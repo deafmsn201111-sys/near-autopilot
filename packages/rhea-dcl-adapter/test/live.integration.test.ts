@@ -43,7 +43,8 @@ const rpcUrl =
 const contractOverride = process.env['RHEA_DCL_CONTRACT_ID'];
 const contractId = contractOverride ? accountId(contractOverride) : DCL_CONTRACT_IDS[deployment];
 
-describe.skipIf(!live)(`live: ${deployment} DCL ${contractId}`, () => {
+// Public RPC round trips routinely exceed vitest's 5 s default.
+describe.skipIf(!live)(`live: ${deployment} DCL ${contractId}`, { timeout: 90_000 }, () => {
   const rpc = new LiveRpc(rpcUrl);
   const client = new RheaDclClient(rpc, { contractId });
 
@@ -75,7 +76,7 @@ describe.skipIf(!live)(`live: ${deployment} DCL ${contractId}`, () => {
   let pools: DclPool[] = [];
 
   it('list_pools parses with the strict schema (this fails loudly if the live shape differs from ref-ui)', async () => {
-    pools = await client.listPools();
+    pools = await client.listPools({ fromIndex: 0, limit: 100 });
     const withLiquidity = pools.filter(
       (p) => (p.liquidity ?? 0n) > 0n || (p.total_x ?? 0n) > 0n || (p.total_y ?? 0n) > 0n,
     );
@@ -94,7 +95,7 @@ describe.skipIf(!live)(`live: ${deployment} DCL ${contractId}`, () => {
     for (const pool of pools.slice(0, 25)) {
       expect(pool.pool_id).toBe(`${pool.token_x}|${pool.token_y}|${pool.fee}`);
       expect([...[pool.token_x, pool.token_y]].sort()).toEqual([pool.token_x, pool.token_y]);
-      expect(pool.current_point % 1).toBe(0);
+      expect(Number.isInteger(pool.current_point)).toBe(true);
       const again = await client.getPool(pool.pool_id);
       expect(again?.pool_id).toBe(pool.pool_id);
     }

@@ -82,6 +82,12 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
     expect(viewer.calls[0]?.args).toEqual({});
   });
 
+  it('list_pools passes a page through as from_index / limit', async () => {
+    const viewer = new ScriptedContractViewer().on(DCL, 'list_pools', [poolFixture]);
+    await client(viewer).listPools({ fromIndex: 200, limit: 50 });
+    expect(viewer.calls[0]?.args).toEqual({ from_index: 200, limit: 50 });
+  });
+
   it('get_liquidity uses lpt_id; list_liquidities uses account_id', async () => {
     const viewer = new ScriptedContractViewer()
       .on(DCL, 'get_liquidity', positionFixture)

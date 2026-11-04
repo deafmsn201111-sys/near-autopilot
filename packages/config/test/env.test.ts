@@ -45,6 +45,14 @@ describe('loadApiEnv', () => {
     expect(loadApiEnv({ ...valid, EXECUTION_MODE: 'dry-run' }).EXECUTION_MODE).toBe('dry-run');
   });
 
+  it('treats empty contract ids as unset (compose passes ${VAR:-})', () => {
+    const empty = { RHEA_CONTRACT_ID: '', BURROW_CONTRACT_ID: '', BURROW_ORACLE_ID: '' };
+    expect(loadApiEnv({ ...valid, ...empty }).BURROW_CONTRACT_ID).toBe('contract.main.burrow.near');
+    expect(() => loadApiEnv({ ...valid, ...empty, NEAR_NETWORK: 'testnet' })).toThrow(
+      'required when NEAR_NETWORK=testnet',
+    );
+  });
+
   it('reports every problem and never echoes secret values', () => {
     try {
       loadApiEnv({

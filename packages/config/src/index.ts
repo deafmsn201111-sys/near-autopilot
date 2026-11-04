@@ -27,6 +27,12 @@ const MAINNET_DEFAULTS = {
   BURROW_ORACLE_ID: 'priceoracle.near',
 } as const;
 
+/** Unset and empty (`FOO=`, or compose's `${FOO:-}`) both mean "not provided". */
+const optionalAccountId = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  accountIdSchema.optional(),
+);
+
 const apiEnvRaw = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -43,9 +49,9 @@ const apiEnvRaw = z.object({
   /** 0 disables the scheduler; cycles can still be triggered via the API. */
   CYCLE_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(0),
   AUTOPILOT_CONFIG_FILE: z.string().min(1).default('./config/autopilot.json'),
-  RHEA_CONTRACT_ID: accountIdSchema.optional(),
-  BURROW_CONTRACT_ID: accountIdSchema.optional(),
-  BURROW_ORACLE_ID: accountIdSchema.optional(),
+  RHEA_CONTRACT_ID: optionalAccountId,
+  BURROW_CONTRACT_ID: optionalAccountId,
+  BURROW_ORACLE_ID: optionalAccountId,
 });
 
 export interface ApiEnv {

@@ -98,8 +98,16 @@ export class RheaDclClient {
    * exceed the view gas limit; that surfaces as an UnexpectedResponseError from the RPC layer, never as
    * a silently truncated list.
    */
-  async listPools(): Promise<DclPool[]> {
-    return this.read('list_pools', undefined, poolListSchema);
+  /**
+   * `list_pools { from_index?, limit? }`. Pass a page on large deployments: unpaged, testnet (11k+ pools, checked
+   * 2026-11-04) exceeds the view-call gas limit (`GasLimitExceeded`).
+   */
+  async listPools(page?: {
+    readonly fromIndex: number;
+    readonly limit: number;
+  }): Promise<DclPool[]> {
+    const args = page ? { from_index: page.fromIndex, limit: page.limit } : undefined;
+    return this.read('list_pools', args, poolListSchema);
   }
 
   /** `get_liquidity { lpt_id }` - one position. */

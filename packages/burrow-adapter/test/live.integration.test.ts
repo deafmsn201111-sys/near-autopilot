@@ -35,7 +35,8 @@ const rpcUrl =
 const override = process.env['BURROW_CONTRACT_ID'];
 const contractId: AccountId = override ? accountId(override) : info.contractId;
 
-describe.skipIf(!live)(`live: Burrow ${deploymentId} ${contractId}`, () => {
+// Public RPC round trips routinely exceed vitest's 5 s default.
+describe.skipIf(!live)(`live: Burrow ${deploymentId} ${contractId}`, { timeout: 90_000 }, () => {
   const rpc = new LiveRpc(rpcUrl);
   const client = new BurrowClient(rpc, contractId);
   const verifier = new BurrowVerifier(

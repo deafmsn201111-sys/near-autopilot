@@ -34,12 +34,16 @@ services:
       API_PORT: 4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      NEAR_NETWORK: ${NEAR_NETWORK:-mainnet}
+      NEAR_NETWORK: ${NEAR_NETWORK:-testnet}
       NEAR_RPC_URL: ${NEAR_RPC_URL:?set NEAR_RPC_URL in .env}
       AUTOPILOT_ACCOUNT_ID: ${AUTOPILOT_ACCOUNT_ID:?set AUTOPILOT_ACCOUNT_ID in .env}
       EXECUTION_MODE: ${EXECUTION_MODE:-dry-run}
       CYCLE_INTERVAL_SECONDS: ${CYCLE_INTERVAL_SECONDS:-0}
       AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+      # Required on testnet (no built-in defaults); empty means "use the mainnet default" on mainnet.
+      RHEA_CONTRACT_ID: ${RHEA_CONTRACT_ID:-}
+      BURROW_CONTRACT_ID: ${BURROW_CONTRACT_ID:-}
+      BURROW_ORACLE_ID: ${BURROW_ORACLE_ID:-}
     volumes:
       - ./config/autopilot.json:/etc/autopilot/autopilot.json:ro
     ports:
