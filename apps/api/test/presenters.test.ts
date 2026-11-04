@@ -104,6 +104,7 @@ describe('presenters produce payloads that satisfy the shared wire contract', ()
         executionMode: 'dry-run',
         engine: 'legacy',
         simulationPortfolio: null,
+        marketData: 'none',
       },
     );
     expect(policyDtoSchema.parse(dto)).toEqual(dto);

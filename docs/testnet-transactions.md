@@ -19,6 +19,7 @@ change in `apps/api/src/testnet-tx/operations.ts`.
 - at most **0.1 NEAR** per operation, worst case (deposit + (attached gas + 5 Tgas) x gas price x 1.2);
 - at most **1 NEAR** in total (actual cost of settled transactions, maximum cost of anything unresolved);
 - at least **0.5 NEAR** left available on the account;
+- the account balance never below **14 NEAR** after the worst case (lowering this floor needs a new agreement);
 - a preview is valid for **10 minutes**.
 
 ## Guarantees, and where they are tested (`apps/api/test/testnet-tx.test.ts`)

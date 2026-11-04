@@ -4,6 +4,7 @@ import {
   portfolioDtoSchema,
   proposalsResponseSchema,
   runsResponseSchema,
+  marketDataDtoSchema,
   testnetTxResponseSchema,
   triggerRunResponseSchema,
 } from '@near-autopilot/core';
@@ -50,6 +51,7 @@ export const getPolicy = () => request('/v1/policy', policyDtoSchema);
 export const getRuns = (limit = 20) => request(`/v1/runs?limit=${limit}`, runsResponseSchema);
 export const getTestnetTransactions = (limit = 20) =>
   request(`/v1/testnet-transactions?limit=${limit}`, testnetTxResponseSchema);
+export const getMarketData = () => request('/v1/market-data', marketDataDtoSchema);
 export const getProposals = (limit = 50) =>
   request(`/v1/proposals?limit=${limit}`, proposalsResponseSchema);
 export const triggerRun = () => request('/v1/runs', triggerRunResponseSchema, { method: 'POST' });

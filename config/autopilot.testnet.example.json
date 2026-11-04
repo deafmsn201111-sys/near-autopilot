@@ -17,7 +17,7 @@
     "approvalThresholdUsd": 50,
     "maxSlippageBps": 50,
     "maxOracleDeviationBps": 150,
-    "maxPriceAgeSeconds": 120,
+    "maxPriceAgeSeconds": 180,
     "cooldownSeconds": 600,
     "approvalTtlSeconds": 120
   },
@@ -44,5 +44,39 @@
   },
   "rhea": {
     "pools": []
+  },
+  "orchestrator": {
+    "freshness": {
+      "maxSnapshotAgeSeconds": 60,
+      "maxPriceAgeSeconds": 180,
+      "maxMarketAgeSeconds": 300
+    },
+    "allocation": {
+      "assets": [
+        {
+          "token": "wrap.testnet",
+          "minBps": 0,
+          "maxBps": 6000
+        },
+        {
+          "token": "usdt.fakes.testnet",
+          "minBps": 0,
+          "maxBps": 6000,
+          "group": "stable"
+        },
+        {
+          "token": "usdc.fakes.testnet",
+          "minBps": 0,
+          "maxBps": 6000,
+          "group": "stable"
+        }
+      ],
+      "groupCaps": [
+        {
+          "group": "stable",
+          "maxBps": 8000
+        }
+      ]
+    }
   }
 }

@@ -1,4 +1,13 @@
-import { bigserial, bigint, index, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import {
+  bigserial,
+  bigint,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
@@ -128,6 +137,42 @@ export const testnetTransactions = pgTable(
     updatedAt: ts('updated_at').notNull(),
   },
   (t) => [index('testnet_transactions_status_idx').on(t.status)],
+);
+
+/**
+ * One row per testnet asset per market-data fetch: the resolved reference price and every source observation behind
+ * it (jsonb), so any price an agent saw can be traced to its source, timestamp and validity. Mainnet data only, applied
+ * to testnet tokens: both networks are columns, fixed by CHECK constraints.
+ */
+export const marketPrices = pgTable(
+  'market_prices',
+  {
+    id: text('id').primaryKey(),
+    reportId: text('report_id').notNull(),
+    fetchedAt: ts('fetched_at').notNull(),
+    marketNetwork: text('market_network', { enum: ['mainnet'] }).notNull(),
+    executionNetwork: text('execution_network', { enum: ['testnet'] }).notNull(),
+    testnetToken: text('testnet_token').notNull(),
+    referenceSymbol: text('reference_symbol').notNull(),
+    mainnetContract: text('mainnet_contract').notNull(),
+    status: text('status', {
+      enum: ['corroborated', 'single_source', 'price_disputed', 'unpriced'],
+    }).notNull(),
+    /** Exact decimal text, USD per whole token. Null when not usable. */
+    priceUsd: text('price_usd'),
+    source: text('source'),
+    sourceAssetId: text('source_asset_id'),
+    publishedAt: ts('published_at'),
+    ageMs: integer('age_ms'),
+    spreadBps: integer('spread_bps'),
+    reason: text('reason'),
+    observations: jsonb('observations').$type<unknown>().notNull(),
+    sources: jsonb('sources').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('market_prices_fetched_idx').on(t.fetchedAt),
+    index('market_prices_token_idx').on(t.testnetToken, t.fetchedAt),
+  ],
 );
 
 export type RunRow = typeof runs.$inferSelect;

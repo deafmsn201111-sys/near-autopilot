@@ -5,6 +5,7 @@ import {
   createDatabase,
   getTableColumns,
   getTableName,
+  marketPrices,
   proposals,
   runMigrations,
   runs,
@@ -15,6 +16,10 @@ import {
 } from '@near-autopilot/db';
 import { accountId } from '@near-autopilot/core';
 import { DrizzleRepository } from '../src/infra/drizzle-repository';
+import { REFERENCE_ASSETS } from '../src/market-data/assets';
+import { parseDecimal } from '../src/market-data/decimal';
+import { REFERENCE_LABEL } from '../src/market-data/model';
+import { DrizzleMarketPriceStore } from '../src/market-data/store';
 import { DrizzleTestnetTxLedger } from '../src/testnet-tx/ledger';
 import type { TestnetTxRecord } from '../src/testnet-tx/model';
 import type { ProposalRecord } from '../src/repository';
@@ -52,11 +57,17 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(4);
+    expect(applied.rows[0]?.n).toBe(5);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
-    const tables: readonly Table[] = [runs, proposals, auditEvents, testnetTransactions];
+    const tables: readonly Table[] = [
+      runs,
+      proposals,
+      auditEvents,
+      testnetTransactions,
+      marketPrices,
+    ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
         .map((c) => `${c.name}:${c.notNull ? 'NO' : 'YES'}`)
@@ -291,6 +302,73 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     });
     await expect(
       handle.db.execute(sql`update testnet_transactions set network = 'mainnet' where id = 'tx-1'`),
+    ).rejects.toThrow();
+  });
+
+  it('market prices: every report persists source, networks, timestamp and status; mainnet->testnet only', async () => {
+    const store = new DrizzleMarketPriceStore(handle.db);
+    expect(await store.latest()).toEqual([]);
+    const at = new Date('2026-11-04T12:00:00Z');
+    const a = REFERENCE_ASSETS[0];
+    if (!a) throw new Error('no asset');
+    const observation = {
+      source: 'defillama' as const,
+      network: 'mainnet' as const,
+      assetId: 'coingecko:near',
+      contract: null,
+      priceUsd: parseDecimal('3.986570184437296'),
+      quoteCurrency: 'USD' as const,
+      confidence: '0.99',
+      publishedAt: new Date(at.getTime() - 20_000),
+      fetchedAt: at,
+      ageMs: 20_000,
+      status: 'valid' as const,
+      reason: null,
+    };
+    for (const id of ['r1', 'r2']) {
+      await store.record({
+        id,
+        fetchedAt: id === 'r1' ? at : new Date(at.getTime() + 60_000),
+        marketNetwork: 'mainnet',
+        executionNetwork: 'testnet',
+        sources: [{ source: 'pyth', health: 'unavailable', detail: 'PYTH_API_KEY is not set' }],
+        range24hBps: new Map(),
+        assets: [
+          {
+            testnetToken: a.testnetToken,
+            referenceSymbol: a.reference.symbol,
+            mainnetContract: a.reference.mainnetContract,
+            status: 'single_source',
+            priceUsd: observation.priceUsd,
+            chosen: observation,
+            crossCheck: null,
+            spreadBps: null,
+            observations: [observation],
+            reason: 'only defillama returned a valid price',
+            label: REFERENCE_LABEL,
+          },
+        ],
+      });
+    }
+    const latest = await store.latest();
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toMatchObject({
+      reportId: 'r2',
+      testnetToken: 'wrap.testnet',
+      status: 'single_source',
+      priceUsd: '3.986570184437296',
+      source: 'defillama',
+      sourceAssetId: 'coingecko:near',
+      marketNetwork: 'mainnet',
+      executionNetwork: 'testnet',
+      ageMs: 20_000,
+    });
+    expect(JSON.stringify(latest[0]?.observations)).toContain('"status":"valid"');
+    await expect(
+      handle.db.execute(sql`update market_prices set execution_network = 'mainnet'`),
+    ).rejects.toThrow();
+    await expect(
+      handle.db.execute(sql`update market_prices set market_network = 'testnet'`),
     ).rejects.toThrow();
   });
 });

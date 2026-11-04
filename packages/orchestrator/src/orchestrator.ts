@@ -345,8 +345,11 @@ export class Orchestrator {
       }
     }
 
+    // Judge freshness at the moment the observation is complete, not when the cycle began: reading the chain can take
+    // many seconds (the public testnet RPC answers in ~3 s per call), and data read after `now` would look future-dated.
+    const observedAt = d.clock.now();
     const dq = checkDataQuality({
-      now,
+      now: observedAt,
       expectedAccount: d.accountId,
       snapshot,
       market,
@@ -398,7 +401,7 @@ export class Orchestrator {
     const suspicious = new Set<AgentId>();
     const seen = new Set<string>();
     const baseObservation: AgentObservation = {
-      now,
+      now: observedAt,
       accountId: d.accountId,
       snapshot,
       market,
@@ -558,7 +561,7 @@ export class Orchestrator {
       new Date(now.getTime() - cfg.execution.dedupeWindowSeconds * 1000),
     );
     const decision = decide({
-      now,
+      now: observedAt,
       accountId: d.accountId,
       snapshot,
       market,

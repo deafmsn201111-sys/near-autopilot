@@ -99,6 +99,8 @@ export interface WorldOptions {
   /** Age of the snapshot and prices when taken, seconds. */
   snapshotAgeSeconds?: number;
   pricesAgeSeconds?: number;
+  /** How long reading the snapshot takes (the clock advances by this much inside take()). */
+  snapshotTakesSeconds?: number;
 }
 
 export interface Spies {
@@ -168,6 +170,7 @@ export function makeWorld(opts: WorldOptions = {}) {
   const snapshots: SnapshotProvider = {
     async take() {
       if (state.snapshotFails) throw new Error('rpc down');
+      clock.advanceSeconds(opts.snapshotTakesSeconds ?? 0);
       return buildSnapshot();
     },
   };

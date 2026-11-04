@@ -67,8 +67,14 @@ interface ProvenanceView {
  * Banner text for where the shown data comes from. Kept as plain text so it reads the same everywhere and can be
  * tested; the four cases must never be confused with each other.
  */
+export const TESTNET_MAINNET_DATA_BANNER =
+  'TESTNET EXECUTION · MAINNET MARKET DATA · NO MAINNET TRANSACTIONS';
+
 export function provenanceBanner(
-  p: ProvenanceView & { readonly executionMode: 'dry-run' | 'live' },
+  p: ProvenanceView & {
+    readonly executionMode: 'dry-run' | 'live';
+    readonly marketData?: 'none' | 'mainnet-reference';
+  },
 ): { readonly tone: 'sim' | 'test' | 'main'; readonly text: string } {
   if (p.dataSource === 'simulation') {
     return {
@@ -80,6 +86,12 @@ export function provenanceBanner(
     p.executionMode === 'dry-run'
       ? 'dry-run, nothing is sent'
       : 'live: approved actions are signed and sent';
+  if (p.network === 'testnet' && p.marketData === 'mainnet-reference') {
+    return {
+      tone: 'test',
+      text: `${TESTNET_MAINNET_DATA_BANNER}: account state is real NEAR testnet data (RPC view calls); prices are MAINNET reference prices, not the value of the test tokens. ${p.executionMode === 'dry-run' ? 'Dry-run: nothing is signed or sent.' : sending}`,
+    };
+  }
   if (p.network === 'testnet') {
     return p.executionMode === 'dry-run'
       ? {

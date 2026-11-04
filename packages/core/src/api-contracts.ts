@@ -105,6 +105,8 @@ export const policyDtoSchema = z.object({
   engine: z.enum(['legacy', 'orchestrator']),
   /** Demo portfolio id when dataSource is `simulation`, else null. */
   simulationPortfolio: z.string().nullable(),
+  /** `mainnet-reference`: MAINNET market data priced onto TESTNET tokens (labelled reference prices). */
+  marketData: z.enum(['none', 'mainnet-reference']),
   enabled: z.boolean(),
   executionMode: z.enum(['dry-run', 'live']),
   maxActionUsd: usdString,
@@ -153,6 +155,65 @@ export const testnetTxResponseSchema = z.object({
   transactions: z.array(testnetTxDtoSchema),
 });
 export type TestnetTxResponse = z.infer<typeof testnetTxResponseSchema>;
+/** One source's value for one asset (always MAINNET market data). */
+export const marketObservationDtoSchema = z.object({
+  source: z.enum(['pyth', 'defillama']),
+  network: z.literal('mainnet'),
+  assetId: z.string(),
+  contract: z.string().nullable(),
+  priceUsd: z.string().nullable(),
+  quoteCurrency: z.literal('USD'),
+  confidence: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+  fetchedAt: z.string(),
+  ageMs: z.number().nullable(),
+  status: z.enum([
+    'valid',
+    'stale',
+    'future',
+    'invalid',
+    'low_confidence',
+    'not_found',
+    'mapping_mismatch',
+    'unavailable',
+  ]),
+  reason: z.string().nullable(),
+});
+export const marketAssetDtoSchema = z.object({
+  testnetToken: z.string(),
+  referenceSymbol: z.string(),
+  mainnetContract: z.string(),
+  status: z.enum(['corroborated', 'single_source', 'price_disputed', 'unpriced']),
+  /** Exact decimal text, USD per whole token. */
+  priceUsd: z.string().nullable(),
+  source: z.string().nullable(),
+  sourceAssetId: z.string().nullable(),
+  publishedAt: z.string().nullable(),
+  ageMs: z.number().nullable(),
+  spreadBps: z.number().nullable(),
+  range24hBps: z.number().nullable(),
+  reason: z.string().nullable(),
+  label: z.string(),
+  observations: z.array(marketObservationDtoSchema),
+});
+export const marketDataDtoSchema = z.object({
+  /** False when this API does not use mainnet reference prices (simulation, or MARKET_DATA=none). */
+  enabled: z.boolean(),
+  flow: z.string(),
+  marketNetwork: z.literal('mainnet'),
+  executionNetwork: z.enum(['mainnet', 'testnet']),
+  fetchedAt: z.string().nullable(),
+  sources: z.array(
+    z.object({
+      source: z.enum(['pyth', 'defillama']),
+      health: z.enum(['ok', 'degraded', 'unavailable']),
+      detail: z.string().nullable(),
+    }),
+  ),
+  assets: z.array(marketAssetDtoSchema),
+  error: z.string().nullable(),
+});
+export type MarketDataDto = z.infer<typeof marketDataDtoSchema>;
 export const proposalsResponseSchema = z.object({ proposals: z.array(proposalDtoSchema) });
 export const triggerRunResponseSchema = z.object({
   run: runDtoSchema,

@@ -13,6 +13,11 @@ export const TESTNET_TX_LIMITS = {
   totalBudgetYocto: YOCTO_PER_NEAR,
   /** 0.5 NEAR always left available on the account, whatever the budget says. */
   reserveYocto: YOCTO_PER_NEAR / 2n,
+  /**
+   * 14 NEAR: the account balance (total, before storage) may never drop below this after an operation's worst case,
+   * without a new, separate agreement with the account owner (and a reviewed code change).
+   */
+  minBalanceAfterYocto: 14n * YOCTO_PER_NEAR,
   /** A preview older than this cannot be sent; prepare a new one. */
   previewTtlMs: 10 * 60_000,
 } as const;

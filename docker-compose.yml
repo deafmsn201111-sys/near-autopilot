@@ -102,6 +102,12 @@ services:
       RHEA_CONTRACT_ID: ${TESTNET_RHEA_CONTRACT_ID:-ref-finance-101.testnet}
       BURROW_CONTRACT_ID: ${TESTNET_BURROW_CONTRACT_ID:-contract.1638481328.burrow.testnet}
       BURROW_ORACLE_ID: ${TESTNET_BURROW_ORACLE_ID:-priceoracle.testnet}
+      # MAINNET MARKET DATA -> TESTNET EXECUTION: mainnet prices applied to testnet tokens as labelled reference prices.
+      MARKET_DATA: ${TESTNET_MARKET_DATA:-mainnet-reference}
+      # Optional; Pyth Hermes requires a key. Without it Pyth is reported unavailable and DefiLlama is the fallback.
+      PYTH_API_KEY: ${PYTH_API_KEY:-}
+      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
     volumes:
       - ./config/autopilot.testnet.local.json:/etc/autopilot/autopilot.json:ro
     ports:

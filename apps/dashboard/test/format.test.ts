@@ -48,6 +48,15 @@ describe('provenance labels never confuse simulated, testnet, mainnet and on-cha
     expect(
       provenanceBanner({ dataSource: 'chain', network: 'mainnet', executionMode: 'dry-run' }).text,
     ).toMatch(/^MAINNET data, read-only/);
+    const ref = provenanceBanner({
+      dataSource: 'chain',
+      network: 'testnet',
+      executionMode: 'dry-run',
+      marketData: 'mainnet-reference',
+    }).text;
+    expect(ref).toMatch(/^TESTNET EXECUTION · MAINNET MARKET DATA · NO MAINNET TRANSACTIONS/);
+    expect(ref).toContain('not the value of the test tokens');
+    expect(ref).toContain('nothing is signed or sent');
   });
 
   it('evidence', async () => {

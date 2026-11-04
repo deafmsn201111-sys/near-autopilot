@@ -12,6 +12,14 @@ export default async function PolicyPage() {
         ? `Simulation (${p.simulationPortfolio ?? 'demo'}): mock RPC, no network access`
         : `NEAR ${p.network}`,
     ],
+    [
+      'Market data',
+      p.marketData === 'mainnet-reference'
+        ? 'MAINNET reference prices (Pyth, then DefiLlama) applied to TESTNET tokens'
+        : p.dataSource === 'simulation'
+          ? 'Fixed demo prices'
+          : `Burrow oracle on ${p.network}`,
+    ],
     ['Decision engine', p.engine],
     ['Kill switch', p.enabled ? 'Off (autopilot allowed to act)' : 'On (all actions blocked)'],
     ['Execution mode', p.executionMode === 'dry-run' ? 'Dry run: nothing is sent' : 'Live'],

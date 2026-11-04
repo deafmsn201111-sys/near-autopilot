@@ -37,6 +37,15 @@ describe('scenario: stale-data protection', () => {
     expect(w.spies.execute).toBe(0);
   });
 
+  it('a slow read is not future-dated: freshness is judged when the observation completes (regression)', async () => {
+    // The public testnet RPC took ~13 s for a snapshot; judged against the cycle's start time, the snapshot looked
+    // 13 s in the future and every cycle was blocked with FUTURE_TIMESTAMP.
+    const w = makeWorld({ lending: watchPosition, snapshotTakesSeconds: 13 });
+    const r = await w.orchestrator.runCycle(w.nextKey());
+    expect(r.decision?.dataQuality.issues.map((i) => i.code)).not.toContain('FUTURE_TIMESTAMP');
+    expect(r.status).toBe('dry_run');
+  });
+
   it('a snapshot for a different account is refused', async () => {
     const w = makeWorld({ lending: watchPosition });
     w.state.accountOverride = 'mallory.near';

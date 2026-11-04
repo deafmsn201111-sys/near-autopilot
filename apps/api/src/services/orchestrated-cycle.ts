@@ -190,6 +190,13 @@ export function summarize(
   agents: ReadonlyArray<Record<string, unknown>>,
 ): string {
   const parts = [report.detail];
+  // Say exactly which data check blocked or limited the cycle (e.g. "PRICES_STALE: oracle prices are 412s old").
+  const issues = report.decision?.dataQuality.issues ?? [];
+  if (issues.length > 0) {
+    parts.push(
+      `data: ${issues.map((i) => `${i.code}${i.blocking ? '' : ' (non-blocking)'}: ${i.detail}`).join(', ')}`,
+    );
+  }
   if (report.escalations.length > 0) {
     parts.push(`escalations: ${[...new Set(report.escalations.map((e) => e.code))].join(', ')}`);
   }

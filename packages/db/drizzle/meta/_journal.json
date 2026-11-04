@@ -29,6 +29,13 @@
       "when": 1793810000000,
       "tag": "0003_testnet_transactions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793820000000,
+      "tag": "0004_market_prices",
+      "breakpoints": true
     }
   ]
 }

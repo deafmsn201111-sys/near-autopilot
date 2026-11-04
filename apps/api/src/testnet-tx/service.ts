@@ -298,6 +298,11 @@ export class TestnetTxService {
         `balance: ${formatNear(available)} NEAR available; must keep ${formatNear(L.reserveYocto)} NEAR after a worst case of ${formatNear(maxCost)}`,
       );
     }
+    if (account.amount - maxCost < L.minBalanceAfterYocto) {
+      throw new TestnetTxRefused(
+        `balance floor: ${formatNear(account.amount)} NEAR now; a worst case of ${formatNear(maxCost)} NEAR would go below ${formatNear(L.minBalanceAfterYocto)} NEAR (needs a new agreement)`,
+      );
+    }
     const preview: TxPreview = {
       network: 'testnet',
       chainId: status.chainId,

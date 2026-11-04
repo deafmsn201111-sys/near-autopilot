@@ -63,6 +63,16 @@ const apiEnvRaw = z.object({
   RHEA_CONTRACT_ID: optionalAccountId,
   BURROW_CONTRACT_ID: optionalAccountId,
   BURROW_ORACLE_ID: optionalAccountId,
+  /**
+   * `none`: prices come from the Burrow oracle of NEAR_NETWORK only.
+   * `mainnet-reference`: MAINNET market data (Pyth, then DefiLlama) priced onto TESTNET tokens as conditional
+   * REFERENCE prices. Testnet + chain + dry-run only: a mainnet price never confirms a testnet token's value.
+   */
+  MARKET_DATA: z.enum(['none', 'mainnet-reference']).default('none'),
+  /** Pyth Hermes requires an API key since Aug 2026. Read from the local .env only; never logged. */
+  PYTH_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
+  PYTH_HERMES_URL: z.string().url().default('https://hermes.pyth.network'),
+  DEFILLAMA_URL: z.string().url().default('https://coins.llama.fi'),
 });
 
 export interface ApiEnv {
@@ -84,6 +94,10 @@ export interface ApiEnv {
   readonly RHEA_CONTRACT_ID: AccountId;
   readonly BURROW_CONTRACT_ID: AccountId;
   readonly BURROW_ORACLE_ID: AccountId;
+  readonly MARKET_DATA: 'none' | 'mainnet-reference';
+  readonly PYTH_API_KEY: string | undefined;
+  readonly PYTH_HERMES_URL: string;
+  readonly DEFILLAMA_URL: string;
 }
 
 export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
@@ -110,6 +124,22 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
       path: ['DATA_SOURCE'],
       message: 'simulation never executes: use EXECUTION_MODE=dry-run',
     });
+  }
+  if (env.MARKET_DATA === 'mainnet-reference') {
+    const why =
+      env.NEAR_NETWORK !== 'testnet'
+        ? 'NEAR_NETWORK=testnet'
+        : env.DATA_SOURCE !== 'chain'
+          ? 'DATA_SOURCE=chain'
+          : env.EXECUTION_MODE !== 'dry-run'
+            ? 'EXECUTION_MODE=dry-run'
+            : null;
+    if (why)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MARKET_DATA'],
+        message: `mainnet reference prices are for testnet analysis only: requires ${why}`,
+      });
   }
   // Protocol contract ids differ per network; only mainnet has safe built-in defaults.
   if (env.NEAR_NETWORK === 'testnet') {
@@ -151,6 +181,10 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     RHEA_CONTRACT_ID: pick('RHEA_CONTRACT_ID'),
     BURROW_CONTRACT_ID: pick('BURROW_CONTRACT_ID'),
     BURROW_ORACLE_ID: pick('BURROW_ORACLE_ID'),
+    MARKET_DATA: env.MARKET_DATA,
+    PYTH_API_KEY: env.PYTH_API_KEY,
+    PYTH_HERMES_URL: env.PYTH_HERMES_URL,
+    DEFILLAMA_URL: env.DEFILLAMA_URL,
   };
 }
 

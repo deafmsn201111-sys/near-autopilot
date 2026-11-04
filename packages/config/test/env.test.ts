@@ -73,6 +73,38 @@ describe('loadApiEnv', () => {
     });
   });
 
+  it('mainnet reference market data is for testnet chain dry-run only, and the Pyth key is never echoed', () => {
+    const testnet = {
+      ...valid,
+      NEAR_NETWORK: 'testnet',
+      NEAR_RPC_URL: 'https://rpc.testnet.near.org',
+      AUTOPILOT_ACCOUNT_ID: 'alice.testnet',
+      RHEA_CONTRACT_ID: 'ref.testnet',
+      BURROW_CONTRACT_ID: 'burrow.testnet',
+      BURROW_ORACLE_ID: 'oracle.testnet',
+      MARKET_DATA: 'mainnet-reference',
+    };
+    const ok = loadApiEnv({ ...testnet, PYTH_API_KEY: '' });
+    expect(ok.MARKET_DATA).toBe('mainnet-reference');
+    expect(ok.PYTH_API_KEY).toBeUndefined();
+    expect(loadApiEnv(valid).MARKET_DATA).toBe('none');
+    for (const [over, needs] of [
+      [
+        { NEAR_NETWORK: 'mainnet', NEAR_RPC_URL: 'https://rpc.mainnet.near.org' },
+        'NEAR_NETWORK=testnet',
+      ],
+      [{ DATA_SOURCE: 'simulation' }, 'DATA_SOURCE=chain'],
+      [{ EXECUTION_MODE: 'live' }, 'EXECUTION_MODE=dry-run'],
+    ] as const) {
+      expect(() => loadApiEnv({ ...testnet, ...over })).toThrow(needs);
+    }
+    try {
+      loadApiEnv({ ...testnet, PYTH_API_KEY: 'short', API_TOKEN: 'x' });
+    } catch (e) {
+      expect(String(e)).not.toContain('short');
+    }
+  });
+
   it('treats empty contract ids as unset (compose passes ${VAR:-})', () => {
     const empty = { RHEA_CONTRACT_ID: '', BURROW_CONTRACT_ID: '', BURROW_ORACLE_ID: '' };
     expect(loadApiEnv({ ...valid, ...empty }).BURROW_CONTRACT_ID).toBe('contract.main.burrow.near');

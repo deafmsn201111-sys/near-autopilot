@@ -149,6 +149,11 @@ describe('testnet transactions: preview (read-only)', () => {
     ],
     ['the balance reserve', (c: FakeChain) => (c.amount = NEAR / 2n), 'must keep 0.5 NEAR'],
     [
+      'the 14 NEAR balance floor',
+      (c: FakeChain) => (c.amount = 14n * NEAR + NEAR / 1000n),
+      'would go below 14 NEAR',
+    ],
+    [
       'an odd storage deposit',
       (c: FakeChain) => (c.storageMin = NEAR),
       'outside the expected range',

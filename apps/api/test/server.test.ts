@@ -18,6 +18,7 @@ const policy: PolicyDto = {
   ...provenance,
   engine: 'legacy',
   simulationPortfolio: null,
+  marketData: 'none',
   enabled: true,
   executionMode: 'dry-run',
   maxActionUsd: '100.00',

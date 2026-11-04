@@ -5,6 +5,7 @@ import type {
   PolicyDto,
   PortfolioSnapshot,
   Provenance,
+  MarketDataDto,
   TestnetTxResponse,
 } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
@@ -21,6 +22,8 @@ export interface ServerDeps {
   readonly provenance: Provenance;
   /** Read-only view of the manually confirmed testnet transaction ledger (absent in tests that do not need it). */
   readonly testnetTransactions?: { list(limit: number): Promise<TestnetTxResponse> };
+  /** Mainnet reference market data (testnet profile); absent means not used by this deployment. */
+  readonly marketData?: { current(): Promise<MarketDataDto> };
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -104,6 +107,21 @@ export function buildServer(
       }
     );
   });
+
+  app.get('/v1/market-data', async () =>
+    deps.marketData
+      ? deps.marketData.current()
+      : {
+          enabled: false,
+          flow: 'MAINNET MARKET DATA → TESTNET EXECUTION',
+          marketNetwork: 'mainnet',
+          executionNetwork: deps.provenance.network,
+          fetchedAt: null,
+          sources: [],
+          assets: [],
+          error: null,
+        },
+  );
 
   app.post('/v1/runs', async (_request, reply) => {
     const result = await deps.cycle.run();

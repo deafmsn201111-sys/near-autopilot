@@ -9,6 +9,7 @@ import {
 } from '@near-autopilot/burrow-adapter';
 import type { ApiEnv } from '@near-autopilot/config';
 import {
+  accountIdSchema,
   assertChainId,
   type Agent,
   type Clock,
@@ -43,8 +44,15 @@ import type { AutopilotRepository } from './repository';
 import { loadSigner } from './signer';
 import { AutopilotCycle } from './services/cycle';
 import { OrchestratedCycle, RepositoryNotifier } from './services/orchestrated-cycle';
+import { PersistentAuditLog } from './services/persistent-audit';
 import { CachedSnapshotService, SnapshotService } from './services/snapshot';
 import { DEMO_PORTFOLIOS } from './simulation/demo-portfolios';
+import { ReferenceMarketProvider, ReferencePriceOracle } from './market-data/adapters';
+import { REFERENCE_ASSETS } from './market-data/assets';
+import { HttpJsonClient } from './market-data/http';
+import type { MarketDataProvider, MarketReportSink } from './market-data/model';
+import { ReferenceMarketData } from './market-data/service';
+import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
 
 export const systemClock: Clock = { now: () => new Date() };
@@ -53,6 +61,10 @@ export const uuidGenerator: IdGenerator = { next: () => randomUUID() };
 export interface WireOptions {
   /** Transport for the NEAR RPC client (tests inject a fake; production uses global fetch). */
   readonly fetchImpl?: typeof fetch;
+  /** Transport for the MAINNET market-data sources (tests inject a fake). Never used for NEAR RPC. */
+  readonly marketFetchImpl?: typeof fetch;
+  /** Where market reports are persisted (Postgres in production). */
+  readonly marketSink?: MarketReportSink;
 }
 
 /**
@@ -93,7 +105,10 @@ export async function wire(
   const tokens = new NearTokenReader(viewer);
   const burrow = { contractId: env.BURROW_CONTRACT_ID, oracleId: env.BURROW_ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrow);
-  const oracle = new BurrowPriceOracle(viewer, burrow);
+  // MAINNET MARKET DATA -> TESTNET EXECUTION (MARKET_DATA=mainnet-reference; config enforces testnet + chain + dry-run).
+  const market =
+    env.MARKET_DATA === 'mainnet-reference' ? referenceMarket(env, tokens, logger, options) : null;
+  const oracle = market ? new ReferencePriceOracle(market) : new BurrowPriceOracle(viewer, burrow);
   const quoter = new RheaSwapQuoter(viewer, {
     contractId: env.RHEA_CONTRACT_ID,
     pools: new StaticPoolRegistry(
@@ -163,8 +178,13 @@ export async function wire(
   const cachedSnapshots = new CachedSnapshotService(snapshots);
 
   const common = { accountId: env.AUTOPILOT_ACCOUNT_ID, executionMode: env.EXECUTION_MODE };
-  // In-memory: why this engine is dry-run only (packages/config). The cycle reads it back to report per-agent outcomes.
-  const orchestratorAudit = new InMemoryAuditLog();
+  // Idempotency and control stores stay in memory: why this engine is dry-run only (packages/config). The cycle reads
+  // the audit back to report per-agent outcomes.
+  // The chain is in memory; every entry is also written to Postgres audit_events (write-through, fails closed).
+  const orchestratorAudit = new PersistentAuditLog(new InMemoryAuditLog(), repo, {
+    dataSource: env.DATA_SOURCE,
+    network: env.NEAR_NETWORK,
+  });
   const cycle =
     env.AUTOPILOT_ENGINE === 'orchestrator'
       ? new OrchestratedCycle({
@@ -181,9 +201,9 @@ export async function wire(
               new CapitalAllocatorAgent(),
             ],
             snapshots,
-            // No market-data source is integrated yet: market intelligence, LP and allocation report
-            // `insufficient_data`; the liquidation guardian works from the snapshot alone.
-            market: null,
+            // Mainnet reference data when enabled (cross-check prices, 24h range); no yield source and no LP
+            // positions exist, so allocation and LP report `insufficient_data`. Without it, market is null.
+            market: market ? new ReferenceMarketProvider(market) : null,
             quoter,
             planner: planners,
             policy,
@@ -215,7 +235,52 @@ export async function wire(
           logger,
         });
 
-  return { cycle, snapshots: cachedSnapshots, policy, simulation };
+  return { cycle, snapshots: cachedSnapshots, policy, simulation, market };
+}
+
+function referenceMarket(
+  env: ApiEnv,
+  tokens: NearTokenReader,
+  logger: Logger,
+  options: WireOptions,
+): MarketDataProvider {
+  if (
+    env.NEAR_NETWORK !== 'testnet' ||
+    env.DATA_SOURCE !== 'chain' ||
+    env.EXECUTION_MODE !== 'dry-run'
+  ) {
+    // Defence in depth: loadApiEnv already rejects this; a hand-built ApiEnv must not bypass it.
+    throw new Error(
+      'MARKET_DATA=mainnet-reference requires NEAR_NETWORK=testnet, DATA_SOURCE=chain, EXECUTION_MODE=dry-run',
+    );
+  }
+  const http = new HttpJsonClient({
+    fetchImpl: options.marketFetchImpl,
+    maxConcurrent: 2,
+    // The source URL is logged, never headers (the Pyth key travels in Authorization).
+    onRetry: (e) =>
+      logger.warn('market data retry', { attempt: e.attempt, kind: e.kind, delayMs: e.delayMs }),
+  });
+  const llama = new DefiLlamaSource({
+    baseUrl: env.DEFILLAMA_URL,
+    http,
+    freshness: { maxAgeMs: 180_000, maxFutureSkewMs: 5_000 },
+  });
+  return new ReferenceMarketData({
+    assets: REFERENCE_ASSETS,
+    // Priority: Pyth first, DefiLlama second.
+    sources: [
+      new PythSource({ baseUrl: env.PYTH_HERMES_URL, apiKey: env.PYTH_API_KEY, http }),
+      llama,
+    ],
+    history: llama,
+    testnetDecimals: async (token) =>
+      (await tokens.getMetadata(accountIdSchema.parse(token))).decimals,
+    now: () => systemClock.now(),
+    ids: () => uuidGenerator.next(),
+    ...(options.marketSink ? { sink: options.marketSink } : {}),
+    onError: (message) => logger.warn(message),
+  });
 }
 
 /**
