@@ -165,14 +165,14 @@ export function makeWorld(
     .deploy(WNEAR, TOKEN_FUNCTIONS)
     .deploy(USDT, TOKEN_FUNCTIONS);
   const viewer = new ScriptedContractViewer();
-  const world = {
+  const world: Omit<World, 'client' | 'verifier'> = {
     rpc,
     viewer,
     clock: new FixedClock(T0),
     account: null,
     assets: { ...ASSET_FIXTURES },
     oracleAccountId: ORACLE,
-  } as World;
+  };
   viewer.onCall(contractId, 'get_config', () => ({
     oracle_account_id: world.oracleAccountId,
     owner_id: 'owner.near',

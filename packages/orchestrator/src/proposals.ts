@@ -1,4 +1,4 @@
-import { accountIdSchema, type TokenId } from '@near-autopilot/core';
+import { accountIdSchema } from '@near-autopilot/core';
 import { z } from 'zod';
 
 /**
@@ -64,7 +64,7 @@ const isoDate = z
   .datetime({ offset: true })
   .transform((v) => new Date(v));
 
-const token = accountIdSchema.transform((v) => v as TokenId);
+const token = accountIdSchema;
 const identifier = z.string().regex(/^[A-Za-z0-9_.:-]{1,64}$/);
 
 const base = { rationale: text(MAX_RATIONALE_LENGTH) };

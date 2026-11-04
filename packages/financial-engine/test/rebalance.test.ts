@@ -10,7 +10,7 @@ import {
   valueInToken1,
   type LiquiditySegment,
 } from '../src';
-import { forAll } from './support/prop';
+import { forAll, type Gen } from './support/prop';
 
 const t = sqrtRatioAtTick;
 const deep = (L = 10n ** 26n): LiquiditySegment[] => [
@@ -230,7 +230,7 @@ describe('rebalanceCost: fixtures', () => {
 });
 
 describe('solveRebalance: properties', () => {
-  const gen = (g: import('./support/prop').Gen) => {
+  const gen = (g: Gen) => {
     const lo = g.int(-1500, 1000);
     return {
       newLower: t(lo),

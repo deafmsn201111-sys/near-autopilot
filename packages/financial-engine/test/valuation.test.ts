@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MissingPriceError, accountId, type TokenId } from '@near-autopilot/core';
+import { MissingPriceError, accountId } from '@near-autopilot/core';
 import { rawForValueUsd, sumValueUsd, tokenValueUsd, valueUsd } from '../src';
 import { NEAR_PRICE, USDT_PRICE, WNEAR, near, prices, usdt } from './fixtures';
 
@@ -17,7 +17,7 @@ describe('valuation', () => {
   });
 
   it('fails closed on missing prices', () => {
-    const unknown = accountId('mystery.near') as TokenId;
+    const unknown = accountId('mystery.near');
     expect(() => tokenValueUsd(prices, unknown, 1n)).toThrow(MissingPriceError);
   });
 
@@ -26,7 +26,7 @@ describe('valuation', () => {
       sumValueUsd(
         [
           { token: WNEAR, raw: near(1) },
-          { token: accountId('usdt.tether-token.near') as TokenId, raw: usdt(5) },
+          { token: accountId('usdt.tether-token.near'), raw: usdt(5) },
         ],
         prices,
       ),

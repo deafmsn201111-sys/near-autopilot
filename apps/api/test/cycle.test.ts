@@ -23,8 +23,8 @@ import { InMemoryRepository } from './in-memory-repository';
 
 const ALICE = accountId('alice.near');
 const BURROW = accountId('contract.main.burrow.near');
-const WNEAR = accountId('wrap.near') as TokenId;
-const USDT = accountId('usdt.tether-token.near') as TokenId;
+const WNEAR = accountId('wrap.near');
+const USDT = accountId('usdt.tether-token.near');
 const NOW = new Date('2026-11-03T12:00:00Z');
 const near = (n: number) => BigInt(n) * 10n ** 24n;
 const usdt = (n: number) => BigInt(n) * 10n ** 6n;

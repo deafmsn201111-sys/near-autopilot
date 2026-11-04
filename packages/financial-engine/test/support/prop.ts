@@ -72,7 +72,7 @@ export interface PropOptions {
 
 const show = (v: unknown): string => {
   try {
-    return JSON.stringify(v, (_k, x) =>
+    return JSON.stringify(v, (_k: string, x: unknown): unknown =>
       typeof x === 'bigint' ? `${x}n` : x instanceof Map ? { Map: [...x.entries()] } : x,
     );
   } catch {

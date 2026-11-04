@@ -115,14 +115,12 @@ export class CapitalAllocatorAgent implements ProposalAgent {
 
     const wantUsd = (total * BigInt(Math.min(-delta(sell), delta(buy)))) / 10_000n;
     const capUsd = usdToMicro(config.swap.maxSwapUsd);
-    const sellUsd = [wantUsd, capUsd, values.get(sell as TokenId) ?? 0n].reduce((a, b) =>
-      b < a ? b : a,
-    );
-    const price = snapshot.prices.get(sell as TokenId);
+    const sellUsd = [wantUsd, capUsd, values.get(sell) ?? 0n].reduce((a, b) => (b < a ? b : a));
+    const price = snapshot.prices.get(sell);
     if (!price || sellUsd <= 0n)
       return envelope(this.id, obs, [noAction('other', 'nothing to sell')]);
     let amount = rawForValueUsd(sellUsd, price);
-    const have = held.get(sell as TokenId) ?? 0n;
+    const have = held.get(sell) ?? 0n;
     if (amount > have) amount = have;
     if (amount <= 0n) return envelope(this.id, obs, [noAction('other', 'nothing to sell')]);
 

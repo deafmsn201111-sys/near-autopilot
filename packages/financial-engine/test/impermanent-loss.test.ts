@@ -11,7 +11,7 @@ import {
   sqrtRatioAtTick,
   WAD,
 } from '../src';
-import { forAll } from './support/prop';
+import { forAll, type Gen } from './support/prop';
 
 const e18 = 10n ** 18n;
 const root = (k: bigint) => k * Q96;
@@ -118,7 +118,7 @@ describe('concentrated vs full-range', () => {
 });
 
 describe('properties of concentrated IL', () => {
-  const gen = (g: import('./support/prop').Gen) => {
+  const gen = (g: Gen) => {
     const a = g.int(-100_000, 90_000);
     const b = a + g.int(20, 40_000);
     return {

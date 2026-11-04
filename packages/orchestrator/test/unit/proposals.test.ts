@@ -199,8 +199,9 @@ describe('parseAgentOutput', () => {
   ];
   it('rejects every malformed amount', () => {
     for (const amount of badAmounts) {
-      const raw = JSON.stringify(env('liquidation-guardian', [{ ...repay, amount }]), (_, v) =>
-        typeof v === 'bigint' ? v.toString() : v,
+      const raw = JSON.stringify(
+        env('liquidation-guardian', [{ ...repay, amount }]),
+        (_: string, v: unknown): unknown => (typeof v === 'bigint' ? v.toString() : v),
       );
       const r = parseAgentOutput('liquidation-guardian', raw);
       expect([String(amount), r.proposals.length]).toEqual([String(amount), 0]);

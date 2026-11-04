@@ -217,7 +217,7 @@ describe('decide: swaps (discretionary)', () => {
     expect(c?.netBenefitUsdMicro).toBe(
       (c?.economics?.benefitUsdMicro ?? 0n) - (c?.economics?.costUsdMicro ?? 0n),
     );
-    expect(c?.netBenefitUsdMicro! > 0n).toBe(true);
+    expect((c?.netBenefitUsdMicro ?? 0n) > 0n).toBe(true);
   });
 
   it('minAmountOut is derived from the QUOTE and the slippage the engine allows, never taken from the agent', () => {

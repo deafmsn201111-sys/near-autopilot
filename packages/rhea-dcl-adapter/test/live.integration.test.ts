@@ -1,4 +1,4 @@
-import { accountId, type AccountId } from '@near-autopilot/core';
+import { accountId } from '@near-autopilot/core';
 import { describe, expect, it } from 'vitest';
 import {
   DCL_CONTRACT_IDS,
@@ -8,6 +8,7 @@ import {
   fetchDeployedAbi,
   requiredDepositForLiquidity,
   verifyDeployedAbi,
+  type DclDeployment,
   type DclPool,
 } from '../src';
 import { LiveRpc } from './support/live-rpc';
@@ -28,15 +29,19 @@ import { LiveRpc } from './support/live-rpc';
  * that whatever comes back parses and is arithmetically self-consistent.
  */
 const live = process.env['RHEA_DCL_LIVE'] === '1';
-const deployment = process.env['RHEA_DCL_DEPLOYMENT'] ?? 'testnet';
+const isDeployment = (v: string): v is DclDeployment => Object.hasOwn(DCL_CONTRACT_IDS, v);
+const requestedDeployment = process.env['RHEA_DCL_DEPLOYMENT'] ?? 'testnet';
+if (!isDeployment(requestedDeployment)) {
+  throw new Error(
+    `RHEA_DCL_DEPLOYMENT must be one of ${Object.keys(DCL_CONTRACT_IDS).join(', ')}; got ${JSON.stringify(requestedDeployment)}`,
+  );
+}
+const deployment: DclDeployment = requestedDeployment;
 const rpcUrl =
   process.env['RHEA_DCL_RPC_URL'] ??
   (deployment === 'mainnet' ? 'https://rpc.mainnet.near.org' : 'https://rpc.testnet.near.org');
-const contractId = (
-  process.env['RHEA_DCL_CONTRACT_ID']
-    ? accountId(process.env['RHEA_DCL_CONTRACT_ID'])
-    : DCL_CONTRACT_IDS[deployment]
-) as AccountId;
+const contractOverride = process.env['RHEA_DCL_CONTRACT_ID'];
+const contractId = contractOverride ? accountId(contractOverride) : DCL_CONTRACT_IDS[deployment];
 
 describe.skipIf(!live)(`live: ${deployment} DCL ${contractId}`, () => {
   const rpc = new LiveRpc(rpcUrl);

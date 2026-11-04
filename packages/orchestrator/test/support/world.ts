@@ -46,8 +46,8 @@ import {
 export const ALICE = accountId('alice.near');
 export const REF = accountId('v2.ref-finance.near');
 export const BURROW = accountId('contract.main.burrow.near');
-export const WNEAR = accountId('wrap.near') as TokenId;
-export const USDT = accountId('usdt.tether-token.near') as TokenId;
+export const WNEAR = accountId('wrap.near');
+export const USDT = accountId('usdt.tether-token.near');
 export const NOW = new Date('2026-11-04T12:00:00Z');
 
 export const near = (n: number): bigint => BigInt(Math.round(n * 1e6)) * 10n ** 18n;
@@ -406,7 +406,8 @@ export type World = ReturnType<typeof makeWorld>;
 /** Agent that returns whatever it is told to, exactly as an LLM might. */
 export function scriptedAgent(
   id: ProposalAgent['id'],
-  output: unknown | (() => unknown | Promise<unknown>),
+  /** A value, or a function (sync or async) producing one. */
+  output: unknown,
 ): ProposalAgent {
   return {
     id,

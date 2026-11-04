@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  accountId,
-  NetworkMismatchError,
-  UnexpectedResponseError
-} from '@near-autopilot/core';
+import { accountId, NetworkMismatchError, UnexpectedResponseError } from '@near-autopilot/core';
 import { BurrowVerificationError, BurrowVerifier, BURROW_DEPLOYMENTS } from '../src';
 import {
   BURROW,
@@ -195,9 +191,9 @@ describe('BurrowVerifier.verifyToken', () => {
   it('refuses unlisted tokens', async () => {
     const w = makeWorld();
     const d = await w.verifier.verifyDeployment();
-    expect(
-      await reasonOf(w.verifier.verifyToken(d, accountId('scam.near'), 'supply')),
-    ).toBe('TOKEN_NOT_LISTED');
+    expect(await reasonOf(w.verifier.verifyToken(d, accountId('scam.near'), 'supply'))).toBe(
+      'TOKEN_NOT_LISTED',
+    );
   });
 
   it('refuses tokens whose deposits are disabled', async () => {
@@ -230,12 +226,8 @@ describe('BurrowVerifier.verifyToken', () => {
   it('refuses to treat Burrow itself or its oracle as a token', async () => {
     const w = makeWorld();
     const d = await w.verifier.verifyDeployment();
-    expect(await reasonOf(w.verifier.verifyToken(d, BURROW, 'supply'))).toBe(
-      'RESERVED_ACCOUNT',
-    );
-    expect(await reasonOf(w.verifier.verifyToken(d, ORACLE, 'supply'))).toBe(
-      'RESERVED_ACCOUNT',
-    );
+    expect(await reasonOf(w.verifier.verifyToken(d, BURROW, 'supply'))).toBe('RESERVED_ACCOUNT');
+    expect(await reasonOf(w.verifier.verifyToken(d, ORACLE, 'supply'))).toBe('RESERVED_ACCOUNT');
   });
 
   it('enforces the token code-hash allowlist', async () => {

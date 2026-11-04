@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scriptedAgent, makeWorld, wire, USDT, WNEAR, near, NOW } from '../support/world';
+import { scriptedAgent, makeWorld, USDT, WNEAR, near, NOW } from '../support/world';
 import { DEFAULT_COLLATERAL_STRESS } from '@near-autopilot/financial-engine';
 import { LiquidationGuardianAgent } from '../../src';
 

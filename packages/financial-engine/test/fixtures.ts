@@ -6,8 +6,8 @@ import {
   type UnitPrice,
 } from '@near-autopilot/core';
 
-export const WNEAR = accountId('wrap.near') as TokenId;
-export const USDT = accountId('usdt.tether-token.near') as TokenId;
+export const WNEAR = accountId('wrap.near');
+export const USDT = accountId('usdt.tether-token.near');
 
 /** $5.00 per NEAR: 24-decimal token, multiplier/10^28 per raw unit. */
 export const NEAR_PRICE: UnitPrice = { multiplier: 50_000n, decimals: 28 };

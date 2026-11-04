@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { MissingPriceError, type TokenId, type UnitPrice } from '@near-autopilot/core';
+import {
+  canonicalJson,
+  MissingPriceError,
+  type TokenId,
+  type UnitPrice,
+} from '@near-autopilot/core';
 import {
   breakevenMoveBps,
   computeRisk,
@@ -216,9 +221,9 @@ describe('stress scenarios', () => {
   });
 
   it('does not mutate its inputs', () => {
-    const before = JSON.stringify(position, (_, v) => (typeof v === 'bigint' ? `${v}n` : v));
+    const before = canonicalJson(position);
     runStressScenarios(position, assets, prices, DEFAULT_STRESS_SCENARIOS);
-    expect(JSON.stringify(position, (_, v) => (typeof v === 'bigint' ? `${v}n` : v))).toBe(before);
+    expect(canonicalJson(position)).toBe(before);
   });
 });
 

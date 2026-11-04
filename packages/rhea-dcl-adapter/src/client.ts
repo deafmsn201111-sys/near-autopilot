@@ -69,11 +69,11 @@ export class RheaDclClient {
     this.contractId = options.contractId;
   }
 
-  private async read<S extends z.ZodTypeAny>(
+  private async read<T>(
     method: string,
     args: Record<string, unknown> | undefined,
-    schema: S,
-  ): Promise<z.infer<S>> {
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  ): Promise<T> {
     const raw = await this.viewer.view(this.contractId, method, args);
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {
@@ -85,7 +85,7 @@ export class RheaDclClient {
         },
       );
     }
-    return parsed.data as z.infer<S>;
+    return parsed.data;
   }
 
   /** `get_pool { pool_id }`. Returns null if the contract answers null (unknown pool). */

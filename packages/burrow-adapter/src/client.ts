@@ -87,12 +87,12 @@ export class BurrowClient {
     readonly contractId: AccountId,
   ) {}
 
-  private async read<S extends z.ZodTypeAny>(
+  private async read<T>(
     contract: AccountId,
     method: string,
     args: Record<string, unknown> | undefined,
-    schema: S,
-  ): Promise<z.infer<S>> {
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+  ): Promise<T> {
     const raw = await this.viewer.view(contract, method, args);
     const parsed = schema.safeParse(raw);
     if (!parsed.success) {

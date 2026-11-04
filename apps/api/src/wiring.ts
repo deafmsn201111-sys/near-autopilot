@@ -8,14 +8,7 @@ import {
   BurrowVerifier,
 } from '@near-autopilot/burrow-adapter';
 import type { ApiEnv } from '@near-autopilot/config';
-import type {
-  Agent,
-  Clock,
-  IdGenerator,
-  Logger,
-  PlanExecutor,
-  TokenId,
-} from '@near-autopilot/core';
+import type { Agent, Clock, IdGenerator, Logger, PlanExecutor } from '@near-autopilot/core';
 import {
   NearAccountReader,
   NearChainContextProvider,
@@ -60,8 +53,8 @@ export function wire(
     pools: new StaticPoolRegistry(
       config.rhea.pools.map((p) => ({
         poolId: p.poolId,
-        tokenA: p.tokenA as TokenId,
-        tokenB: p.tokenB as TokenId,
+        tokenA: p.tokenA,
+        tokenB: p.tokenB,
       })),
     ),
   });
@@ -110,7 +103,7 @@ export function wire(
   const agents: Agent[] = [new HealthGuardianAgent(config.guardian)];
   if (config.rebalancer?.enabled) agents.push(new RebalancerAgent(config.rebalancer));
 
-  const trackedTokens = config.policy.allowedTokens as TokenId[];
+  const trackedTokens = config.policy.allowedTokens;
   const snapshots = new SnapshotService({
     accountId: env.AUTOPILOT_ACCOUNT_ID,
     trackedTokens,

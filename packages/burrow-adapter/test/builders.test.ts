@@ -43,7 +43,7 @@ describe('buildRepay', () => {
   });
 
   it('uses extra_decimals 0 for wNEAR (raw == inner)', async () => {
-    const { deployment, w } = await setup();
+    const { deployment, tokens, now } = await setup();
     const tx = buildRepay({ deployment, token: tokens.nearSupply, now, rawAmount: 7n });
     expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
       Execute: { actions: [{ Repay: { token_id: WNEAR, max_amount: '7' } }] },
@@ -69,7 +69,7 @@ describe('buildRepay', () => {
   });
 
   it('rejects a token proof issued for another Burrow contract', async () => {
-    const { deployment, tokens, now } = await setup();
+    const { deployment, now } = await setup();
     const beta = makeWorld({ contractId: BURROW_BETA });
     const betaDeployment = await beta.verifier.verifyDeployment();
     const betaToken = await beta.verifier.verifyToken(betaDeployment, USDT, 'repay');
@@ -175,9 +175,14 @@ describe('proofs cannot be forged', () => {
       oracleId: ORACLE,
       expiresAt: new Date(9e15),
     };
-    // @ts-expect-error a plain object is not a VerifiedBurrowDeployment (it lacks the brand)
     expect(() =>
-      buildRepay({ deployment: handMade, token: tokens.usdtRepay, now, rawAmount: 1n }),
+      buildRepay({
+        // @ts-expect-error a plain object is not a VerifiedBurrowDeployment (it lacks the brand)
+        deployment: handMade,
+        token: tokens.usdtRepay,
+        now,
+        rawAmount: 1n,
+      }),
     ).toThrow('UNVERIFIED_PROOF');
   });
 

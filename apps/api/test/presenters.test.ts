@@ -6,15 +6,14 @@ import {
   policyDtoSchema,
   runDtoSchema,
   type PortfolioSnapshot,
-  type TokenId,
 } from '@near-autopilot/core';
 import { guardianConfigSchema } from '@near-autopilot/agents';
 import { policyConfigSchema } from '@near-autopilot/policy-engine';
 import { toPolicyDto, toPortfolioDto, toProposalDto, toRunDto } from '../src/presenters';
 
 const ALICE = accountId('alice.near');
-const WNEAR = accountId('wrap.near') as TokenId;
-const USDT = accountId('usdt.tether-token.near') as TokenId;
+const WNEAR = accountId('wrap.near');
+const USDT = accountId('usdt.tether-token.near');
 const NOW = new Date('2026-11-03T12:00:00Z');
 
 const snapshot: PortfolioSnapshot = {

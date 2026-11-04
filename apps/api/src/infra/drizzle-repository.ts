@@ -9,7 +9,6 @@ import {
   sql,
   type Database,
 } from '@near-autopilot/db';
-import type { PolicyViolation } from '@near-autopilot/core';
 import type {
   AuditEvent,
   AutopilotRepository,
@@ -31,7 +30,7 @@ const toRecord = (row: ProposalRow): ProposalRecord => ({
   intent: row.intent,
   valueUsdMicro: row.valueUsdMicro,
   status: row.status,
-  violations: row.violations as PolicyViolation[],
+  violations: row.violations,
   planHash: row.planHash,
   executionMode: row.executionMode,
   txHash: row.txHash,

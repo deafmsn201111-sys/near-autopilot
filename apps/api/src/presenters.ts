@@ -6,7 +6,6 @@ import {
   type PortfolioSnapshot,
   type ProposalDto,
   type RunDto,
-  type TokenId,
 } from '@near-autopilot/core';
 import type { GuardianConfig } from '@near-autopilot/agents';
 import { valuePortfolio, tokenValueUsd } from '@near-autopilot/financial-engine';
@@ -26,8 +25,8 @@ export function toPortfolioDto(snapshot: PortfolioSnapshot): PortfolioDto {
   });
   const holding = (b: AssetBalance) => ({
     token: b.token,
-    symbol: snapshot.tokens.get(b.token as TokenId)?.symbol ?? b.token,
-    decimals: snapshot.tokens.get(b.token as TokenId)?.decimals ?? 0,
+    symbol: snapshot.tokens.get(b.token)?.symbol ?? b.token,
+    decimals: snapshot.tokens.get(b.token)?.decimals ?? 0,
     raw: b.raw.toString(),
     valueUsd: snapshot.prices.has(b.token)
       ? formatMicroUsd(tokenValueUsd(snapshot.prices, b.token, b.raw))

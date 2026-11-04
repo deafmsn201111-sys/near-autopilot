@@ -12,6 +12,7 @@ import {
   WAD,
   type LendingModel,
 } from '../src';
+import { canonicalJson } from '@near-autopilot/core';
 import { forAll, type Gen } from './support/prop';
 
 const e18 = 10n ** 18n;
@@ -198,11 +199,11 @@ describe('collateral stress testing: hand-computed', () => {
   });
 
   it('never mutates its input', () => {
-    const before = JSON.stringify(base, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v));
+    const before = canonicalJson(base);
     stressTest(base, DEFAULT_COLLATERAL_STRESS);
     collateralDropBuffer(base);
     liquidationPrice(base, 'collateral', 'ETH');
-    expect(JSON.stringify(base, (_k, v) => (typeof v === 'bigint' ? `${v}n` : v))).toBe(before);
+    expect(canonicalJson(base)).toBe(before);
   });
 });
 
