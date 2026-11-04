@@ -71,6 +71,14 @@ const apiEnvRaw = z.object({
    * REFERENCE prices. Testnet + chain + dry-run only: a mainnet price never confirms a testnet token's value.
    */
   MARKET_DATA: z.enum(['none', 'mainnet-reference']).default('none'),
+  /**
+   * `none`: no yield data (the Capital Allocator reports missing yields).
+   * `testnet-onchain`: Burrow rates, Rhea v1 pool fees and Rhea DCL pool state read from TESTNET contracts (read-only
+   * views at one pinned block). Testnet + chain + dry-run + mainnet-reference prices only.
+   */
+  YIELD_DATA: z.enum(['none', 'testnet-onchain']).default('none'),
+  /** Rhea DCL contract to observe (optional; empty = DCL not read). */
+  RHEA_DCL_CONTRACT_ID: optionalAccountId,
   /** Pyth Hermes requires an API key since Aug 2026. Read from the local .env only; never logged. */
   PYTH_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
   PYTH_HERMES_URL: z.string().url().default('https://hermes.pyth.network'),
@@ -98,6 +106,8 @@ export interface ApiEnv {
   readonly BURROW_CONTRACT_ID: AccountId;
   readonly BURROW_ORACLE_ID: AccountId;
   readonly MARKET_DATA: 'none' | 'mainnet-reference';
+  readonly YIELD_DATA: 'none' | 'testnet-onchain';
+  readonly RHEA_DCL_CONTRACT_ID: AccountId | undefined;
   readonly PYTH_API_KEY: string | undefined;
   readonly PYTH_HERMES_URL: string;
   readonly DEFILLAMA_URL: string;
@@ -144,6 +154,14 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
         message: `mainnet reference prices are for testnet analysis only: requires ${why}`,
       });
   }
+  if (env.YIELD_DATA === 'testnet-onchain' && env.MARKET_DATA !== 'mainnet-reference')
+    // Implies testnet + chain + dry-run through the rule above; liquidity and pool checks need those prices.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['YIELD_DATA'],
+      message:
+        'testnet yield data requires MARKET_DATA=mainnet-reference (testnet, chain, dry-run)',
+    });
   // Protocol contract ids differ per network; only mainnet has safe built-in defaults.
   if (env.NEAR_NETWORK === 'testnet') {
     for (const key of Object.keys(MAINNET_DEFAULTS) as Array<keyof typeof MAINNET_DEFAULTS>) {
@@ -186,6 +204,8 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     BURROW_CONTRACT_ID: pick('BURROW_CONTRACT_ID'),
     BURROW_ORACLE_ID: pick('BURROW_ORACLE_ID'),
     MARKET_DATA: env.MARKET_DATA,
+    YIELD_DATA: env.YIELD_DATA,
+    RHEA_DCL_CONTRACT_ID: env.RHEA_DCL_CONTRACT_ID,
     PYTH_API_KEY: env.PYTH_API_KEY,
     PYTH_HERMES_URL: env.PYTH_HERMES_URL,
     DEFILLAMA_URL: env.DEFILLAMA_URL,

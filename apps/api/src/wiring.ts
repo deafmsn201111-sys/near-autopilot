@@ -54,6 +54,9 @@ import type { MarketDataProvider, MarketReportSink } from './market-data/model';
 import { ReferenceMarketData } from './market-data/service';
 import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
+import { usable } from './market-data/model';
+import type { PoolHistory, YieldReportSink } from './yield/model';
+import { YieldService } from './yield/service';
 
 export const systemClock: Clock = { now: () => new Date() };
 export const uuidGenerator: IdGenerator = { next: () => randomUUID() };
@@ -65,6 +68,8 @@ export interface WireOptions {
   readonly marketFetchImpl?: typeof fetch;
   /** Where market reports are persisted (Postgres in production). */
   readonly marketSink?: MarketReportSink;
+  /** Where yield reports are persisted, and where earlier pool observations are read back (Postgres). */
+  readonly yieldSink?: YieldReportSink & PoolHistory;
 }
 
 /**
@@ -114,6 +119,11 @@ export async function wire(
   const market =
     env.MARKET_DATA === 'mainnet-reference' ? referenceMarket(env, tokens, logger, options) : null;
   const oracle = market ? new ReferencePriceOracle(market) : new BurrowPriceOracle(viewer, burrow);
+  // TESTNET yield data (YIELD_DATA=testnet-onchain; config enforces mainnet-reference prices, hence testnet + dry-run).
+  const yields =
+    env.YIELD_DATA === 'testnet-onchain' && market
+      ? testnetYields(env, config, rpc, market, logger, options)
+      : null;
   const quoter = new RheaSwapQuoter(viewer, {
     contractId: env.RHEA_CONTRACT_ID,
     pools: new StaticPoolRegistry(
@@ -208,7 +218,13 @@ export async function wire(
             snapshots,
             // Mainnet reference data when enabled (cross-check prices, 24h range); no yield source and no LP
             // positions exist, so allocation and LP report `insufficient_data`. Without it, market is null.
-            market: market ? new ReferenceMarketProvider(market) : null,
+            market: market
+              ? new ReferenceMarketProvider(
+                  market,
+                  yields,
+                  config.orchestrator?.allocation?.assets.map((a) => a.token) ?? [],
+                )
+              : null,
             quoter,
             planner: planners,
             policy,
@@ -240,7 +256,68 @@ export async function wire(
           logger,
         });
 
-  return { cycle, snapshots: cachedSnapshots, policy, simulation, market };
+  return { cycle, snapshots: cachedSnapshots, policy, simulation, market, yields };
+}
+
+function testnetYields(
+  env: ApiEnv,
+  config: AutopilotConfig,
+  rpc: NearRpcClient,
+  market: MarketDataProvider,
+  logger: Logger,
+  options: WireOptions,
+): YieldService {
+  if (
+    env.NEAR_NETWORK !== 'testnet' ||
+    env.DATA_SOURCE !== 'chain' ||
+    env.EXECUTION_MODE !== 'dry-run'
+  ) {
+    // Defence in depth: loadApiEnv already rejects this; a hand-built ApiEnv must not bypass it.
+    throw new Error(
+      'YIELD_DATA=testnet-onchain requires NEAR_NETWORK=testnet, DATA_SOURCE=chain, EXECUTION_MODE=dry-run',
+    );
+  }
+  const y = config.yield ?? {
+    rheaV1Pools: [],
+    dclPools: [],
+    maxAprBps: 10_000,
+    maxUtilizationBps: 9_500,
+    minLiquidityUsd: 1_000,
+    minObservationSeconds: 3_600,
+    maxObservationSeconds: 604_800,
+  };
+  const freshness = config.orchestrator?.freshness?.maxMarketAgeSeconds ?? 300;
+  return new YieldService({
+    rpc,
+    burrowContract: env.BURROW_CONTRACT_ID,
+    rheaContract: env.RHEA_CONTRACT_ID,
+    dclContract: env.RHEA_DCL_CONTRACT_ID ?? null,
+    rheaV1Pools: y.rheaV1Pools,
+    dclPools: y.dclPools,
+    allowlist: new Set(config.rhea.pools.map((p) => p.poolId)),
+    allowedTokens: new Set(config.policy.allowedTokens),
+    prices: async () => {
+      const report = await market.report();
+      return (token) => {
+        const a = report.assets.find((x) => x.testnetToken === token);
+        return a && usable(a) ? a.priceUsd : null;
+      };
+    },
+    history: options.yieldSink ?? null,
+    limits: {
+      maxAprBps: y.maxAprBps,
+      maxUtilizationBps: y.maxUtilizationBps,
+      minLiquidityUsd: y.minLiquidityUsd,
+      maxAgeSeconds: freshness,
+    },
+    maxPriceDeviationBps: config.policy.maxOracleDeviationBps,
+    minPeriodSeconds: y.minObservationSeconds,
+    maxPeriodSeconds: y.maxObservationSeconds,
+    ...(options.yieldSink ? { sink: options.yieldSink } : {}),
+    now: () => systemClock.now(),
+    ids: () => uuidGenerator.next(),
+    onError: (message) => logger.warn(message),
+  });
 }
 
 function referenceMarket(

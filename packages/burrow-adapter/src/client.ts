@@ -25,6 +25,8 @@ export interface BurrowAsset {
   readonly reservedInner: bigint;
   readonly supplyApr: string | null;
   readonly borrowApr: string | null;
+  /** Nanoseconds since epoch, when the contract last accrued this asset; null if not reported. */
+  readonly lastUpdateTimestampNs: bigint | null;
 }
 
 export interface BurrowAccountBalance {
@@ -74,6 +76,8 @@ function toAsset(view: AssetView): BurrowAsset {
     reservedInner: view.reserved,
     supplyApr: view.supply_apr ?? null,
     borrowApr: view.borrow_apr ?? null,
+    lastUpdateTimestampNs:
+      view.last_update_timestamp === undefined ? null : BigInt(view.last_update_timestamp),
   };
 }
 

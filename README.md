@@ -26,12 +26,12 @@ Two interchangeable decision engines feed the same pipeline
 
 **`orchestrator`** (dry-run only; [docs/orchestrator.md](docs/orchestrator.md))
 
-| Agent                  | Job                                                                                  | In the current API wiring                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `liquidation-guardian` | Ranked de-risk candidates (repay, add collateral) from the position and stress tests | Active                                                                                             |
-| `market-intelligence`  | Volatility, oracle-divergence, depeg and liquidity signals that tighten decisions    | Testnet profile: mainnet reference prices (source divergence, 24h range); else `insufficient_data` |
-| `lp-optimizer`         | Rhea DCL range re-centring, advisory only, with payback estimate                     | `insufficient_data`: no market data / LP positions are wired in                                    |
-| `capital-allocator`    | Target-weight allocation swaps using yield estimates                                 | `insufficient_data`: no yield-estimate source                                                      |
+| Agent                  | Job                                                                                  | In the current API wiring                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `liquidation-guardian` | Ranked de-risk candidates (repay, add collateral) from the position and stress tests | Active                                                                                                                 |
+| `market-intelligence`  | Volatility, oracle-divergence, depeg and liquidity signals that tighten decisions    | Testnet profile: mainnet reference prices (source divergence, 24h range); else `insufficient_data`                     |
+| `lp-optimizer`         | Rhea DCL range re-centring, advisory only, with payback estimate                     | `insufficient_data`: no LP positions are read; testnet profile reports the pools observed and why rejected             |
+| `capital-allocator`    | Target-weight allocation swaps using yield estimates                                 | Testnet profile: valid Burrow supply APRs ([docs/yield-data.md](docs/yield-data.md)); missing ones named with a reason |
 
 Agent output is strictly schema-validated, then a pure decision engine ranks candidates; each one still has to pass
 the same policy engine and executor as the legacy path. Every proposal, policy decision and execution result is stored
@@ -149,7 +149,9 @@ market data** (Pyth with `PYTH_API_KEY`, DefiLlama as fallback), applied to the 
 `TESTNET EXECUTION · MAINNET MARKET DATA · NO MAINNET TRANSACTIONS`, a Market data page (source, asset id, price,
 timestamp, age, validity, reason per observation), and for each check the reasons it did or did not act. Mapping,
 validation and fallback rules: [docs/market-data.md](docs/market-data.md). Set `TESTNET_MARKET_DATA=none` to price
-from the testnet Burrow oracle instead (which currently prices nothing). Read-only integration suites:
+from the testnet Burrow oracle instead (which currently prices nothing). Testnet yield data (Burrow rates, Rhea v1 and
+DCL pools, read-only at one block, validated): [docs/yield-data.md](docs/yield-data.md), page Yield data,
+`TESTNET_YIELD_DATA=none` to turn it off. Read-only integration suites:
 
 ```bash
 pnpm --filter @near-autopilot/burrow-adapter test:live     # BURROW_LIVE=1
@@ -219,6 +221,7 @@ All `/v1/*` routes require `Authorization: Bearer <API_TOKEN>`.
 | `GET /v1/proposals`            | Proposals with policy outcome and tx hash                        |
 | `GET /v1/policy`               | Active limits (read-only)                                        |
 | `GET /v1/market-data`          | Mainnet reference prices, per source and asset (testnet profile) |
+| `GET /v1/yield`                | Testnet yield estimates per source, with validation and reasons  |
 | `GET /v1/testnet-transactions` | Manually confirmed testnet transaction ledger (read-only)        |
 | `POST /v1/runs`                | Run one cycle now (409 if one is running)                        |
 
@@ -245,8 +248,9 @@ Response shapes live in `packages/core/src/api-contracts.ts` and are shared with
 - Pyth Hermes requires an API key since August 2026; without `PYTH_API_KEY` only DefiLlama is used and every price is
   `single_source`.
 - The orchestrator engine is dry-run only: its idempotency and control stores are in memory. Its audit entries are
-  written through to Postgres `audit_events` (fails closed), so they survive restarts. There is no yield-estimate
-  source and no LP position reader, so Capital Allocator and LP Optimizer return `insufficient_data` outside tests.
+  written through to Postgres `audit_events` (fails closed), so they survive restarts. Yields come only from testnet
+  Burrow supply rates (testnet profile); Rhea v1 fee APRs need two observations ≥ 1 h apart and an allowlisted pool,
+  DCL APRs are not computed, and there is no LP position reader, so the LP Optimizer returns `insufficient_data`.
 - The public testnet RPC is slow (~3 s per call) and rate-limits (HTTP 429). The RPC client retries reads only, with
   backoff, jitter, Retry-After and bounded concurrency, and never retries a send; a dedicated endpoint is still
   advisable.

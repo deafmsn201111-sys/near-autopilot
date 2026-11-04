@@ -105,6 +105,31 @@ describe('loadApiEnv', () => {
     }
   });
 
+  it('testnet yield data needs mainnet reference prices (hence testnet, chain, dry-run)', () => {
+    const testnet = {
+      ...valid,
+      NEAR_NETWORK: 'testnet',
+      NEAR_RPC_URL: 'https://rpc.testnet.near.org',
+      AUTOPILOT_ACCOUNT_ID: 'alice.testnet',
+      RHEA_CONTRACT_ID: 'ref.testnet',
+      BURROW_CONTRACT_ID: 'burrow.testnet',
+      BURROW_ORACLE_ID: 'oracle.testnet',
+      YIELD_DATA: 'testnet-onchain',
+    };
+    expect(() => loadApiEnv(testnet)).toThrow('YIELD_DATA');
+    const ok = loadApiEnv({
+      ...testnet,
+      MARKET_DATA: 'mainnet-reference',
+      RHEA_DCL_CONTRACT_ID: '',
+    });
+    expect(ok.YIELD_DATA).toBe('testnet-onchain');
+    expect(ok.RHEA_DCL_CONTRACT_ID).toBeUndefined();
+    expect(() =>
+      loadApiEnv({ ...testnet, MARKET_DATA: 'mainnet-reference', EXECUTION_MODE: 'live' }),
+    ).toThrow('EXECUTION_MODE=dry-run');
+    expect(loadApiEnv(valid).YIELD_DATA).toBe('none');
+  });
+
   it('treats empty contract ids as unset (compose passes ${VAR:-})', () => {
     const empty = { RHEA_CONTRACT_ID: '', BURROW_CONTRACT_ID: '', BURROW_ORACLE_ID: '' };
     expect(loadApiEnv({ ...valid, ...empty }).BURROW_CONTRACT_ID).toBe('contract.main.burrow.near');

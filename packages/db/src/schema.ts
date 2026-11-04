@@ -175,6 +175,50 @@ export const marketPrices = pgTable(
   ],
 );
 
+/** TESTNET yield estimates (Burrow, Rhea v1, Rhea DCL): one row per estimate per report, valid or rejected. */
+export const yieldObservations = pgTable(
+  'yield_observations',
+  {
+    id: text('id').primaryKey(),
+    reportId: text('report_id').notNull(),
+    observedAt: ts('observed_at').notNull(),
+    network: text('network', { enum: ['testnet'] }).notNull(),
+    blockHeight: integer('block_height').notNull(),
+    blockTimestamp: ts('block_timestamp').notNull(),
+    source: text('source', { enum: ['burrow', 'rhea_v1', 'rhea_dcl'] }).notNull(),
+    contract: text('contract').notNull(),
+    methods: jsonb('methods').$type<string[]>().notNull(),
+    marketId: text('market_id').notNull(),
+    assetIds: jsonb('asset_ids').$type<string[]>().notNull(),
+    yieldType: text('yield_type', {
+      enum: ['lending_supply', 'lending_borrow', 'lp_fee'],
+    }).notNull(),
+    /** Exact decimal text, a fraction (0.05 = 5 %). */
+    apr: text('apr'),
+    apy: text('apy'),
+    calculationMethod: text('calculation_method', {
+      enum: ['source_reported', 'calculated'],
+    }).notNull(),
+    formula: text('formula'),
+    observationPeriodSeconds: integer('observation_period_seconds'),
+    utilization: text('utilization'),
+    liquidityUsd: text('liquidity_usd'),
+    volumeUsd: text('volume_usd'),
+    priceStatus: text('price_status', { enum: ['fresh', 'missing', 'not_needed'] }).notNull(),
+    sourceTimestamp: ts('source_timestamp'),
+    validationStatus: text('validation_status', {
+      enum: ['valid', 'rejected', 'informational'],
+    }).notNull(),
+    reasons: jsonb('reasons').$type<unknown>().notNull(),
+    raw: jsonb('raw').$type<unknown>().notNull(),
+    sources: jsonb('sources').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('yield_observations_observed_idx').on(t.observedAt),
+    index('yield_observations_market_idx').on(t.source, t.marketId, t.observedAt),
+  ],
+);
+
 export type RunRow = typeof runs.$inferSelect;
 export type NewRunRow = typeof runs.$inferInsert;
 export type ProposalRow = typeof proposals.$inferSelect;

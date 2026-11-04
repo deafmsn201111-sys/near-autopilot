@@ -7,6 +7,9 @@ import { toPolicyDto } from './presenters';
 import { buildServer } from './server';
 import { marketDataView } from './market-data/presenter';
 import { DrizzleMarketPriceStore } from './market-data/store';
+import { yieldDataView } from './yield/presenter';
+import { AuditedYieldSink } from './yield/audit';
+import { DrizzleYieldStore } from './yield/store';
 import { DrizzleTestnetTxLedger } from './testnet-tx/ledger';
 import { testnetTxView } from './testnet-tx/presenter';
 import { wire } from './wiring';
@@ -21,8 +24,9 @@ async function main(): Promise<void> {
   const provenance = { dataSource: env.DATA_SOURCE, network: env.NEAR_NETWORK } as const;
   const repo = new DrizzleRepository(database.db, provenance);
 
-  const { cycle, snapshots, policy, market } = await wire(env, config, repo, logger, {
+  const { cycle, snapshots, policy, market, yields } = await wire(env, config, repo, logger, {
     marketSink: new DrizzleMarketPriceStore(database.db),
+    yieldSink: new AuditedYieldSink(new DrizzleYieldStore(database.db), repo),
   });
   const app = buildServer(
     {
@@ -40,6 +44,7 @@ async function main(): Promise<void> {
       provenance,
       testnetTransactions: testnetTxView(new DrizzleTestnetTxLedger(database.db)),
       marketData: marketDataView(market, env.NEAR_NETWORK),
+      yieldData: yieldDataView(yields),
     },
     { logger: { level: env.LOG_LEVEL } },
   );
@@ -75,6 +80,7 @@ async function main(): Promise<void> {
     marketData:
       env.MARKET_DATA === 'mainnet-reference' ? 'MAINNET MARKET DATA → TESTNET EXECUTION' : 'none',
     pythKey: env.PYTH_API_KEY ? 'set' : 'not set',
+    yieldData: env.YIELD_DATA,
     account: env.AUTOPILOT_ACCOUNT_ID,
   });
 }

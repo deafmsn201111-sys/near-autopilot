@@ -45,6 +45,15 @@
   "rhea": {
     "pools": []
   },
+  "yield": {
+    "rheaV1Pools": [34, 54],
+    "dclPools": ["usdt.fakes.testnet|wrap.testnet|2000"],
+    "maxAprBps": 10000,
+    "maxUtilizationBps": 9500,
+    "minLiquidityUsd": 1000,
+    "minObservationSeconds": 3600,
+    "maxObservationSeconds": 604800
+  },
   "orchestrator": {
     "freshness": {
       "maxSnapshotAgeSeconds": 60,

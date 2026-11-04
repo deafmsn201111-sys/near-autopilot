@@ -5,6 +5,7 @@ import {
   proposalsResponseSchema,
   runsResponseSchema,
   marketDataDtoSchema,
+  yieldDataDtoSchema,
   testnetTxResponseSchema,
   triggerRunResponseSchema,
 } from '@near-autopilot/core';
@@ -52,6 +53,7 @@ export const getRuns = (limit = 20) => request(`/v1/runs?limit=${limit}`, runsRe
 export const getTestnetTransactions = (limit = 20) =>
   request(`/v1/testnet-transactions?limit=${limit}`, testnetTxResponseSchema);
 export const getMarketData = () => request('/v1/market-data', marketDataDtoSchema);
+export const getYieldData = () => request('/v1/yield', yieldDataDtoSchema);
 export const getProposals = (limit = 50) =>
   request(`/v1/proposals?limit=${limit}`, proposalsResponseSchema);
 export const triggerRun = () => request('/v1/runs', triggerRunResponseSchema, { method: 'POST' });

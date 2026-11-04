@@ -42,6 +42,16 @@ export interface MarketContext {
   readonly referencePrices: ReadonlyMap<TokenId, UnitPrice>;
   readonly volatility24hBps: ReadonlyMap<TokenId, number>;
   readonly lpPositions: readonly LpPositionView[];
+  /**
+   * Why data is missing, for the agents' explanations only (never used as data): per token, the reason it has no
+   * yield estimate; for LP, a summary of the pools observed and why none is usable.
+   */
+  readonly notes?: {
+    readonly yield?: ReadonlyMap<TokenId, string>;
+    readonly lp?: string;
+  };
+  /** Ids of the source reports this context was built from (market prices, yields), recorded with each decision. */
+  readonly provenance?: Readonly<Record<string, string>>;
 }
 
 export type RiskLevel =

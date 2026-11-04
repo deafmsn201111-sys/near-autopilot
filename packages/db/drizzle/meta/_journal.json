@@ -36,6 +36,13 @@
       "when": 1793820000000,
       "tag": "0004_market_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793900000000,
+      "tag": "0005_yield_observations",
+      "breakpoints": true
     }
   ]
 }

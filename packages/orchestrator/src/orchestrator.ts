@@ -959,6 +959,7 @@ export class Orchestrator {
         ltvBps: decision.risk.ltvBps,
       },
       dataIssues: decision.dataQuality.issues,
+      marketProvenance: market?.provenance ?? null,
       ranked: decision.ranked.map(summary),
       wouldHaveActed: decision.wouldHaveActed ? summary(decision.wouldHaveActed) : null,
       advisories: decision.advisories,

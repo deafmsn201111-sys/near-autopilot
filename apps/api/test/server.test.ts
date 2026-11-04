@@ -4,6 +4,7 @@ import {
   portfolioDtoSchema,
   runsResponseSchema,
   testnetTxResponseSchema,
+  yieldDataDtoSchema,
   proposalsResponseSchema,
   triggerRunResponseSchema,
   type PolicyDto,
@@ -115,6 +116,20 @@ describe('HTTP API', () => {
           .statusCode,
       ).toBe(404);
     }
+  });
+
+  it('serves yield data read-only, behind auth, disabled unless configured', async () => {
+    const server = make();
+    expect((await server.inject({ url: '/v1/yield' })).statusCode).toBe(401);
+    const body = yieldDataDtoSchema.parse(
+      (await server.inject({ url: '/v1/yield', headers: auth })).json(),
+    );
+    expect(body.enabled).toBe(false);
+    expect(body.estimates).toEqual([]);
+    for (const method of ['POST', 'PUT'] as const)
+      expect((await server.inject({ method, url: '/v1/yield', headers: auth })).statusCode).toBe(
+        404,
+      );
   });
 
   it('validates query parameters', async () => {

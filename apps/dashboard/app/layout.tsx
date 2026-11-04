@@ -26,6 +26,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <nav aria-label="Primary">
             <Link href="/">Position</Link>
             <Link href="/market">Market data</Link>
+            <Link href="/yield">Yield data</Link>
             <Link href="/activity">Activity</Link>
             <Link href="/policy">Policy</Link>
           </nav>

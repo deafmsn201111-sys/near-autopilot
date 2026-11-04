@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "test:db": "vitest run test/drizzle-repository.integration.test.ts",
-    "testnet-tx": "tsx --env-file-if-exists=../../.env src/testnet-tx/cli.ts"
+    "testnet-tx": "tsx --env-file-if-exists=../../.env src/testnet-tx/cli.ts",
+    "test:live:yield": "node --env-file-if-exists=../../.env node_modules/vitest/vitest.mjs run test/yield.live.test.ts"
   },
   "dependencies": {
     "@near-autopilot/agents": "workspace:*",
@@ -23,6 +24,7 @@
     "@near-autopilot/orchestrator": "workspace:*",
     "@near-autopilot/policy-engine": "workspace:*",
     "@near-autopilot/rhea-adapter": "workspace:*",
+    "@near-autopilot/rhea-dcl-adapter": "workspace:*",
     "@near-autopilot/tx-execution": "workspace:*",
     "fastify": "^5.2.0",
     "tsx": "^4.19.2",

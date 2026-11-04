@@ -71,6 +71,9 @@ importers:
       '@near-autopilot/rhea-adapter':
         specifier: workspace:*
         version: link:../../packages/rhea-adapter
+      '@near-autopilot/rhea-dcl-adapter':
+        specifier: workspace:*
+        version: link:../../packages/rhea-dcl-adapter
       '@near-autopilot/tx-execution':
         specifier: workspace:*
         version: link:../../packages/tx-execution

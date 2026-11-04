@@ -43,6 +43,8 @@ export const assetDetailedObjectSchema = z
     config: assetConfigSchema,
     supply_apr: decimalText.optional(),
     borrow_apr: decimalText.optional(),
+    /** Nanoseconds; when the asset's interest was last accrued (S: asset.rs `last_update_timestamp`). */
+    last_update_timestamp: z.union([z.string().regex(/^\d+$/), int.nonnegative()]).optional(),
   })
   .passthrough();
 export const assetDetailedSchema = assetDetailedObjectSchema.nullable();

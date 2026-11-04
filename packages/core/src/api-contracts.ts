@@ -214,6 +214,56 @@ export const marketDataDtoSchema = z.object({
   error: z.string().nullable(),
 });
 export type MarketDataDto = z.infer<typeof marketDataDtoSchema>;
+
+export const yieldEstimateDtoSchema = z.object({
+  source: z.enum(['burrow', 'rhea_v1', 'rhea_dcl']),
+  network: z.literal('testnet'),
+  contract: z.string(),
+  methods: z.array(z.string()),
+  marketId: z.string(),
+  assetIds: z.array(z.string()),
+  yieldType: z.enum(['lending_supply', 'lending_borrow', 'lp_fee']),
+  /** Exact decimal text, a fraction (0.05 = 5 %). */
+  apr: z.string().nullable(),
+  apy: z.string().nullable(),
+  calculationMethod: z.enum(['source_reported', 'calculated']),
+  formula: z.string().nullable(),
+  observationPeriodSeconds: z.number().int().nullable(),
+  utilization: z.string().nullable(),
+  liquidityUsd: z.string().nullable(),
+  volumeUsd: z.string().nullable(),
+  priceStatus: z.enum(['fresh', 'missing', 'not_needed']),
+  blockHeight: z.number().int(),
+  blockTimestamp: z.string(),
+  sourceTimestamp: z.string().nullable(),
+  validationStatus: z.enum(['valid', 'rejected', 'informational']),
+  reasons: z.array(z.object({ code: z.string(), detail: z.string() })),
+});
+export const yieldDataDtoSchema = z.object({
+  /** False unless YIELD_DATA=testnet-onchain. */
+  enabled: z.boolean(),
+  label: z.string(),
+  network: z.literal('testnet').nullable(),
+  observedAt: z.string().nullable(),
+  blockHeight: z.number().int().nullable(),
+  sources: z.array(
+    z.object({
+      source: z.enum(['burrow', 'rhea_v1', 'rhea_dcl']),
+      contract: z.string(),
+      health: z.enum(['ok', 'unavailable', 'disabled']),
+      detail: z.string().nullable(),
+      marketsRead: z.number().int(),
+    }),
+  ),
+  counts: z.object({
+    valid: z.number().int(),
+    rejected: z.number().int(),
+    informational: z.number().int(),
+  }),
+  estimates: z.array(yieldEstimateDtoSchema),
+  error: z.string().nullable(),
+});
+export type YieldDataDto = z.infer<typeof yieldDataDtoSchema>;
 export const proposalsResponseSchema = z.object({ proposals: z.array(proposalDtoSchema) });
 export const triggerRunResponseSchema = z.object({
   run: runDtoSchema,

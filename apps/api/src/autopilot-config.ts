@@ -28,6 +28,29 @@ export const autopilotConfigSchema = z
       })
       .strict()
       .default({ pools: [] }),
+    /**
+     * Testnet yield data (YIELD_DATA=testnet-onchain). Pools listed here are OBSERVED only; strategic use of a Rhea v1
+     * pool still requires it in `rhea.pools` (the operator allowlist), and no DCL pool is reviewed.
+     */
+    yield: z
+      .object({
+        rheaV1Pools: z.array(z.number().int().nonnegative()).max(20).default([]),
+        dclPools: z.array(z.string().min(1).max(200)).max(20).default([]),
+        /** A reported APR above this (bps) is implausible and rejected. */
+        maxAprBps: z.number().int().min(1).max(100_000).default(10_000),
+        /** At or above this utilisation (bps) withdrawals may be impossible: rejected. */
+        maxUtilizationBps: z.number().int().min(1).max(10_000).default(9_500),
+        /** Minimum withdrawable / pooled value in USD. */
+        minLiquidityUsd: z.number().int().min(0).default(1_000),
+        /** Fee APR observation period bounds (seconds). */
+        minObservationSeconds: z.number().int().min(60).default(3_600),
+        maxObservationSeconds: z.number().int().min(60).default(604_800),
+      })
+      .strict()
+      .refine((y) => y.minObservationSeconds <= y.maxObservationSeconds, {
+        message: 'minObservationSeconds must not exceed maxObservationSeconds',
+      })
+      .optional(),
     /** Used only when AUTOPILOT_ENGINE=orchestrator; every field has a conservative default. */
     orchestrator: orchestratorConfigSchema.optional(),
   })

@@ -18,7 +18,10 @@ export class LpOptimizerAgent implements ProposalAgent {
     const market = obs.market;
     if (!market || market.lpPositions.length === 0)
       return envelope(this.id, obs, [
-        noAction('insufficient_data', 'no liquidity positions to evaluate'),
+        noAction(
+          'insufficient_data',
+          `no liquidity positions to evaluate${market?.notes?.lp ? `; ${market.notes.lp}` : ''}`,
+        ),
       ]);
     const half = obs.config.lp.halfWidthTicks;
     const proposals: Record<string, unknown>[] = [];

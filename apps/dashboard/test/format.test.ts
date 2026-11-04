@@ -86,3 +86,16 @@ describe('provenance labels never confuse simulated, testnet, mainnet and on-cha
     );
   });
 });
+
+describe('formatFractionPercent (exact, truncated)', () => {
+  it('formats fractions from the API as percentages without float rounding', async () => {
+    const { formatFractionPercent } = await import('../lib/format');
+    expect(formatFractionPercent('0.104335039813366256446294778')).toBe('10.43 %');
+    expect(formatFractionPercent('2.497000482062869906959227371')).toBe('249.70 %');
+    expect(formatFractionPercent('0.000000015502412932919529923')).toBe('0.00 %');
+    expect(formatFractionPercent('0')).toBe('0.00 %');
+    expect(formatFractionPercent('1')).toBe('100.00 %');
+    expect(formatFractionPercent('0.0438')).toBe('4.38 %');
+    expect(formatFractionPercent(null)).toBe('—');
+  });
+});

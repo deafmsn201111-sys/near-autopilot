@@ -7,10 +7,12 @@ import type {
   Provenance,
   MarketDataDto,
   TestnetTxResponse,
+  YieldDataDto,
 } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
 import { toPortfolioDto, toProposalDto, toRunDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
+import { disabledYieldView } from './yield/presenter';
 
 export interface ServerDeps {
   readonly apiToken: string;
@@ -24,6 +26,7 @@ export interface ServerDeps {
   readonly testnetTransactions?: { list(limit: number): Promise<TestnetTxResponse> };
   /** Mainnet reference market data (testnet profile); absent means not used by this deployment. */
   readonly marketData?: { current(): Promise<MarketDataDto> };
+  readonly yieldData?: { current(): Promise<YieldDataDto> };
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -107,6 +110,8 @@ export function buildServer(
       }
     );
   });
+
+  app.get('/v1/yield', async () => (deps.yieldData ? deps.yieldData.current() : disabledYieldView));
 
   app.get('/v1/market-data', async () =>
     deps.marketData

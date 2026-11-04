@@ -44,8 +44,19 @@ export class CapitalAllocatorAgent implements ProposalAgent {
       ]);
 
     const yields = assets.map((a) => market.estimatedYieldWad.get(a.token));
-    if (yields.some((y) => y === undefined))
-      return envelope(this.id, obs, [noAction('insufficient_data', 'missing yield estimate')]);
+    const missing = assets.filter((_, i) => yields[i] === undefined);
+    if (missing.length > 0)
+      return envelope(this.id, obs, [
+        noAction(
+          'insufficient_data',
+          `missing yield estimate: ${missing
+            .map((a) => {
+              const note = market.notes?.yield?.get(a.token);
+              return note ? `${a.token} (${note})` : a.token;
+            })
+            .join('; ')}`,
+        ),
+      ]);
 
     let target: ReadonlyMap<string, number>;
     try {

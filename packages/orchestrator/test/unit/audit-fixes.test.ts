@@ -203,3 +203,56 @@ describe('capital allocator: the drift threshold looks at the real drift, not th
     expect(parsed.proposals.map((p) => p.proposal.kind)).toEqual(['allocation.swap']);
   });
 });
+
+describe("agents explain missing market data with the provider's reasons", () => {
+  const observe = async (market: AgentObservation['market'], w: ReturnType<typeof makeWorld>) => {
+    const snapshot = w.buildSnapshot();
+    return {
+      now: NOW,
+      accountId: ALICE,
+      snapshot,
+      market,
+      risk: assessRisk(snapshot, w.config),
+      config: w.config,
+    } satisfies AgentObservation;
+  };
+
+  it('the Capital Allocator names each token without a yield and why, and proposes nothing', async () => {
+    const { CapitalAllocatorAgent } = await import('../../src');
+    const { WNEAR, USDT } = await import('../support/world');
+    const w = makeWorld({
+      lending: null,
+      wallet: { near: 100, usdt: 500 },
+      config: { allocation: { assets: [{ token: WNEAR }, { token: USDT }] } },
+    });
+    const base = w.buildMarket();
+    const market = {
+      ...base,
+      estimatedYieldWad: new Map([[USDT, 10n ** 17n]]),
+      notes: { yield: new Map([[WNEAR, 'INSUFFICIENT_LIQUIDITY: utilisation 100.00 %']]) },
+    };
+    const out = JSON.stringify(
+      await new CapitalAllocatorAgent().propose(await observe(market, w)),
+      (_k: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v),
+    );
+    const parsed = parseAgentOutput('capital-allocator', out);
+    expect(parsed.proposals.map((p) => p.proposal.kind)).not.toContain('allocation.swap');
+    expect(out).toContain(
+      `missing yield estimate: ${WNEAR} (INSUFFICIENT_LIQUIDITY: utilisation 100.00 %)`,
+    );
+  });
+
+  it('the LP Optimizer reports the pools observed and why none is usable', async () => {
+    const { LpOptimizerAgent } = await import('../../src');
+    const w = makeWorld({ lending: null });
+    const market = {
+      ...w.buildMarket(),
+      lpPositions: [],
+      notes: { lp: '2 pool(s) observed, 0 usable; rejected: UNVERIFIED_POOL' },
+    };
+    const out = JSON.stringify(await new LpOptimizerAgent().propose(await observe(market, w)));
+    expect(out).toContain(
+      'no liquidity positions to evaluate; 2 pool(s) observed, 0 usable; rejected: UNVERIFIED_POOL',
+    );
+  });
+});

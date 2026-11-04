@@ -11,6 +11,7 @@ export {
   inArray,
   isNotNull,
   isNull,
+  lte,
   or,
   sql,
 } from 'drizzle-orm';

@@ -120,3 +120,12 @@ export function evidenceLabel(
   if (p.executionMode === 'dry-run') return `Dry run on ${p.network} data: not sent`;
   return `Not executed (${p.network} data)`;
 }
+
+/** Exact decimal fraction text -> percent with two decimals, without float parsing of the whole value. */
+export function formatFractionPercent(fraction: string | null): string {
+  if (fraction === null) return '—';
+  const [whole = '0', frac = ''] = fraction.replace('-', '').split('.');
+  const digits = `${whole}${frac.padEnd(4, '0').slice(0, 4)}`.replace(/^0+(?=\d{3})/, '');
+  const scaled = digits.padStart(3, '0');
+  return `${fraction.startsWith('-') ? '-' : ''}${scaled.slice(0, -2)}.${scaled.slice(-2)} %`;
+}

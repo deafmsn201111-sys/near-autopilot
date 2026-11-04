@@ -106,6 +106,9 @@ services:
       BURROW_ORACLE_ID: ${TESTNET_BURROW_ORACLE_ID:-priceoracle.testnet}
       # MAINNET MARKET DATA -> TESTNET EXECUTION: mainnet prices applied to testnet tokens as labelled reference prices.
       MARKET_DATA: ${TESTNET_MARKET_DATA:-mainnet-reference}
+      # TESTNET yield data: Burrow rates, Rhea v1 pool fees, Rhea DCL pool state (read-only views at one pinned block).
+      YIELD_DATA: ${TESTNET_YIELD_DATA:-testnet-onchain}
+      RHEA_DCL_CONTRACT_ID: ${TESTNET_RHEA_DCL_CONTRACT_ID:-dclv2.ref-dev.testnet}
       # Optional; Pyth Hermes requires a key. Without it Pyth is reported unavailable and DefiLlama is the fallback.
       PYTH_API_KEY: ${PYTH_API_KEY:-}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}

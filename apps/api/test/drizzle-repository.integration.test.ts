@@ -11,6 +11,7 @@ import {
   runs,
   sql,
   testnetTransactions,
+  yieldObservations,
   type DatabaseHandle,
   type Table,
 } from '@near-autopilot/db';
@@ -21,6 +22,8 @@ import { parseDecimal } from '../src/market-data/decimal';
 import { REFERENCE_LABEL } from '../src/market-data/model';
 import { DrizzleMarketPriceStore } from '../src/market-data/store';
 import { DrizzleTestnetTxLedger } from '../src/testnet-tx/ledger';
+import type { YieldEstimate } from '../src/yield/model';
+import { DrizzleYieldStore } from '../src/yield/store';
 import type { TestnetTxRecord } from '../src/testnet-tx/model';
 import type { ProposalRecord } from '../src/repository';
 
@@ -57,7 +60,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(5);
+    expect(applied.rows[0]?.n).toBe(6);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -67,6 +70,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       auditEvents,
       testnetTransactions,
       marketPrices,
+      yieldObservations,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
@@ -369,6 +373,87 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     ).rejects.toThrow();
     await expect(
       handle.db.execute(sql`update market_prices set market_network = 'testnet'`),
+    ).rejects.toThrow();
+  });
+
+  it('yield observations: valid and rejected estimates persist with block, reasons and raw data; testnet only', async () => {
+    const store = new DrizzleYieldStore(handle.db);
+    expect(await store.latest()).toEqual([]);
+    const t0 = new Date('2026-11-05T09:00:00Z');
+    const estimate = (at: Date, height: number, volumesIn: string[]): YieldEstimate => ({
+      source: 'rhea_v1',
+      network: 'testnet',
+      contract: 'ref-finance-101.testnet',
+      methods: ['get_pool', 'get_pool_volumes', 'metadata'],
+      marketId: 'pool:34',
+      assetIds: ['wrap.testnet', 'usdt.fakes.testnet'],
+      yieldType: 'lp_fee',
+      apr: null,
+      apy: null,
+      calculationMethod: 'calculated',
+      formula: 'f',
+      observationPeriodSeconds: null,
+      utilization: null,
+      liquidityUsd: parseDecimal('12.5'),
+      volumeUsd: null,
+      priceStatus: 'fresh',
+      block: { height, timestamp: at },
+      sourceTimestamp: null,
+      validationStatus: 'rejected',
+      reasons: [{ code: 'UNVERIFIED_POOL', detail: 'observed only' }],
+      raw: { volumesIn },
+    });
+    for (const [id, offset, height] of [
+      ['y1', 0, 100],
+      ['y2', 7_200_000, 200],
+    ] as const) {
+      const at = new Date(t0.getTime() + offset);
+      await store.record({
+        id,
+        network: 'testnet',
+        observedAt: at,
+        block: { height, timestamp: at },
+        sources: [
+          {
+            source: 'rhea_v1',
+            contract: 'ref-finance-101.testnet',
+            health: 'ok',
+            detail: null,
+            marketsRead: 1,
+          },
+        ],
+        estimates: [estimate(at, height, [String(height), '0'])],
+      });
+    }
+    const latest = await store.latest();
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toMatchObject({
+      reportId: 'y2',
+      blockHeight: 200,
+      source: 'rhea_v1',
+      marketId: 'pool:34',
+      validationStatus: 'rejected',
+      liquidityUsd: '12.5',
+      network: 'testnet',
+    });
+    // The start of an observation period: the latest observation at least 1 h before the given time.
+    const prev = await store.previous(
+      'rhea_v1',
+      'pool:34',
+      new Date(t0.getTime() + 7_200_000),
+      3_600,
+    );
+    expect(prev?.blockHeight).toBe(100);
+    expect(prev?.raw).toEqual({ volumesIn: ['100', '0'] });
+    expect(await store.previous('rhea_v1', 'pool:34', t0, 3_600)).toBeNull();
+    await expect(
+      handle.db.execute(sql`update yield_observations set network = 'mainnet'`),
+    ).rejects.toThrow();
+    // A borrow rate can never be stored as a usable yield.
+    await expect(
+      handle.db.execute(
+        sql`update yield_observations set yield_type = 'lending_borrow', validation_status = 'valid'`,
+      ),
     ).rejects.toThrow();
   });
 });
