@@ -187,3 +187,157 @@ describe('NearTransactionBroadcaster', () => {
     ).rejects.toThrow('may or may not have landed');
   });
 });
+
+describe('NearRpcClient resilience (rate limits, timeouts, invalid responses)', () => {
+  const kindOf = async (p: Promise<unknown>) => {
+    try {
+      await p;
+    } catch (error) {
+      return error instanceof RpcError ? { kind: error.kind, retryable: error.retryable } : error;
+    }
+    return 'resolved';
+  };
+
+  it('retries HTTP 429 with backoff, honours Retry-After (capped), and reports each retry', async () => {
+    const waits: number[] = [];
+    const events: string[] = [];
+    let i = 0;
+    const fetchImpl: typeof fetch = async () => {
+      i += 1;
+      if (i === 1) return new Response('', { status: 429, headers: { 'retry-after': '2' } });
+      if (i === 2) return new Response('', { status: 429, headers: { 'retry-after': '3600' } });
+      return new Response(JSON.stringify({ result: 'ok' }), { status: 200 });
+    };
+    const rpc = new NearRpcClient({
+      url: 'http://rpc.invalid',
+      fetchImpl,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+      random: () => 0,
+      maxDelayMs: 10_000,
+      onRetry: (e) => events.push(`${e.attempt}:${e.kind}`),
+    });
+    expect(await rpc.call('status', [])).toBe('ok');
+    expect(waits).toEqual([2000, 10_000]);
+    expect(events).toEqual(['1:rate_limit', '2:rate_limit']);
+  });
+
+  it('adds jitter to the exponential backoff', async () => {
+    const waits: number[] = [];
+    const { fetchImpl } = stubFetch([{ status: 503, body: {} }]);
+    const rpc = new NearRpcClient({
+      url: 'http://rpc.invalid',
+      fetchImpl,
+      maxRetries: 3,
+      baseDelayMs: 100,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+      random: () => 0.5,
+    });
+    await expect(rpc.call('status', [])).rejects.toThrow(RpcError);
+    // exp = 100, 200, 400; equal jitter with random 0.5 -> 75%.
+    expect(waits).toEqual([75, 150, 300]);
+  });
+
+  it('gives up after maxRetries and surfaces rate_limit, never a fake result', async () => {
+    const { fetchImpl, requests } = stubFetch([{ status: 429, body: {} }]);
+    expect(await kindOf(client(fetchImpl, 2).call('status', []))).toEqual({
+      kind: 'rate_limit',
+      retryable: true,
+    });
+    expect(requests).toHaveLength(3);
+  });
+
+  it('never retries a broadcast, even on HTTP 429 or a timeout', async () => {
+    const limited = stubFetch([{ status: 429, body: {} }]);
+    await expect(
+      client(limited.fetchImpl).call('send_tx', {}, { idempotent: false }),
+    ).rejects.toThrow(RpcError);
+    expect(limited.requests).toHaveLength(1);
+
+    let calls = 0;
+    const timingOut: typeof fetch = async () => {
+      calls += 1;
+      throw new DOMException('timed out', 'TimeoutError');
+    };
+    expect(await kindOf(client(timingOut).call('send_tx', {}, { idempotent: false }))).toEqual({
+      kind: 'timeout',
+      retryable: true,
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('classifies timeouts, unreachable endpoints and HTTP errors', async () => {
+    const timeout: typeof fetch = async () => {
+      throw new DOMException('timed out', 'TimeoutError');
+    };
+    const down: typeof fetch = async () => {
+      throw new TypeError('fetch failed');
+    };
+    expect(await kindOf(client(timeout, 0).call('status', []))).toEqual({
+      kind: 'timeout',
+      retryable: true,
+    });
+    expect(await kindOf(client(down, 0).call('status', []))).toEqual({
+      kind: 'unavailable',
+      retryable: true,
+    });
+    const forbidden = stubFetch([{ status: 403, body: {} }]);
+    expect(await kindOf(client(forbidden.fetchImpl).call('status', []))).toEqual({
+      kind: 'http_error',
+      retryable: false,
+    });
+    expect(forbidden.requests).toHaveLength(1);
+  });
+
+  it('rejects bodies that are not JSON-RPC envelopes as invalid_response', async () => {
+    const html: typeof fetch = async () => new Response('<html>busy</html>', { status: 200 });
+    expect(await kindOf(client(html, 0).call('status', []))).toEqual({
+      kind: 'invalid_response',
+      retryable: true,
+    });
+    const notEnvelope = stubFetch([{ body: { jsonrpc: '2.0', id: 1 } }]);
+    expect(await kindOf(client(notEnvelope.fetchImpl).call('status', []))).toEqual({
+      kind: 'invalid_response',
+      retryable: false,
+    });
+    const arrayBody = stubFetch([{ body: [1, 2] }]);
+    expect(await kindOf(client(arrayBody.fetchImpl).call('status', []))).toEqual({
+      kind: 'invalid_response',
+      retryable: false,
+    });
+  });
+
+  it('treats node-side TIMEOUT_ERROR as a transient timeout and UNKNOWN_ACCOUNT as final', async () => {
+    const t = stubFetch([
+      { body: { error: { name: 'HANDLER_ERROR', cause: { name: 'TIMEOUT_ERROR' } } } },
+      { body: { result: 1 } },
+    ]);
+    expect(await client(t.fetchImpl).call('query', {})).toBe(1);
+    const u = stubFetch([
+      { body: { error: { name: 'HANDLER_ERROR', cause: { name: 'UNKNOWN_ACCOUNT' } } } },
+    ]);
+    expect(await kindOf(client(u.fetchImpl).call('query', {}))).toEqual({
+      kind: 'rpc_error',
+      retryable: false,
+    });
+    expect(u.requests).toHaveLength(1);
+  });
+
+  it('bounds concurrent requests', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const fetchImpl: typeof fetch = async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight -= 1;
+      return new Response(JSON.stringify({ result: 1 }), { status: 200 });
+    };
+    const rpc = new NearRpcClient({ url: 'http://rpc.invalid', fetchImpl, maxConcurrent: 2 });
+    await Promise.all(Array.from({ length: 8 }, () => rpc.call('status', [])));
+    expect(peak).toBe(2);
+  });
+});

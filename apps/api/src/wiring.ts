@@ -78,6 +78,14 @@ export async function wire(
   const rpc = new NearRpcClient({
     url: env.NEAR_RPC_URL,
     fetchImpl: simulation?.fetch ?? options.fetchImpl,
+    // Reads only: the client never retries a broadcast. The URL is not logged (hosted endpoints embed keys).
+    onRetry: (e) =>
+      logger.warn('rpc retry', {
+        method: e.method,
+        attempt: e.attempt,
+        kind: e.kind,
+        delayMs: e.delayMs,
+      }),
   });
   // Fail closed: an unreachable RPC or one serving another chain stops start-up.
   await assertChainId(rpc, env.NEAR_NETWORK);

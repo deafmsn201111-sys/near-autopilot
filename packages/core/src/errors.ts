@@ -36,13 +36,24 @@ export class UnsupportedIntentError extends AutopilotError {
   }
 }
 
+/**
+ * Why an RPC call failed. `rate_limit` (HTTP 429), `timeout` (no answer in time), `unavailable` (network error,
+ * HTTP 5xx), `invalid_response` (not a JSON-RPC envelope), `rpc_error` (the node answered with a JSON-RPC error),
+ * `http_error` (any other non-2xx status).
+ */
+export type RpcErrorKind =
+  'rate_limit' | 'timeout' | 'unavailable' | 'invalid_response' | 'rpc_error' | 'http_error';
+
 export class RpcError extends AutopilotError {
+  readonly kind: RpcErrorKind;
+
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; kind?: RpcErrorKind },
   ) {
     super('RPC_ERROR', message, options);
+    this.kind = options?.kind ?? 'rpc_error';
   }
 }
 
