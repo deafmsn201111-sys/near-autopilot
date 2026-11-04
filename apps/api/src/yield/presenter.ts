@@ -68,7 +68,15 @@ export function yieldDataView(yields: YieldDataProvider | null): {
     async current() {
       if (!yields) return disabled;
       try {
-        return yieldReportDto(await yields.report());
+        // Read-only: show the last report a cycle or the collector built; never read the chain from a page view.
+        const last = yields.latest ? yields.latest() : await yields.report();
+        return last
+          ? yieldReportDto(last)
+          : {
+              ...disabled,
+              enabled: true,
+              error: 'no yield report yet: run a cycle (or wait for the collector)',
+            };
       } catch {
         return { ...disabled, enabled: true, error: 'yield data could not be read' };
       }

@@ -88,6 +88,8 @@ export interface MarketReport {
 
 export interface MarketDataProvider {
   report(): Promise<MarketReport>;
+  /** The last report built, if any; never triggers a fetch. */
+  latest?(): MarketReport | null;
 }
 
 export interface SourceResult {

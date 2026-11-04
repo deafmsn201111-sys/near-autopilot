@@ -279,9 +279,37 @@ describe('PythSource', () => {
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
     const r = await pyth.observe(REFERENCE_ASSETS, NOW);
-    expect(f.calls.filter((c) => c.url.includes('/latest'))).toHaveLength(1);
+    // One request per feed, none retried.
+    const feeds = REFERENCE_ASSETS.filter((a) => a.pyth).length;
+    expect(f.calls.filter((c) => c.url.includes('/latest'))).toHaveLength(feeds);
+    expect(r.status.health).toBe('unavailable');
     expect(r.status.detail).toContain('unauthorized');
     expect(JSON.stringify([...r.observations.values()])).not.toContain('secret-key-xyz');
+  });
+
+  it('a feed the key is not entitled to (403) fails alone; entitled feeds are still used', async () => {
+    const nearFeed = NEAR.pyth?.feedId ?? '';
+    const f = fakeFetch([
+      ['/v2/price_feeds', pythFeeds],
+      [`ids[]=${nearFeed}`, () => new Response('Not entitled: feed', { status: 403 })],
+      ['/v2/updates/price/latest', () => pythLatest()],
+    ]);
+    const pyth = new PythSource({
+      baseUrl: 'https://hermes.test',
+      apiKey: 'secret-key-xyz',
+      http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
+    });
+    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
+    expect(r.status.health).toBe('degraded');
+    const near = r.observations.get(NEAR.testnetToken)?.[0];
+    expect(near?.status).toBe('unavailable');
+    expect(near?.reason).toContain('not entitled');
+    expect(r.observations.get(USDT.testnetToken)?.[0]?.status).toBe('valid');
+    expect(
+      JSON.stringify([...r.observations.values()], (_k: string, v: unknown) =>
+        typeof v === 'bigint' ? v.toString() : v,
+      ),
+    ).not.toContain('secret-key-xyz');
   });
 });
 

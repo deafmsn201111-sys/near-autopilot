@@ -41,6 +41,8 @@ export const ALLOWED = {
     '@near-autopilot/tx-execution',
   ],
   '@near-autopilot/dashboard': ['@near-autopilot/config', '@near-autopilot/core'],
+  // Read-only analytics UI for the shadow collector: HTTP to the analytics API only.
+  '@near-autopilot/analytics': ['@near-autopilot/config', '@near-autopilot/core'],
 };
 
 /**
@@ -67,4 +69,5 @@ export const LOCATIONS = {
   '@near-autopilot/db': 'packages/db',
   '@near-autopilot/api': 'apps/api',
   '@near-autopilot/dashboard': 'apps/dashboard',
+  '@near-autopilot/analytics': 'apps/analytics',
 };

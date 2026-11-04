@@ -119,15 +119,27 @@ export class ReferenceMarketData implements MarketDataProvider {
 
   constructor(private readonly o: ReferenceMarketDataOptions) {}
 
+  private last: MarketReport | null = null;
+
   report(): Promise<MarketReport> {
     const nowMs = this.o.now().getTime();
     if (this.cached && nowMs - this.cached.at < (this.o.ttlMs ?? 30_000)) return this.cached.value;
     const value = this.fetch();
     this.cached = { at: nowMs, value };
-    value.catch(() => {
-      if (this.cached?.value === value) this.cached = null;
-    });
+    value.then(
+      (r) => {
+        this.last = r;
+      },
+      () => {
+        if (this.cached?.value === value) this.cached = null;
+      },
+    );
     return value;
+  }
+
+  /** The last report built, without fetching (page views must not create observations). */
+  latest(): MarketReport | null {
+    return this.last;
   }
 
   private async fetch(): Promise<MarketReport> {

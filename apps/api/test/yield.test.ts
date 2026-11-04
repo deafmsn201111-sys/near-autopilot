@@ -46,6 +46,9 @@ const asset = (over: Omit<Partial<BurrowAsset>, 'tokenId'> & { tokenId: string }
   lastUpdateTimestampNs: 1_793_000_000_000_000_000n,
   suppliedShares: over.suppliedInner ?? 0n,
   supplyFarms: [],
+  reserveRatioBps: 2500,
+  suppliedLimitInner: null,
+  borrowedLimitInner: null,
   ...over,
   tokenId: accountId(over.tokenId),
 });

@@ -1,13 +1,17 @@
 import {
   bigserial,
   bigint,
+  boolean,
   index,
   integer,
   jsonb,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+import { sql } from 'drizzle-orm';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
@@ -214,10 +218,191 @@ export const yieldObservations = pgTable(
     reasons: jsonb('reasons').$type<unknown>().notNull(),
     raw: jsonb('raw').$type<unknown>().notNull(),
     sources: jsonb('sources').$type<unknown>().notNull(),
+    /** scheduled (collector) | on_demand (an explicit cycle). Dashboard reads never create rows. */
+    origin: text('origin', { enum: ['scheduled', 'on_demand'] })
+      .notNull()
+      .default('on_demand'),
   },
   (t) => [
     index('yield_observations_observed_idx').on(t.observedAt),
     index('yield_observations_market_idx').on(t.source, t.marketId, t.observedAt),
+  ],
+);
+
+/* ------------------------------ autonomous shadow collector (mainnet, read-only) ------------------------------ */
+
+/** One collector cycle. `trigger`: scheduled (the collector) or on_demand (an explicit request). */
+export const collectorCycles = pgTable(
+  'collector_cycles',
+  {
+    id: text('id').primaryKey(),
+    trigger: text('trigger', { enum: ['scheduled', 'on_demand'] }).notNull(),
+    status: text('status', { enum: ['running', 'success', 'partial', 'failed'] }).notNull(),
+    startedAt: ts('started_at').notNull(),
+    finishedAt: ts('finished_at'),
+    durationMs: integer('duration_ms'),
+    records: integer('records').notNull().default(0),
+    /** Per-source health: [{source, health, detail, records, durationMs}]. */
+    sources: jsonb('sources').$type<unknown>().notNull(),
+    error: text('error'),
+    snapshotId: text('snapshot_id'),
+    registryScan: boolean('registry_scan').notNull().default(false),
+  },
+  (t) => [
+    index('collector_cycles_started_idx').on(t.startedAt),
+    uniqueIndex('collector_cycles_one_running')
+      .on(t.status)
+      .where(sql`${t.status} = 'running'`),
+  ],
+);
+
+/** The market state one cycle saw: one pinned mainnet block, one price report. Portfolios are analysed against it. */
+export const marketSnapshots = pgTable(
+  'market_snapshots',
+  {
+    id: text('id').primaryKey(),
+    cycleId: text('cycle_id').notNull(),
+    network: text('network', { enum: ['mainnet'] }).notNull(),
+    blockHeight: integer('block_height').notNull(),
+    blockTimestamp: ts('block_timestamp').notNull(),
+    takenAt: ts('taken_at').notNull(),
+    marketReportId: text('market_report_id'),
+    yieldReportId: text('yield_report_id'),
+    summary: jsonb('summary').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('market_snapshots_taken_idx').on(t.takenAt),
+    index('market_snapshots_block_idx').on(t.blockHeight),
+  ],
+);
+
+/** Every price from every source, kept separately per source (no merged price is stored here). */
+export const priceObservations = pgTable(
+  'price_observations',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id').notNull(),
+    asset: text('asset').notNull(),
+    source: text('source', { enum: ['pyth', 'defillama'] }).notNull(),
+    sourceAssetId: text('source_asset_id').notNull(),
+    priceUsd: text('price_usd'),
+    quoteCurrency: text('quote_currency').notNull(),
+    confidence: text('confidence'),
+    publishedAt: ts('published_at'),
+    observedAt: ts('observed_at').notNull(),
+    ageMs: integer('age_ms'),
+    /** valid | stale | future | invalid | low_confidence | not_found | unavailable | mapping_mismatch */
+    status: text('status').notNull(),
+    reason: text('reason'),
+  },
+  (t) => [
+    index('price_observations_asset_idx').on(t.asset, t.observedAt),
+    index('price_observations_snapshot_idx').on(t.snapshotId),
+  ],
+);
+
+/** Rhea pool registry: every pool ever discovered, with its latest classification. */
+export const rheaPools = pgTable(
+  'rhea_pools',
+  {
+    /** `v1:<id>` or `dcl:<pool_id>`. */
+    poolKey: text('pool_key').primaryKey(),
+    contract: text('contract').notNull(),
+    family: text('family', { enum: ['v1', 'dcl'] }).notNull(),
+    poolType: text('pool_type').notNull(),
+    tokens: jsonb('tokens').$type<string[]>().notNull(),
+    firstSeenAt: ts('first_seen_at').notNull(),
+    lastSeenAt: ts('last_seen_at').notNull(),
+    lastBlockHeight: integer('last_block_height').notNull(),
+    feeBps: integer('fee_bps'),
+    tvlUsd: text('tvl_usd'),
+    /** OK (all tokens priced >= 0.9 confidence) | LOW_CONFIDENCE | UNPRICED */
+    priceQuality: text('price_quality').notNull(),
+    /** DISCOVERED | LIQUID | ANALYTICS_ELIGIBLE | LP_SIMULATION_ELIGIBLE | LOW_LIQUIDITY | UNSUPPORTED | DATA_INVALID */
+    category: text('category').notNull(),
+    modelStatus: text('model_status').notNull(),
+    reasons: jsonb('reasons').$type<unknown>().notNull(),
+    active: boolean('active').notNull().default(true),
+    latest: jsonb('latest').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('rhea_pools_category_idx').on(t.category),
+    index('rhea_pools_family_idx').on(t.family),
+  ],
+);
+
+/** One reading of one (tracked) pool at one block. Cumulative volumes make fee yields computable over any window. */
+export const rheaPoolObservations = pgTable(
+  'rhea_pool_observations',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id').notNull(),
+    poolKey: text('pool_key').notNull(),
+    blockHeight: integer('block_height').notNull(),
+    blockTimestamp: ts('block_timestamp').notNull(),
+    reserves: jsonb('reserves').$type<string[]>().notNull(),
+    volumesIn: jsonb('volumes_in').$type<string[] | null>(),
+    feeBps: integer('fee_bps'),
+    adminFeeBps: integer('admin_fee_bps'),
+    tvlUsd: text('tvl_usd'),
+    priceQuality: text('price_quality').notNull(),
+    quality: text('quality').notNull(),
+    raw: jsonb('raw').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('rhea_pool_observations_pool_idx').on(t.poolKey, t.blockTimestamp),
+    index('rhea_pool_observations_snapshot_idx').on(t.snapshotId),
+    uniqueIndex('rhea_pool_observations_unique').on(t.poolKey, t.blockHeight),
+  ],
+);
+
+/** Burrow market registry and its per-snapshot readings. */
+export const burrowMarkets = pgTable('burrow_markets', {
+  token: text('token').primaryKey(),
+  contract: text('contract').notNull(),
+  firstSeenAt: ts('first_seen_at').notNull(),
+  lastSeenAt: ts('last_seen_at').notNull(),
+  status: text('status').notNull(),
+  latest: jsonb('latest').$type<unknown>().notNull(),
+});
+
+export const burrowMarketObservations = pgTable(
+  'burrow_market_observations',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id').notNull(),
+    token: text('token').notNull(),
+    blockHeight: integer('block_height').notNull(),
+    blockTimestamp: ts('block_timestamp').notNull(),
+    supplyApr: text('supply_apr'),
+    borrowApr: text('borrow_apr'),
+    utilization: text('utilization'),
+    availableUsd: text('available_usd'),
+    rewardApr: text('reward_apr'),
+    quality: text('quality').notNull(),
+    raw: jsonb('raw').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('burrow_market_observations_token_idx').on(t.token, t.blockTimestamp),
+    uniqueIndex('burrow_market_observations_unique').on(t.token, t.blockHeight),
+  ],
+);
+
+/** Per snapshot and demo portfolio: agents, decision, LP entry simulations and the strategy comparison. */
+export const portfolioAnalyses = pgTable(
+  'portfolio_analyses',
+  {
+    id: text('id').primaryKey(),
+    snapshotId: text('snapshot_id').notNull(),
+    portfolioId: text('portfolio_id').notNull(),
+    runId: text('run_id'),
+    createdAt: ts('created_at').notNull(),
+    outcome: text('outcome'),
+    result: jsonb('result').$type<unknown>().notNull(),
+  },
+  (t) => [
+    index('portfolio_analyses_snapshot_idx').on(t.snapshotId),
+    uniqueIndex('portfolio_analyses_unique').on(t.snapshotId, t.portfolioId),
   ],
 );
 

@@ -97,6 +97,8 @@ export interface YieldSourceStatus {
 
 export interface YieldReport {
   readonly id: string;
+  /** scheduled: the collector; on_demand: an explicit cycle. Reads of stored data never create a report. */
+  readonly origin: 'scheduled' | 'on_demand';
   readonly network: YieldNetwork;
   readonly observedAt: Date;
   /** The single block every view of this report was read at (null if the block itself could not be read). */
@@ -107,6 +109,8 @@ export interface YieldReport {
 
 export interface YieldDataProvider {
   report(): Promise<YieldReport>;
+  /** The last report built, if any; never triggers a read. */
+  latest?(): YieldReport | null;
 }
 
 export interface YieldReportSink {

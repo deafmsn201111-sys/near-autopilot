@@ -507,13 +507,24 @@ export function decide(input: EvaluationInput): Decision {
         const net = benefit - cost;
         const multiple = BigInt(config.swap.costCoverMultiple) * (caution === 3 ? 2n : 1n);
         if (net < limits.minNetBenefitUsdMicro || benefit < multiple * cost) {
-          rejected.push(
-            reject(
+          rejected.push({
+            ...reject(
               p,
               'BELOW_HURDLE',
               `estimated benefit ${benefit} minus cost ${cost} = ${net} micro-USD; needs >= ${limits.minNetBenefitUsdMicro} and benefit >= ${multiple}x cost`,
             ),
-          );
+            economics: {
+              tokenIn: prop.tokenIn,
+              tokenOut: prop.tokenOut,
+              amountIn: prop.amountIn,
+              valueInUsdMicro: valueIn,
+              benefitUsdMicro: benefit,
+              costUsdMicro: cost,
+              netUsdMicro: net,
+              requiredMultiple: multiple,
+              minNetUsdMicro: limits.minNetBenefitUsdMicro,
+            },
+          });
           break;
         }
         const key = actionKeyOf({

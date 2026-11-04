@@ -12,6 +12,14 @@ import {
   sql,
   testnetTransactions,
   yieldObservations,
+  collectorCycles,
+  marketSnapshots,
+  priceObservations,
+  rheaPools,
+  rheaPoolObservations,
+  burrowMarkets,
+  burrowMarketObservations,
+  portfolioAnalyses,
   type DatabaseHandle,
   type Table,
 } from '@near-autopilot/db';
@@ -60,7 +68,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(7);
+    expect(applied.rows[0]?.n).toBe(8);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -71,6 +79,14 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       testnetTransactions,
       marketPrices,
       yieldObservations,
+      collectorCycles,
+      marketSnapshots,
+      priceObservations,
+      rheaPools,
+      rheaPoolObservations,
+      burrowMarkets,
+      burrowMarketObservations,
+      portfolioAnalyses,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
@@ -414,6 +430,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       const at = new Date(t0.getTime() + offset);
       await store.record({
         id,
+        origin: 'scheduled',
         network: 'testnet',
         observedAt: at,
         block: { height, timestamp: at },
@@ -464,5 +481,66 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
         sql`update yield_observations set yield_type = 'lending_borrow', validation_status = 'valid'`,
       ),
     ).rejects.toThrow();
+  });
+
+  it('collector: one running cycle at a time; pool observations are unique per block; registry upserts', async () => {
+    const { CollectorStore } = await import('../src/collector/store');
+    const store = new CollectorStore(handle.db);
+    const at = new Date('2026-11-05T10:00:00Z');
+    expect(await store.startCycle('c1', 'scheduled', at, true)).toBe(true);
+    // A second cycle cannot start while one is running, from any process.
+    expect(await store.startCycle('c2', 'on_demand', at, false)).toBe(false);
+    await store.finishCycle('c1', {
+      status: 'success',
+      finishedAt: at,
+      durationMs: 1,
+      records: 0,
+      sources: [],
+      error: null,
+      snapshotId: null,
+    });
+    expect(await store.startCycle('c3', 'on_demand', at, false)).toBe(true);
+    await store.closeAbandoned(at);
+    expect((await store.recentCycles(5)).find((c) => c.id === 'c3')?.status).toBe('failed');
+    const row = {
+      snapshotId: 's',
+      poolKey: 'v1:1',
+      blockHeight: 10,
+      blockTimestamp: at,
+      reserves: ['1', '2'],
+      volumesIn: ['0', '0'],
+      feeBps: 30,
+      adminFeeBps: 2000,
+      tvlUsd: '100',
+      priceQuality: 'OK',
+      quality: 'OK',
+      raw: {},
+    };
+    await store.insertPoolObservations([{ ...row, id: 'a' }]);
+    await store.insertPoolObservations([{ ...row, id: 'b' }]); // same pool + block: ignored, not duplicated
+    expect(await store.poolHistory('v1:1', new Date(0))).toHaveLength(1);
+    const pool = {
+      poolKey: 'v1:1',
+      contract: 'v2.ref-finance.near',
+      family: 'v1' as const,
+      poolType: 'SIMPLE_POOL',
+      tokens: ['a', 'b'],
+      firstSeenAt: at,
+      lastSeenAt: at,
+      lastBlockHeight: 10,
+      feeBps: 30,
+      tvlUsd: '100',
+      priceQuality: 'OK',
+      category: 'LIQUID',
+      modelStatus: 'SUPPORTED',
+      reasons: [],
+      active: true,
+      latest: {},
+    };
+    await store.upsertPools([pool]);
+    await store.upsertPools([{ ...pool, category: 'LOW_LIQUIDITY', lastBlockHeight: 11 }]);
+    expect((await store.pool('v1:1'))?.category).toBe('LOW_LIQUIDITY');
+    expect(await store.markMissingInactive('v1', [], at)).toBe(1);
+    expect((await store.pool('v1:1'))?.active).toBe(false);
   });
 });

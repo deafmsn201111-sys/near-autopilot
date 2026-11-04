@@ -32,6 +32,8 @@ export interface OrchestratedCycleDeps {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly logger: Logger;
+  /** Optional observer of every cycle report (analytics); never changes what the cycle does. */
+  readonly onReport?: (report: CycleReport) => void;
 }
 
 /**
@@ -57,6 +59,7 @@ export class OrchestratedCycle {
     await repo.createRun({ id: runId, accountId, startedAt });
     try {
       const report = await this.deps.orchestrator.runCycle(runId);
+      this.deps.onReport?.(report);
       const proposals = report.policy.map((summary) => this.toRecord(runId, report, summary));
       for (const p of proposals) await repo.insertProposal(p);
       const finishedAt = clock.now();

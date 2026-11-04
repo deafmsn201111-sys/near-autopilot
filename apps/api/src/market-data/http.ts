@@ -125,8 +125,10 @@ export class HttpJsonClient {
       const after = parseRetryAfter(response.headers.get('retry-after'), Date.now());
       throw new MarketHttpError(s === 429 ? 'rate_limit' : 'unavailable', `HTTP ${s}`, true, after);
     }
-    if (s === 401 || s === 403)
-      throw new MarketHttpError('unauthorized', `HTTP ${s} (API key missing or rejected)`, false);
+    if (s === 401)
+      throw new MarketHttpError('unauthorized', 'HTTP 401 (API key missing or rejected)', false);
+    if (s === 403)
+      throw new MarketHttpError('unauthorized', 'HTTP 403 (not entitled to this resource)', false);
     if (s === 404) throw new MarketHttpError('not_found', 'HTTP 404', false);
     if (s === 408 || s === 504) throw new MarketHttpError('timeout', `HTTP ${s}`, true);
     if (s >= 500) throw new MarketHttpError('unavailable', `HTTP ${s}`, true);

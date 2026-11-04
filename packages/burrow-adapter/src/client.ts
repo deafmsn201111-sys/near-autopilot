@@ -31,6 +31,11 @@ export interface BurrowAsset {
   readonly suppliedShares: bigint;
   /** Reward programmes on SUPPLYING this asset (`farm_id: {"Supplied": token}`); empty if none. */
   readonly supplyFarms: readonly BurrowFarmReward[];
+  /** Share of borrow interest kept as reserve (bps). */
+  readonly reserveRatioBps: number;
+  /** Caps on total supplied / borrowed in inner units; null when the contract does not report one. */
+  readonly suppliedLimitInner: bigint | null;
+  readonly borrowedLimitInner: bigint | null;
 }
 
 export interface BurrowFarmReward {
@@ -91,6 +96,9 @@ function toAsset(view: AssetView): BurrowAsset {
     lastUpdateTimestampNs:
       view.last_update_timestamp === undefined ? null : BigInt(view.last_update_timestamp),
     suppliedShares: view.supplied.shares,
+    reserveRatioBps: c.reserve_ratio,
+    suppliedLimitInner: c.supplied_limit ?? null,
+    borrowedLimitInner: c.borrowed_limit ?? null,
     supplyFarms: (view.farms ?? []).flatMap((f) =>
       typeof f.farm_id === 'object' && f.farm_id.Supplied === view.token_id
         ? Object.entries(f.rewards).flatMap(([token, r]) => {

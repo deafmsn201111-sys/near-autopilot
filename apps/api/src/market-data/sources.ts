@@ -172,19 +172,35 @@ export class PythSource implements PriceSource {
         status: { source: 'pyth', health: 'degraded', detail: 'no verified feeds' },
       };
 
-    let parsed: z.infer<typeof pythLatestSchema>;
-    try {
-      const raw = await this.o.http.getJson(
-        `${this.o.baseUrl}/v2/updates/price/latest?${ids.map((id) => `ids[]=${id}`).join('&')}&parsed=true&encoding=hex`,
-        { authorization: `Bearer ${this.o.apiKey}` },
-      );
-      const r = pythLatestSchema.safeParse(raw);
-      if (!r.success)
-        throw new MarketHttpError('invalid_response', 'unexpected price update shape', false);
-      parsed = r.data;
-    } catch (e) {
-      return fail(errorText(e));
+    // One request per feed: an entitlement covers feeds individually (e.g. stablecoins but not NEAR), so one refused
+    // feed must not take the others down. The key travels only in the Authorization header, never in an error.
+    const fetched = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const raw = await this.o.http.getJson(
+            `${this.o.baseUrl}/v2/updates/price/latest?ids[]=${id}&parsed=true&encoding=hex`,
+            { authorization: `Bearer ${this.o.apiKey}` },
+          );
+          const r = pythLatestSchema.safeParse(raw);
+          if (!r.success)
+            throw new MarketHttpError('invalid_response', 'unexpected price update shape', false);
+          return { id, parsed: r.data.parsed, error: null };
+        } catch (e) {
+          return { id, parsed: [], error: errorText(e) };
+        }
+      }),
+    );
+    for (const f of fetched) {
+      if (!f.error) continue;
+      const a = feeds.find((x) => x.pyth?.feedId === f.id);
+      if (a) out.set(a.testnetToken, [unavailable('pyth', f.id, null, now, f.error)]);
     }
+    if (fetched.every((f) => f.error))
+      return {
+        observations: out,
+        status: { source: 'pyth', health: 'unavailable', detail: fetched[0]?.error ?? 'no feed' },
+      };
+    const parsed = { parsed: fetched.flatMap((f) => f.parsed) };
     const rules = this.o.freshness ?? { maxAgeMs: 60_000, maxFutureSkewMs: 5_000 };
     const maxConf = BigInt(this.o.maxConfidenceBps ?? 200);
     for (const a of feeds) {

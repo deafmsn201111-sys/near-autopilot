@@ -163,7 +163,8 @@ services:
       NEAR_RPC_URL: https://rpc.mainnet.near.org
       AUTOPILOT_ACCOUNT_ID: shadow-demo.near
       AUTOPILOT_ENGINE: orchestrator
-      CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-0}
+      # The schedule belongs to shadow-collector (SHADOW_CYCLE_INTERVAL_SECONDS); this API only runs cycles on demand.
+      CYCLE_INTERVAL_SECONDS: 0
       AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
       MARKET_DATA: mainnet-live
       YIELD_DATA: mainnet-onchain
@@ -193,6 +194,89 @@ services:
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
     ports:
       - '127.0.0.1:${SHADOW_DASHBOARD_PORT:-3003}:3000'
+
+  # ---- Autonomous shadow collector + analytics: `docker compose --profile shadow up -d` ----
+  # Plain Node services (no LLM). The collector reads MAINNET with view calls only on a schedule and stores everything in
+  # Postgres; analytics-api serves it read-only; analytics (127.0.0.1:3001) renders it. No signer exists anywhere here.
+  shadow-collector:
+    profiles: [shadow]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # api-shadow applies the migrations first.
+      api-shadow:
+        condition: service_healthy
+    command: ['node', '--import', 'tsx', 'src/collector/main.ts']
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
+      NEAR_NETWORK: mainnet
+      DATA_SOURCE: simulation
+      EXECUTION_MODE: dry-run
+      NEAR_RPC_URL: https://rpc.mainnet.near.org
+      AUTOPILOT_ACCOUNT_ID: shadow-demo.near
+      AUTOPILOT_ENGINE: orchestrator
+      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+      MARKET_DATA: mainnet-live
+      YIELD_DATA: mainnet-onchain
+      RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
+      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
+      PYTH_API_KEY: ${PYTH_API_KEY:-}
+      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      COLLECTOR_REGISTRY_EVERY: ${COLLECTOR_REGISTRY_EVERY:-4}
+      COLLECTOR_HEALTH_PORT: 4100
+    volumes:
+      - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4100/health']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  analytics-api:
+    profiles: [shadow]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api-shadow:
+        condition: service_healthy
+    command: ['node', '--import', 'tsx', 'src/analytics/main.ts']
+    environment:
+      NODE_ENV: production
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
+      API_PORT: 4000
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+    ports:
+      - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
+
+  analytics:
+    profiles: [shadow]
+    build:
+      context: .
+      dockerfile: docker/analytics.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      analytics-api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://analytics-api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+    ports:
+      - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
 
 volumes:
   pgdata:

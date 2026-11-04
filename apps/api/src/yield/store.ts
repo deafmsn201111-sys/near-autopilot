@@ -45,6 +45,7 @@ export class DrizzleYieldStore implements YieldReportSink, PoolHistory {
         reasons: e.reasons.map((r) => ({ ...r })),
         raw: { ...e.raw },
         sources,
+        origin: report.origin,
       })),
     );
   }

@@ -30,6 +30,9 @@ export const assetConfigSchema = z
     can_use_as_collateral: z.boolean(),
     can_borrow: z.boolean(),
     net_tvl_multiplier: int.optional(),
+    /** Caps on total supplied / borrowed (inner units); absent in older versions. */
+    supplied_limit: u128StringSchema.optional(),
+    borrowed_limit: u128StringSchema.optional(),
   })
   .passthrough();
 

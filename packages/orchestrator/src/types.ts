@@ -151,6 +151,18 @@ export interface Rejection {
   readonly kind: string;
   readonly code: RejectionCode;
   readonly detail: string;
+  /** For rejected trades: the numbers the hurdle was applied to (micro-USD), for audit and analytics. */
+  readonly economics?: {
+    readonly tokenIn: TokenId;
+    readonly tokenOut: TokenId;
+    readonly amountIn: bigint;
+    readonly valueInUsdMicro: bigint;
+    readonly benefitUsdMicro: bigint;
+    readonly costUsdMicro: bigint;
+    readonly netUsdMicro: bigint;
+    readonly requiredMultiple: bigint;
+    readonly minNetUsdMicro: bigint;
+  };
 }
 
 export type CandidateAction =

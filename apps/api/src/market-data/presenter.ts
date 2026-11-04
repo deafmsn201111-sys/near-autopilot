@@ -23,7 +23,14 @@ export function marketDataView(
     async current() {
       if (!market) return disabledView(executionNetwork);
       try {
-        const r = await market.report();
+        // Read-only: the last report a cycle or the collector built; a page view never fetches prices.
+        const r = market.latest ? market.latest() : await market.report();
+        if (!r)
+          return {
+            ...disabledView(executionNetwork),
+            enabled: true,
+            error: 'no market report yet: run a cycle (or wait for the collector)',
+          };
         return {
           enabled: true,
           flow: r.executionNetwork === 'none' ? SHADOW_FLOW_LABEL : DATA_FLOW_LABEL,

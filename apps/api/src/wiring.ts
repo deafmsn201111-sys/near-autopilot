@@ -14,6 +14,7 @@ import {
   type Agent,
   type Clock,
   type IdGenerator,
+  type ContractViewer,
   type Logger,
   type PlanExecutor,
 } from '@near-autopilot/core';
@@ -35,6 +36,7 @@ import {
   MarketIntelligenceAgent,
   Orchestrator,
   orchestratorConfigSchema,
+  type CycleReport,
 } from '@near-autopilot/orchestrator';
 import { PolicyEngine } from '@near-autopilot/policy-engine';
 import { RheaPlanner, RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
@@ -55,7 +57,7 @@ import { ReferenceMarketData } from './market-data/service';
 import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
 import { MAINNET_PRICE_LABEL, usable } from './market-data/model';
-import type { PoolHistory, YieldReportSink } from './yield/model';
+import type { PoolHistory, YieldDataProvider, YieldReportSink } from './yield/model';
 import { YieldService } from './yield/service';
 
 export const systemClock: Clock = { now: () => new Date() };
@@ -72,6 +74,17 @@ export interface WireOptions {
   readonly yieldSink?: YieldReportSink & PoolHistory;
   /** Transport for the read-only MAINNET RPC of the shadow analysis (tests inject a fake). */
   readonly mainnetFetchImpl?: typeof fetch;
+  /**
+   * Shadow analysis on a SHARED snapshot (the collector): the market report, yield report and a block-pinned mainnet
+   * viewer are given, so several portfolios are analysed against exactly the same data. Nothing is read beyond them.
+   */
+  readonly shadowInputs?: {
+    readonly market: MarketDataProvider;
+    readonly yields: YieldDataProvider;
+    readonly viewer: ContractViewer;
+  };
+  /** Receives every orchestrator cycle report (the collector stores decisions per portfolio). */
+  readonly onCycleReport?: (report: CycleReport) => void;
 }
 
 /**
@@ -120,26 +133,32 @@ export async function wire(
   // MAINNET READ-ONLY SHADOW ANALYSIS (MARKET_DATA=mainnet-live; config enforces simulation + mainnet + dry-run): a
   // second RPC client, used ONLY for view calls on mainnet (prices' token decimals, yields, Rhea quotes). The portfolio
   // is the simulated demo one; there is no signer and the executor is dry-run.
+  const shared = env.MARKET_DATA === 'mainnet-live' ? (options.shadowInputs ?? null) : null;
   const mainnetRead =
-    env.MARKET_DATA === 'mainnet-live'
+    env.MARKET_DATA === 'mainnet-live' && !shared
       ? await mainnetReadRpc(env, logger, options.mainnetFetchImpl)
       : null;
-  const mainnetViewer = mainnetRead ? new NearContractViewer(mainnetRead) : null;
+  const mainnetViewer: ContractViewer | null =
+    shared?.viewer ?? (mainnetRead ? new NearContractViewer(mainnetRead) : null);
   // MAINNET MARKET DATA -> TESTNET EXECUTION (MARKET_DATA=mainnet-reference; config enforces testnet + chain + dry-run).
   const market =
     env.MARKET_DATA === 'mainnet-reference'
       ? referenceMarket(env, tokens, logger, options)
-      : mainnetViewer
-        ? referenceMarket(env, new NearTokenReader(mainnetViewer), logger, options, 'shadow')
-        : null;
+      : shared
+        ? shared.market
+        : mainnetViewer
+          ? referenceMarket(env, new NearTokenReader(mainnetViewer), logger, options, 'shadow')
+          : null;
   const oracle = market ? new ReferencePriceOracle(market) : new BurrowPriceOracle(viewer, burrow);
   // Yield data: TESTNET contracts (testnet-onchain) or MAINNET contracts read-only (mainnet-onchain, shadow only).
   const yields =
     env.YIELD_DATA === 'testnet-onchain' && market
       ? testnetYields(env, config, rpc, market, logger, options)
-      : env.YIELD_DATA === 'mainnet-onchain' && market && mainnetRead
-        ? testnetYields(env, config, mainnetRead, market, logger, options, 'mainnet')
-        : null;
+      : env.YIELD_DATA === 'mainnet-onchain' && shared
+        ? shared.yields
+        : env.YIELD_DATA === 'mainnet-onchain' && market && mainnetRead
+          ? testnetYields(env, config, mainnetRead, market, logger, options, 'mainnet')
+          : null;
   // Shadow: quotes come from the REAL mainnet exchange (`get_return` view), so the analysis prices trades honestly.
   const quoter = new RheaSwapQuoter(mainnetViewer ?? viewer, {
     contractId: env.RHEA_CONTRACT_ID,
@@ -222,6 +241,7 @@ export async function wire(
       ? new OrchestratedCycle({
           ...common,
           audit: orchestratorAudit,
+          ...(options.onCycleReport ? { onReport: options.onCycleReport } : {}),
           // Same snapshot source, planners, policy engine and executor as the legacy path: one execution pipeline.
           orchestrator: new Orchestrator({
             accountId: env.AUTOPILOT_ACCOUNT_ID,
@@ -453,4 +473,30 @@ function simulatedChain(env: ApiEnv, config: AutopilotConfig): SimulatedChain {
     );
   }
   return chain;
+}
+
+/**
+ * The shadow analysis' data sources, for the autonomous collector: a read-only mainnet RPC (chain id checked), the
+ * mainnet price provider and the configured yield service. Same rules as `wire` (simulation + mainnet + dry-run).
+ */
+export async function shadowSources(
+  env: ApiEnv,
+  config: AutopilotConfig,
+  logger: Logger,
+  options: WireOptions = {},
+): Promise<{ rpc: NearRpcClient; market: MarketDataProvider; yields: YieldService }> {
+  if (env.MARKET_DATA !== 'mainnet-live' || env.YIELD_DATA !== 'mainnet-onchain')
+    throw new Error(
+      'the shadow collector requires MARKET_DATA=mainnet-live and YIELD_DATA=mainnet-onchain',
+    );
+  const rpc = await mainnetReadRpc(env, logger, options.mainnetFetchImpl);
+  const market = referenceMarket(
+    env,
+    new NearTokenReader(new NearContractViewer(rpc)),
+    logger,
+    options,
+    'shadow',
+  );
+  const yields = testnetYields(env, config, rpc, market, logger, options, 'mainnet');
+  return { rpc, market, yields };
 }

@@ -61,14 +61,35 @@ export class YieldService implements YieldDataProvider {
 
   constructor(private readonly o: YieldServiceOptions) {}
 
+  private last: YieldReport | null = null;
+
+  /** For a cycle (on demand): reuses a report younger than the TTL, else reads a new one at the latest final block. */
   report(): Promise<YieldReport> {
     const nowMs = this.o.now().getTime();
     if (this.cached && nowMs - this.cached.at < (this.o.ttlMs ?? 30_000)) return this.cached.value;
-    const value = this.fetch();
+    return this.remember(nowMs, this.fetch(null, 'on_demand'));
+  }
+
+  /** For the collector: one report at exactly this block, marked `scheduled`; later cycles within the TTL reuse it. */
+  reportAt(block: BlockRef, origin: YieldReport['origin'] = 'scheduled'): Promise<YieldReport> {
+    return this.remember(this.o.now().getTime(), this.fetch(block, origin));
+  }
+
+  /** The last report built, without reading anything (dashboard and API reads must never create observations). */
+  latest(): YieldReport | null {
+    return this.last;
+  }
+
+  private remember(nowMs: number, value: Promise<YieldReport>): Promise<YieldReport> {
     this.cached = { at: nowMs, value };
-    value.catch(() => {
-      if (this.cached?.value === value) this.cached = null;
-    });
+    value.then(
+      (r) => {
+        this.last = r;
+      },
+      () => {
+        if (this.cached?.value === value) this.cached = null;
+      },
+    );
     return value;
   }
 
@@ -82,12 +103,15 @@ export class YieldService implements YieldDataProvider {
     return { source, contract, health, detail, marketsRead };
   }
 
-  private async fetch(): Promise<YieldReport> {
+  private async fetch(
+    pinned: BlockRef | null,
+    origin: YieldReport['origin'],
+  ): Promise<YieldReport> {
     const observedAt = this.o.now();
-    let block: BlockRef | null = null;
+    let block: BlockRef | null = pinned;
     let runs: SourceRun[] = [];
     try {
-      block = await finalBlock(this.o.rpc);
+      block ??= await finalBlock(this.o.rpc);
     } catch (error) {
       const detail = `final block unreadable: ${errorMessage(error)}`;
       runs = [
@@ -147,6 +171,7 @@ export class YieldService implements YieldDataProvider {
     }
     const report: YieldReport = {
       id: this.o.ids(),
+      origin,
       network: this.o.network ?? 'testnet',
       observedAt,
       block,

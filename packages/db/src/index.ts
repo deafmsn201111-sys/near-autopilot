@@ -3,6 +3,7 @@ export * from './client';
 export * from './migrate';
 export {
   and,
+  asc,
   desc,
   eq,
   getTableColumns,
@@ -11,6 +12,7 @@ export {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   or,
   sql,
