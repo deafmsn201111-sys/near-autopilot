@@ -60,6 +60,7 @@ const make = (cycleError?: Error) => {
             startedAt: new Date(0),
             finishedAt: new Date(1),
             error: null,
+            outcome: null,
           },
           proposals: [],
         };

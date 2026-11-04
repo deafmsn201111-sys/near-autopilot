@@ -60,10 +60,13 @@ export class OrchestratedCycle {
       const proposals = report.policy.map((summary) => this.toRecord(runId, report, summary));
       for (const p of proposals) await repo.insertProposal(p);
       const finishedAt = clock.now();
+      const agents = agentOutcomes(await this.deps.audit.entries(), runId);
+      const outcome = summarize(report, agents);
       await repo.finishRun(runId, {
         status: 'completed',
         finishedAt,
         error: null,
+        outcome,
         snapshot: toJsonSafe({
           engine: 'orchestrator',
           cycleStatus: report.status,
@@ -72,7 +75,7 @@ export class OrchestratedCycle {
           reasons: report.decision?.reasons ?? [],
           advisories: report.decision?.advisories ?? [],
           escalations: report.escalations,
-          agents: agentOutcomes(await this.deps.audit.entries(), runId),
+          agents,
         }),
       });
       logger.info('orchestrator cycle finished', {
@@ -81,7 +84,15 @@ export class OrchestratedCycle {
         proposals: proposals.length,
       });
       return {
-        run: { id: runId, accountId, status: 'completed', startedAt, finishedAt, error: null },
+        run: {
+          id: runId,
+          accountId,
+          status: 'completed',
+          startedAt,
+          finishedAt,
+          error: null,
+          outcome,
+        },
         proposals,
       };
     } catch (error) {
@@ -90,6 +101,7 @@ export class OrchestratedCycle {
         status: 'failed',
         finishedAt,
         error: errorMessage(error),
+        outcome: null,
         snapshot: null,
       });
       logger.error('orchestrator cycle failed', { runId, error: errorMessage(error) });
@@ -101,6 +113,7 @@ export class OrchestratedCycle {
           startedAt,
           finishedAt,
           error: errorMessage(error),
+          outcome: null,
         },
         proposals: [],
       };
@@ -166,6 +179,39 @@ export function agentOutcomes(
     outcomes.push({ agent, event: e.type.slice('agent.'.length), ...rest });
   }
   return outcomes;
+}
+
+/**
+ * "no action: DATA_NOT_FRESH; escalations: RISK_WATCH; market-intelligence: insufficient_data (no market data
+ * available); liquidation-guardian: 2 proposal(s)". Bounded: this goes into a table cell.
+ */
+export function summarize(
+  report: CycleReport,
+  agents: ReadonlyArray<Record<string, unknown>>,
+): string {
+  const parts = [report.detail];
+  if (report.escalations.length > 0) {
+    parts.push(`escalations: ${[...new Set(report.escalations.map((e) => e.code))].join(', ')}`);
+  }
+  for (const a of agents) {
+    const name = typeof a['agent'] === 'string' ? a['agent'] : 'agent';
+    const event = typeof a['event'] === 'string' ? a['event'] : '';
+    const items: unknown[] = Array.isArray(a['proposals']) ? a['proposals'] : [];
+    const noAction = items.find(
+      (p): p is { reasonCode: string; rationale?: unknown } =>
+        typeof p === 'object' &&
+        p !== null &&
+        'reasonCode' in p &&
+        typeof p.reasonCode === 'string',
+    );
+    if (event !== 'output') parts.push(`${name}: ${event}`);
+    else if (noAction) {
+      const why = typeof noAction.rationale === 'string' ? ` (${noAction.rationale})` : '';
+      parts.push(`${name}: ${noAction.reasonCode}${why}`);
+    } else parts.push(`${name}: ${items.length} proposal(s)`);
+  }
+  const text = parts.join('; ');
+  return text.length > 1000 ? `${text.slice(0, 999)}…` : text;
 }
 
 function statusOf(

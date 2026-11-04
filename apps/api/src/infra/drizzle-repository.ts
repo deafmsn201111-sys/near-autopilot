@@ -5,6 +5,7 @@ import {
   eq,
   gte,
   isNotNull,
+  isNull,
   or,
   proposals,
   runs,
@@ -82,6 +83,7 @@ export class DrizzleRepository implements AutopilotRepository {
       status: 'completed' | 'failed';
       finishedAt: Date;
       error: string | null;
+      outcome: string | null;
       snapshot: unknown;
     },
   ): Promise<void> {
@@ -91,6 +93,7 @@ export class DrizzleRepository implements AutopilotRepository {
         status: update.status,
         finishedAt: update.finishedAt,
         error: update.error,
+        outcome: update.outcome,
         snapshot: update.snapshot,
       })
       .where(eq(runs.id, id));
@@ -161,11 +164,13 @@ export class DrizzleRepository implements AutopilotRepository {
         startedAt: runs.startedAt,
         finishedAt: runs.finishedAt,
         error: runs.error,
+        outcome: runs.outcome,
         dataSource: runs.dataSource,
         network: runs.network,
         proposalCount: sql<number>`(select count(*)::int from ${proposals} where ${qualified(proposals, proposals.runId)} = ${qualified(runs, runs.id)})`,
       })
       .from(runs)
+      .where(this.ownRows(runs))
       .orderBy(desc(runs.startedAt))
       .limit(limit);
     return rows.map((r) => ({ ...r, ...provenanceOf(r) }));
@@ -178,10 +183,27 @@ export class DrizzleRepository implements AutopilotRepository {
     const rows = await this.db
       .select()
       .from(proposals)
-      .where(options.runId === undefined ? undefined : eq(proposals.runId, options.runId))
+      .where(
+        options.runId === undefined
+          ? this.ownRows(proposals)
+          : and(this.ownRows(proposals), eq(proposals.runId, options.runId)),
+      )
       .orderBy(desc(proposals.createdAt))
       .limit(options.limit);
     return rows.map(toRecord);
+  }
+
+  /**
+   * Rows of this deployment's provenance only, so a simulation API and a testnet API sharing one database never show
+   * each other's data. Rows from before migration 0001 have no network and count as mainnet (see provenanceOf).
+   */
+  private ownRows(table: typeof runs | typeof proposals): SQL | undefined {
+    return and(
+      eq(table.dataSource, this.provenance.dataSource),
+      this.provenance.network === 'mainnet'
+        ? or(eq(table.network, 'mainnet'), isNull(table.network))
+        : eq(table.network, this.provenance.network),
+    );
   }
 
   async ping(): Promise<void> {

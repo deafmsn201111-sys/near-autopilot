@@ -22,7 +22,13 @@ export class InMemoryRepository implements AutopilotRepository {
   readonly log: string[] = [];
 
   async createRun(run: Pick<RunRecord, 'id' | 'accountId' | 'startedAt'>): Promise<void> {
-    this.runs.set(run.id, { ...run, status: 'running', finishedAt: null, error: null });
+    this.runs.set(run.id, {
+      ...run,
+      status: 'running',
+      finishedAt: null,
+      error: null,
+      outcome: null,
+    });
   }
   async finishRun(
     id: string,
@@ -30,6 +36,7 @@ export class InMemoryRepository implements AutopilotRepository {
       status: 'completed' | 'failed';
       finishedAt: Date;
       error: string | null;
+      outcome: string | null;
       snapshot: unknown;
     },
   ): Promise<void> {
@@ -40,6 +47,7 @@ export class InMemoryRepository implements AutopilotRepository {
       status: update.status,
       finishedAt: update.finishedAt,
       error: update.error,
+      outcome: update.outcome,
     });
     this.snapshots.set(id, update.snapshot);
   }

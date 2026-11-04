@@ -47,6 +47,11 @@ export const portfolioDtoSchema = z.object({
   collateral: z.array(holdingDtoSchema),
   supplied: z.array(holdingDtoSchema),
   borrowed: z.array(holdingDtoSchema),
+  /**
+   * Tracked tokens with and without a usable oracle price. A token without one is excluded from totals and from every
+   * decision; it is never valued at zero.
+   */
+  pricing: z.object({ priced: z.array(z.string()), unpriced: z.array(z.string()) }),
 });
 export type PortfolioDto = z.infer<typeof portfolioDtoSchema>;
 
@@ -88,6 +93,8 @@ export const runDtoSchema = z.object({
   finishedAt: z.string().nullable(),
   status: z.enum(['running', 'completed', 'failed']),
   error: z.string().nullable(),
+  /** What the cycle saw and decided, including why it did nothing (missing prices, insufficient_data, ...). */
+  outcome: z.string().nullable(),
   proposalCount: z.number().int(),
 });
 export type RunDto = z.infer<typeof runDtoSchema>;

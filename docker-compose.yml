@@ -67,5 +67,60 @@ services:
     ports:
       - '127.0.0.1:${DASHBOARD_PORT:-3000}:3000'
 
+  # ---- Read-only NEAR testnet profile: `docker compose --profile testnet up -d` ----
+  # A second API + dashboard over REAL testnet data (RPC view calls only), next to the simulation stack and sharing
+  # its Postgres; each API lists only rows of its own provenance. Network, data source and execution mode are fixed
+  # here on purpose: .env cannot turn this profile into a live or simulated one.
+  api-testnet:
+    profiles: [testnet]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Starts after the main API has applied migrations, so the two never migrate concurrently.
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
+      NEAR_NETWORK: testnet
+      DATA_SOURCE: chain
+      EXECUTION_MODE: dry-run
+      NEAR_RPC_URL: ${TESTNET_RPC_URL:-https://rpc.testnet.near.org}
+      AUTOPILOT_ACCOUNT_ID: ${TESTNET_ACCOUNT_ID:?set TESTNET_ACCOUNT_ID in .env (an existing *.testnet account)}
+      AUTOPILOT_ENGINE: ${TESTNET_ENGINE:-orchestrator}
+      # 0 = only on demand: every cycle costs public-RPC requests (rate limited), never NEAR.
+      CYCLE_INTERVAL_SECONDS: ${TESTNET_CYCLE_INTERVAL_SECONDS:-0}
+      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+      RHEA_CONTRACT_ID: ${TESTNET_RHEA_CONTRACT_ID:-ref-finance-101.testnet}
+      BURROW_CONTRACT_ID: ${TESTNET_BURROW_CONTRACT_ID:-contract.1638481328.burrow.testnet}
+      BURROW_ORACLE_ID: ${TESTNET_BURROW_ORACLE_ID:-priceoracle.testnet}
+    volumes:
+      - ./config/autopilot.testnet.local.json:/etc/autopilot/autopilot.json:ro
+    ports:
+      - '127.0.0.1:${TESTNET_API_HOST_PORT:-4001}:4000'
+
+  dashboard-testnet:
+    profiles: [testnet]
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api-testnet:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api-testnet:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+    ports:
+      - '127.0.0.1:${TESTNET_DASHBOARD_PORT:-3002}:3000'
+
 volumes:
   pgdata:

@@ -76,6 +76,7 @@ describe('presenters produce payloads that satisfy the shared wire contract', ()
           startedAt: NOW,
           finishedAt: NOW,
           error: null,
+          outcome: null,
           proposalCount: 1,
         }),
       ),

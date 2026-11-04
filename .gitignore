@@ -8,6 +8,7 @@ coverage
 !.env.example
 *.tsbuildinfo
 config/autopilot.json
+config/*.local.json
 
 # Keys, credentials and local data: never commit (this project needs none for the local demo)
 *.pem

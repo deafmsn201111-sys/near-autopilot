@@ -39,6 +39,7 @@ export const STATUS_LABELS: Record<string, string> = {
   requires_approval: 'Needs your approval',
   planning_failed: 'Could not build transaction',
   failed: 'Failed',
+  completed: 'Check completed',
 };
 
 export function statusTone(status: string): 'good' | 'warn' | 'bad' | 'neutral' {
@@ -79,9 +80,15 @@ export function provenanceBanner(
     p.executionMode === 'dry-run'
       ? 'dry-run, nothing is sent'
       : 'live: approved actions are signed and sent';
-  return p.network === 'testnet'
-    ? { tone: 'test', text: `TESTNET data (test tokens, no real value); ${sending}.` }
-    : { tone: 'main', text: `MAINNET data, read-only (${sending}).` };
+  if (p.network === 'testnet') {
+    return p.executionMode === 'dry-run'
+      ? {
+          tone: 'test',
+          text: 'TESTNET · READ-ONLY · DRY-RUN: real NEAR testnet data read through RPC view calls (test tokens, no real value). Nothing is signed or sent.',
+        }
+      : { tone: 'test', text: `TESTNET data (test tokens, no real value); ${sending}.` };
+  }
+  return { tone: 'main', text: `MAINNET data, read-only (${sending}).` };
 }
 
 /** What a proposal's outcome is evidence of: simulated, planned only, or a real transaction on a named network. */

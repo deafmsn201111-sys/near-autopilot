@@ -48,7 +48,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(2);
+    expect(applied.rows[0]?.n).toBe(3);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -96,6 +96,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       status: 'completed',
       finishedAt: new Date('2026-11-04T10:00:01Z'),
       error: null,
+      outcome: 'no action: DATA_NOT_FRESH',
       snapshot: { engine: 'orchestrator' },
     });
     await repo.updateProposal('p-sim', {
@@ -111,6 +112,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       network: 'testnet',
       proposalCount: 1,
       startedAt,
+      outcome: 'no action: DATA_NOT_FRESH',
     });
     const [p] = await repo.listProposals({ limit: 10, runId: 'run-sim' });
     expect(p).toMatchObject({
@@ -127,23 +129,32 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(p?.valueUsdMicro).toBe(39_700_001n);
   });
 
-  it('keeps each deployment’s labels when two provenances share a database', async () => {
+  it('isolates deployments sharing a database: simulation and testnet never see each other', async () => {
     const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    const sim = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'testnet' });
     await chain.createRun({ id: 'run-chain', accountId: 'demo.testnet', startedAt: new Date() });
     await chain.insertProposal(proposal({ id: 'p-chain', runId: 'run-chain' }));
+
     const [p] = await chain.listProposals({ limit: 10, runId: 'run-chain' });
     expect(p).toMatchObject({ dataSource: 'chain', network: 'testnet' });
-    const [sim] = await chain.listProposals({ limit: 10, runId: 'run-sim' });
-    expect(sim).toMatchObject({ dataSource: 'simulation', network: 'testnet' });
+    expect(await chain.listProposals({ limit: 10, runId: 'run-sim' })).toEqual([]);
+    expect((await chain.listRuns(50)).map((r) => r.id)).toEqual(['run-chain']);
+    expect((await chain.listProposals({ limit: 50 })).map((r) => r.id)).toEqual(['p-chain']);
+
+    expect((await sim.listRuns(50)).map((r) => r.id)).toEqual(['run-sim']);
+    expect((await sim.listProposals({ limit: 50 })).map((r) => r.id)).toEqual(['p-sim']);
+    expect(await sim.listProposals({ limit: 10, runId: 'run-chain' })).toEqual([]);
   });
 
   it('reads rows written before migration 0001 (no network) as chain/mainnet', async () => {
     await handle.db.execute(
       sql`insert into runs (id, account_id, status, started_at) values ('run-old', 'old.near', 'completed', now())`,
     );
-    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'testnet' });
-    const [old] = (await repo.listRuns(50)).filter((r) => r.id === 'run-old');
+    const mainnet = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
+    const [old] = (await mainnet.listRuns(50)).filter((r) => r.id === 'run-old');
     expect(old).toMatchObject({ dataSource: 'chain', network: 'mainnet', proposalCount: 0 });
+    const testnet = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    expect((await testnet.listRuns(50)).map((r) => r.id)).not.toContain('run-old');
   });
 
   it('execution stats count only live rows that may have reached the chain', async () => {

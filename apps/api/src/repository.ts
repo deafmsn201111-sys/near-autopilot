@@ -13,6 +13,8 @@ export interface RunRecord {
   readonly startedAt: Date;
   readonly finishedAt: Date | null;
   readonly error: string | null;
+  /** Human-readable summary of what the cycle saw and decided (why nothing happened, too). */
+  readonly outcome: string | null;
 }
 
 export interface ProposalRecord {
@@ -65,12 +67,14 @@ export interface AutopilotRepository {
       status: 'completed' | 'failed';
       finishedAt: Date;
       error: string | null;
+      outcome: string | null;
       snapshot: unknown;
     },
   ): Promise<void>;
   insertProposal(proposal: ProposalRecord): Promise<void>;
   updateProposal(id: string, patch: ProposalPatch): Promise<void>;
   appendAudit(event: AuditEvent): Promise<void>;
+  /** Lists return only rows written under this repository's own provenance (simulation never mixes with chain). */
   /** Live, executed proposals only: spend since `since` and the most recent execution time. */
   getExecutionStats(accountId: string, since: Date): Promise<PolicyHistory>;
   listRuns(limit: number): Promise<Array<RunRecord & Provenance & { proposalCount: number }>>;

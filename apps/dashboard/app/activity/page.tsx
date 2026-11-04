@@ -1,6 +1,6 @@
 import { revalidatePath } from 'next/cache';
 import { StatusLabel } from '../../components/StatusLabel';
-import { ApiError, getProposals, triggerRun } from '../../lib/api';
+import { ApiError, getProposals, getRuns, triggerRun } from '../../lib/api';
 import { evidenceLabel, formatTimestamp, formatUsd } from '../../lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +17,7 @@ async function runCheck(): Promise<void> {
 }
 
 export default async function ActivityPage() {
-  const { proposals } = await getProposals(50);
+  const [{ proposals }, { runs }] = await Promise.all([getProposals(50), getRuns(10)]);
 
   return (
     <>
@@ -30,6 +30,28 @@ export default async function ActivityPage() {
         <button type="submit">Run a check now</button>
       </form>
 
+      <section className="block" aria-labelledby="checks">
+        <h2 id="checks">Recent checks</h2>
+        {runs.length === 0 ? (
+          <p className="muted">No checks have run yet.</p>
+        ) : (
+          <ol className="feed">
+            {runs.map((r) => (
+              <li key={r.id}>
+                <div className="feed-head">
+                  <StatusLabel status={r.status === 'failed' ? 'failed' : 'completed'} />
+                  <span className="feed-value">{r.proposalCount} proposal(s)</span>
+                  <time dateTime={r.startedAt}>{formatTimestamp(r.startedAt)}</time>
+                </div>
+                {r.outcome && <p className="feed-summary">{r.outcome}</p>}
+                {r.error && <p className="error-text">{r.error}</p>}
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <h2>Proposals</h2>
       {proposals.length === 0 ? (
         <p className="muted">
           No proposals yet. Agents only propose when the position needs attention.

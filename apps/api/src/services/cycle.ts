@@ -16,6 +16,7 @@ import {
 } from '@near-autopilot/core';
 import type { PolicyEngine } from '@near-autopilot/policy-engine';
 import type { PlannerRegistry } from '@near-autopilot/tx-execution';
+import { describeSnapshot } from './outcome';
 import type { AutopilotRepository, ProposalRecord, RunRecord } from '../repository';
 
 export class CycleInProgressError extends AutopilotError {
@@ -104,23 +105,49 @@ export class AutopilotCycle {
       }
 
       const finishedAt = clock.now();
+      const outcome = `${
+        proposals.length === 0 ? 'no action proposed' : `${proposals.length} proposal(s)`
+      }; ${describeSnapshot(snapshot)}`;
       await repo.finishRun(runId, {
         status: 'completed',
         finishedAt,
         error: null,
+        outcome,
         snapshot: toJsonSafe(snapshot),
       });
       return {
-        run: { id: runId, accountId, status: 'completed', startedAt, finishedAt, error: null },
+        run: {
+          id: runId,
+          accountId,
+          status: 'completed',
+          startedAt,
+          finishedAt,
+          error: null,
+          outcome,
+        },
         proposals,
       };
     } catch (error) {
       const finishedAt = clock.now();
       const message = errorMessage(error);
       logger.error('cycle failed', { runId, error: message });
-      await repo.finishRun(runId, { status: 'failed', finishedAt, error: message, snapshot: null });
+      await repo.finishRun(runId, {
+        status: 'failed',
+        finishedAt,
+        error: message,
+        outcome: null,
+        snapshot: null,
+      });
       return {
-        run: { id: runId, accountId, status: 'failed', startedAt, finishedAt, error: message },
+        run: {
+          id: runId,
+          accountId,
+          status: 'failed',
+          startedAt,
+          finishedAt,
+          error: message,
+          outcome: null,
+        },
         proposals,
       };
     } finally {

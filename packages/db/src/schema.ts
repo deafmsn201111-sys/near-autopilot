@@ -12,6 +12,8 @@ export const runs = pgTable(
     startedAt: ts('started_at').notNull(),
     finishedAt: ts('finished_at'),
     error: text('error'),
+    /** Human-readable summary of what the cycle saw and decided (migration 0002). */
+    outcome: text('outcome'),
     /** JSON-safe portfolio snapshot the agents saw. */
     snapshot: jsonb('snapshot').$type<unknown>(),
     /** 'simulation' rows come from a mock RPC and never touched a network. */

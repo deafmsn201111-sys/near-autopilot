@@ -41,7 +41,10 @@ describe('provenance labels never confuse simulated, testnet, mainnet and on-cha
     ).toContain('no result here happened on-chain');
     expect(
       provenanceBanner({ dataSource: 'chain', network: 'testnet', executionMode: 'dry-run' }).text,
-    ).toMatch(/^TESTNET/);
+    ).toMatch(/^TESTNET · READ-ONLY · DRY-RUN: real NEAR testnet data/);
+    expect(
+      provenanceBanner({ dataSource: 'chain', network: 'testnet', executionMode: 'dry-run' }).text,
+    ).toContain('Nothing is signed or sent');
     expect(
       provenanceBanner({ dataSource: 'chain', network: 'mainnet', executionMode: 'dry-run' }).text,
     ).toMatch(/^MAINNET data, read-only/);

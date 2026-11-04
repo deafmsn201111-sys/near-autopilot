@@ -13,6 +13,7 @@ import type { GuardianConfig } from '@near-autopilot/agents';
 import { valuePortfolio, tokenValueUsd } from '@near-autopilot/financial-engine';
 import type { PolicyConfig } from '@near-autopilot/policy-engine';
 import type { ProposalRecord, RunRecord } from './repository';
+import { pricingOf } from './services/outcome';
 
 /**
  * Display-only view. Wallet tokens without an oracle price are listed with `valueUsd: null` and
@@ -49,6 +50,7 @@ export function toPortfolioDto(snapshot: PortfolioSnapshot, provenance: Provenan
     collateral: (snapshot.lending?.collateral ?? []).map(holding),
     supplied: (snapshot.lending?.supplied ?? []).map(holding),
     borrowed: (snapshot.lending?.borrowed ?? []).map(holding),
+    pricing: pricingOf(snapshot),
   };
 }
 
@@ -81,6 +83,7 @@ export function toRunDto(run: RunRecord & Provenance & { proposalCount: number }
     finishedAt: run.finishedAt?.toISOString() ?? null,
     status: run.status,
     error: run.error,
+    outcome: run.outcome,
     proposalCount: run.proposalCount,
   };
 }

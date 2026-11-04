@@ -196,3 +196,70 @@ describe('the simulated chain cannot accept a transaction', () => {
     },
   );
 });
+
+describe('an RPC failure never yields a successful partial snapshot', () => {
+  /** Real chain path (DATA_SOURCE=chain) over a mock chain whose oracle answers `failure` for get_price_data. */
+  const brokenOracle = (failure: 'invalid_body' | 'rpc_error'): typeof fetch => {
+    const chain = new SimulatedChain({
+      network: 'testnet',
+      accountId: accountId(ACCOUNT),
+      burrowContractId: accountId('contract.1638481328.burrow.testnet'),
+      burrowOracleId: accountId('priceoracle.testnet'),
+      rheaContractId: accountId('ref-finance-101.testnet'),
+      portfolio: DEMO_PORTFOLIOS['demo-500'],
+      clock: new FixedClock(new Date()),
+      otherTokens: testnetConfig.policy.allowedTokens,
+    });
+    return async (input, init) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (body.includes('"method_name":"get_price_data"')) {
+        return failure === 'invalid_body'
+          ? new Response('<html>bad gateway page</html>', { status: 200 })
+          : new Response(
+              JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                error: { name: 'HANDLER_ERROR', cause: { name: 'UNKNOWN_ACCOUNT' }, message: 'x' },
+              }),
+              { status: 200 },
+            );
+      }
+      return chain.fetch(input, init);
+    };
+  };
+
+  it.each(['invalid_body', 'rpc_error'] as const)(
+    'legacy: the run fails and nothing is proposed (%s)',
+    async (failure) => {
+      const repo = new InMemoryRepository({ dataSource: 'chain', network: 'testnet' });
+      const wired = await wire(
+        envFor({ DATA_SOURCE: 'chain', AUTOPILOT_ENGINE: 'legacy' }),
+        testnetConfig,
+        repo,
+        new SilentLogger(),
+        { fetchImpl: brokenOracle(failure) },
+      );
+      const { run, proposals } = await wired.cycle.run();
+      expect(run.status).toBe('failed');
+      expect(run.error).toMatch(/RPC|JSON|oracle|price/i);
+      expect(proposals).toEqual([]);
+      expect(repo.snapshots.get(run.id)).toBeNull();
+    },
+    30_000,
+  );
+
+  it('orchestrator: no snapshot, no action, and the run says why', async () => {
+    const repo = new InMemoryRepository({ dataSource: 'chain', network: 'testnet' });
+    const wired = await wire(
+      envFor({ DATA_SOURCE: 'chain', AUTOPILOT_ENGINE: 'orchestrator' }),
+      testnetConfig,
+      repo,
+      new SilentLogger(),
+      { fetchImpl: brokenOracle('rpc_error') },
+    );
+    const { run, proposals } = await wired.cycle.run();
+    expect(proposals).toEqual([]);
+    expect(run.outcome).toContain('no snapshot available');
+    expect(run.outcome).toContain('SNAPSHOT_UNAVAILABLE');
+  }, 30_000);
+});
