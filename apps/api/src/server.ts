@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError, z } from 'zod';
-import type { PolicyDto, PortfolioSnapshot } from '@near-autopilot/core';
+import type { PolicyDto, PortfolioSnapshot, Provenance } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
 import { toPortfolioDto, toProposalDto, toRunDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
@@ -12,6 +12,8 @@ export interface ServerDeps {
   readonly snapshots: { take(): Promise<PortfolioSnapshot> };
   readonly cycle: { run(): Promise<CycleResult> };
   readonly policy: PolicyDto;
+  /** This deployment's data source and network, stamped on everything it produces. */
+  readonly provenance: Provenance;
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -66,7 +68,9 @@ export function buildServer(
     }
   });
 
-  app.get('/v1/portfolio', async () => toPortfolioDto(await deps.snapshots.take()));
+  app.get('/v1/portfolio', async () =>
+    toPortfolioDto(await deps.snapshots.take(), deps.provenance),
+  );
 
   app.get('/v1/runs', async (request) => {
     const { limit } = limitQuery.parse(request.query);
@@ -86,8 +90,12 @@ export function buildServer(
   app.post('/v1/runs', async (_request, reply) => {
     const result = await deps.cycle.run();
     return reply.status(201).send({
-      run: toRunDto({ ...result.run, proposalCount: result.proposals.length }),
-      proposals: result.proposals.map(toProposalDto),
+      run: toRunDto({
+        ...result.run,
+        ...deps.provenance,
+        proposalCount: result.proposals.length,
+      }),
+      proposals: result.proposals.map((p) => toProposalDto({ ...p, ...deps.provenance })),
     });
   });
 

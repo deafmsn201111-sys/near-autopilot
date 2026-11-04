@@ -181,8 +181,8 @@ export function makeWorld(opts: WorldOptions = {}) {
   const quoter: QuoteProvider = {
     async quote({ tokenIn, tokenOut, amountIn }) {
       spies.quotes += 1;
-      const pin = prices.get(tokenIn as TokenId);
-      const pout = prices.get(tokenOut as TokenId);
+      const pin = prices.get(tokenIn);
+      const pout = prices.get(tokenOut);
       if (!pin || !pout) return null;
       const value = (valueUsd(amountIn, pin) * BigInt(10_000 - (opts.quoteFeeBps ?? 30))) / 10_000n;
       return { poolId: 7, amountIn, amountOut: (rawForValueUsd(value, pout) * 999n) / 1000n };

@@ -14,6 +14,12 @@ export const runs = pgTable(
     error: text('error'),
     /** JSON-safe portfolio snapshot the agents saw. */
     snapshot: jsonb('snapshot').$type<unknown>(),
+    /** 'simulation' rows come from a mock RPC and never touched a network. */
+    dataSource: text('data_source', { enum: ['chain', 'simulation'] })
+      .notNull()
+      .default('chain'),
+    /** Configured network at the time of the run (null for rows written before migration 0001). */
+    network: text('network', { enum: ['mainnet', 'testnet'] }),
   },
   (t) => [index('runs_started_at_idx').on(t.startedAt)],
 );
@@ -55,6 +61,10 @@ export const proposals = pgTable(
     error: text('error'),
     createdAt: ts('created_at').notNull(),
     updatedAt: ts('updated_at').notNull(),
+    dataSource: text('data_source', { enum: ['chain', 'simulation'] })
+      .notNull()
+      .default('chain'),
+    network: text('network', { enum: ['mainnet', 'testnet'] }),
   },
   (t) => [
     index('proposals_run_idx').on(t.runId),

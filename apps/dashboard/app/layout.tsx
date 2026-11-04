@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ProvenanceBanner } from '../components/ProvenanceBanner';
+import { getPolicy } from '../lib/api';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -9,7 +11,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export const dynamic = 'force-dynamic';
+
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // The banner must render even when the API is down (error pages still need the layout).
+  const policy = await getPolicy().catch(() => null);
   return (
     <html lang="en">
       <body>
@@ -23,6 +29,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/policy">Policy</Link>
           </nav>
         </header>
+        <ProvenanceBanner policy={policy} />
         <main>{children}</main>
       </body>
     </html>

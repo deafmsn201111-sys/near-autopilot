@@ -11,6 +11,7 @@ import {
   sql,
   type Database,
 } from '@near-autopilot/db';
+import type { Provenance } from '@near-autopilot/core';
 import type {
   AuditEvent,
   AutopilotRepository,
@@ -21,7 +22,14 @@ import type {
 
 type ProposalRow = typeof proposals.$inferSelect;
 
-const toRecord = (row: ProposalRow): ProposalRecord => ({
+/** Rows from before migration 0001 have no network; they can only have come from the chain path. */
+const provenanceOf = (row: {
+  dataSource: Provenance['dataSource'];
+  network: Provenance['network'] | null;
+}): Provenance => ({ dataSource: row.dataSource, network: row.network ?? 'mainnet' });
+
+const toRecord = (row: ProposalRow): ProposalRecord & Provenance => ({
+  ...provenanceOf(row),
   id: row.id,
   runId: row.runId,
   accountId: row.accountId,
@@ -42,7 +50,10 @@ const toRecord = (row: ProposalRow): ProposalRecord => ({
 });
 
 export class DrizzleRepository implements AutopilotRepository {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly provenance: Provenance,
+  ) {}
 
   async createRun(run: Pick<RunRecord, 'id' | 'accountId' | 'startedAt'>): Promise<void> {
     await this.db.insert(runs).values({
@@ -50,6 +61,7 @@ export class DrizzleRepository implements AutopilotRepository {
       accountId: run.accountId,
       status: 'running',
       startedAt: run.startedAt,
+      ...this.provenance,
     });
   }
 
@@ -74,7 +86,9 @@ export class DrizzleRepository implements AutopilotRepository {
   }
 
   async insertProposal(p: ProposalRecord): Promise<void> {
-    await this.db.insert(proposals).values({ ...p, violations: [...p.violations] });
+    await this.db
+      .insert(proposals)
+      .values({ ...p, violations: [...p.violations], ...this.provenance });
   }
 
   async updateProposal(id: string, patch: ProposalPatch): Promise<void> {
@@ -125,7 +139,9 @@ export class DrizzleRepository implements AutopilotRepository {
     };
   }
 
-  async listRuns(limit: number): Promise<Array<RunRecord & { proposalCount: number }>> {
+  async listRuns(
+    limit: number,
+  ): Promise<Array<RunRecord & Provenance & { proposalCount: number }>> {
     const rows = await this.db
       .select({
         id: runs.id,
@@ -134,15 +150,20 @@ export class DrizzleRepository implements AutopilotRepository {
         startedAt: runs.startedAt,
         finishedAt: runs.finishedAt,
         error: runs.error,
+        dataSource: runs.dataSource,
+        network: runs.network,
         proposalCount: sql<number>`(select count(*)::int from ${proposals} where ${proposals.runId} = ${runs.id})`,
       })
       .from(runs)
       .orderBy(desc(runs.startedAt))
       .limit(limit);
-    return rows;
+    return rows.map((r) => ({ ...r, ...provenanceOf(r) }));
   }
 
-  async listProposals(options: { limit: number; runId?: string }): Promise<ProposalRecord[]> {
+  async listProposals(options: {
+    limit: number;
+    runId?: string;
+  }): Promise<Array<ProposalRecord & Provenance>> {
     const rows = await this.db
       .select()
       .from(proposals)

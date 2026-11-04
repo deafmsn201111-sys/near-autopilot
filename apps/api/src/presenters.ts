@@ -1,10 +1,12 @@
 import {
   formatMicroUsd,
+  usdToMicro,
   type AssetBalance,
   type PolicyDto,
   type PortfolioDto,
   type PortfolioSnapshot,
   type ProposalDto,
+  type Provenance,
   type RunDto,
 } from '@near-autopilot/core';
 import type { GuardianConfig } from '@near-autopilot/agents';
@@ -18,7 +20,7 @@ import type { ProposalRecord, RunRecord } from './repository';
  * the strict valuation, which fails closed instead.) A lending position that cannot be priced
  * still throws: showing a wrong debt figure would be worse than showing an error.
  */
-export function toPortfolioDto(snapshot: PortfolioSnapshot): PortfolioDto {
+export function toPortfolioDto(snapshot: PortfolioSnapshot, provenance: Provenance): PortfolioDto {
   const valuation = valuePortfolio({
     ...snapshot,
     walletBalances: snapshot.walletBalances.filter((b) => snapshot.prices.has(b.token)),
@@ -33,6 +35,7 @@ export function toPortfolioDto(snapshot: PortfolioSnapshot): PortfolioDto {
       : null,
   });
   return {
+    ...provenance,
     accountId: snapshot.accountId,
     asOf: snapshot.takenAt.toISOString(),
     pricesAsOf: snapshot.pricesAsOf.toISOString(),
@@ -49,8 +52,11 @@ export function toPortfolioDto(snapshot: PortfolioSnapshot): PortfolioDto {
   };
 }
 
-export function toProposalDto(p: ProposalRecord): ProposalDto {
+export function toProposalDto(p: ProposalRecord & Provenance): ProposalDto {
   return {
+    dataSource: p.dataSource,
+    network: p.network,
+    executionMode: p.executionMode,
     id: p.id,
     runId: p.runId,
     agentId: p.agentId,
@@ -66,8 +72,10 @@ export function toProposalDto(p: ProposalRecord): ProposalDto {
   };
 }
 
-export function toRunDto(run: RunRecord & { proposalCount: number }): RunDto {
+export function toRunDto(run: RunRecord & Provenance & { proposalCount: number }): RunDto {
   return {
+    dataSource: run.dataSource,
+    network: run.network,
     id: run.id,
     startedAt: run.startedAt.toISOString(),
     finishedAt: run.finishedAt?.toISOString() ?? null,
@@ -77,19 +85,28 @@ export function toRunDto(run: RunRecord & { proposalCount: number }): RunDto {
   };
 }
 
-const usd2 = (n: number): string => n.toFixed(2).replace(/^(-?\d+)$/, '$1.00');
+/** Exact: config USD -> micro-USD (schema-guaranteed representable) -> decimal string. */
+const usd = (n: number): string => formatMicroUsd(usdToMicro(n));
+
+export interface SystemInfo extends Provenance {
+  readonly executionMode: 'dry-run' | 'live';
+  readonly engine: 'legacy' | 'orchestrator';
+  readonly simulationPortfolio: string | null;
+}
 
 export function toPolicyDto(
   policy: PolicyConfig,
   guardian: GuardianConfig,
-  executionMode: 'dry-run' | 'live',
+  system: SystemInfo,
 ): PolicyDto {
+  const { executionMode, ...rest } = system;
   return {
+    ...rest,
     enabled: policy.enabled,
     executionMode,
-    maxActionUsd: usd2(policy.maxActionUsd),
-    dailyLimitUsd: usd2(policy.dailyLimitUsd),
-    approvalThresholdUsd: usd2(policy.approvalThresholdUsd),
+    maxActionUsd: usd(policy.maxActionUsd),
+    dailyLimitUsd: usd(policy.dailyLimitUsd),
+    approvalThresholdUsd: usd(policy.approvalThresholdUsd),
     maxSlippageBps: policy.maxSlippageBps,
     maxOracleDeviationBps: policy.maxOracleDeviationBps,
     cooldownSeconds: policy.cooldownSeconds,

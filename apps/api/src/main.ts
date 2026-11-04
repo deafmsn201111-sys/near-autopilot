@@ -14,7 +14,8 @@ async function main(): Promise<void> {
 
   const database = createDatabase(env.DATABASE_URL);
   await runMigrations(database.db);
-  const repo = new DrizzleRepository(database.db);
+  const provenance = { dataSource: env.DATA_SOURCE, network: env.NEAR_NETWORK } as const;
+  const repo = new DrizzleRepository(database.db, provenance);
 
   const { cycle, snapshots, policy } = await wire(env, config, repo, logger);
   const app = buildServer(
@@ -23,7 +24,13 @@ async function main(): Promise<void> {
       repo,
       snapshots,
       cycle,
-      policy: toPolicyDto(policy.config, config.guardian, env.EXECUTION_MODE),
+      policy: toPolicyDto(policy.config, config.guardian, {
+        ...provenance,
+        executionMode: env.EXECUTION_MODE,
+        engine: env.AUTOPILOT_ENGINE,
+        simulationPortfolio: env.DATA_SOURCE === 'simulation' ? env.SIMULATION_PORTFOLIO : null,
+      }),
+      provenance,
     },
     { logger: { level: env.LOG_LEVEL } },
   );
@@ -54,6 +61,8 @@ async function main(): Promise<void> {
   logger.info('autopilot api started', {
     mode: env.EXECUTION_MODE,
     network: env.NEAR_NETWORK,
+    dataSource: env.DATA_SOURCE,
+    engine: env.AUTOPILOT_ENGINE,
     account: env.AUTOPILOT_ACCOUNT_ID,
   });
 }

@@ -7,6 +7,7 @@ import {
   type ExecutionResult,
   type Logger,
   type PlanExecutor,
+  type PolicyViolation,
   type PortfolioSnapshot,
 } from '@near-autopilot/core';
 import { sha256Hex } from '@near-autopilot/core/hash';
@@ -71,7 +72,7 @@ export interface PolicyOutcomeSummary {
   readonly intentId: string;
   readonly proposalId: string;
   readonly outcome: string;
-  readonly violations: readonly { rule: string; message: string }[];
+  readonly violations: readonly PolicyViolation[];
 }
 
 export interface CycleReport {
@@ -645,7 +646,11 @@ export class Orchestrator {
         intentId: intent.id,
         proposalId: candidate.proposalId,
         outcome: verdict.outcome,
-        violations: verdict.violations.map((v) => ({ rule: v.rule, message: v.message })),
+        violations: verdict.violations.map((v) => ({
+          rule: v.rule,
+          message: v.message,
+          severity: v.severity,
+        })),
       });
       await this.record(
         'policy.verdict',

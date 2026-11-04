@@ -56,3 +56,48 @@ export function statusTone(status: string): 'good' | 'warn' | 'bad' | 'neutral' 
       return 'neutral';
   }
 }
+
+interface ProvenanceView {
+  readonly dataSource: 'chain' | 'simulation';
+  readonly network: 'mainnet' | 'testnet';
+}
+
+/**
+ * Banner text for where the shown data comes from. Kept as plain text so it reads the same everywhere and can be
+ * tested; the four cases must never be confused with each other.
+ */
+export function provenanceBanner(
+  p: ProvenanceView & { readonly executionMode: 'dry-run' | 'live' },
+): { readonly tone: 'sim' | 'test' | 'main'; readonly text: string } {
+  if (p.dataSource === 'simulation') {
+    return {
+      tone: 'sim',
+      text: 'SIMULATION: synthetic demo portfolio served by a mock RPC. Nothing is read from or sent to NEAR; no result here happened on-chain.',
+    };
+  }
+  const sending =
+    p.executionMode === 'dry-run'
+      ? 'dry-run, nothing is sent'
+      : 'live: approved actions are signed and sent';
+  return p.network === 'testnet'
+    ? { tone: 'test', text: `TESTNET data (test tokens, no real value); ${sending}.` }
+    : { tone: 'main', text: `MAINNET data, read-only (${sending}).` };
+}
+
+/** What a proposal's outcome is evidence of: simulated, planned only, or a real transaction on a named network. */
+export function evidenceLabel(
+  p: ProvenanceView & {
+    readonly status: string;
+    readonly executionMode: 'dry-run' | 'live' | null;
+    readonly txHash: string | null;
+  },
+): string {
+  if (p.dataSource === 'simulation') return 'Simulated: mock data, not sent';
+  if (p.txHash !== null && p.executionMode === 'live') {
+    return p.status === 'executed'
+      ? `On-chain (${p.network}): transaction ${p.txHash} confirmed`
+      : `Sent on ${p.network}, outcome not confirmed: check transaction ${p.txHash}`;
+  }
+  if (p.executionMode === 'dry-run') return `Dry run on ${p.network} data: not sent`;
+  return `Not executed (${p.network} data)`;
+}

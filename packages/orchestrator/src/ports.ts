@@ -5,6 +5,7 @@ import type {
   PlannedTransaction,
   PolicyDecision,
   PortfolioSnapshot,
+  SwapQuoteRequest,
 } from '@near-autopilot/core';
 import type { AgentId } from './proposals';
 import type { ActionStatus, AgentObservation, MarketContext, Mode, RecentAction } from './types';
@@ -36,13 +37,12 @@ export interface MarketProvider {
   get(): Promise<MarketContext | null>;
 }
 
+/** Read-only quoting. Same request shape as core `SwapQuoter`, which satisfies this port structurally. */
 export interface QuoteProvider {
-  /** Read-only. Best executable quote for exactly this amount, or null. */
-  quote(request: {
-    tokenIn: string;
-    tokenOut: string;
-    amountIn: bigint;
-  }): Promise<{ poolId: number; amountIn: bigint; amountOut: bigint } | null>;
+  /** Best executable quote for exactly this amount, or null. */
+  quote(
+    request: SwapQuoteRequest,
+  ): Promise<{ poolId: number; amountIn: bigint; amountOut: bigint } | null>;
 }
 
 /* ------------------------------ authorisation and execution ------------------------------ */

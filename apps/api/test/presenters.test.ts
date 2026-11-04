@@ -33,7 +33,8 @@ const snapshot: PortfolioSnapshot = {
 
 describe('presenters produce payloads that satisfy the shared wire contract', () => {
   it('portfolio', () => {
-    const dto = toPortfolioDto(snapshot);
+    const dto = toPortfolioDto(snapshot, { dataSource: 'simulation', network: 'testnet' });
+    expect(dto).toMatchObject({ dataSource: 'simulation', network: 'testnet' });
     expect(portfolioDtoSchema.parse(dto)).toEqual(dto);
     expect(dto.walletValueUsd).toBe('10.00');
     expect(dto.healthFactor).toBeNull();
@@ -43,6 +44,8 @@ describe('presenters produce payloads that satisfy the shared wire contract', ()
 
   it('proposal and run', () => {
     const proposal = toProposalDto({
+      dataSource: 'chain',
+      network: 'mainnet',
       id: 'p1',
       runId: 'r1',
       accountId: ALICE,
@@ -65,6 +68,8 @@ describe('presenters produce payloads that satisfy the shared wire contract', ()
     expect(
       runDtoSchema.parse(
         toRunDto({
+          dataSource: 'chain',
+          network: 'mainnet',
           id: 'r1',
           accountId: ALICE,
           status: 'completed',
@@ -92,7 +97,13 @@ describe('presenters produce payloads that satisfy the shared wire contract', ()
     const dto = toPolicyDto(
       policy,
       guardianConfigSchema.parse({ triggerHealthFactor: 1.3, targetHealthFactor: 1.6 }),
-      'dry-run',
+      {
+        dataSource: 'chain',
+        network: 'testnet',
+        executionMode: 'dry-run',
+        engine: 'legacy',
+        simulationPortfolio: null,
+      },
     );
     expect(policyDtoSchema.parse(dto)).toEqual(dto);
     expect(dto.maxActionUsd).toBe('100.00');

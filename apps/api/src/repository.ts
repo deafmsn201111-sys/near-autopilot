@@ -1,4 +1,9 @@
-import type { ExecutionMode, PolicyViolation, ProposalStatus } from '@near-autopilot/core';
+import type {
+  ExecutionMode,
+  PolicyViolation,
+  ProposalStatus,
+  Provenance,
+} from '@near-autopilot/core';
 import type { PolicyHistory } from '@near-autopilot/policy-engine';
 
 export interface RunRecord {
@@ -46,7 +51,12 @@ export interface AuditEvent {
   readonly payload: unknown;
 }
 
-/** Persistence port used by the cycle and the HTTP layer. Implemented with Drizzle in `infra/`. */
+/**
+ * Persistence port used by the cycle and the HTTP layer. Implemented with Drizzle in `infra/`.
+ * An implementation is bound to ONE deployment provenance (data source + network) and stamps it on every run and
+ * proposal it writes; reads return what was stored, so rows from different deployments sharing a database keep
+ * their own labels.
+ */
 export interface AutopilotRepository {
   createRun(run: Pick<RunRecord, 'id' | 'accountId' | 'startedAt'>): Promise<void>;
   finishRun(
@@ -63,7 +73,10 @@ export interface AutopilotRepository {
   appendAudit(event: AuditEvent): Promise<void>;
   /** Live, executed proposals only: spend since `since` and the most recent execution time. */
   getExecutionStats(accountId: string, since: Date): Promise<PolicyHistory>;
-  listRuns(limit: number): Promise<Array<RunRecord & { proposalCount: number }>>;
-  listProposals(options: { limit: number; runId?: string }): Promise<ProposalRecord[]>;
+  listRuns(limit: number): Promise<Array<RunRecord & Provenance & { proposalCount: number }>>;
+  listProposals(options: {
+    limit: number;
+    runId?: string;
+  }): Promise<Array<ProposalRecord & Provenance>>;
   ping(): Promise<void>;
 }

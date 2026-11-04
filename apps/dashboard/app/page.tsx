@@ -14,9 +14,11 @@ export default async function PositionPage() {
       <p className="lede">
         <span className="figure">{formatUsd(portfolio.netValueUsd)}</span> net value across wallet
         and Burrow.{' '}
-        {policy.executionMode === 'dry-run'
-          ? 'The autopilot is in dry-run: it plans and checks every action but sends nothing.'
-          : 'The autopilot is live: approved actions are sent on-chain.'}
+        {portfolio.dataSource === 'simulation'
+          ? 'These are SIMULATED demo balances, not an on-chain position.'
+          : policy.executionMode === 'dry-run'
+            ? `The autopilot is in dry-run on ${portfolio.network}: it plans and checks every action but sends nothing.`
+            : `The autopilot is live on ${portfolio.network}: approved actions are sent on-chain.`}
         {!policy.enabled && ' Policy kill switch is ON; every action is blocked.'}
       </p>
 
@@ -40,14 +42,22 @@ export default async function PositionPage() {
         empty="Nothing posted as collateral."
       />
       <HoldingsTable
+        title="Supplied on Burrow (not collateral)"
+        holdings={portfolio.supplied}
+        empty="Nothing supplied outside collateral."
+      />
+      <HoldingsTable
         title="Borrowed on Burrow"
         holdings={portfolio.borrowed}
         empty="No outstanding loans."
       />
 
       <p className="muted small">
-        Prices from the Burrow oracle as of {formatTimestamp(portfolio.pricesAsOf)}. Tokens without
-        an oracle price are listed but not counted in totals.
+        {portfolio.dataSource === 'simulation'
+          ? 'Fixed demo prices'
+          : 'Prices from the Burrow oracle'}{' '}
+        as of {formatTimestamp(portfolio.pricesAsOf)}. Tokens without an oracle price are listed but
+        not counted in totals.
       </p>
     </>
   );

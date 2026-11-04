@@ -45,6 +45,34 @@ describe('loadApiEnv', () => {
     expect(loadApiEnv({ ...valid, EXECUTION_MODE: 'dry-run' }).EXECUTION_MODE).toBe('dry-run');
   });
 
+  it('orchestrator engine and simulation are dry-run only', () => {
+    const testnetLive = {
+      ...valid,
+      NEAR_NETWORK: 'testnet',
+      EXECUTION_MODE: 'live',
+      RHEA_CONTRACT_ID: 'ref-finance-101.testnet',
+      BURROW_CONTRACT_ID: 'contract.1638481328.burrow.testnet',
+      BURROW_ORACLE_ID: 'priceoracle.testnet',
+    };
+    expect(() => loadApiEnv({ ...testnetLive, AUTOPILOT_ENGINE: 'orchestrator' })).toThrow(
+      'dry-run only',
+    );
+    expect(() => loadApiEnv({ ...testnetLive, DATA_SOURCE: 'simulation' })).toThrow(
+      'simulation never executes',
+    );
+    const sim = loadApiEnv({
+      ...valid,
+      DATA_SOURCE: 'simulation',
+      SIMULATION_PORTFOLIO: 'demo-5000',
+    });
+    expect(sim).toMatchObject({
+      DATA_SOURCE: 'simulation',
+      SIMULATION_PORTFOLIO: 'demo-5000',
+      AUTOPILOT_ENGINE: 'legacy',
+      EXECUTION_MODE: 'dry-run',
+    });
+  });
+
   it('treats empty contract ids as unset (compose passes ${VAR:-})', () => {
     const empty = { RHEA_CONTRACT_ID: '', BURROW_CONTRACT_ID: '', BURROW_ORACLE_ID: '' };
     expect(loadApiEnv({ ...valid, ...empty }).BURROW_CONTRACT_ID).toBe('contract.main.burrow.near');

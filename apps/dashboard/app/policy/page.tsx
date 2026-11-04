@@ -6,6 +6,13 @@ export const dynamic = 'force-dynamic';
 export default async function PolicyPage() {
   const p = await getPolicy();
   const rows: Array<[string, string]> = [
+    [
+      'Data source',
+      p.dataSource === 'simulation'
+        ? `Simulation (${p.simulationPortfolio ?? 'demo'}): mock RPC, no network access`
+        : `NEAR ${p.network}`,
+    ],
+    ['Decision engine', p.engine],
     ['Kill switch', p.enabled ? 'Off (autopilot allowed to act)' : 'On (all actions blocked)'],
     ['Execution mode', p.executionMode === 'dry-run' ? 'Dry run: nothing is sent' : 'Live'],
     ['Largest single action', formatUsd(p.maxActionUsd)],

@@ -40,6 +40,9 @@ services:
       EXECUTION_MODE: ${EXECUTION_MODE:-dry-run}
       CYCLE_INTERVAL_SECONDS: ${CYCLE_INTERVAL_SECONDS:-0}
       AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+      AUTOPILOT_ENGINE: ${AUTOPILOT_ENGINE:-legacy}
+      DATA_SOURCE: ${DATA_SOURCE:-chain}
+      SIMULATION_PORTFOLIO: ${SIMULATION_PORTFOLIO:-demo-500}
       # Required on testnet (no built-in defaults); empty means "use the mainnet default" on mainnet.
       RHEA_CONTRACT_ID: ${RHEA_CONTRACT_ID:-}
       BURROW_CONTRACT_ID: ${BURROW_CONTRACT_ID:-}

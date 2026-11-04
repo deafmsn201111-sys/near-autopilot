@@ -12,7 +12,11 @@ import { CycleInProgressError } from '../src/services/cycle';
 import { InMemoryRepository } from './in-memory-repository';
 
 const TOKEN = 't'.repeat(40);
+const provenance = { dataSource: 'chain', network: 'mainnet' } as const;
 const policy: PolicyDto = {
+  ...provenance,
+  engine: 'legacy',
+  simulationPortfolio: null,
   enabled: true,
   executionMode: 'dry-run',
   maxActionUsd: '100.00',
@@ -39,6 +43,7 @@ const make = (cycleError?: Error) => {
     apiToken: TOKEN,
     repo,
     policy,
+    provenance,
     snapshots: {
       take: async () => {
         throw new Error('not needed');

@@ -1,7 +1,7 @@
 import { revalidatePath } from 'next/cache';
 import { StatusLabel } from '../../components/StatusLabel';
 import { ApiError, getProposals, triggerRun } from '../../lib/api';
-import { formatTimestamp, formatUsd } from '../../lib/format';
+import { evidenceLabel, formatTimestamp, formatUsd } from '../../lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +43,7 @@ export default async function ActivityPage() {
                 <span className="feed-value">{formatUsd(p.valueUsd)}</span>
                 <time dateTime={p.createdAt}>{formatTimestamp(p.createdAt)}</time>
               </div>
+              <p className="evidence">{evidenceLabel(p)}</p>
               <p className="feed-summary">{p.summary}</p>
               <p className="muted">
                 {p.agentId}: {p.reason}
@@ -55,7 +56,6 @@ export default async function ActivityPage() {
                 </ul>
               )}
               {p.error && <p className="error-text">{p.error}</p>}
-              {p.txHash && <p className="muted">Transaction {p.txHash}</p>}
             </li>
           ))}
         </ol>

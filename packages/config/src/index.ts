@@ -49,6 +49,17 @@ const apiEnvRaw = z.object({
   /** 0 disables the scheduler; cycles can still be triggered via the API. */
   CYCLE_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(0),
   AUTOPILOT_CONFIG_FILE: z.string().min(1).default('./config/autopilot.json'),
+  /**
+   * `legacy`: packages/agents (health guardian + optional rebalancer) through services/cycle.
+   * `orchestrator`: packages/orchestrator (multi-agent decision engine). Its stores are in-memory, so it is dry-run only.
+   */
+  AUTOPILOT_ENGINE: z.enum(['legacy', 'orchestrator']).default('legacy'),
+  /**
+   * `chain`: read the configured NEAR network. `simulation`: a deterministic demo portfolio, no network access at all;
+   * every result is labelled simulated. Simulation is dry-run only.
+   */
+  DATA_SOURCE: z.enum(['chain', 'simulation']).default('chain'),
+  SIMULATION_PORTFOLIO: z.enum(['demo-500', 'demo-5000']).default('demo-500'),
   RHEA_CONTRACT_ID: optionalAccountId,
   BURROW_CONTRACT_ID: optionalAccountId,
   BURROW_ORACLE_ID: optionalAccountId,
@@ -67,6 +78,9 @@ export interface ApiEnv {
   readonly EXECUTION_MODE: 'dry-run' | 'live';
   readonly CYCLE_INTERVAL_SECONDS: number;
   readonly AUTOPILOT_CONFIG_FILE: string;
+  readonly AUTOPILOT_ENGINE: 'legacy' | 'orchestrator';
+  readonly DATA_SOURCE: 'chain' | 'simulation';
+  readonly SIMULATION_PORTFOLIO: 'demo-500' | 'demo-5000';
   readonly RHEA_CONTRACT_ID: AccountId;
   readonly BURROW_CONTRACT_ID: AccountId;
   readonly BURROW_ORACLE_ID: AccountId;
@@ -80,6 +94,21 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
       path: ['EXECUTION_MODE'],
       message:
         'live execution is refused on mainnet (no mainnet signing keys, ever); use dry-run, or NEAR_NETWORK=testnet',
+    });
+  }
+  if (env.EXECUTION_MODE === 'live' && env.AUTOPILOT_ENGINE === 'orchestrator') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AUTOPILOT_ENGINE'],
+      message:
+        'the orchestrator engine keeps its audit/idempotency state in memory and is dry-run only',
+    });
+  }
+  if (env.EXECUTION_MODE === 'live' && env.DATA_SOURCE === 'simulation') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['DATA_SOURCE'],
+      message: 'simulation never executes: use EXECUTION_MODE=dry-run',
     });
   }
   // Protocol contract ids differ per network; only mainnet has safe built-in defaults.
@@ -116,6 +145,9 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     EXECUTION_MODE: env.EXECUTION_MODE,
     CYCLE_INTERVAL_SECONDS: env.CYCLE_INTERVAL_SECONDS,
     AUTOPILOT_CONFIG_FILE: env.AUTOPILOT_CONFIG_FILE,
+    AUTOPILOT_ENGINE: env.AUTOPILOT_ENGINE,
+    DATA_SOURCE: env.DATA_SOURCE,
+    SIMULATION_PORTFOLIO: env.SIMULATION_PORTFOLIO,
     RHEA_CONTRACT_ID: pick('RHEA_CONTRACT_ID'),
     BURROW_CONTRACT_ID: pick('BURROW_CONTRACT_ID'),
     BURROW_ORACLE_ID: pick('BURROW_ORACLE_ID'),

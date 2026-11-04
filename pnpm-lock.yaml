@@ -62,6 +62,9 @@ importers:
       '@near-autopilot/near-adapter':
         specifier: workspace:*
         version: link:../../packages/near-adapter
+      '@near-autopilot/orchestrator':
+        specifier: workspace:*
+        version: link:../../packages/orchestrator
       '@near-autopilot/policy-engine':
         specifier: workspace:*
         version: link:../../packages/policy-engine

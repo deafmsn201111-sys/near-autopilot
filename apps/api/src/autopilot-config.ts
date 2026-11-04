@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { accountIdSchema, type AccountId } from '@near-autopilot/core';
 import { guardianConfigSchema, rebalancerConfigSchema } from '@near-autopilot/agents';
+import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import { policyConfigSchema } from '@near-autopilot/policy-engine';
 import { z } from 'zod';
 
@@ -27,6 +28,8 @@ export const autopilotConfigSchema = z
       })
       .strict()
       .default({ pools: [] }),
+    /** Used only when AUTOPILOT_ENGINE=orchestrator; every field has a conservative default. */
+    orchestrator: orchestratorConfigSchema.optional(),
   })
   .strict();
 

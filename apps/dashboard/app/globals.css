@@ -270,3 +270,31 @@ button:hover {
     animation: none !important;
   }
 }
+
+/* Data provenance banner: simulated, testnet and mainnet must look different at a glance. */
+.provenance {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0.6rem 1.25rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--rule);
+}
+.provenance-sim {
+  background: #fff3cd;
+  color: #664d03;
+}
+.provenance-test {
+  background: #e7f1ff;
+  color: #084298;
+}
+.provenance-main {
+  background: #f8d7da;
+  color: #842029;
+}
+.provenance-unknown {
+  color: var(--muted);
+}
+.evidence {
+  font-size: 0.85rem;
+  font-weight: 600;
+}

@@ -1,3 +1,4 @@
+import type { Provenance } from '@near-autopilot/core';
 import type { PolicyHistory } from '@near-autopilot/policy-engine';
 import type {
   AuditEvent,
@@ -9,6 +10,8 @@ import type {
 
 /** Test-only AutopilotRepository. Mirrors the semantics the Drizzle implementation guarantees. */
 export class InMemoryRepository implements AutopilotRepository {
+  constructor(readonly provenance: Provenance = { dataSource: 'chain', network: 'mainnet' }) {}
+
   readonly runs = new Map<string, RunRecord>();
   readonly proposals = new Map<string, ProposalRecord>();
   readonly audit: AuditEvent[] = [];
@@ -56,16 +59,23 @@ export class InMemoryRepository implements AutopilotRepository {
   async getExecutionStats(): Promise<PolicyHistory> {
     return this.executionHistory;
   }
-  async listRuns(limit: number): Promise<Array<RunRecord & { proposalCount: number }>> {
+  async listRuns(
+    limit: number,
+  ): Promise<Array<RunRecord & Provenance & { proposalCount: number }>> {
     return [...this.runs.values()].slice(0, limit).map((r) => ({
       ...r,
+      ...this.provenance,
       proposalCount: [...this.proposals.values()].filter((p) => p.runId === r.id).length,
     }));
   }
-  async listProposals(options: { limit: number; runId?: string }): Promise<ProposalRecord[]> {
+  async listProposals(options: {
+    limit: number;
+    runId?: string;
+  }): Promise<Array<ProposalRecord & Provenance>> {
     return [...this.proposals.values()]
       .filter((p) => options.runId === undefined || p.runId === options.runId)
-      .slice(0, options.limit);
+      .slice(0, options.limit)
+      .map((p) => ({ ...p, ...this.provenance }));
   }
   async ping(): Promise<void> {}
 }

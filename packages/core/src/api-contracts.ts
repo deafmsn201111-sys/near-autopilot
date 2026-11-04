@@ -7,6 +7,22 @@ import { z } from 'zod';
 const usdString = z.string().regex(/^-?\d+\.\d{2,6}$/);
 const rawString = z.string().regex(/^\d+$/);
 
+/**
+ * Where a value came from. `chain`: read from the NEAR network named in `network`. `simulation`: a deterministic demo
+ * portfolio served by an in-process mock RPC; nothing was read from or sent to any network. Every DTO that shows
+ * portfolio or pipeline data carries both, so a consumer can never mistake simulated or testnet data for mainnet.
+ */
+export const dataSourceSchema = z.enum(['chain', 'simulation']);
+export type DataSource = z.infer<typeof dataSourceSchema>;
+const provenance = {
+  dataSource: dataSourceSchema,
+  network: z.enum(['mainnet', 'testnet']),
+};
+export interface Provenance {
+  readonly dataSource: DataSource;
+  readonly network: 'mainnet' | 'testnet';
+}
+
 export const holdingDtoSchema = z.object({
   token: z.string(),
   symbol: z.string(),
@@ -16,6 +32,7 @@ export const holdingDtoSchema = z.object({
 });
 
 export const portfolioDtoSchema = z.object({
+  ...provenance,
   accountId: z.string(),
   asOf: z.string(),
   pricesAsOf: z.string(),
@@ -46,6 +63,9 @@ export const proposalStatusSchema = z.enum([
 export type ProposalStatus = z.infer<typeof proposalStatusSchema>;
 
 export const proposalDtoSchema = z.object({
+  ...provenance,
+  /** `dry-run`: planned and policy-checked, never sent. `live`: signed and sent. null: never reached execution. */
+  executionMode: z.enum(['dry-run', 'live']).nullable(),
   id: z.string(),
   runId: z.string(),
   agentId: z.string(),
@@ -62,6 +82,7 @@ export const proposalDtoSchema = z.object({
 export type ProposalDto = z.infer<typeof proposalDtoSchema>;
 
 export const runDtoSchema = z.object({
+  ...provenance,
   id: z.string(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
@@ -72,6 +93,11 @@ export const runDtoSchema = z.object({
 export type RunDto = z.infer<typeof runDtoSchema>;
 
 export const policyDtoSchema = z.object({
+  ...provenance,
+  /** Which decision pipeline runs: packages/agents (`legacy`) or packages/orchestrator. */
+  engine: z.enum(['legacy', 'orchestrator']),
+  /** Demo portfolio id when dataSource is `simulation`, else null. */
+  simulationPortfolio: z.string().nullable(),
   enabled: z.boolean(),
   executionMode: z.enum(['dry-run', 'live']),
   maxActionUsd: usdString,
