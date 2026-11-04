@@ -136,7 +136,7 @@ describe('TransactionExecutor', () => {
   it('keeps the signed hash when the broadcast errors (the transaction may still land)', async () => {
     const { executor } = build(new Error('network down'));
     const result = await executor.execute(approve());
-    expect(result).toMatchObject({ status: 'failed', txHash: 'hash-7' });
+    expect(result).toMatchObject({ status: 'unknown', mode: 'live', txHash: 'hash-7' });
     expect(result.error).toContain('outcome unknown, reconcile hash-7 on-chain: network down');
   });
 

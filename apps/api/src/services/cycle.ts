@@ -213,6 +213,8 @@ export class AutopilotCycle {
     });
 
     const result = await executor.execute(approved);
+    // `unknown` (signed, broadcast errored) is stored as `failed` WITH its tx hash: execution stats count such rows
+    // against limits and cooldown, the cycle stops, and the error text says to reconcile it on-chain.
     const status: ProposalRecord['status'] =
       result.status === 'success' ? 'executed' : result.status === 'dry_run' ? 'dry_run' : 'failed';
     const patch = {

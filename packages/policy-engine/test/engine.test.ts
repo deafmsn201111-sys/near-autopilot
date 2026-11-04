@@ -191,6 +191,18 @@ describe('PolicyEngine.evaluate', () => {
   });
 });
 
+describe('oracle deviation fails closed', () => {
+  it('rejects (instead of throwing) a swap whose input value rounds to zero', () => {
+    const { engine } = makeEngine();
+    const dust = swapIntent({ amountIn: 1n, quotedAmountOut: 1n, minAmountOut: 1n });
+    const decision = engine.evaluate(input(dust));
+    expect(decision.outcome).toBe('reject');
+    expect(decision.violations.map((v) => v.message).join(' ')).toContain(
+      'Cannot measure oracle deviation',
+    );
+  });
+});
+
 describe('Burrow message must match the intent exactly', () => {
   const withMsg = (plan: PlannedTransaction, msg: string): PlannedTransaction => ({
     ...plan,

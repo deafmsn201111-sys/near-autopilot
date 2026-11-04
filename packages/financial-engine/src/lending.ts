@@ -42,7 +42,9 @@ export function lendingTotals(
     const r = riskOf(risk, b.token);
     if (r.borrowFactorBps <= 0) throw new RangeError(`Borrow factor for ${b.token} must be > 0`);
     const value = tokenValueUsd(prices, b.token, b.raw);
-    adjustedBorrowedUsd += (value * BPS) / BigInt(r.borrowFactorBps);
+    // Round debt UP (as Burrow does): flooring would overstate the health factor near the threshold.
+    const factor = BigInt(r.borrowFactorBps);
+    adjustedBorrowedUsd += (value * BPS + factor - 1n) / factor;
   }
   return {
     suppliedUsd: sumValueUsd(position.supplied, prices),
@@ -53,7 +55,21 @@ export function lendingTotals(
   };
 }
 
-/** adjusted collateral ÷ adjusted debt; null when there is no debt. Liquidation occurs below 1.0. */
+/**
+ * Exact health factor in basis points (10_000 = 1.0), rounded DOWN; null when there is no debt. Use this for
+ * decisions: it never reports a position healthier than it is.
+ */
+export function healthFactorBps(
+  totals: Pick<LendingTotals, 'adjustedCollateralUsd' | 'adjustedBorrowedUsd'>,
+): bigint | null {
+  if (totals.adjustedBorrowedUsd === 0n) return null;
+  return (totals.adjustedCollateralUsd * BPS) / totals.adjustedBorrowedUsd;
+}
+
+/**
+ * adjusted collateral ÷ adjusted debt as a number, for DISPLAY only (6 decimals, truncated); null when there is no
+ * debt. Liquidation occurs below 1.0. Decisions must use `healthFactorBps`.
+ */
 export function healthFactor(
   totals: Pick<LendingTotals, 'adjustedCollateralUsd' | 'adjustedBorrowedUsd'>,
 ): number | null {

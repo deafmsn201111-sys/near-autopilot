@@ -54,7 +54,12 @@ export type ApprovedPlan = Brand<
   'ApprovedPlan'
 >;
 
-export type ExecutionStatus = 'success' | 'failed' | 'dry_run' | 'rejected';
+/**
+ * `unknown`: the transaction was signed and handed to the network but the result could not be established (e.g. the
+ * broadcast call errored). It may or may not have landed; `txHash` identifies it for reconciliation. Callers must
+ * treat it as possibly executed: stop, count it against limits, and never retry automatically.
+ */
+export type ExecutionStatus = 'success' | 'failed' | 'dry_run' | 'rejected' | 'unknown';
 export type ExecutionMode = 'dry-run' | 'live';
 
 export interface ExecutionResult {

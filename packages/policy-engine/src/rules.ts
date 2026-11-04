@@ -307,6 +307,10 @@ export const oracleDeviation: Rule = ({ intent, snapshot, config }) => {
   } catch (error) {
     if (error instanceof MissingPriceError)
       return [reject('price_missing', `No oracle price for ${error.token}`)];
+    // e.g. an input worth < 1 micro-USD: the deviation cannot be measured, so the trade cannot be vetted.
+    // A rule must fail closed with a violation, never throw and abort the evaluation of every other rule.
+    if (error instanceof RangeError)
+      return [reject('oracle_deviation', `Cannot measure oracle deviation: ${error.message}`)];
     throw error;
   }
 };

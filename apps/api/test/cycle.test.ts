@@ -218,6 +218,17 @@ describe('AutopilotCycle', () => {
     expect(proposals[0]).toMatchObject({ status: 'failed', error: 'receipt failed' });
   });
 
+  it('stores an unknown broadcast outcome as failed WITH its hash, so limits count it', async () => {
+    const { cycle } = build({
+      mode: 'live',
+      result: { status: 'unknown', mode: 'live', txHash: 'TX3', error: 'outcome unknown' },
+    });
+    const { run, proposals } = await cycle.run();
+    expect(run.status).toBe('completed');
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0]).toMatchObject({ status: 'failed', txHash: 'TX3', executionMode: 'live' });
+  });
+
   it('never executes when policy rejects, and keeps the reasons', async () => {
     const { cycle, executor } = build({ policyOverrides: { enabled: false } });
     const { proposals } = await cycle.run();

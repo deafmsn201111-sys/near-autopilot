@@ -152,6 +152,34 @@ describe('HealthGuardianAgent', () => {
   });
 });
 
+describe('HealthGuardianAgent: exact threshold arithmetic', () => {
+  // 100 NEAR @ $5 x 0.70 = $350 adjusted collateral; 225 USDt / 0.90 = $250 adjusted debt; HF = 1.4 exactly.
+  const atOnePointFour = snapshot({
+    lending: lending(100, 225),
+    walletBalances: [{ token: USDT, raw: usdt(500) }],
+  });
+  const guardian = (trigger: number) =>
+    new HealthGuardianAgent(
+      guardianConfigSchema.parse({ triggerHealthFactor: trigger, targetHealthFactor: 1.6 }),
+    );
+
+  it('does not act when the health factor equals the trigger', async () => {
+    expect(await guardian(1.4).evaluate(ctx(atOnePointFour))).toEqual([]);
+  });
+
+  it('acts one basis point above it', async () => {
+    const intents = await guardian(1.4001).evaluate(ctx(atOnePointFour));
+    expect(intents).toHaveLength(1);
+    expect(intents[0]?.reason).toContain('health factor 1.4000 < trigger 1.4001');
+  });
+
+  it('rejects thresholds finer than a basis point instead of rounding them', () => {
+    expect(() =>
+      guardianConfigSchema.parse({ triggerHealthFactor: 1.00005, targetHealthFactor: 1.6 }),
+    ).toThrow('4 decimal places');
+  });
+});
+
 describe('RebalancerAgent', () => {
   const config = rebalancerConfigSchema.parse({
     enabled: true,

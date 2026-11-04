@@ -87,13 +87,18 @@ export class TransactionExecutor implements PlanExecutor {
         txHash: signedHash,
         error: errorMessage(error),
       });
-      // A signed transaction whose broadcast errored may still land: keep its hash so the caller stops the
-      // cycle, counts it against limits and cooldown, and an operator can reconcile it on-chain.
-      const error_ =
-        signedHash === null
-          ? errorMessage(error)
-          : `outcome unknown, reconcile ${signedHash} on-chain: ${errorMessage(error)}`;
-      return { status: 'failed', mode: 'live', txHash: signedHash, error: error_ };
+      // Failed before signing: nothing can have reached the network.
+      if (signedHash === null) {
+        return { status: 'failed', mode: 'live', txHash: null, error: errorMessage(error) };
+      }
+      // Signed and handed to the broadcaster, which errored: the transaction may still land. Keep its hash so the
+      // caller stops, counts it against limits and cooldown, and an operator can reconcile it on-chain.
+      return {
+        status: 'unknown',
+        mode: 'live',
+        txHash: signedHash,
+        error: `outcome unknown, reconcile ${signedHash} on-chain: ${errorMessage(error)}`,
+      };
     }
   }
 }

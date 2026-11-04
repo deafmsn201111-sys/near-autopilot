@@ -1,4 +1,6 @@
 import {
+  decimalToScaled,
+  hasAtMostDecimals,
   MissingPriceError,
   type ActionIntent,
   type Agent,
@@ -6,7 +8,7 @@ import {
 } from '@near-autopilot/core';
 import {
   collateralValueForTargetHealthFactor,
-  healthFactor,
+  healthFactorBps,
   lendingTotals,
   priceOf,
   rawForValueUsd,
@@ -15,13 +17,22 @@ import {
 } from '@near-autopilot/financial-engine';
 import { z } from 'zod';
 
+/** Health factors are compared in basis points, so config values must have at most 4 decimals (1.3, 1.6125). */
+const healthFactorValue = z
+  .number()
+  .gt(1)
+  .max(100)
+  .refine((v) => hasAtMostDecimals(v, 4), {
+    message: 'must have at most 4 decimal places (basis-point precision)',
+  });
+
 export const guardianConfigSchema = z
   .object({
     enabled: z.boolean().default(true),
     /** Act when the health factor falls below this. */
-    triggerHealthFactor: z.number().gt(1),
+    triggerHealthFactor: healthFactorValue,
     /** Size the action to restore this health factor. */
-    targetHealthFactor: z.number().gt(1),
+    targetHealthFactor: healthFactorValue,
   })
   .strict()
   .refine((c) => c.targetHealthFactor > c.triggerHealthFactor, {
@@ -37,7 +48,13 @@ export type GuardianConfig = z.output<typeof guardianConfigSchema>;
 export class HealthGuardianAgent implements Agent {
   readonly id = 'health-guardian';
 
-  constructor(private readonly config: GuardianConfig) {}
+  private readonly triggerBps: bigint;
+  private readonly targetBps: number;
+
+  constructor(private readonly config: GuardianConfig) {
+    this.triggerBps = decimalToScaled(config.triggerHealthFactor, 4);
+    this.targetBps = Number(decimalToScaled(config.targetHealthFactor, 4));
+  }
 
   async evaluate(context: AgentContext): Promise<readonly ActionIntent[]> {
     const { snapshot } = context;
@@ -46,11 +63,11 @@ export class HealthGuardianAgent implements Agent {
 
     try {
       const totals = lendingTotals(snapshot.lending, snapshot.prices, snapshot.risk);
-      const hf = healthFactor(totals);
-      if (hf === null || hf >= this.config.triggerHealthFactor) return [];
+      const hfBps = healthFactorBps(totals);
+      if (hfBps === null || hfBps >= this.triggerBps) return [];
 
-      const targetBps = Math.round(this.config.targetHealthFactor * 10_000);
-      const reason = `health factor ${hf.toFixed(3)} < trigger ${this.config.triggerHealthFactor}; restoring to ${this.config.targetHealthFactor}`;
+      const targetBps = this.targetBps;
+      const reason = `health factor ${formatBps(hfBps)} < trigger ${this.config.triggerHealthFactor}; restoring to ${this.config.targetHealthFactor}`;
       const wallet = new Map(snapshot.walletBalances.map((b) => [b.token, b.raw]));
 
       // 1. Repay: largest debts first.
@@ -130,4 +147,9 @@ export class HealthGuardianAgent implements Agent {
       throw error;
     }
   }
+}
+
+/** 13_000n -> "1.3000" (exact, no float). */
+function formatBps(bps: bigint): string {
+  return `${bps / 10_000n}.${(bps % 10_000n).toString().padStart(4, '0')}`;
 }

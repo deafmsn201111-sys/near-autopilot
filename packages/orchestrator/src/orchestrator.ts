@@ -751,9 +751,10 @@ export class Orchestrator {
         thrown = errorMessage(error);
       }
 
-      // A live attempt that failed without a transaction hash may or may not have reached the network.
+      // Explicitly unknown, or a live failure without a transaction hash: it may or may not have reached the network.
       const inDoubt =
         thrown !== null ||
+        result?.status === 'unknown' ||
         (result !== null &&
           result.mode === 'live' &&
           result.status === 'failed' &&

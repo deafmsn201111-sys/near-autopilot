@@ -1,10 +1,16 @@
-import { accountIdSchema } from '@near-autopilot/core';
+import { accountIdSchema, hasAtMostDecimals } from '@near-autopilot/core';
 import { z } from 'zod';
 
 const yocto = z
   .string()
   .regex(/^\d+$/)
   .transform((v) => BigInt(v));
+
+/** USD limits are enforced in micro-USD, so a config value must convert to it exactly (no silent rounding). */
+const usdAmount = (base: z.ZodNumber) =>
+  base.max(1_000_000_000).refine((v) => hasAtMostDecimals(v, 6), {
+    message: 'must have at most 6 decimal places (micro-USD precision)',
+  });
 
 /** 0.05 NEAR kept free for gas. */
 const DEFAULT_NATIVE_RESERVE = '50000000000000000000000';
@@ -22,10 +28,10 @@ export const policyConfigSchema = z
     allowedTokens: z.array(accountIdSchema).min(1),
     allowedMethods: z.array(z.string().min(1)).min(1).default(['ft_transfer_call']),
     maxDepositYocto: yocto.default('1'),
-    maxActionUsd: z.number().positive(),
-    dailyLimitUsd: z.number().positive(),
+    maxActionUsd: usdAmount(z.number().positive()),
+    dailyLimitUsd: usdAmount(z.number().positive()),
     /** Actions above this value are held for a human instead of executing. */
-    approvalThresholdUsd: z.number().nonnegative(),
+    approvalThresholdUsd: usdAmount(z.number().nonnegative()),
     maxSlippageBps: z.number().int().min(0).max(1_000),
     /** Max shortfall of a quote versus the oracle-implied output. */
     maxOracleDeviationBps: z.number().int().min(0).max(2_000),
