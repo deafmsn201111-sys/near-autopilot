@@ -83,6 +83,30 @@ Use it with `config/autopilot.testnet.example.json` and `NEAR_NETWORK=testnet` (
 `AUTOPILOT_ENGINE=orchestrator` runs the multi-agent orchestrator instead of the legacy guardian; both are covered by
 `apps/api/test/simulation.test.ts`.
 
+### Local Docker demo (simulation, orchestrator, dry-run)
+
+Everything in containers, bound to `127.0.0.1` only. `.env` and `config/autopilot.json` are git-ignored; generate
+fresh secrets rather than reusing the example values.
+
+```bash
+cp .env.example .env    # then set: API_TOKEN / POSTGRES_PASSWORD (openssl rand -hex 32), DATABASE_URL to match,
+                        # DATA_SOURCE=simulation, AUTOPILOT_ENGINE=orchestrator, EXECUTION_MODE=dry-run,
+                        # AUTOPILOT_ACCOUNT_ID=<any valid *.testnet id>; DASHBOARD_PORT etc. if a port is taken
+cp config/autopilot.testnet.example.json config/autopilot.json   # set policy.signerAccountId = AUTOPILOT_ACCOUNT_ID
+docker compose up -d --build        # postgres -> api (runs migrations) -> dashboard; all three have health checks
+docker compose ps                   # wait for (healthy)
+docker compose logs -f api          # structured JSON logs
+docker compose stop                 # stop, keep data   |   docker compose start   # resume
+```
+
+The `pgdata` volume survives `stop`, `down` and reboots (`restart: unless-stopped` brings the stack back when Docker
+Desktop starts). `docker compose down -v` deletes the database: don't, unless you mean it. Switch portfolio with
+`SIMULATION_PORTFOLIO=demo-5000` in `.env` and `docker compose up -d api`.
+
+In this mode the three market-dependent agents (market intelligence, LP optimizer, capital allocator) report
+`no_action / insufficient_data` every cycle because no market-data source is integrated; only the liquidation
+guardian acts. Each run's `snapshot.agents` records what every agent returned.
+
 ### Configuring the autopilot
 
 `config/autopilot.json` (validated at startup, unknown keys rejected) holds:
@@ -104,16 +128,17 @@ reason, never the value). See `.env.example` for the full list. On testnet you m
 
 ## Scripts
 
-| Command                 | Purpose                                                    |
-| ----------------------- | ---------------------------------------------------------- |
-| `pnpm dev`              | API + dashboard in watch mode                              |
-| `pnpm verify`           | format check, lint, typecheck, tests (what CI runs)        |
-| `pnpm test`             | Vitest across all packages (via Turborepo)                 |
-| `pnpm typecheck`        | `tsc` in strict mode across all packages                   |
-| `pnpm lint`             | ESLint + dependency boundary check                         |
-| `pnpm check:boundaries` | Standalone layer check                                     |
-| `pnpm db:generate`      | Generate a new Drizzle migration after editing `schema.ts` |
-| `pnpm db:migrate`       | Apply migrations manually                                  |
+| Command                                     | Purpose                                                                                                          |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`                                  | API + dashboard in watch mode                                                                                    |
+| `pnpm verify`                               | format check, lint, typecheck, tests (what CI runs)                                                              |
+| `pnpm test`                                 | Vitest across all packages (via Turborepo)                                                                       |
+| `pnpm typecheck`                            | `tsc` in strict mode across all packages                                                                         |
+| `pnpm lint`                                 | ESLint + dependency boundary check                                                                               |
+| `pnpm check:boundaries`                     | Standalone layer check                                                                                           |
+| `pnpm db:generate`                          | Generate a new Drizzle migration after editing `schema.ts`                                                       |
+| `pnpm db:migrate`                           | Apply migrations manually                                                                                        |
+| `pnpm --filter @near-autopilot/api test:db` | Migrations + repository on real Postgres (`DATABASE_TEST_URL`, CREATEDB rights; uses its own throwaway database) |
 
 ## HTTP API
 

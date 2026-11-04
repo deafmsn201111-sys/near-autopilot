@@ -43,12 +43,15 @@ Use a dedicated account holding only what the autopilot should be allowed to mov
 Checked from this repository with view calls only (`status`, `view_code`, `call_function`) against
 `https://rpc.testnet.near.org`; no keys, no transactions:
 
-| Component                                   | Result                                                                                                                                                    |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Burrow `contract.1638481328.burrow.testnet` | Passes `BurrowVerifier` (chain id, exports, oracle identity); 9 assets parse; a registered account with debt parses with the current `get_account` schema |
-| Oracle `priceoracle.testnet`                | Named by Burrow `get_config`; exports verified; **returned no fresh price for any listed asset**, so no testnet decision can currently be priced          |
-| Rhea v1 `ref-finance-101.testnet`           | Has code; `get_pool` and `get_return` answer (2894 pools)                                                                                                 |
-| Rhea DCL `dclv2.ref-dev.testnet`            | Exports every source-verified method; `list_pools` needs paging (unpaged it exceeds view gas); quotes and market depth parse                              |
+| Component                                                         | Result                                                                                                                                                    |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Burrow `contract.1638481328.burrow.testnet`                       | Passes `BurrowVerifier` (chain id, exports, oracle identity); 9 assets parse; a registered account with debt parses with the current `get_account` schema |
+| Oracle `priceoracle.testnet`                                      | Named by Burrow `get_config`; exports verified; **returned no fresh price for any listed asset**, so no testnet decision can currently be priced          |
+| Rhea v1 `ref-finance-101.testnet`                                 | Has code; `get_pool` and `get_return` answer (2894 pools)                                                                                                 |
+| Rhea DCL `dclv2.ref-dev.testnet`                                  | Exports every source-verified method; `list_pools` needs paging (unpaged it exceeds view gas); quotes and market depth parse                              |
+| Tokens `wrap.testnet`, `usdt.fakes.testnet`, `usdc.fakes.testnet` | Code deployed; `ft_metadata`: wNEAR/24, USDT.e/6, USDC.e/6; export the methods the planners call                                                          |
+| Rhea v1 pool prices                                               | Pools pairing wNEAR with the fake stables exist (e.g. #34, #54) but are not price-meaningful (1 wNEAR quotes ~2.2e22 raw USDT.e): keep `rhea.pools` empty |
+| Pipeline, `DATA_SOURCE=chain`, dry-run                            | With an unregistered account the legacy cycle fails closed (`UNKNOWN_ACCOUNT`) and the orchestrator records `SNAPSHOT_UNAVAILABLE` and does nothing       |
 
 Not verified: any transaction (no signer is shipped), the mainnet Burrow `get_account` shape, the mainnet oracle
 id. The public RPC rate-limits (HTTP 429) under the live suites; rerun or use a dedicated endpoint.
