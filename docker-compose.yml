@@ -133,5 +133,66 @@ services:
     ports:
       - '127.0.0.1:${TESTNET_DASHBOARD_PORT:-3002}:3000'
 
+  # ---- Read-only MAINNET shadow analysis: `docker compose --profile shadow up -d` ----
+  # A SIMULATED demo portfolio (mock RPC) analysed with REAL mainnet prices, Burrow rates and rewards, Rhea pools and
+  # quotes, read with view calls only through MAINNET_READ_RPC_URL. Network, data source and execution mode are fixed:
+  # there is no signer, the executor is dry-run, and nothing is ever sent to any network.
+  api-shadow:
+    profiles: [shadow]
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
+      NEAR_NETWORK: mainnet
+      DATA_SOURCE: simulation
+      EXECUTION_MODE: dry-run
+      SIMULATION_PORTFOLIO: ${SHADOW_PORTFOLIO:-demo-500}
+      # Served by the in-process mock in simulation; never contacted.
+      NEAR_RPC_URL: https://rpc.mainnet.near.org
+      AUTOPILOT_ACCOUNT_ID: shadow-demo.near
+      AUTOPILOT_ENGINE: orchestrator
+      CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-0}
+      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+      MARKET_DATA: mainnet-live
+      YIELD_DATA: mainnet-onchain
+      RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
+      # Read-only mainnet RPC (view calls only). The FastNEAR key is shared with the testnet profile by default.
+      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
+      PYTH_API_KEY: ${PYTH_API_KEY:-}
+      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+      DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
+    volumes:
+      - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
+    ports:
+      - '127.0.0.1:${SHADOW_API_HOST_PORT:-4002}:4000'
+
+  dashboard-shadow:
+    profiles: [shadow]
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api-shadow:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api-shadow:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+    ports:
+      - '127.0.0.1:${SHADOW_DASHBOARD_PORT:-3003}:3000'
+
 volumes:
   pgdata:

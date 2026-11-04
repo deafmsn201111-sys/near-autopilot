@@ -32,9 +32,18 @@ export default async function MarketPage() {
     <>
       <h1>Market data</h1>
       <p className="provenance provenance-test" role="status">
-        {market.flow}. Prices are read from MAINNET sources and applied to{' '}
-        {market.executionNetwork.toUpperCase()} test tokens as REFERENCE prices: they do not confirm
-        any value, liquidity or redeemability of the test tokens.
+        {market.executionNetwork === 'none' ? (
+          <>
+            {market.flow}. Real MAINNET prices of the mainnet tokens themselves, applied to a
+            SIMULATED demo portfolio for analysis. Nothing is executed anywhere.
+          </>
+        ) : (
+          <>
+            {market.flow}. Prices are read from MAINNET sources and applied to{' '}
+            {market.executionNetwork.toUpperCase()} test tokens as REFERENCE prices: they do not
+            confirm any value, liquidity or redeemability of the test tokens.
+          </>
+        )}
       </p>
       {market.error && (
         <p className="provenance provenance-unknown" role="alert">

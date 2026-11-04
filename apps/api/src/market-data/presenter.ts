@@ -1,6 +1,6 @@
 import type { MarketDataDto } from '@near-autopilot/core';
 import { formatDecimal } from './decimal';
-import { DATA_FLOW_LABEL, type MarketDataProvider } from './model';
+import { DATA_FLOW_LABEL, SHADOW_FLOW_LABEL, type MarketDataProvider } from './model';
 import { observationJson } from './store';
 
 const disabledView = (executionNetwork: 'mainnet' | 'testnet'): MarketDataDto => ({
@@ -26,7 +26,7 @@ export function marketDataView(
         const r = await market.report();
         return {
           enabled: true,
-          flow: DATA_FLOW_LABEL,
+          flow: r.executionNetwork === 'none' ? SHADOW_FLOW_LABEL : DATA_FLOW_LABEL,
           marketNetwork: r.marketNetwork,
           executionNetwork: r.executionNetwork,
           fetchedAt: r.fetchedAt.toISOString(),

@@ -45,6 +45,28 @@ export const assetDetailedObjectSchema = z
     borrow_apr: decimalText.optional(),
     /** Nanoseconds; when the asset's interest was last accrued (S: asset.rs `last_update_timestamp`). */
     last_update_timestamp: z.union([z.string().regex(/^\d+$/), int.nonnegative()]).optional(),
+    /**
+     * S: asset_view.rs `AssetFarmView`: `farm_id` is {"Supplied": token} | {"Borrowed": token} | "NetTvl"; `rewards`
+     * maps a reward token to `AssetFarmReward` (reward_per_day, remaining_rewards, boosted_shares: u128 strings).
+     */
+    farms: z
+      .array(
+        z
+          .object({
+            farm_id: z.union([z.string(), z.record(z.string())]),
+            rewards: z.record(
+              z
+                .object({
+                  reward_per_day: u128StringSchema,
+                  remaining_rewards: u128StringSchema,
+                  boosted_shares: u128StringSchema,
+                })
+                .passthrough(),
+            ),
+          })
+          .passthrough(),
+      )
+      .optional(),
   })
   .passthrough();
 export const assetDetailedSchema = assetDetailedObjectSchema.nullable();

@@ -102,4 +102,64 @@ export const REFERENCE_ASSETS: readonly ReferenceAsset[] = [
 ];
 
 export const referenceAssetFor = (token: string): ReferenceAsset | undefined =>
-  REFERENCE_ASSETS.find((a) => a.testnetToken === token);
+  REFERENCE_ASSETS.find((a) => a.testnetToken === token) ??
+  MAINNET_ASSETS.find((a) => a.testnetToken === token);
+
+/**
+ * MAINNET tokens priced as themselves, for the read-only shadow analysis (DATA_SOURCE=simulation with
+ * MARKET_DATA=mainnet-live): the demo portfolio holds these ids, nothing is executed. `testnetToken` here is simply the
+ * token the price is applied to (the mainnet token); decimals are re-read from mainnet ft_metadata at run time.
+ * Checked on 2026-11-05: ft_metadata (wNEAR 24, USDt 6, USDC 6), DefiLlama keys (coingecko:* confidence 0.999; the
+ * near:<contract> keys report confidence 0.7 and are rejected as low confidence).
+ */
+const NATIVE_USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+export const MAINNET_ASSETS: readonly ReferenceAsset[] = [
+  {
+    testnetToken: 'wrap.near',
+    testnetSymbol: 'wNEAR',
+    testnetDecimals: 24,
+    reference: { symbol: 'NEAR', mainnetContract: 'wrap.near', mainnetDecimals: 24 },
+    pyth: {
+      feedId: 'c415de8d2eba7db216527dff4b60e8f3a5311c740dadb233e13e12547e226750',
+      symbol: 'Crypto.NEAR/USD',
+    },
+    defillama: [
+      { key: 'coingecko:near', symbol: 'NEAR', decimals: null },
+      { key: 'near:wrap.near', symbol: 'wNEAR', decimals: 24 },
+    ],
+    maxDeviationBps: 200,
+    note: 'mainnet wNEAR, priced as NEAR',
+  },
+  {
+    testnetToken: 'usdt.tether-token.near',
+    testnetSymbol: 'USDt',
+    testnetDecimals: 6,
+    reference: { symbol: 'USDT', mainnetContract: 'usdt.tether-token.near', mainnetDecimals: 6 },
+    pyth: {
+      feedId: '2b89b9dc8fdf9f34709a5b106b472f0f39bb6ca9ce04b0fd7f2e971688e2e53b',
+      symbol: 'Crypto.USDT/USD',
+    },
+    defillama: [
+      { key: 'coingecko:tether', symbol: 'USDT', decimals: null },
+      { key: 'near:usdt.tether-token.near', symbol: 'USDt', decimals: 6 },
+    ],
+    maxDeviationBps: 100,
+    note: 'native USDt on NEAR mainnet',
+  },
+  {
+    testnetToken: NATIVE_USDC,
+    testnetSymbol: 'USDC',
+    testnetDecimals: 6,
+    reference: { symbol: 'USDC', mainnetContract: NATIVE_USDC, mainnetDecimals: 6 },
+    pyth: {
+      feedId: 'eaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a',
+      symbol: 'Crypto.USDC/USD',
+    },
+    defillama: [
+      { key: 'coingecko:usd-coin', symbol: 'USDC', decimals: null },
+      { key: `near:${NATIVE_USDC}`, symbol: 'USDC', decimals: 6 },
+    ],
+    maxDeviationBps: 100,
+    note: 'native USDC on NEAR mainnet',
+  },
+];

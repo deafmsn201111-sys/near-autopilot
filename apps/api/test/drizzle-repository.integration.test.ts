@@ -60,7 +60,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(6);
+    expect(applied.rows[0]?.n).toBe(7);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -371,6 +371,10 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     await expect(
       handle.db.execute(sql`update market_prices set execution_network = 'mainnet'`),
     ).rejects.toThrow();
+    // `none`: the shadow analysis, where nothing is executed anywhere.
+    await handle.db.execute(
+      sql`update market_prices set execution_network = 'none' where report_id = 'r1'`,
+    );
     await expect(
       handle.db.execute(sql`update market_prices set market_network = 'testnet'`),
     ).rejects.toThrow();
@@ -446,9 +450,13 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(prev?.blockHeight).toBe(100);
     expect(prev?.raw).toEqual({ volumesIn: ['100', '0'] });
     expect(await store.previous('rhea_v1', 'pool:34', t0, 3_600)).toBeNull();
+    // Data may be READ from testnet or mainnet (shadow analysis); any other value is refused.
     await expect(
-      handle.db.execute(sql`update yield_observations set network = 'mainnet'`),
+      handle.db.execute(sql`update yield_observations set network = 'devnet'`),
     ).rejects.toThrow();
+    await handle.db.execute(
+      sql`update yield_observations set network = 'mainnet' where report_id = 'y1'`,
+    );
     // A borrow rate can never be stored as a usable yield.
     await expect(
       handle.db.execute(

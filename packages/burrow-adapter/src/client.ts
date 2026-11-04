@@ -1,5 +1,5 @@
 import type { AccountId, ContractViewer, TokenId, UnitPrice } from '@near-autopilot/core';
-import { UnexpectedResponseError } from '@near-autopilot/core';
+import { accountIdSchema, UnexpectedResponseError } from '@near-autopilot/core';
 import type { z } from 'zod';
 import {
   accountDetailedSchema,
@@ -27,6 +27,18 @@ export interface BurrowAsset {
   readonly borrowApr: string | null;
   /** Nanoseconds since epoch, when the contract last accrued this asset; null if not reported. */
   readonly lastUpdateTimestampNs: bigint | null;
+  /** Supply shares (pool `supplied.shares`); rewards are paid per boosted share. */
+  readonly suppliedShares: bigint;
+  /** Reward programmes on SUPPLYING this asset (`farm_id: {"Supplied": token}`); empty if none. */
+  readonly supplyFarms: readonly BurrowFarmReward[];
+}
+
+export interface BurrowFarmReward {
+  readonly rewardToken: TokenId;
+  /** Reward token raw units per day, shared across all boosted shares. */
+  readonly rewardPerDay: bigint;
+  readonly remainingRewards: bigint;
+  readonly boostedShares: bigint;
 }
 
 export interface BurrowAccountBalance {
@@ -78,6 +90,24 @@ function toAsset(view: AssetView): BurrowAsset {
     borrowApr: view.borrow_apr ?? null,
     lastUpdateTimestampNs:
       view.last_update_timestamp === undefined ? null : BigInt(view.last_update_timestamp),
+    suppliedShares: view.supplied.shares,
+    supplyFarms: (view.farms ?? []).flatMap((f) =>
+      typeof f.farm_id === 'object' && f.farm_id.Supplied === view.token_id
+        ? Object.entries(f.rewards).flatMap(([token, r]) => {
+            const parsed = accountIdSchema.safeParse(token);
+            return parsed.success
+              ? [
+                  {
+                    rewardToken: parsed.data,
+                    rewardPerDay: r.reward_per_day,
+                    remainingRewards: r.remaining_rewards,
+                    boostedShares: r.boosted_shares,
+                  },
+                ]
+              : [];
+          })
+        : [],
+    ),
   };
 }
 

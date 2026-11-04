@@ -70,13 +70,26 @@ const apiEnvRaw = z.object({
    * `mainnet-reference`: MAINNET market data (Pyth, then DefiLlama) priced onto TESTNET tokens as conditional
    * REFERENCE prices. Testnet + chain + dry-run only: a mainnet price never confirms a testnet token's value.
    */
-  MARKET_DATA: z.enum(['none', 'mainnet-reference']).default('none'),
+  MARKET_DATA: z.enum(['none', 'mainnet-reference', 'mainnet-live']).default('none'),
   /**
    * `none`: no yield data (the Capital Allocator reports missing yields).
    * `testnet-onchain`: Burrow rates, Rhea v1 pool fees and Rhea DCL pool state read from TESTNET contracts (read-only
    * views at one pinned block). Testnet + chain + dry-run + mainnet-reference prices only.
    */
-  YIELD_DATA: z.enum(['none', 'testnet-onchain']).default('none'),
+  YIELD_DATA: z.enum(['none', 'testnet-onchain', 'mainnet-onchain']).default('none'),
+  /**
+   * Read-only MAINNET RPC for the shadow analysis (MARKET_DATA=mainnet-live, YIELD_DATA=mainnet-onchain): view calls
+   * only; the API checks at start-up that it serves mainnet. Never used to sign or broadcast; no signer exists.
+   */
+  MAINNET_READ_RPC_URL: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().url().optional(),
+  ),
+  /** Optional key for that RPC (e.g. FastNEAR), sent as `Authorization: Bearer`. Local .env only; never logged. */
+  MAINNET_READ_RPC_API_KEY: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(8).optional(),
+  ),
   /** Rhea DCL contract to observe (optional; empty = DCL not read). */
   RHEA_DCL_CONTRACT_ID: optionalAccountId,
   /** Pyth Hermes requires an API key since Aug 2026. Read from the local .env only; never logged. */
@@ -105,8 +118,10 @@ export interface ApiEnv {
   readonly RHEA_CONTRACT_ID: AccountId;
   readonly BURROW_CONTRACT_ID: AccountId;
   readonly BURROW_ORACLE_ID: AccountId;
-  readonly MARKET_DATA: 'none' | 'mainnet-reference';
-  readonly YIELD_DATA: 'none' | 'testnet-onchain';
+  readonly MARKET_DATA: 'none' | 'mainnet-reference' | 'mainnet-live';
+  readonly YIELD_DATA: 'none' | 'testnet-onchain' | 'mainnet-onchain';
+  readonly MAINNET_READ_RPC_URL: string | undefined;
+  readonly MAINNET_READ_RPC_API_KEY: string | undefined;
   readonly RHEA_DCL_CONTRACT_ID: AccountId | undefined;
   readonly PYTH_API_KEY: string | undefined;
   readonly PYTH_HERMES_URL: string;
@@ -154,6 +169,45 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
         message: `mainnet reference prices are for testnet analysis only: requires ${why}`,
       });
   }
+  if (env.MARKET_DATA === 'mainnet-live') {
+    // Shadow analysis: real mainnet prices for a SIMULATED portfolio. Nothing is ever executed.
+    const why =
+      env.DATA_SOURCE !== 'simulation'
+        ? 'DATA_SOURCE=simulation'
+        : env.NEAR_NETWORK !== 'mainnet'
+          ? 'NEAR_NETWORK=mainnet'
+          : env.EXECUTION_MODE !== 'dry-run'
+            ? 'EXECUTION_MODE=dry-run'
+            : null;
+    if (why)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MARKET_DATA'],
+        message: `mainnet live prices are for the simulated shadow analysis only: requires ${why}`,
+      });
+  }
+  if (env.YIELD_DATA === 'mainnet-onchain') {
+    if (env.MARKET_DATA !== 'mainnet-live')
+      ctx.addIssue({
+        code: 'custom',
+        path: ['YIELD_DATA'],
+        message:
+          'mainnet yield data requires MARKET_DATA=mainnet-live (simulation, mainnet, dry-run)',
+      });
+    if (!env.MAINNET_READ_RPC_URL)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['MAINNET_READ_RPC_URL'],
+        message: 'required when YIELD_DATA=mainnet-onchain',
+      });
+  }
+  if (env.MARKET_DATA === 'mainnet-live' && !env.MAINNET_READ_RPC_URL)
+    ctx.addIssue({
+      code: 'custom',
+      path: ['MAINNET_READ_RPC_URL'],
+      message:
+        'required when MARKET_DATA=mainnet-live (mainnet token decimals are verified on-chain)',
+    });
   if (env.YIELD_DATA === 'testnet-onchain' && env.MARKET_DATA !== 'mainnet-reference')
     // Implies testnet + chain + dry-run through the rule above; liquidity and pool checks need those prices.
     ctx.addIssue({
@@ -205,6 +259,8 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     BURROW_ORACLE_ID: pick('BURROW_ORACLE_ID'),
     MARKET_DATA: env.MARKET_DATA,
     YIELD_DATA: env.YIELD_DATA,
+    MAINNET_READ_RPC_URL: env.MAINNET_READ_RPC_URL,
+    MAINNET_READ_RPC_API_KEY: env.MAINNET_READ_RPC_API_KEY,
     RHEA_DCL_CONTRACT_ID: env.RHEA_DCL_CONTRACT_ID,
     PYTH_API_KEY: env.PYTH_API_KEY,
     PYTH_HERMES_URL: env.PYTH_HERMES_URL,

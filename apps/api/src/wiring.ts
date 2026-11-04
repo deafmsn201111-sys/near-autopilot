@@ -48,13 +48,13 @@ import { PersistentAuditLog } from './services/persistent-audit';
 import { CachedSnapshotService, SnapshotService } from './services/snapshot';
 import { DEMO_PORTFOLIOS } from './simulation/demo-portfolios';
 import { ReferenceMarketProvider, ReferencePriceOracle } from './market-data/adapters';
-import { REFERENCE_ASSETS } from './market-data/assets';
+import { MAINNET_ASSETS, REFERENCE_ASSETS } from './market-data/assets';
 import { HttpJsonClient } from './market-data/http';
 import type { MarketDataProvider, MarketReportSink } from './market-data/model';
 import { ReferenceMarketData } from './market-data/service';
 import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
-import { usable } from './market-data/model';
+import { MAINNET_PRICE_LABEL, usable } from './market-data/model';
 import type { PoolHistory, YieldReportSink } from './yield/model';
 import { YieldService } from './yield/service';
 
@@ -70,6 +70,8 @@ export interface WireOptions {
   readonly marketSink?: MarketReportSink;
   /** Where yield reports are persisted, and where earlier pool observations are read back (Postgres). */
   readonly yieldSink?: YieldReportSink & PoolHistory;
+  /** Transport for the read-only MAINNET RPC of the shadow analysis (tests inject a fake). */
+  readonly mainnetFetchImpl?: typeof fetch;
 }
 
 /**
@@ -115,16 +117,31 @@ export async function wire(
   const tokens = new NearTokenReader(viewer);
   const burrow = { contractId: env.BURROW_CONTRACT_ID, oracleId: env.BURROW_ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrow);
+  // MAINNET READ-ONLY SHADOW ANALYSIS (MARKET_DATA=mainnet-live; config enforces simulation + mainnet + dry-run): a
+  // second RPC client, used ONLY for view calls on mainnet (prices' token decimals, yields, Rhea quotes). The portfolio
+  // is the simulated demo one; there is no signer and the executor is dry-run.
+  const mainnetRead =
+    env.MARKET_DATA === 'mainnet-live'
+      ? await mainnetReadRpc(env, logger, options.mainnetFetchImpl)
+      : null;
+  const mainnetViewer = mainnetRead ? new NearContractViewer(mainnetRead) : null;
   // MAINNET MARKET DATA -> TESTNET EXECUTION (MARKET_DATA=mainnet-reference; config enforces testnet + chain + dry-run).
   const market =
-    env.MARKET_DATA === 'mainnet-reference' ? referenceMarket(env, tokens, logger, options) : null;
+    env.MARKET_DATA === 'mainnet-reference'
+      ? referenceMarket(env, tokens, logger, options)
+      : mainnetViewer
+        ? referenceMarket(env, new NearTokenReader(mainnetViewer), logger, options, 'shadow')
+        : null;
   const oracle = market ? new ReferencePriceOracle(market) : new BurrowPriceOracle(viewer, burrow);
-  // TESTNET yield data (YIELD_DATA=testnet-onchain; config enforces mainnet-reference prices, hence testnet + dry-run).
+  // Yield data: TESTNET contracts (testnet-onchain) or MAINNET contracts read-only (mainnet-onchain, shadow only).
   const yields =
     env.YIELD_DATA === 'testnet-onchain' && market
       ? testnetYields(env, config, rpc, market, logger, options)
-      : null;
-  const quoter = new RheaSwapQuoter(viewer, {
+      : env.YIELD_DATA === 'mainnet-onchain' && market && mainnetRead
+        ? testnetYields(env, config, mainnetRead, market, logger, options, 'mainnet')
+        : null;
+  // Shadow: quotes come from the REAL mainnet exchange (`get_return` view), so the analysis prices trades honestly.
+  const quoter = new RheaSwapQuoter(mainnetViewer ?? viewer, {
     contractId: env.RHEA_CONTRACT_ID,
     pools: new StaticPoolRegistry(
       config.rhea.pools.map((p) => ({
@@ -259,6 +276,37 @@ export async function wire(
   return { cycle, snapshots: cachedSnapshots, policy, simulation, market, yields };
 }
 
+/** The read-only mainnet RPC of the shadow analysis. Refuses to start unless it really serves mainnet. */
+async function mainnetReadRpc(
+  env: ApiEnv,
+  logger: Logger,
+  fetchImpl?: typeof fetch,
+): Promise<NearRpcClient> {
+  if (
+    env.DATA_SOURCE !== 'simulation' ||
+    env.NEAR_NETWORK !== 'mainnet' ||
+    env.EXECUTION_MODE !== 'dry-run' ||
+    !env.MAINNET_READ_RPC_URL
+  ) {
+    // Defence in depth: loadApiEnv already rejects this; a hand-built ApiEnv must not bypass it.
+    throw new Error(
+      'MARKET_DATA=mainnet-live requires DATA_SOURCE=simulation, NEAR_NETWORK=mainnet, EXECUTION_MODE=dry-run and MAINNET_READ_RPC_URL',
+    );
+  }
+  const client = new NearRpcClient({
+    url: env.MAINNET_READ_RPC_URL,
+    headers: env.MAINNET_READ_RPC_API_KEY
+      ? { authorization: `Bearer ${env.MAINNET_READ_RPC_API_KEY}` }
+      : undefined,
+    maxConcurrent: 2,
+    ...(fetchImpl ? { fetchImpl } : {}),
+    onRetry: (e) =>
+      logger.warn('mainnet read rpc retry', { method: e.method, attempt: e.attempt, kind: e.kind }),
+  });
+  await assertChainId(client, 'mainnet');
+  return client;
+}
+
 function testnetYields(
   env: ApiEnv,
   config: AutopilotConfig,
@@ -266,15 +314,18 @@ function testnetYields(
   market: MarketDataProvider,
   logger: Logger,
   options: WireOptions,
+  network: 'testnet' | 'mainnet' = 'testnet',
 ): YieldService {
-  if (
-    env.NEAR_NETWORK !== 'testnet' ||
-    env.DATA_SOURCE !== 'chain' ||
-    env.EXECUTION_MODE !== 'dry-run'
-  ) {
+  const allowed =
+    network === 'testnet'
+      ? env.NEAR_NETWORK === 'testnet' && env.DATA_SOURCE === 'chain'
+      : env.NEAR_NETWORK === 'mainnet' && env.DATA_SOURCE === 'simulation';
+  if (!allowed || env.EXECUTION_MODE !== 'dry-run') {
     // Defence in depth: loadApiEnv already rejects this; a hand-built ApiEnv must not bypass it.
     throw new Error(
-      'YIELD_DATA=testnet-onchain requires NEAR_NETWORK=testnet, DATA_SOURCE=chain, EXECUTION_MODE=dry-run',
+      network === 'testnet'
+        ? 'YIELD_DATA=testnet-onchain requires NEAR_NETWORK=testnet, DATA_SOURCE=chain, EXECUTION_MODE=dry-run'
+        : 'YIELD_DATA=mainnet-onchain requires DATA_SOURCE=simulation, NEAR_NETWORK=mainnet, EXECUTION_MODE=dry-run',
     );
   }
   const y = config.yield ?? {
@@ -289,6 +340,7 @@ function testnetYields(
   const freshness = config.orchestrator?.freshness?.maxMarketAgeSeconds ?? 300;
   return new YieldService({
     rpc,
+    network,
     burrowContract: env.BURROW_CONTRACT_ID,
     rheaContract: env.RHEA_CONTRACT_ID,
     dclContract: env.RHEA_DCL_CONTRACT_ID ?? null,
@@ -325,15 +377,18 @@ function referenceMarket(
   tokens: NearTokenReader,
   logger: Logger,
   options: WireOptions,
+  mode: 'testnet-reference' | 'shadow' = 'testnet-reference',
 ): MarketDataProvider {
-  if (
-    env.NEAR_NETWORK !== 'testnet' ||
-    env.DATA_SOURCE !== 'chain' ||
-    env.EXECUTION_MODE !== 'dry-run'
-  ) {
+  const shadow = mode === 'shadow';
+  const allowed = shadow
+    ? env.NEAR_NETWORK === 'mainnet' && env.DATA_SOURCE === 'simulation'
+    : env.NEAR_NETWORK === 'testnet' && env.DATA_SOURCE === 'chain';
+  if (!allowed || env.EXECUTION_MODE !== 'dry-run') {
     // Defence in depth: loadApiEnv already rejects this; a hand-built ApiEnv must not bypass it.
     throw new Error(
-      'MARKET_DATA=mainnet-reference requires NEAR_NETWORK=testnet, DATA_SOURCE=chain, EXECUTION_MODE=dry-run',
+      shadow
+        ? 'MARKET_DATA=mainnet-live requires DATA_SOURCE=simulation, NEAR_NETWORK=mainnet, EXECUTION_MODE=dry-run'
+        : 'MARKET_DATA=mainnet-reference requires NEAR_NETWORK=testnet, DATA_SOURCE=chain, EXECUTION_MODE=dry-run',
     );
   }
   const http = new HttpJsonClient({
@@ -349,7 +404,8 @@ function referenceMarket(
     freshness: { maxAgeMs: 180_000, maxFutureSkewMs: 5_000 },
   });
   return new ReferenceMarketData({
-    assets: REFERENCE_ASSETS,
+    assets: shadow ? MAINNET_ASSETS : REFERENCE_ASSETS,
+    ...(shadow ? { label: MAINNET_PRICE_LABEL, executionNetwork: 'none' as const } : {}),
     // Priority: Pyth first, DefiLlama second.
     sources: [
       new PythSource({ baseUrl: env.PYTH_HERMES_URL, apiKey: env.PYTH_API_KEY, http }),

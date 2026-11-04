@@ -78,7 +78,12 @@ async function main(): Promise<void> {
     dataSource: env.DATA_SOURCE,
     engine: env.AUTOPILOT_ENGINE,
     marketData:
-      env.MARKET_DATA === 'mainnet-reference' ? 'MAINNET MARKET DATA → TESTNET EXECUTION' : 'none',
+      env.MARKET_DATA === 'mainnet-reference'
+        ? 'MAINNET MARKET DATA → TESTNET EXECUTION'
+        : env.MARKET_DATA === 'mainnet-live'
+          ? 'MAINNET READ-ONLY DATA → SIMULATED PORTFOLIO (NO EXECUTION)'
+          : 'none',
+    mainnetReadRpc: env.MAINNET_READ_RPC_URL ? 'set' : 'not set',
     pythKey: env.PYTH_API_KEY ? 'set' : 'not set',
     yieldData: env.YIELD_DATA,
     account: env.AUTOPILOT_ACCOUNT_ID,

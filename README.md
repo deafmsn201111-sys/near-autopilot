@@ -151,7 +151,8 @@ timestamp, age, validity, reason per observation), and for each check the reason
 validation and fallback rules: [docs/market-data.md](docs/market-data.md). Set `TESTNET_MARKET_DATA=none` to price
 from the testnet Burrow oracle instead (which currently prices nothing). Testnet yield data (Burrow rates, Rhea v1 and
 DCL pools, read-only at one block, validated): [docs/yield-data.md](docs/yield-data.md), page Yield data,
-`TESTNET_YIELD_DATA=none` to turn it off. Read-only integration suites:
+`TESTNET_YIELD_DATA=none` to turn it off. A read-only MAINNET shadow analysis of a simulated portfolio (profile
+`shadow`, no transactions): [docs/mainnet-shadow.md](docs/mainnet-shadow.md). Read-only integration suites:
 
 ```bash
 pnpm --filter @near-autopilot/burrow-adapter test:live     # BURROW_LIVE=1

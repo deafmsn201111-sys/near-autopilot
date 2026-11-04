@@ -99,3 +99,19 @@ describe('formatFractionPercent (exact, truncated)', () => {
     expect(formatFractionPercent(null)).toBe('—');
   });
 });
+
+describe('shadow analysis banner', () => {
+  it('says the portfolio is synthetic, the data is real mainnet read-only, and nothing is executed', async () => {
+    const { provenanceBanner, SHADOW_BANNER } = await import('../lib/format');
+    const b = provenanceBanner({
+      dataSource: 'simulation',
+      network: 'mainnet',
+      executionMode: 'dry-run',
+      marketData: 'mainnet-live',
+    });
+    expect(b.tone).toBe('sim');
+    expect(b.text).toContain(SHADOW_BANNER);
+    expect(b.text).toContain('SYNTHETIC');
+    expect(b.text).toContain('nothing is signed, sent or executable');
+  });
+});

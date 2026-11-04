@@ -69,7 +69,18 @@ export function yieldContext(
       (e) => e.source === 'burrow' && e.yieldType === 'lending_supply' && e.marketId === token,
     );
     if (supply && isStrategic(supply) && supply.apr) {
-      estimatedYieldWad.set(token, toWad(supply.apr));
+      // Valid supply reward programmes on the same market add to the supply rate (base rate, no booster).
+      const rewards = report.estimates.filter(
+        (e) =>
+          e.source === 'burrow' &&
+          e.yieldType === 'lending_reward' &&
+          e.assetIds[0] === token &&
+          isStrategic(e),
+      );
+      estimatedYieldWad.set(
+        token,
+        rewards.reduce((sum, e) => sum + (e.apr ? toWad(e.apr) : 0n), toWad(supply.apr)),
+      );
     } else if (supply) {
       yieldNotes.set(token, supply.reasons.map((r) => `${r.code}: ${r.detail}`).join('; '));
     } else {

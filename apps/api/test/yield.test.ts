@@ -44,6 +44,8 @@ const asset = (over: Omit<Partial<BurrowAsset>, 'tokenId'> & { tokenId: string }
   supplyApr: '0',
   borrowApr: '0',
   lastUpdateTimestampNs: 1_793_000_000_000_000_000n,
+  suppliedShares: over.suppliedInner ?? 0n,
+  supplyFarms: [],
   ...over,
   tokenId: accountId(over.tokenId),
 });
@@ -146,6 +148,61 @@ describe('Burrow lending rates', () => {
     expect(codes(supplyOf(burrow([USDC_LIVE], { decimals: noDecimals }), USDC))).toContain(
       'INVALID_YIELD_DATA',
     );
+  });
+});
+
+describe('Burrow supply reward programmes (farms)', () => {
+  const BRRR = 'token.burrow.near';
+  const market = asset({
+    tokenId: USDC,
+    extraDecimals: 12,
+    suppliedInner: 10n ** 24n, // 1,000,000 USDC (6 + 12 inner decimals)
+    supplyApr: '0.05',
+    supplyFarms: [
+      {
+        rewardToken: accountId(BRRR),
+        rewardPerDay: 100n * 10n ** 18n, // 100 BRRR / day
+        remainingRewards: 10_000n * 10n ** 18n,
+        boostedShares: 10n ** 24n,
+      },
+    ],
+  });
+  const withReward = new Map(DECIMALS);
+  withReward.set(BRRR, 18);
+  const reward = (over: Partial<Parameters<typeof burrowEstimates>[0]> = {}) =>
+    burrow([market], {
+      decimals: withReward,
+      priceUsd: (t) => (t === BRRR ? parseDecimal('0.01') : priceUsd(t)),
+      ...over,
+    }).find((e) => e.yieldType === 'lending_reward');
+
+  it('base reward APR = 100 BRRR/day x 365 x $0.01 / $1,000,000 supplied = 0.0365 %', () => {
+    const r = reward();
+    expect(r?.validationStatus).toBe('valid');
+    expect(r?.apr && formatDecimal(r.apr)).toBe('0.000365');
+    expect(r?.calculationMethod).toBe('calculated');
+    expect(r?.marketId).toBe(`${USDC}#reward:${BRRR}`);
+    expect(r?.raw.remainingDays).toBe('100');
+  });
+
+  it('no reward price, an exhausted programme or no boosted shares: no usable reward rate', () => {
+    expect(codes(reward({ priceUsd }))).toContain('MISSING_PRICE');
+    const exhausted = burrow(
+      [{ ...market, supplyFarms: [{ ...market.supplyFarms[0]!, remainingRewards: 0n }] }],
+      { decimals: withReward, priceUsd: (t) => (t === BRRR ? parseDecimal('0.01') : priceUsd(t)) },
+    ).find((e) => e.yieldType === 'lending_reward');
+    expect(codes(exhausted)).toContain('MISSING_YIELD_DATA');
+    const unboosted = burrow(
+      [{ ...market, supplyFarms: [{ ...market.supplyFarms[0]!, boostedShares: 0n }] }],
+      { decimals: withReward, priceUsd: (t) => (t === BRRR ? parseDecimal('0.01') : priceUsd(t)) },
+    ).find((e) => e.yieldType === 'lending_reward');
+    expect(unboosted?.apr).toBeNull();
+  });
+
+  it('a reward on a rejected supply market inherits the rejection', () => {
+    const r = reward({ allowedTokens: new Set() });
+    expect(r?.validationStatus).toBe('rejected');
+    expect(r?.reasons[0]?.detail).toContain('supply market');
   });
 });
 

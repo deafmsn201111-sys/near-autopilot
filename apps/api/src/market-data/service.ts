@@ -7,6 +7,8 @@ import {
   type MarketReport,
   type MarketReportSink,
   type PriceObservation,
+  type PriceLabel,
+  type ExecutionNetwork,
   type PriceSource,
   type SourceStatus,
 } from './model';
@@ -26,13 +28,14 @@ export function resolveAsset(
   asset: ReferenceAsset,
   observations: readonly PriceObservation[],
   testnetDecimals: number | null,
+  label: PriceLabel = REFERENCE_LABEL,
 ): AssetPrice {
   const base = {
     testnetToken: asset.testnetToken,
     referenceSymbol: asset.reference.symbol,
     mainnetContract: asset.reference.mainnetContract,
     observations,
-    label: REFERENCE_LABEL,
+    label,
   } as const;
   const none = { priceUsd: null, chosen: null, crossCheck: null } as const;
   if (testnetDecimals !== asset.testnetDecimals) {
@@ -105,6 +108,9 @@ export interface ReferenceMarketDataOptions {
   /** Reports are reused for this long, so one cycle sees one consistent set of prices. */
   readonly ttlMs?: number;
   readonly onError?: (message: string) => void;
+  /** Defaults: REFERENCE_LABEL / 'testnet' (mainnet prices on testnet tokens). Shadow: MAINNET_PRICE_LABEL / 'none'. */
+  readonly label?: PriceLabel;
+  readonly executionNetwork?: ExecutionNetwork;
 }
 
 /** The `MarketDataProvider`: mainnet market data, resolved per testnet asset. Agents never see a source directly. */
@@ -150,6 +156,7 @@ export class ReferenceMarketData implements MarketDataProvider {
         a,
         results.flatMap((r) => r.observations.get(a.testnetToken) ?? []),
         decimals[i] ?? null,
+        this.o.label ?? REFERENCE_LABEL,
       ),
     );
     const keyOf = (a: AssetPrice) =>
@@ -168,7 +175,7 @@ export class ReferenceMarketData implements MarketDataProvider {
       id: this.o.ids(),
       fetchedAt: now,
       marketNetwork: 'mainnet',
-      executionNetwork: 'testnet',
+      executionNetwork: this.o.executionNetwork ?? 'testnet',
       assets: resolved,
       sources: results.map((r) => r.status),
       range24hBps,

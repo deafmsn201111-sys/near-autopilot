@@ -3,11 +3,12 @@ import type { RheaPoolInfo, RheaPoolVolume } from '@near-autopilot/rhea-adapter'
 import { compareDecimal, deviationBps, type Decimal } from '../market-data/decimal';
 import type { YieldLimits } from './burrow';
 import { add, dec, div, fromRaw, mul } from './math';
-import type { BlockRef, PoolObservation, YieldEstimate, YieldReason } from './model';
+import type { BlockRef, PoolObservation, YieldEstimate, YieldNetwork, YieldReason } from './model';
 
 const SECONDS_PER_YEAR = 31_536_000n;
 
 export interface PoolContext {
+  readonly network?: YieldNetwork;
   readonly contract: string;
   readonly block: BlockRef;
   readonly now: Date;
@@ -175,7 +176,7 @@ export function rheaV1Estimate(input: RheaV1Input): YieldEstimate {
 
   return {
     source: 'rhea_v1',
-    network: 'testnet',
+    network: input.network ?? 'testnet',
     contract: input.contract,
     methods: ['get_pool', 'get_pool_volumes', 'metadata'],
     marketId: `pool:${pool.poolId}`,
@@ -244,7 +245,7 @@ export function dclEstimate(input: PoolContext & { readonly pool: DclPool }): Yi
     typeof extra[k] === 'string' || typeof extra[k] === 'bigint' ? String(extra[k]) : null;
   return {
     source: 'rhea_dcl',
-    network: 'testnet',
+    network: input.network ?? 'testnet',
     contract: input.contract,
     methods: ['get_pool'],
     marketId: pool.pool_id,

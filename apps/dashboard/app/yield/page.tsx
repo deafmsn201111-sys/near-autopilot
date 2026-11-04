@@ -11,6 +11,7 @@ const SOURCE_TEXT: Record<string, string> = {
 };
 const TYPE_TEXT: Record<string, string> = {
   lending_supply: 'Supply APR',
+  lending_reward: 'Supply reward APR (base, no booster)',
   lending_borrow: 'Borrow APR (a cost, not a yield)',
   lp_fee: 'LP fee APR (historical)',
 };
@@ -94,8 +95,9 @@ export default async function YieldPage() {
     <>
       <h1>Yield data</h1>
       <p className="provenance provenance-test" role="status">
-        {data.label}. Read-only views of TESTNET contracts at one block. A rate shown here is not an
-        investment opportunity: only valid Burrow supply rates reach the Capital Allocator, and no
+        {data.label}. Read-only views of {data.network === 'mainnet' ? 'MAINNET' : 'TESTNET'}{' '}
+        contracts at one block. A rate shown here is not an investment opportunity: only valid
+        Burrow supply rates (and valid supply rewards) reach the Capital Allocator, and no
         transaction is ever made from this page.
       </p>
       {data.error && (

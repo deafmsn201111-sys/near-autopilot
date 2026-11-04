@@ -3,6 +3,12 @@ import type { ReferenceAsset } from './assets';
 
 /** Printed wherever a mainnet price is applied to a testnet token. */
 export const REFERENCE_LABEL = 'REFERENCE_PRICE — NOT A REAL TESTNET TOKEN PRICE';
+/** Shadow analysis: a real mainnet price of the mainnet token itself, applied to a SIMULATED portfolio. */
+export const MAINNET_PRICE_LABEL = 'MAINNET PRICE — SIMULATED PORTFOLIO, NOTHING EXECUTED';
+export const SHADOW_FLOW_LABEL = 'MAINNET READ-ONLY DATA → SIMULATED PORTFOLIO (NO EXECUTION)';
+export type PriceLabel = typeof REFERENCE_LABEL | typeof MAINNET_PRICE_LABEL;
+/** Where the prices are used: testnet execution (dry-run) or nowhere (shadow analysis). */
+export type ExecutionNetwork = 'testnet' | 'none';
 export const DATA_FLOW_LABEL = 'MAINNET MARKET DATA → TESTNET EXECUTION';
 
 export type SourceName = 'pyth' | 'defillama';
@@ -58,7 +64,7 @@ export interface AssetPrice {
   readonly spreadBps: bigint | null;
   readonly observations: readonly PriceObservation[];
   readonly reason: string | null;
-  readonly label: typeof REFERENCE_LABEL;
+  readonly label: PriceLabel;
 }
 
 export type SourceHealth = 'ok' | 'degraded' | 'unavailable';
@@ -73,7 +79,7 @@ export interface MarketReport {
   readonly id: string;
   readonly fetchedAt: Date;
   readonly marketNetwork: 'mainnet';
-  readonly executionNetwork: 'testnet';
+  readonly executionNetwork: ExecutionNetwork;
   readonly assets: readonly AssetPrice[];
   readonly sources: readonly SourceStatus[];
   /** 24h high-low range of the reference price in bps (hourly DefiLlama points). A volatility PROXY. */

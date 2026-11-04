@@ -6,15 +6,19 @@ import type { Decimal } from '../market-data/decimal';
  * for its current utilisation; LP fee rates are historical (an observation period is always stated).
  */
 export const YIELD_LABEL = 'TESTNET YIELD — OBSERVED, NOT A FORECAST';
+export const MAINNET_YIELD_LABEL =
+  'MAINNET YIELD (READ-ONLY) — OBSERVED, NOT A FORECAST, NOTHING EXECUTED';
+export type YieldNetwork = 'testnet' | 'mainnet';
 
 export type YieldSourceName = 'burrow' | 'rhea_v1' | 'rhea_dcl';
 
 /**
  * - `lending_supply`: what a supplier earns (Burrow `supply_apr`).
+ * - `lending_reward`: a Burrow reward programme on supplying (farm), base rate without booster (calculated).
  * - `lending_borrow`: what a borrower PAYS (Burrow `borrow_apr`); never a yield on supplied capital.
  * - `lp_fee`: trading fees earned by liquidity providers over an observation period (historical).
  */
-export type YieldType = 'lending_supply' | 'lending_borrow' | 'lp_fee';
+export type YieldType = 'lending_supply' | 'lending_reward' | 'lending_borrow' | 'lp_fee';
 
 /** `source_reported`: the contract returns the rate. `calculated`: computed here; `formula` says how. */
 export type CalculationMethod = 'source_reported' | 'calculated';
@@ -50,7 +54,7 @@ export interface BlockRef {
 
 export interface YieldEstimate {
   readonly source: YieldSourceName;
-  readonly network: 'testnet';
+  readonly network: YieldNetwork;
   /** Contract and view methods the numbers came from. */
   readonly contract: string;
   readonly methods: readonly string[];
@@ -93,7 +97,7 @@ export interface YieldSourceStatus {
 
 export interface YieldReport {
   readonly id: string;
-  readonly network: 'testnet';
+  readonly network: YieldNetwork;
   readonly observedAt: Date;
   /** The single block every view of this report was read at (null if the block itself could not be read). */
   readonly block: BlockRef | null;
@@ -126,5 +130,8 @@ export interface PoolHistory {
   ): Promise<PoolObservation | null>;
 }
 
+/** Lending yields that may reach the Capital Allocator: a valid supply rate, plus valid supply rewards. */
 export const isStrategic = (e: YieldEstimate): boolean =>
-  e.validationStatus === 'valid' && e.yieldType === 'lending_supply' && e.apr !== null;
+  e.validationStatus === 'valid' &&
+  (e.yieldType === 'lending_supply' || e.yieldType === 'lending_reward') &&
+  e.apr !== null;

@@ -12,6 +12,7 @@ import type {
   YieldEstimate,
   YieldReport,
   YieldReportSink,
+  YieldNetwork,
   YieldSourceName,
   YieldSourceStatus,
 } from './model';
@@ -20,6 +21,8 @@ import { dclEstimate, rheaV1Estimate } from './rhea';
 
 export interface YieldServiceOptions {
   readonly rpc: Pick<NearRpcClient, 'call'>;
+  /** Network the contracts live on (checked at start-up by the caller). Default testnet. */
+  readonly network?: YieldNetwork;
   readonly burrowContract: AccountId;
   readonly rheaContract: AccountId;
   readonly dclContract: AccountId | null;
@@ -127,6 +130,7 @@ export class YieldService implements YieldDataProvider {
         new Map(await Promise.all(ts.map(async (t) => [t, await decimalsOf(t)] as const)));
       const priceUsd = await this.o.prices().catch(() => () => null);
       const ctx = {
+        network: this.o.network ?? 'testnet',
         block,
         now: this.o.now(),
         priceUsd,
@@ -143,7 +147,7 @@ export class YieldService implements YieldDataProvider {
     }
     const report: YieldReport = {
       id: this.o.ids(),
-      network: 'testnet',
+      network: this.o.network ?? 'testnet',
       observedAt,
       block,
       sources: runs.map((r) => r.status),
@@ -167,7 +171,10 @@ export class YieldService implements YieldDataProvider {
     const contract = this.o.burrowContract;
     try {
       const assets = await new BurrowClient(viewer, contract).listAssets();
-      const decimals = await decimalsFor(assets.map((a) => a.tokenId));
+      const decimals = await decimalsFor([
+        ...assets.map((a) => a.tokenId),
+        ...assets.flatMap((a) => a.supplyFarms.map((f) => f.rewardToken)),
+      ]);
       const estimates = burrowEstimates({ ...ctx, contract, assets, decimals });
       return { status: this.status('burrow', contract, 'ok', null, assets.length), estimates };
     } catch (error) {

@@ -151,7 +151,8 @@ export const marketPrices = pgTable(
     reportId: text('report_id').notNull(),
     fetchedAt: ts('fetched_at').notNull(),
     marketNetwork: text('market_network', { enum: ['mainnet'] }).notNull(),
-    executionNetwork: text('execution_network', { enum: ['testnet'] }).notNull(),
+    /** `none`: read-only shadow analysis of a simulated portfolio; nothing executed anywhere. */
+    executionNetwork: text('execution_network', { enum: ['testnet', 'none'] }).notNull(),
     testnetToken: text('testnet_token').notNull(),
     referenceSymbol: text('reference_symbol').notNull(),
     mainnetContract: text('mainnet_contract').notNull(),
@@ -182,7 +183,8 @@ export const yieldObservations = pgTable(
     id: text('id').primaryKey(),
     reportId: text('report_id').notNull(),
     observedAt: ts('observed_at').notNull(),
-    network: text('network', { enum: ['testnet'] }).notNull(),
+    /** Network the data was READ from. Nothing is executed from these rows. */
+    network: text('network', { enum: ['testnet', 'mainnet'] }).notNull(),
     blockHeight: integer('block_height').notNull(),
     blockTimestamp: ts('block_timestamp').notNull(),
     source: text('source', { enum: ['burrow', 'rhea_v1', 'rhea_dcl'] }).notNull(),
@@ -191,7 +193,7 @@ export const yieldObservations = pgTable(
     marketId: text('market_id').notNull(),
     assetIds: jsonb('asset_ids').$type<string[]>().notNull(),
     yieldType: text('yield_type', {
-      enum: ['lending_supply', 'lending_borrow', 'lp_fee'],
+      enum: ['lending_supply', 'lending_reward', 'lending_borrow', 'lp_fee'],
     }).notNull(),
     /** Exact decimal text, a fraction (0.05 = 5 %). */
     apr: text('apr'),

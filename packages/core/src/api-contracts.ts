@@ -106,7 +106,7 @@ export const policyDtoSchema = z.object({
   /** Demo portfolio id when dataSource is `simulation`, else null. */
   simulationPortfolio: z.string().nullable(),
   /** `mainnet-reference`: MAINNET market data priced onto TESTNET tokens (labelled reference prices). */
-  marketData: z.enum(['none', 'mainnet-reference']),
+  marketData: z.enum(['none', 'mainnet-reference', 'mainnet-live']),
   enabled: z.boolean(),
   executionMode: z.enum(['dry-run', 'live']),
   maxActionUsd: usdString,
@@ -201,7 +201,8 @@ export const marketDataDtoSchema = z.object({
   enabled: z.boolean(),
   flow: z.string(),
   marketNetwork: z.literal('mainnet'),
-  executionNetwork: z.enum(['mainnet', 'testnet']),
+  /** `none`: shadow analysis, nothing is executed anywhere. */
+  executionNetwork: z.enum(['mainnet', 'testnet', 'none']),
   fetchedAt: z.string().nullable(),
   sources: z.array(
     z.object({
@@ -217,12 +218,12 @@ export type MarketDataDto = z.infer<typeof marketDataDtoSchema>;
 
 export const yieldEstimateDtoSchema = z.object({
   source: z.enum(['burrow', 'rhea_v1', 'rhea_dcl']),
-  network: z.literal('testnet'),
+  network: z.enum(['testnet', 'mainnet']),
   contract: z.string(),
   methods: z.array(z.string()),
   marketId: z.string(),
   assetIds: z.array(z.string()),
-  yieldType: z.enum(['lending_supply', 'lending_borrow', 'lp_fee']),
+  yieldType: z.enum(['lending_supply', 'lending_reward', 'lending_borrow', 'lp_fee']),
   /** Exact decimal text, a fraction (0.05 = 5 %). */
   apr: z.string().nullable(),
   apy: z.string().nullable(),
@@ -243,7 +244,7 @@ export const yieldDataDtoSchema = z.object({
   /** False unless YIELD_DATA=testnet-onchain. */
   enabled: z.boolean(),
   label: z.string(),
-  network: z.literal('testnet').nullable(),
+  network: z.enum(['testnet', 'mainnet']).nullable(),
   observedAt: z.string().nullable(),
   blockHeight: z.number().int().nullable(),
   sources: z.array(

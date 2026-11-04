@@ -70,12 +70,21 @@ interface ProvenanceView {
 export const TESTNET_MAINNET_DATA_BANNER =
   'TESTNET EXECUTION · MAINNET MARKET DATA · NO MAINNET TRANSACTIONS';
 
+export const SHADOW_BANNER =
+  'SIMULATED PORTFOLIO · REAL MAINNET DATA (READ-ONLY) · NO TRANSACTIONS';
+
 export function provenanceBanner(
   p: ProvenanceView & {
     readonly executionMode: 'dry-run' | 'live';
-    readonly marketData?: 'none' | 'mainnet-reference';
+    readonly marketData?: 'none' | 'mainnet-reference' | 'mainnet-live';
   },
 ): { readonly tone: 'sim' | 'test' | 'main'; readonly text: string } {
+  if (p.dataSource === 'simulation' && p.marketData === 'mainnet-live') {
+    return {
+      tone: 'sim',
+      text: `${SHADOW_BANNER}: the portfolio is a SYNTHETIC demo; prices, lending rates, rewards, pools and quotes are real MAINNET data read with view calls only. Analysis only: nothing is signed, sent or executable from here.`,
+    };
+  }
   if (p.dataSource === 'simulation') {
     return {
       tone: 'sim',
