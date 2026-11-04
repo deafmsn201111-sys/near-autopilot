@@ -1,0 +1,63 @@
+# Local/staging stack: Postgres + API + dashboard.
+#   cp .env.example .env && cp config/autopilot.example.json config/autopilot.json
+#   docker compose up --build
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-autopilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-autopilot}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
+      NEAR_NETWORK: ${NEAR_NETWORK:-mainnet}
+      NEAR_RPC_URL: ${NEAR_RPC_URL:?set NEAR_RPC_URL in .env}
+      AUTOPILOT_ACCOUNT_ID: ${AUTOPILOT_ACCOUNT_ID:?set AUTOPILOT_ACCOUNT_ID in .env}
+      EXECUTION_MODE: ${EXECUTION_MODE:-dry-run}
+      CYCLE_INTERVAL_SECONDS: ${CYCLE_INTERVAL_SECONDS:-0}
+      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+    volumes:
+      - ./config/autopilot.json:/etc/autopilot/autopilot.json:ro
+    ports:
+      - '127.0.0.1:4000:4000'
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+    ports:
+      - '127.0.0.1:3000:3000'
+
+volumes:
+  pgdata:

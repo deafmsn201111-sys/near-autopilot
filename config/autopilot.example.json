@@ -1,0 +1,46 @@
+{
+  "policy": {
+    "enabled": true,
+    "signerAccountId": "your-account.near",
+    "allowedContracts": [
+      "wrap.near",
+      "usdt.tether-token.near",
+      "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+      "v2.ref-finance.near",
+      "contract.main.burrow.near"
+    ],
+    "allowedRecipients": ["v2.ref-finance.near", "contract.main.burrow.near"],
+    "allowedTokens": [
+      "wrap.near",
+      "usdt.tether-token.near",
+      "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+    ],
+    "allowedMethods": ["ft_transfer_call"],
+    "maxActionUsd": 100,
+    "dailyLimitUsd": 300,
+    "approvalThresholdUsd": 50,
+    "maxSlippageBps": 50,
+    "maxOracleDeviationBps": 150,
+    "maxPriceAgeSeconds": 120,
+    "cooldownSeconds": 600,
+    "approvalTtlSeconds": 120
+  },
+  "guardian": {
+    "enabled": true,
+    "triggerHealthFactor": 1.3,
+    "targetHealthFactor": 1.6
+  },
+  "rebalancer": {
+    "enabled": false,
+    "targets": [
+      { "token": "wrap.near", "weightBps": 5000 },
+      { "token": "usdt.tether-token.near", "weightBps": 5000 }
+    ],
+    "driftThresholdBps": 500,
+    "maxTradeUsd": 50,
+    "slippageBps": 30
+  },
+  "rhea": {
+    "pools": []
+  }
+}

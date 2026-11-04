@@ -1,0 +1,36 @@
+{
+  "name": "near-autopilot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Policy-gated autopilot for NEAR DeFi positions (Rhea + Burrow)",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.15.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint && pnpm run check:boundaries",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "db:generate": "pnpm --filter @near-autopilot/db run generate",
+    "db:migrate": "pnpm --filter @near-autopilot/db run migrate",
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^2.1.8"
+  }
+}

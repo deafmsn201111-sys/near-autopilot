@@ -1,0 +1,63 @@
+# Security model
+
+## Threat model (what the design defends against)
+
+| Threat                                             | Control                                                                                         |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Buggy/compromised agent proposes a harmful action  | Policy re-values the action itself, checks allowlists, limits, slippage, oracle deviation       |
+| Planner bug sends funds somewhere unexpected       | `intentMatchesPlan`, recipient allowlist for `ft_transfer_call`, one action per tx, deposit cap |
+| Manipulated or illiquid pool                       | Operator-curated pools only; quote must be within `maxOracleDeviationBps` of oracle price       |
+| Stale data                                         | Snapshot and prices must be younger than `maxPriceAgeSeconds`                                   |
+| Plan altered after approval / approval replay      | Approval binds SHA-256 of canonical plan + TTL; executor re-verifies; approvals are single-use  |
+| Runaway loop                                       | Per-action cap, rolling 24h cap, swap cooldown, one in-flight cycle, one tx per live cycle      |
+| Leveraging up                                      | No borrow/withdraw intents exist; v1 can only de-risk or rebalance spot                         |
+| Tx built against a wrong chain / contract / oracle | Burrow builders accept only `BurrowVerifier` proofs (chain id, deployed code, oracle, token)    |
+| Mainnet signing                                    | `loadApiEnv` and `wire()` reject `EXECUTION_MODE=live` on mainnet; no override exists           |
+| Stranded swap output                               | Planner requires storage registration on the output token before building the swap              |
+| Unauthorised API use                               | Bearer token (≥32 chars, constant-time compare); dashboard calls server-side only               |
+| Secret leakage                                     | Env validation errors name variables, never values; API errors are generic                      |
+
+## Key custody (deliberately not included)
+
+`TransactionSigner` is a port. The repo ships no implementation, and `EXECUTION_MODE=live` fails at startup
+until `loadSigner()` in `apps/api/src/signer.ts` returns one.
+
+**Mainnet is dry-run only.** Configuration with `EXECUTION_MODE=live` and `NEAR_NETWORK=mainnet` is rejected at
+load time, and the composition root checks it again, so a mainnet signing key cannot be put to use through this
+code. Live signing is possible on testnet only, with a testnet key. Nothing in the adapters or tests reads key
+material. If you fork this project to change that, it is a deliberate security decision to review, not a flag.
+Recommended setups for a testnet signer (and for anything you build yourself), strongest first:
+
+1. KMS/HSM- or MPC-backed signing behind the `TransactionSigner` interface.
+2. A **function-call access key** restricted to the allowlisted token/protocol contracts and `ft_transfer_call`,
+   with a gas allowance, rather than a full-access key. Policy limits are a second line of defence, not the first.
+3. Never place a full-access private key in an environment variable or config file.
+
+Use a dedicated account holding only what the autopilot should be allowed to move.
+
+## Pre-mainnet checklist
+
+The adapters validate responses strictly, so a wrong assumption fails closed, but verify on **testnet**
+(or against mainnet in `dry-run`, which only reads) before relying on any planner:
+
+- [ ] Run the read-only Burrow live test against your target network (`BURROW_LIVE=1 pnpm --filter
+@near-autopilot/burrow-adapter test:live`): it verifies the chain id, the deployed Burrow and oracle code, and
+      that assets and the oracle parse. Treat a testnet failure as "testnet deployment unusable", not as flakiness.
+- [ ] `BURROW_ORACLE_ID` equals the oracle your deployment reports in `get_config` (verification refuses otherwise);
+      the built-in mainnet default `priceoracle.near` has not been confirmed against the chain.
+- [ ] Consider pinning `allowedCodeHashes` in the `BurrowVerifier` options once you have audited a deployed version.
+- [ ] Balances from Burrow are INNER units (`raw × 10^extra_decimals`); the adapter converts, but spot-check one position by hand.
+- [ ] The Burrow `Execute` repay/increase-collateral messages are accepted by a real `ft_transfer_call` on testnet
+      (the argument shapes rest on contract and frontend source; they have not been executed by this project).
+- [ ] `get_return` and the Rhea instant-swap message (`force`, `actions[]`) match the exchange contract you point at,
+      and swap output reaches the wallet (check whether your account needs a storage deposit on the exchange).
+- [ ] Gas defaults (180 Tgas swap; Burrow `ft_transfer_call` 100 Tgas, `execute` 50 Tgas, copied from the Burrow frontend) suffice; unused gas is refunded.
+- [ ] Run several `dry-run` cycles and review the `proposals` and `audit_events` tables.
+- [ ] Reconcile a deliberately interrupted run (kill the API between `approved` and execution) to practise recovery.
+
+## Operational notes
+
+- Keep `maxActionUsd`, `dailyLimitUsd` and `approvalThresholdUsd` small until you trust the system.
+- `policy.enabled: false` is the kill switch; restart the API after editing the config file.
+- Run Postgres with backups; `audit_events` is the forensic record.
+- Put the API behind a private network; compose binds ports to `127.0.0.1` by default.

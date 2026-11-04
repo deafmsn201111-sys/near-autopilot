@@ -1,0 +1,32 @@
+{
+  "name": "@near-autopilot/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@near-autopilot/agents": "workspace:*",
+    "@near-autopilot/burrow-adapter": "workspace:*",
+    "@near-autopilot/config": "workspace:*",
+    "@near-autopilot/core": "workspace:*",
+    "@near-autopilot/db": "workspace:*",
+    "@near-autopilot/financial-engine": "workspace:*",
+    "@near-autopilot/near-adapter": "workspace:*",
+    "@near-autopilot/policy-engine": "workspace:*",
+    "@near-autopilot/rhea-adapter": "workspace:*",
+    "@near-autopilot/tx-execution": "workspace:*",
+    "fastify": "^5.2.0",
+    "tsx": "^4.19.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
