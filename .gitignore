@@ -8,3 +8,18 @@ coverage
 !.env.example
 *.tsbuildinfo
 config/autopilot.json
+
+# Keys, credentials and local data: never commit (this project needs none for the local demo)
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.near-credentials/
+**/near-credentials/
+*.sqlite
+*.sqlite3
+*.dump
+*.log
+.DS_Store

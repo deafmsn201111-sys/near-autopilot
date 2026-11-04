@@ -8,15 +8,34 @@ whether each action may run. Nothing is signed unless policy approved that exact
 > **Safe by default.** The system starts in `dry-run`: it reads the chain, plans transactions,
 > evaluates policy and records everything, but never signs or broadcasts. Live execution requires
 > you to supply a key-custody implementation (see [docs/security.md](docs/security.md)).
+>
+> **Status:** a working local demo (simulation + dry-run) and read-only testnet integration. **Mainnet execution is
+> not a finished or verified feature**, and no seed phrase, private key or wallet is needed to run anything below.
 
 ## What it does
+
+Two interchangeable decision engines feed the same pipeline
+(snapshot → agents → planner → **policy engine** → executor → Postgres → dashboard), selected by `AUTOPILOT_ENGINE`:
+
+**`legacy`** (default)
 
 | Agent             | Job                                                                                                                     |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `health-guardian` | When the Burrow health factor drops below a trigger, repays debt (or adds collateral) to reach a target. Never borrows. |
 | `rebalancer`      | Optional. Keeps wallet holdings near target weights with one capped Rhea swap per cycle.                                |
 
-Every proposal, policy decision and execution result is stored in Postgres and visible in the dashboard.
+**`orchestrator`** (dry-run only; [docs/orchestrator.md](docs/orchestrator.md))
+
+| Agent                  | Job                                                                                  | In the current API wiring                                       |
+| ---------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `liquidation-guardian` | Ranked de-risk candidates (repay, add collateral) from the position and stress tests | Active                                                          |
+| `market-intelligence`  | Volatility, oracle-divergence, depeg and liquidity signals that tighten decisions    | `insufficient_data`: no market-data source is integrated        |
+| `lp-optimizer`         | Rhea DCL range re-centring, advisory only, with payback estimate                     | `insufficient_data`: no market data / LP positions are wired in |
+| `capital-allocator`    | Target-weight allocation swaps using yield estimates                                 | `insufficient_data`: no market data / yield estimates           |
+
+Agent output is strictly schema-validated, then a pure decision engine ranks candidates; each one still has to pass
+the same policy engine and executor as the legacy path. Every proposal, policy decision and execution result is stored
+in Postgres and visible in the dashboard.
 
 ## Repository layout
 
@@ -46,12 +65,12 @@ Dependency direction is enforced mechanically (ESLint + `scripts/check-boundarie
 
 ## Quick start
 
-Requirements: Node 22+, pnpm 9.15+, Docker (for Postgres).
+Requirements: Node 22 (`.nvmrc`), pnpm 9.15 (`packageManager`), Docker with Compose v2 (for Postgres, or the whole
+stack). No NEAR wallet, key or API key is needed.
 
 ```bash
-pnpm install                      # generates pnpm-lock.yaml on first run: commit it
-pnpm format                       # one-time: normalise formatting with Prettier before the first CI run
-cp .env.example .env              # testnet + dry-run by default; edit API_TOKEN, AUTOPILOT_ACCOUNT_ID, ...
+pnpm install --frozen-lockfile
+cp .env.example .env              # testnet + dry-run by default; set API_TOKEN, POSTGRES_PASSWORD, DATABASE_URL, AUTOPILOT_ACCOUNT_ID
 cp config/autopilot.testnet.example.json config/autopilot.json   # then edit (see below)
 
 docker compose up -d postgres
@@ -107,6 +126,19 @@ In this mode the three market-dependent agents (market intelligence, LP optimize
 `no_action / insufficient_data` every cycle because no market-data source is integrated; only the liquidation
 guardian acts. Each run's `snapshot.agents` records what every agent returned.
 
+### Testnet, read-only
+
+With `DATA_SOURCE=chain`, `NEAR_NETWORK=testnet` and `EXECUTION_MODE=dry-run`, the API reads the configured account
+through `NEAR_RPC_URL` with view calls only. At start-up it checks that the RPC really serves testnet; Burrow
+plans are only built after the verifier has confirmed the contract's code, its oracle and the token listing. The verified testnet ids are in `.env.example` and
+`config/autopilot.testnet.example.json`. `AUTOPILOT_ACCOUNT_ID` must be an existing testnet account; it is only read,
+never signed for. Read-only integration suites:
+
+```bash
+pnpm --filter @near-autopilot/burrow-adapter test:live     # BURROW_LIVE=1
+pnpm --filter @near-autopilot/rhea-dcl-adapter test:live   # RHEA_DCL_LIVE=1
+```
+
 ### Configuring the autopilot
 
 `config/autopilot.json` (validated at startup, unknown keys rejected) holds:
@@ -140,6 +172,15 @@ reason, never the value). See `.env.example` for the full list. On testnet you m
 | `pnpm db:migrate`                           | Apply migrations manually                                                                                        |
 | `pnpm --filter @near-autopilot/api test:db` | Migrations + repository on real Postgres (`DATABASE_TEST_URL`, CREATEDB rights; uses its own throwaway database) |
 
+## Security rules
+
+- Never put a seed phrase, private key or wallet file in this repository; none is needed for the demo or the
+  read-only testnet mode. `.env`, `config/autopilot.json`, key and credential files are git-ignored.
+- `EXECUTION_MODE=live` is refused on mainnet, with the orchestrator engine, and with simulation; it also refuses to
+  start without a signer, and none is shipped.
+- Generate `API_TOKEN` and `POSTGRES_PASSWORD` locally (`openssl rand -hex 32`); never reuse example values.
+- All published ports bind to `127.0.0.1`. Details and threat model: [docs/security.md](docs/security.md).
+
 ## HTTP API
 
 All `/v1/*` routes require `Authorization: Bearer <API_TOKEN>`.
@@ -161,18 +202,24 @@ Response shapes live in `packages/core/src/api-contracts.ts` and are shared with
 - **No signer is shipped, and mainnet never signs.** `EXECUTION_MODE=live` refuses to start until you implement
   `loadSigner()` (`apps/api/src/signer.ts`), and `loadApiEnv`/`wire()` reject live execution on mainnet outright
   (there is no override). Mainnet runs are dry-run. See [docs/security.md](docs/security.md).
-- **Protocol payload shapes need live verification.** Rhea v1 (`get_return`, `ft_transfer_call` swap message)
-  was written against documented interfaces. Burrow was checked against the contract and frontend source and is
-  gated at runtime by on-chain verification (chain id, deployed-code exports, oracle identity, token listing), but
-  Burrow testnet support has **never been exercised from this repository's build environment** (no RPC access).
-  Responses are strictly Zod-validated so a mismatch fails closed. Evidence and gaps:
-  [docs/burrow-capability-matrix.md](docs/burrow-capability-matrix.md), and run the checklist in
-  [docs/security.md](docs/security.md#pre-mainnet-checklist) on testnet first.
+- **Simulation is not on-chain.** `DATA_SOURCE=simulation` uses synthetic balances and fixed demo prices served by
+  an in-process mock RPC; nothing it shows was read from NEAR, and nothing is ever sent.
+- **`dry-run` sends nothing.** A `dry_run` proposal is a plan that passed policy, not a transaction; it has no tx hash.
+- **No transaction has ever been submitted from this repository**, on any network. Transaction payloads (Rhea v1
+  `ft_transfer_call` swap message, Burrow repay/collateral messages) follow the contracts' source and are gated at
+  runtime by on-chain verification (chain id, deployed-code exports, oracle identity, token listing), but their
+  on-chain _effect_ is unverified. Responses are strictly Zod-validated so a mismatch fails closed. Evidence and gaps:
+  [docs/burrow-capability-matrix.md](docs/burrow-capability-matrix.md),
+  [docs/security.md](docs/security.md#pre-mainnet-checklist).
 - Testnet: Burrow, its oracle and both Rhea contracts were confirmed with read-only calls (docs/security.md), but the
-  testnet oracle currently reports **no prices**, so chain-mode testnet runs cannot price a decision. Use simulation
-  to demonstrate behaviour.
-- The orchestrator engine is dry-run only (in-memory audit/idempotency stores) and has no market-data source, so its
-  LP Optimizer and Capital Allocator report `insufficient_data` outside tests.
+  testnet oracle reported **no fresh price for any asset** when checked (2026-11-04), so chain-mode testnet runs
+  cannot price a decision. Use simulation to demonstrate behaviour.
+- The orchestrator engine is dry-run only (in-memory audit/idempotency stores) and has no market-data source, so
+  LP Optimizer, Capital Allocator and Market Intelligence return `insufficient_data` outside tests.
+- The public testnet RPC is slow (~3 s per call) and rate-limits (HTTP 429); the RPC client does not back off yet,
+  so use a dedicated endpoint for anything beyond a quick check.
+- `pnpm db:generate` cannot diff against the current schema: `packages/db/drizzle/meta` has no snapshot files
+  (migration `0001` is hand-written). Write further migrations by hand, or regenerate the snapshots first.
 - Rhea quoting is single-hop through operator-listed pools only.
 - Proposals that exceed the approval threshold are recorded as `requires_approval` and held; there is no
   approval UI yet.
