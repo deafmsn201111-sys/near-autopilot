@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   portfolioDtoSchema,
   runsResponseSchema,
+  testnetTxResponseSchema,
   proposalsResponseSchema,
   triggerRunResponseSchema,
   type PolicyDto,
@@ -97,6 +98,22 @@ describe('HTTP API', () => {
         (await server.inject({ url: '/v1/proposals?limit=5', headers: auth })).json(),
       ),
     ).toEqual({ proposals: [] });
+  });
+
+  it('serves the testnet transaction ledger read-only, behind auth', async () => {
+    const server = make();
+    expect((await server.inject({ url: '/v1/testnet-transactions' })).statusCode).toBe(401);
+    const body = testnetTxResponseSchema.parse(
+      (await server.inject({ url: '/v1/testnet-transactions', headers: auth })).json(),
+    );
+    expect(body).toEqual({ budgetNear: '0', spentNear: '0', transactions: [] });
+    // There is no route that prepares or sends a transaction.
+    for (const method of ['POST', 'PUT'] as const) {
+      expect(
+        (await server.inject({ method, url: '/v1/testnet-transactions', headers: auth }))
+          .statusCode,
+      ).toBe(404);
+    }
   });
 
   it('validates query parameters', async () => {

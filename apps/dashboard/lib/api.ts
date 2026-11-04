@@ -4,6 +4,7 @@ import {
   portfolioDtoSchema,
   proposalsResponseSchema,
   runsResponseSchema,
+  testnetTxResponseSchema,
   triggerRunResponseSchema,
 } from '@near-autopilot/core';
 import type { ZodType } from 'zod';
@@ -47,6 +48,8 @@ async function request<T>(path: string, schema: ZodType<T>, init: RequestInit = 
 export const getPortfolio = () => request('/v1/portfolio', portfolioDtoSchema);
 export const getPolicy = () => request('/v1/policy', policyDtoSchema);
 export const getRuns = (limit = 20) => request(`/v1/runs?limit=${limit}`, runsResponseSchema);
+export const getTestnetTransactions = (limit = 20) =>
+  request(`/v1/testnet-transactions?limit=${limit}`, testnetTxResponseSchema);
 export const getProposals = (limit = 50) =>
   request(`/v1/proposals?limit=${limit}`, proposalsResponseSchema);
 export const triggerRun = () => request('/v1/runs', triggerRunResponseSchema, { method: 'POST' });

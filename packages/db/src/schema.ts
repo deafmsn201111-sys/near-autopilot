@@ -91,6 +91,45 @@ export const auditEvents = pgTable(
   ],
 );
 
+/**
+ * Manually confirmed TESTNET transactions (apps/api testnet-tx). prepared -> approved -> submitted -> confirmed, or
+ * rejected / failed / expired / unknown. Amounts in yoctoNEAR as decimal strings (u128 exceeds bigint columns).
+ */
+export const testnetTransactions = pgTable(
+  'testnet_transactions',
+  {
+    id: text('id').primaryKey(),
+    previewHash: text('preview_hash').notNull().unique(),
+    network: text('network', { enum: ['testnet'] }).notNull(),
+    signerId: text('signer_id').notNull(),
+    operation: text('operation').notNull(),
+    receiverId: text('receiver_id').notNull(),
+    methodName: text('method_name').notNull(),
+    preview: jsonb('preview').$type<unknown>().notNull(),
+    status: text('status', {
+      enum: [
+        'prepared',
+        'approved',
+        'submitted',
+        'confirmed',
+        'rejected',
+        'failed',
+        'expired',
+        'unknown',
+      ],
+    }).notNull(),
+    depositYocto: text('deposit_yocto').notNull(),
+    maxCostYocto: text('max_cost_yocto').notNull(),
+    actualCostYocto: text('actual_cost_yocto'),
+    txHash: text('tx_hash'),
+    error: text('error'),
+    createdAt: ts('created_at').notNull(),
+    expiresAt: ts('expires_at').notNull(),
+    updatedAt: ts('updated_at').notNull(),
+  },
+  (t) => [index('testnet_transactions_status_idx').on(t.status)],
+);
+
 export type RunRow = typeof runs.$inferSelect;
 export type NewRunRow = typeof runs.$inferInsert;
 export type ProposalRow = typeof proposals.$inferSelect;

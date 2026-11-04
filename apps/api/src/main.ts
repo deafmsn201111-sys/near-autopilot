@@ -5,6 +5,8 @@ import { DrizzleRepository } from './infra/drizzle-repository';
 import { createJsonLogger } from './logger';
 import { toPolicyDto } from './presenters';
 import { buildServer } from './server';
+import { DrizzleTestnetTxLedger } from './testnet-tx/ledger';
+import { testnetTxView } from './testnet-tx/presenter';
 import { wire } from './wiring';
 
 async function main(): Promise<void> {
@@ -31,6 +33,7 @@ async function main(): Promise<void> {
         simulationPortfolio: env.DATA_SOURCE === 'simulation' ? env.SIMULATION_PORTFOLIO : null,
       }),
       provenance,
+      testnetTransactions: testnetTxView(new DrizzleTestnetTxLedger(database.db)),
     },
     { logger: { level: env.LOG_LEVEL } },
   );

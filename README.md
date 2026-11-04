@@ -130,14 +130,34 @@ guardian acts. Each run's `snapshot.agents` records what every agent returned.
 
 With `DATA_SOURCE=chain`, `NEAR_NETWORK=testnet` and `EXECUTION_MODE=dry-run`, the API reads the configured account
 through `NEAR_RPC_URL` with view calls only. At start-up it checks that the RPC really serves testnet; Burrow
-plans are only built after the verifier has confirmed the contract's code, its oracle and the token listing. The verified testnet ids are in `.env.example` and
-`config/autopilot.testnet.example.json`. `AUTOPILOT_ACCOUNT_ID` must be an existing testnet account; it is only read,
-never signed for. Read-only integration suites:
+plans are only built after the verifier has confirmed the contract's code, its oracle and the token listing.
+`AUTOPILOT_ACCOUNT_ID` must be an existing testnet account; it is only read, never signed for.
+
+A ready-made profile runs it next to the simulation stack (same Postgres; each API lists only its own rows):
+
+```bash
+cp config/autopilot.testnet.example.json config/autopilot.testnet.local.json   # set policy.signerAccountId
+# .env: TESTNET_ACCOUNT_ID=<your-account>.testnet   (optional: TESTNET_RPC_URL, TESTNET_ENGINE)
+docker compose --profile testnet up -d --build
+# simulation: dashboard http://127.0.0.1:3001, API :4000   |   testnet: dashboard http://127.0.0.1:3002, API :4001
+docker compose --profile testnet stop    # keeps data
+```
+
+Network, data source and dry-run are fixed for this profile in `docker-compose.yml`. The dashboard shows
+`TESTNET · READ-ONLY · DRY-RUN`, which tracked tokens have no oracle price, and for each check the reasons it did
+nothing (`DATA_NOT_FRESH`, per-agent `insufficient_data`, ...). Read-only integration suites:
 
 ```bash
 pnpm --filter @near-autopilot/burrow-adapter test:live     # BURROW_LIVE=1
 pnpm --filter @near-autopilot/rhea-dcl-adapter test:live   # RHEA_DCL_LIVE=1
 ```
+
+### Testnet transactions (manual, confirmed, capped)
+
+`pnpm --filter @near-autopilot/api testnet-tx ...` prepares a read-only preview of one allowlisted operation
+(`wrap.testnet` `storage_deposit` / `near_deposit`), and signs and sends it only when you repeat its exact preview
+hash, with a key file you keep outside the repository. Limits: 0.1 NEAR per operation, 1 NEAR in total, 0.5 NEAR
+always kept. See [docs/testnet-transactions.md](docs/testnet-transactions.md). The autopilot itself still never signs.
 
 ### Configuring the autopilot
 
@@ -177,7 +197,8 @@ reason, never the value). See `.env.example` for the full list. On testnet you m
 - Never put a seed phrase, private key or wallet file in this repository; none is needed for the demo or the
   read-only testnet mode. `.env`, `config/autopilot.json`, key and credential files are git-ignored.
 - `EXECUTION_MODE=live` is refused on mainnet, with the orchestrator engine, and with simulation; it also refuses to
-  start without a signer, and none is shipped.
+  start without a signer, and the autopilot ships none. The separate `testnet-tx` tool signs only on testnet, only
+  allowlisted operations, only after you confirm the exact preview.
 - Generate `API_TOKEN` and `POSTGRES_PASSWORD` locally (`openssl rand -hex 32`); never reuse example values.
 - All published ports bind to `127.0.0.1`. Details and threat model: [docs/security.md](docs/security.md).
 
@@ -199,7 +220,8 @@ Response shapes live in `packages/core/src/api-contracts.ts` and are shared with
 
 ## Honest limitations
 
-- **No signer is shipped, and mainnet never signs.** `EXECUTION_MODE=live` refuses to start until you implement
+- **The autopilot ships no signer, and mainnet never signs.** (The `testnet-tx` tool's key-file signer is testnet-only
+  and outside the autopilot pipeline.) `EXECUTION_MODE=live` refuses to start until you implement
   `loadSigner()` (`apps/api/src/signer.ts`), and `loadApiEnv`/`wire()` reject live execution on mainnet outright
   (there is no override). Mainnet runs are dry-run. See [docs/security.md](docs/security.md).
 - **Simulation is not on-chain.** `DATA_SOURCE=simulation` uses synthetic balances and fixed demo prices served by
@@ -216,8 +238,9 @@ Response shapes live in `packages/core/src/api-contracts.ts` and are shared with
   cannot price a decision. Use simulation to demonstrate behaviour.
 - The orchestrator engine is dry-run only (in-memory audit/idempotency stores) and has no market-data source, so
   LP Optimizer, Capital Allocator and Market Intelligence return `insufficient_data` outside tests.
-- The public testnet RPC is slow (~3 s per call) and rate-limits (HTTP 429); the RPC client does not back off yet,
-  so use a dedicated endpoint for anything beyond a quick check.
+- The public testnet RPC is slow (~3 s per call) and rate-limits (HTTP 429). The RPC client retries reads only, with
+  backoff, jitter, Retry-After and bounded concurrency, and never retries a send; a dedicated endpoint is still
+  advisable.
 - `pnpm db:generate` cannot diff against the current schema: `packages/db/drizzle/meta` has no snapshot files
   (migration `0001` is hand-written). Write further migrations by hand, or regenerate the snapshots first.
 - Rhea quoting is single-hop through operator-listed pools only.

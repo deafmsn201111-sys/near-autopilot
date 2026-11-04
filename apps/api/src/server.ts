@@ -1,7 +1,12 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError, z } from 'zod';
-import type { PolicyDto, PortfolioSnapshot, Provenance } from '@near-autopilot/core';
+import type {
+  PolicyDto,
+  PortfolioSnapshot,
+  Provenance,
+  TestnetTxResponse,
+} from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
 import { toPortfolioDto, toProposalDto, toRunDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
@@ -14,6 +19,8 @@ export interface ServerDeps {
   readonly policy: PolicyDto;
   /** This deployment's data source and network, stamped on everything it produces. */
   readonly provenance: Provenance;
+  /** Read-only view of the manually confirmed testnet transaction ledger (absent in tests that do not need it). */
+  readonly testnetTransactions?: { list(limit: number): Promise<TestnetTxResponse> };
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -86,6 +93,17 @@ export function buildServer(
   });
 
   app.get('/v1/policy', async () => deps.policy);
+
+  app.get('/v1/testnet-transactions', async (request) => {
+    const { limit } = limitQuery.parse(request.query);
+    return (
+      (await deps.testnetTransactions?.list(limit)) ?? {
+        budgetNear: '0',
+        spentNear: '0',
+        transactions: [],
+      }
+    );
+  });
 
   app.post('/v1/runs', async (_request, reply) => {
     const result = await deps.cycle.run();

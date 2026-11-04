@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
-    "test:db": "vitest run test/drizzle-repository.integration.test.ts"
+    "test:db": "vitest run test/drizzle-repository.integration.test.ts",
+    "testnet-tx": "tsx --env-file-if-exists=../../.env src/testnet-tx/cli.ts"
   },
   "dependencies": {
     "@near-autopilot/agents": "workspace:*",

@@ -53,7 +53,8 @@ Checked from this repository with view calls only (`status`, `view_code`, `call_
 | Rhea v1 pool prices                                               | Pools pairing wNEAR with the fake stables exist (e.g. #34, #54) but are not price-meaningful (1 wNEAR quotes ~2.2e22 raw USDT.e): keep `rhea.pools` empty |
 | Pipeline, `DATA_SOURCE=chain`, dry-run                            | With an unregistered account the legacy cycle fails closed (`UNKNOWN_ACCOUNT`) and the orchestrator records `SNAPSHOT_UNAVAILABLE` and does nothing       |
 
-Not verified: any transaction (no signer is shipped), the mainnet Burrow `get_account` shape, the mainnet oracle
+Not verified: any transaction (the autopilot ships no signer; the separate testnet-only `testnet-tx` tool, see
+[testnet-transactions.md](testnet-transactions.md), had not sent one when this was written), the mainnet Burrow `get_account` shape, the mainnet oracle
 id. The public RPC rate-limits (HTTP 429) under the live suites; rerun or use a dedicated endpoint.
 
 ## Pre-mainnet checklist
