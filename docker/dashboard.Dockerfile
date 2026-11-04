@@ -17,4 +17,5 @@ COPY --from=build --chown=node:node /repo/apps/dashboard/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/dashboard/.next/static ./apps/dashboard/.next/static
 USER node
 EXPOSE 3000
+HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
 CMD ["node", "apps/dashboard/server.js"]

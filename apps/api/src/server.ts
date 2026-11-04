@@ -34,7 +34,7 @@ export function buildServer(
   deps: ServerDeps,
   options: { logger?: boolean | { level: string } } = {},
 ): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? false, disableRequestLogging: false });
+  const app = Fastify({ logger: options.logger ?? false });
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {

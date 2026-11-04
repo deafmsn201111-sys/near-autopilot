@@ -1,6 +1,7 @@
 # Local/staging stack: Postgres + API + dashboard.
 #   cp .env.example .env && cp config/autopilot.example.json config/autopilot.json
 #   docker compose up --build
+# Host ports are bound to 127.0.0.1 only; override with POSTGRES_HOST_PORT / API_HOST_PORT / DASHBOARD_PORT if taken.
 services:
   postgres:
     image: postgres:16-alpine
@@ -12,7 +13,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - '127.0.0.1:5432:5432'
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 5s
@@ -50,7 +51,7 @@ services:
     volumes:
       - ./config/autopilot.json:/etc/autopilot/autopilot.json:ro
     ports:
-      - '127.0.0.1:4000:4000'
+      - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
 
   dashboard:
     build:
@@ -64,7 +65,7 @@ services:
       API_BASE_URL: http://api:4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:${DASHBOARD_PORT:-3000}:3000'
 
 volumes:
   pgdata:
