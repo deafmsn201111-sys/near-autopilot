@@ -179,9 +179,59 @@ export const intentMatchesPlan: Rule = ({ intent, plan }) => {
     } catch {
       out.push(reject('intent_match', 'Swap message is not valid JSON'));
     }
+  } else {
+    const problem = burrowMessageProblem(intent, action.args['msg']);
+    if (problem) out.push(reject('intent_match', problem));
   }
   return out;
 };
+
+const POSITIVE_INTEGER = /^[1-9]\d*$/;
+
+/**
+ * A Burrow `ft_transfer_call` message is executed by the lending contract, so it must carry exactly the one action
+ * the intent asked for: anything else in `Execute.actions` (e.g. a Withdraw or Borrow) would ride along unchecked.
+ * Shapes follow `burrow-adapter/src/builders.ts`. `max_amount` is in Burrow inner units (token-specific extra
+ * decimals the policy engine does not know), so only its form is checked; the contract caps it at the transfer.
+ */
+function burrowMessageProblem(
+  intent: Exclude<ActionIntent, { kind: 'swap' }>,
+  msg: unknown,
+): string | null {
+  if (typeof msg !== 'string') return 'Lending message is missing';
+  if (intent.kind === 'lending.supply' && !intent.asCollateral) {
+    return msg === '' ? null : 'Plain supply must use an empty message';
+  }
+  const expected = intent.kind === 'lending.repay' ? 'Repay' : 'IncreaseCollateral';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(msg);
+  } catch {
+    return 'Lending message is not valid JSON';
+  }
+  const execute = isRecord(parsed) && Object.keys(parsed).length === 1 ? parsed['Execute'] : null;
+  const actions =
+    isRecord(execute) && Object.keys(execute).length === 1 ? execute['actions'] : null;
+  if (!Array.isArray(actions) || actions.length !== 1) {
+    return `Lending message must contain exactly one ${expected} action`;
+  }
+  const [only] = actions as unknown[];
+  const body = isRecord(only) && Object.keys(only).length === 1 ? only[expected] : null;
+  if (!isRecord(body)) return `Lending message action is not ${expected}`;
+  if (body['token_id'] !== intent.token) {
+    return `Lending message token ${String(body['token_id'])} differs from intent ${intent.token}`;
+  }
+  const maxAmount = body['max_amount'];
+  if (typeof maxAmount !== 'string' || !POSITIVE_INTEGER.test(maxAmount)) {
+    return 'Lending message max_amount must be a positive integer string';
+  }
+  const extra = Object.keys(body).filter((k) => k !== 'token_id' && k !== 'max_amount');
+  return extra.length === 0 ? null : `Lending message has unexpected fields: ${extra.join(', ')}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 export const valueLimits: Rule = ({ valueUsdMicro, limits, history }) => {
   if (valueUsdMicro === null)

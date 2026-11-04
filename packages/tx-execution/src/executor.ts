@@ -1,5 +1,6 @@
 import {
   errorMessage,
+  type ApprovalAuthority,
   type ApprovedPlan,
   type ChainContextProvider,
   type Clock,
@@ -17,6 +18,8 @@ export interface TransactionExecutorDeps {
   readonly broadcaster: TransactionBroadcaster;
   readonly clock: Clock;
   readonly logger: Logger;
+  /** The policy engine that minted the approvals this executor may run. */
+  readonly approvals: ApprovalAuthority;
 }
 
 const rejected = (mode: ExecutionResult['mode'], error: string): ExecutionResult => ({
@@ -39,7 +42,7 @@ class ReplayGuard {
 
 /**
  * Live executor: verify approval -> fetch nonce/block hash -> sign -> broadcast.
- * It only accepts `ApprovedPlan`, so nothing that skipped the policy engine type-checks.
+ * It only accepts `ApprovedPlan` (compile time) that its `ApprovalAuthority` recognises (run time).
  */
 export class TransactionExecutor implements PlanExecutor {
   private readonly replay = new ReplayGuard();
@@ -47,9 +50,9 @@ export class TransactionExecutor implements PlanExecutor {
   constructor(private readonly deps: TransactionExecutorDeps) {}
 
   async execute(approved: ApprovedPlan): Promise<ExecutionResult> {
-    const { signer, contextProvider, broadcaster, clock, logger } = this.deps;
+    const { signer, contextProvider, broadcaster, clock, logger, approvals } = this.deps;
     try {
-      verifyApproval(approved, clock.now());
+      verifyApproval(approved, clock.now(), approvals);
     } catch (error) {
       return rejected('live', errorMessage(error));
     }
@@ -61,9 +64,12 @@ export class TransactionExecutor implements PlanExecutor {
     }
     if (!this.replay.claim(approved)) return rejected('live', 'Approval has already been used');
 
+    // Once signed, the hash identifies the transaction whether or not the broadcast call returns cleanly.
+    let signedHash: string | null = null;
     try {
       const chain = await contextProvider.getContext(signer.accountId, signer.publicKey);
       const signed = await signer.sign(approved.plan, chain);
+      signedHash = signed.hash;
       logger.info('broadcasting transaction', {
         intentId: approved.plan.intentId,
         txHash: signed.hash,
@@ -78,9 +84,16 @@ export class TransactionExecutor implements PlanExecutor {
     } catch (error) {
       logger.error('execution failed', {
         intentId: approved.plan.intentId,
+        txHash: signedHash,
         error: errorMessage(error),
       });
-      return { status: 'failed', mode: 'live', txHash: null, error: errorMessage(error) };
+      // A signed transaction whose broadcast errored may still land: keep its hash so the caller stops the
+      // cycle, counts it against limits and cooldown, and an operator can reconcile it on-chain.
+      const error_ =
+        signedHash === null
+          ? errorMessage(error)
+          : `outcome unknown, reconcile ${signedHash} on-chain: ${errorMessage(error)}`;
+      return { status: 'failed', mode: 'live', txHash: signedHash, error: error_ };
     }
   }
 }
@@ -90,14 +103,19 @@ export class TransactionExecutor implements PlanExecutor {
  * never signs or broadcasts, and reports `dry_run` so nothing downstream mistakes it for a fill.
  */
 export class DryRunExecutor implements PlanExecutor {
-  constructor(private readonly deps: Pick<TransactionExecutorDeps, 'clock' | 'logger'>) {}
+  private readonly replay = new ReplayGuard();
+
+  constructor(
+    private readonly deps: Pick<TransactionExecutorDeps, 'clock' | 'logger' | 'approvals'>,
+  ) {}
 
   async execute(approved: ApprovedPlan): Promise<ExecutionResult> {
     try {
-      verifyApproval(approved, this.deps.clock.now());
+      verifyApproval(approved, this.deps.clock.now(), this.deps.approvals);
     } catch (error) {
       return rejected('dry-run', errorMessage(error));
     }
+    if (!this.replay.claim(approved)) return rejected('dry-run', 'Approval has already been used');
     this.deps.logger.info('dry-run: would execute transaction', {
       intentId: approved.plan.intentId,
       receiverId: approved.plan.receiverId,

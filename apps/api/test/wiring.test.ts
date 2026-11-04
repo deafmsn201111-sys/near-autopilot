@@ -1,0 +1,91 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { loadApiEnv, type ApiEnv } from '@near-autopilot/config';
+import { accountId, NetworkMismatchError } from '@near-autopilot/core';
+import { SilentLogger } from '@near-autopilot/core/testing';
+import { parseAutopilotConfig } from '../src/autopilot-config';
+import { wire } from '../src/wiring';
+import { InMemoryRepository } from './in-memory-repository';
+
+const ACCOUNT = 'your-account.near';
+const config = parseAutopilotConfig(
+  JSON.parse(
+    readFileSync(new URL('../../../config/autopilot.example.json', import.meta.url), 'utf8'),
+  ) as unknown,
+  accountId(ACCOUNT),
+);
+
+const baseEnv = {
+  API_TOKEN: 'test-token-test-token-test-token-test',
+  DATABASE_URL: 'postgres://u:p@localhost:5432/db',
+  AUTOPILOT_ACCOUNT_ID: ACCOUNT,
+};
+const mainnetEnv = (): ApiEnv =>
+  loadApiEnv({
+    ...baseEnv,
+    NEAR_NETWORK: 'mainnet',
+    NEAR_RPC_URL: 'https://rpc.example.invalid',
+  });
+const testnetEnv = (): ApiEnv =>
+  loadApiEnv({
+    ...baseEnv,
+    NEAR_NETWORK: 'testnet',
+    NEAR_RPC_URL: 'https://rpc.example.invalid',
+    RHEA_CONTRACT_ID: 'ref.example.testnet',
+    BURROW_CONTRACT_ID: 'burrow.example.testnet',
+    BURROW_ORACLE_ID: 'oracle.example.testnet',
+  });
+
+/** Fake RPC transport that answers `status` with the given chain id and records every method called. */
+function rpcReporting(chainId: string) {
+  const methods: string[] = [];
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    if (typeof init?.body !== 'string') throw new Error('expected a JSON string body');
+    const body = JSON.parse(init.body) as { id: number; method: string };
+    methods.push(body.method);
+    return new Response(
+      JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { chain_id: chainId } }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  };
+  return { fetchImpl, methods };
+}
+
+const wireWith = (env: ApiEnv, chainId: string) => {
+  const rpc = rpcReporting(chainId);
+  const result = wire(env, config, new InMemoryRepository(), new SilentLogger(), {
+    fetchImpl: rpc.fetchImpl,
+  });
+  return { result, methods: rpc.methods };
+};
+
+describe('wire (composition root)', () => {
+  it('refuses live execution on mainnet before touching the network', async () => {
+    const env: ApiEnv = { ...mainnetEnv(), EXECUTION_MODE: 'live' };
+    const { result, methods } = wireWith(env, 'mainnet');
+    await expect(result).rejects.toThrow('Refusing to wire live execution on mainnet');
+    expect(methods).toEqual([]);
+  });
+
+  it('refuses to start when the RPC serves a different chain than NEAR_NETWORK', async () => {
+    // The dangerous case: config says testnet (so live would be allowed) but the endpoint is mainnet.
+    const { result } = wireWith({ ...testnetEnv(), EXECUTION_MODE: 'live' }, 'mainnet');
+    await expect(result).rejects.toBeInstanceOf(NetworkMismatchError);
+    await expect(wireWith(mainnetEnv(), 'testnet').result).rejects.toBeInstanceOf(
+      NetworkMismatchError,
+    );
+  });
+
+  it('refuses live mode without a signer even on a verified testnet', async () => {
+    const { result, methods } = wireWith({ ...testnetEnv(), EXECUTION_MODE: 'live' }, 'testnet');
+    await expect(result).rejects.toThrow('requires a TransactionSigner');
+    expect(methods).toEqual(['status']);
+  });
+
+  it('wires dry-run once the chain id matches', async () => {
+    const { result, methods } = wireWith(mainnetEnv(), 'mainnet');
+    const wired = await result;
+    expect(wired.cycle).toBeDefined();
+    expect(methods).toEqual(['status']);
+  });
+});

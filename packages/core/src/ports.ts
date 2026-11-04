@@ -125,4 +125,13 @@ export interface PlanExecutor {
   execute(approved: ApprovedPlan): Promise<ExecutionResult>;
 }
 
+/**
+ * Runtime proof of origin for an `ApprovedPlan`. The `ApprovedPlan` brand is compile-time only, so a cast or a
+ * structural copy would otherwise pass for a real approval. Implemented by the policy engine (which records every
+ * approval it mints); executors refuse anything it does not recognise.
+ */
+export interface ApprovalAuthority {
+  isAuthentic(approved: ApprovedPlan): boolean;
+}
+
 export type { PortfolioSnapshot };

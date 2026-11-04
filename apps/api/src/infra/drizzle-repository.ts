@@ -4,6 +4,8 @@ import {
   desc,
   eq,
   gte,
+  isNotNull,
+  or,
   proposals,
   runs,
   sql,
@@ -97,10 +99,17 @@ export class DrizzleRepository implements AutopilotRepository {
     accountId: string,
     since: Date,
   ): Promise<{ spentLast24hUsdMicro: bigint; lastExecutedAt: Date | null }> {
+    // Count everything that may have reached the chain, not only confirmed successes: an `approved` row is a
+    // send that never recorded its result (crash mid-send), and a `failed` row with a hash was signed and
+    // broadcast with an unknown or failed outcome. Under-counting would let limits and cooldown be exceeded.
     const live = and(
       eq(proposals.accountId, accountId),
-      eq(proposals.status, 'executed'),
       eq(proposals.executionMode, 'live'),
+      or(
+        eq(proposals.status, 'executed'),
+        eq(proposals.status, 'approved'),
+        and(eq(proposals.status, 'failed'), isNotNull(proposals.txHash)),
+      ),
     );
     const [spent] = await this.db
       .select({ total: sql<string>`coalesce(sum(${proposals.valueUsdMicro}), 0)` })

@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   await runMigrations(database.db);
   const repo = new DrizzleRepository(database.db);
 
-  const { cycle, snapshots, policy } = wire(env, config, repo, logger);
+  const { cycle, snapshots, policy } = await wire(env, config, repo, logger);
   const app = buildServer(
     {
       apiToken: env.API_TOKEN,

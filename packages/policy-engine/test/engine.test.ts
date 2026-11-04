@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PlannedTransaction } from '@near-autopilot/core';
+import type { ActionIntent, LendingSupplyIntent, PlannedTransaction } from '@near-autopilot/core';
 import { planHash } from '@near-autopilot/core/hash';
 import { policyConfigSchema } from '../src';
 import {
@@ -191,6 +191,69 @@ describe('PolicyEngine.evaluate', () => {
   });
 });
 
+describe('Burrow message must match the intent exactly', () => {
+  const withMsg = (plan: PlannedTransaction, msg: string): PlannedTransaction => ({
+    ...plan,
+    actions: plan.actions.map((a) => ({ ...a, args: { ...a.args, msg } })),
+  });
+  const execute = (...actions: unknown[]) => JSON.stringify({ Execute: { actions } });
+  const supply = (asCollateral: boolean): LendingSupplyIntent => ({
+    id: 'intent-3',
+    agentId: 'guardian',
+    reason: 'test',
+    kind: 'lending.supply',
+    protocol: 'burrow',
+    token: USDT,
+    amount: 20_000_000n,
+    asCollateral,
+  });
+  const intentMatch = (plan: PlannedTransaction, intent: ActionIntent = repayIntent()) => {
+    const { engine } = makeEngine();
+    return engine
+      .evaluate(input(intent, { plan }))
+      .violations.filter((v) => v.rule === 'intent_match')
+      .map((v) => v.message);
+  };
+
+  it('accepts the shapes the Burrow builders emit', () => {
+    expect(intentMatch(planFor(repayIntent()))).toEqual([]);
+    expect(intentMatch(planFor(supply(true)), supply(true))).toEqual([]);
+    expect(intentMatch(planFor(supply(false)), supply(false))).toEqual([]);
+  });
+
+  it('rejects a repay that smuggles a second action (e.g. Withdraw)', () => {
+    const repay = { Repay: { token_id: USDT, max_amount: '1' } };
+    const withdraw = { Withdraw: { token_id: WNEAR, max_amount: '1' } };
+    const plan = withMsg(planFor(repayIntent()), execute(repay, withdraw));
+    expect(intentMatch(plan)).toEqual(['Lending message must contain exactly one Repay action']);
+    const { engine } = makeEngine();
+    expect(engine.evaluate(input(repayIntent(), { plan })).outcome).toBe('reject');
+  });
+
+  it('rejects the wrong action, token, amount form or extra fields', () => {
+    const plan = planFor(repayIntent());
+    const cases: Array<[string, string]> = [
+      [execute({ Withdraw: { token_id: USDT, max_amount: '1' } }), 'is not Repay'],
+      [execute({ Repay: { token_id: WNEAR, max_amount: '1' } }), 'differs from intent'],
+      [execute({ Repay: { token_id: USDT, max_amount: '0' } }), 'positive integer'],
+      [execute({ Repay: { token_id: USDT, max_amount: '1', to: 'x' } }), 'unexpected fields'],
+      [JSON.stringify({ Execute: { actions: [] }, Extra: 1 }), 'exactly one Repay'],
+      ['', 'not valid JSON'],
+    ];
+    for (const [msg, expected] of cases) {
+      expect(intentMatch(withMsg(plan, msg)).join(' ')).toContain(expected);
+    }
+  });
+
+  it('a plain supply must not carry any Execute message', () => {
+    const plan = withMsg(
+      planFor(supply(false)),
+      execute({ IncreaseCollateral: { token_id: USDT, max_amount: '1' } }),
+    );
+    expect(intentMatch(plan, supply(false))).toEqual(['Plain supply must use an empty message']);
+  });
+});
+
 describe('PolicyEngine.approve', () => {
   it('mints an approval bound to the plan hash with a TTL', () => {
     const { engine } = makeEngine();
@@ -210,6 +273,38 @@ describe('PolicyEngine.approve', () => {
     const { engine: ok } = makeEngine();
     const decision = ok.evaluate(input(intent));
     expect(() => ok.approve({ ...plan, intentId: 'other' }, decision)).toThrow('different intent');
+  });
+
+  it('refuses decisions it did not produce, even if they claim approve', () => {
+    const { engine } = makeEngine();
+    const intent = swapIntent();
+    const plan = planFor(intent);
+    const real = engine.evaluate(input(intent));
+    expect(() => engine.approve(plan, { ...real })).toThrow('not produced by this policy engine');
+    const { engine: other } = makeEngine();
+    expect(() => other.approve(plan, real)).toThrow('not produced by this policy engine');
+  });
+
+  it('refuses to approve a different plan than the one evaluated', () => {
+    const { engine } = makeEngine();
+    const intent = swapIntent();
+    const plan = planFor(intent);
+    const decision = engine.evaluate(input(intent));
+    const swapped: PlannedTransaction = { ...plan, receiverId: BURROW };
+    expect(() => engine.approve(swapped, decision)).toThrow('differs from the plan');
+  });
+
+  it('uses each decision at most once and recognises only its own approvals', () => {
+    const { engine } = makeEngine();
+    const intent = swapIntent();
+    const plan = planFor(intent);
+    const decision = engine.evaluate(input(intent));
+    const approved = engine.approve(plan, decision);
+    expect(engine.isAuthentic(approved)).toBe(true);
+    expect(engine.isAuthentic({ ...approved })).toBe(false);
+    expect(Object.isFrozen(approved)).toBe(true);
+    expect(() => engine.approve(plan, decision)).toThrow('already used');
+    expect(makeEngine().engine.isAuthentic(approved)).toBe(false);
   });
 });
 

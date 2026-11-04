@@ -40,8 +40,8 @@ export interface PolicyDecision {
 }
 
 /**
- * A plan the policy engine has approved. It can only be minted by `PolicyEngine.approve`
- * (compile-time boundary) and the executor re-verifies `planHash` and `expiresAt` at run time.
+ * A plan the policy engine has approved. It can only be minted by `PolicyEngine.approve`: the brand enforces that
+ * at compile time, and executors check `ApprovalAuthority.isAuthentic` plus `planHash` and `expiresAt` at run time.
  */
 export type ApprovedPlan = Brand<
   {

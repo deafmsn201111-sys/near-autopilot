@@ -229,7 +229,7 @@ export function makeWorld(opts: WorldOptions = {}) {
       {
         type: 'FunctionCall',
         methodName: 'ft_transfer_call',
-        args: { receiver_id: BURROW, amount: i.amount.toString(), msg: '' },
+        args: { receiver_id: BURROW, amount: i.amount.toString(), msg: burrowMessage(i) },
         gas: 300_000_000_000_000n,
         deposit: 1n,
       },
@@ -308,8 +308,15 @@ export function makeWorld(opts: WorldOptions = {}) {
   };
   const realExecutor: PlanExecutor =
     opts.executor === 'live'
-      ? new TransactionExecutor({ signer, contextProvider, broadcaster, clock, logger })
-      : new DryRunExecutor({ clock, logger });
+      ? new TransactionExecutor({
+          signer,
+          contextProvider,
+          broadcaster,
+          clock,
+          logger,
+          approvals: engine,
+        })
+      : new DryRunExecutor({ clock, logger, approvals: engine });
   const executor: PlanExecutor = {
     async execute(approved) {
       spies.execute += 1;
@@ -402,6 +409,16 @@ export function makeWorld(opts: WorldOptions = {}) {
 }
 
 export type World = ReturnType<typeof makeWorld>;
+
+/** Same message shapes as burrow-adapter buildRepay / buildSupplyAsCollateral / buildSupply. */
+function burrowMessage(i: Extract<ActionIntent, { kind: 'lending.repay' | 'lending.supply' }>) {
+  const action =
+    i.kind === 'lending.repay' ? 'Repay' : i.asCollateral ? 'IncreaseCollateral' : null;
+  if (!action) return '';
+  return JSON.stringify({
+    Execute: { actions: [{ [action]: { token_id: i.token, max_amount: i.amount.toString() } }] },
+  });
+}
 
 /** Agent that returns whatever it is told to, exactly as an LLM might. */
 export function scriptedAgent(

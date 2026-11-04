@@ -200,6 +200,8 @@ export class AutopilotCycle {
       ...decided,
       status: 'approved',
       planHash: approved.planHash,
+      // Known before sending, so an `approved` row left by a crash mid-send still counts against live limits.
+      executionMode: this.deps.executionMode,
       updatedAt: clock.now(),
     });
     await repo.appendAudit({

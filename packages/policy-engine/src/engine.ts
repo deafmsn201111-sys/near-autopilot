@@ -1,6 +1,7 @@
 import { planHash } from '@near-autopilot/core/hash';
 import {
   usdToMicro,
+  type ApprovalAuthority,
   type ApprovedPlan,
   type Clock,
   type IdGenerator,
@@ -18,8 +19,12 @@ import {
   type RuleContext,
 } from './rules';
 
-export class PolicyEngine {
+export class PolicyEngine implements ApprovalAuthority {
   private readonly limits: RuleContext['limits'];
+  /** Decisions this engine produced, each bound to the hash of the plan it evaluated. Single use. */
+  private readonly evaluated = new WeakMap<PolicyDecision, string>();
+  /** Approvals this engine minted. The brand is compile-time only; this is the run-time proof. */
+  private readonly issued = new WeakSet<ApprovedPlan>();
 
   constructor(
     readonly config: PolicyConfig,
@@ -49,31 +54,52 @@ export class PolicyEngine {
       : violations.length > 0
         ? 'require_approval'
         : 'approve';
-    return {
+    const decision: PolicyDecision = Object.freeze({
       id: this.deps.ids.next(),
       intentId: input.intent.id,
       outcome,
       violations,
       evaluatedAt: now,
       valueUsdMicro: context.valueUsdMicro,
-    };
+    });
+    this.evaluated.set(decision, planHash(input.plan));
+    return decision;
   }
 
-  /** The only way to obtain an `ApprovedPlan`. Binds the approval to the exact plan content. */
+  /**
+   * The only way to obtain an `ApprovedPlan`. Accepts only a decision this engine produced, for the exact plan it
+   * evaluated, once.
+   */
   approve(plan: PlannedTransaction, decision: PolicyDecision): ApprovedPlan {
+    const evaluatedHash = this.evaluated.get(decision);
+    if (evaluatedHash === undefined) {
+      throw new Error('Decision was not produced by this policy engine (or was already used)');
+    }
     if (decision.outcome !== 'approve') {
       throw new Error(`Cannot approve a plan whose decision outcome is "${decision.outcome}"`);
     }
     if (decision.intentId !== plan.intentId) {
       throw new Error('Decision was made for a different intent than this plan');
     }
+    const hash = planHash(plan);
+    if (hash !== evaluatedHash) {
+      throw new Error('Plan differs from the plan this decision evaluated');
+    }
+    this.evaluated.delete(decision);
     const approvedAt = this.deps.clock.now();
-    return {
+    // The single place the ApprovedPlan brand is applied; `issued` makes it verifiable at run time.
+    const approved = Object.freeze({
       plan,
       decisionId: decision.id,
-      planHash: planHash(plan),
+      planHash: hash,
       approvedAt,
       expiresAt: new Date(approvedAt.getTime() + this.config.approvalTtlSeconds * 1000),
-    } as ApprovedPlan;
+    }) as ApprovedPlan;
+    this.issued.add(approved);
+    return approved;
+  }
+
+  isAuthentic(approved: ApprovedPlan): boolean {
+    return this.issued.has(approved);
   }
 }

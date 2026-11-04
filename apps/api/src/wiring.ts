@@ -8,7 +8,14 @@ import {
   BurrowVerifier,
 } from '@near-autopilot/burrow-adapter';
 import type { ApiEnv } from '@near-autopilot/config';
-import type { Agent, Clock, IdGenerator, Logger, PlanExecutor } from '@near-autopilot/core';
+import {
+  assertChainId,
+  type Agent,
+  type Clock,
+  type IdGenerator,
+  type Logger,
+  type PlanExecutor,
+} from '@near-autopilot/core';
 import {
   NearAccountReader,
   NearChainContextProvider,
@@ -29,12 +36,22 @@ import { CachedSnapshotService, SnapshotService } from './services/snapshot';
 export const systemClock: Clock = { now: () => new Date() };
 export const uuidGenerator: IdGenerator = { next: () => randomUUID() };
 
-/** Composition root: the only place concrete adapters are bound to ports. */
-export function wire(
+export interface WireOptions {
+  /** Transport for the NEAR RPC client (tests inject a fake; production uses global fetch). */
+  readonly fetchImpl?: typeof fetch;
+}
+
+/**
+ * Composition root: the only place concrete adapters are bound to ports. Async because it first proves the RPC
+ * endpoint serves the configured network: `NEAR_NETWORK` alone is a claim, and every mainnet-live guard
+ * (here and in loadApiEnv) relies on it being true.
+ */
+export async function wire(
   env: ApiEnv,
   config: AutopilotConfig,
   repo: AutopilotRepository,
   logger: Logger,
+  options: WireOptions = {},
 ) {
   // Defence in depth: loadApiEnv already rejects this; a hand-built ApiEnv must not bypass it.
   if (env.EXECUTION_MODE === 'live' && env.NEAR_NETWORK === 'mainnet') {
@@ -42,7 +59,9 @@ export function wire(
       'Refusing to wire live execution on mainnet: this system never signs with mainnet keys',
     );
   }
-  const rpc = new NearRpcClient({ url: env.NEAR_RPC_URL });
+  const rpc = new NearRpcClient({ url: env.NEAR_RPC_URL, fetchImpl: options.fetchImpl });
+  // Fail closed: an unreachable RPC or one serving another chain stops start-up.
+  await assertChainId(rpc, env.NEAR_NETWORK);
   const viewer = new NearContractViewer(rpc);
   const tokens = new NearTokenReader(viewer);
   const burrow = { contractId: env.BURROW_CONTRACT_ID, oracleId: env.BURROW_ORACLE_ID };
@@ -95,9 +114,10 @@ export function wire(
       broadcaster: new NearTransactionBroadcaster(rpc),
       clock: systemClock,
       logger,
+      approvals: policy,
     });
   } else {
-    executor = new DryRunExecutor({ clock: systemClock, logger });
+    executor = new DryRunExecutor({ clock: systemClock, logger, approvals: policy });
   }
 
   const agents: Agent[] = [new HealthGuardianAgent(config.guardian)];

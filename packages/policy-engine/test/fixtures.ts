@@ -132,16 +132,35 @@ export function planFor(intent: ActionIntent): PlannedTransaction {
       ],
     };
   }
-  const token = intent.kind === 'lending.repay' ? intent.token : intent.token;
+  // Mirrors burrow-adapter builders: Repay / IncreaseCollateral capped in inner units (USDt: 12 extra decimals).
+  const capped = (action: 'Repay' | 'IncreaseCollateral') =>
+    JSON.stringify({
+      Execute: {
+        actions: [
+          {
+            [action]: {
+              token_id: intent.token,
+              max_amount: (intent.amount * 10n ** 12n).toString(),
+            },
+          },
+        ],
+      },
+    });
+  const msg =
+    intent.kind === 'lending.repay'
+      ? capped('Repay')
+      : intent.asCollateral
+        ? capped('IncreaseCollateral')
+        : '';
   return {
     intentId: intent.id,
     signerId: ALICE,
-    receiverId: token,
+    receiverId: intent.token,
     actions: [
       {
         type: 'FunctionCall',
         methodName: 'ft_transfer_call',
-        args: { receiver_id: BURROW, amount: intent.amount.toString(), msg: '' },
+        args: { receiver_id: BURROW, amount: intent.amount.toString(), msg },
         gas: 300_000_000_000_000n,
         deposit: 1n,
       },

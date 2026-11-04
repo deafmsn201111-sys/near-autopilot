@@ -1,7 +1,9 @@
 // Test doubles for the core ports. Exported on a separate entry point so production
 // bundles never include them. Everything here implements an explicit port interface.
+import { planHash } from './hash';
 import type { AccountId } from './ids';
-import type { Clock, ContractViewer, IdGenerator, Logger } from './ports';
+import type { ApprovedPlan, PlannedTransaction } from './plan';
+import type { ApprovalAuthority, Clock, ContractViewer, IdGenerator, Logger } from './ports';
 
 export class FixedClock implements Clock {
   constructor(private current: Date) {}
@@ -67,5 +69,32 @@ export class ScriptedContractViewer implements ContractViewer {
     if (!handler)
       throw new Error(`ScriptedContractViewer: no handler for ${contractId}#${methodName}`);
     return handler(args);
+  }
+}
+
+/**
+ * Stand-in for the policy engine's approval minting, for executor tests that must not depend on policy-engine.
+ * Only approvals returned by `mint` are authentic; copies and hand-built objects are not.
+ */
+export class TestApprovalAuthority implements ApprovalAuthority {
+  private readonly minted = new WeakSet<ApprovedPlan>();
+
+  mint(
+    plan: PlannedTransaction,
+    opts: { now: Date; ttlSeconds?: number; decisionId?: string },
+  ): ApprovedPlan {
+    const approved = {
+      plan,
+      decisionId: opts.decisionId ?? 'test-decision',
+      planHash: planHash(plan),
+      approvedAt: opts.now,
+      expiresAt: new Date(opts.now.getTime() + (opts.ttlSeconds ?? 60) * 1000),
+    } as ApprovedPlan;
+    this.minted.add(approved);
+    return approved;
+  }
+
+  isAuthentic(approved: ApprovedPlan): boolean {
+    return this.minted.has(approved);
   }
 }

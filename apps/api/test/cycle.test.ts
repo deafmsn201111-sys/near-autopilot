@@ -92,6 +92,18 @@ const burrowPlanner: ProtocolPlanner = {
   supports: (i) => i.kind === 'lending.repay' || i.kind === 'lending.supply',
   plan: async (intent: ActionIntent, signerId): Promise<PlannedTransaction> => {
     if (intent.kind === 'swap') throw new Error('unsupported');
+    // Same message shapes as burrow-adapter buildRepay / buildSupplyAsCollateral / buildSupply.
+    const action =
+      intent.kind === 'lending.repay' ? 'Repay' : intent.asCollateral ? 'IncreaseCollateral' : null;
+    const msg = action
+      ? JSON.stringify({
+          Execute: {
+            actions: [
+              { [action]: { token_id: intent.token, max_amount: intent.amount.toString() } },
+            ],
+          },
+        })
+      : '';
     return {
       intentId: intent.id,
       signerId,
@@ -100,7 +112,7 @@ const burrowPlanner: ProtocolPlanner = {
         {
           type: 'FunctionCall',
           methodName: 'ft_transfer_call',
-          args: { receiver_id: BURROW, amount: intent.amount.toString(), msg: '' },
+          args: { receiver_id: BURROW, amount: intent.amount.toString(), msg },
           gas: 1n,
           deposit: 1n,
         },
