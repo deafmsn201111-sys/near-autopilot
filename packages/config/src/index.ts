@@ -43,6 +43,8 @@ const apiEnvRaw = z.object({
   DATABASE_URL: z.string().url(),
   NEAR_NETWORK: networkSchema,
   NEAR_RPC_URL: z.string().url(),
+  /** Optional key for a hosted RPC (e.g. FastNEAR), sent as `Authorization: Bearer`. Local .env only; never logged. */
+  NEAR_RPC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
   AUTOPILOT_ACCOUNT_ID: accountIdSchema,
   /** `dry-run` plans and evaluates policy but never signs or broadcasts. */
   EXECUTION_MODE: z.enum(['dry-run', 'live']).default('dry-run'),
@@ -84,6 +86,7 @@ export interface ApiEnv {
   readonly DATABASE_URL: string;
   readonly NEAR_NETWORK: 'mainnet' | 'testnet';
   readonly NEAR_RPC_URL: string;
+  readonly NEAR_RPC_API_KEY: string | undefined;
   readonly AUTOPILOT_ACCOUNT_ID: AccountId;
   readonly EXECUTION_MODE: 'dry-run' | 'live';
   readonly CYCLE_INTERVAL_SECONDS: number;
@@ -171,6 +174,7 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     DATABASE_URL: env.DATABASE_URL,
     NEAR_NETWORK: env.NEAR_NETWORK,
     NEAR_RPC_URL: env.NEAR_RPC_URL,
+    NEAR_RPC_API_KEY: env.NEAR_RPC_API_KEY,
     AUTOPILOT_ACCOUNT_ID: env.AUTOPILOT_ACCOUNT_ID,
     EXECUTION_MODE: env.EXECUTION_MODE,
     CYCLE_INTERVAL_SECONDS: env.CYCLE_INTERVAL_SECONDS,

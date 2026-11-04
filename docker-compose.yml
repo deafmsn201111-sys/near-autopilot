@@ -94,6 +94,8 @@ services:
       DATA_SOURCE: chain
       EXECUTION_MODE: dry-run
       NEAR_RPC_URL: ${TESTNET_RPC_URL:-https://rpc.testnet.near.org}
+      # Optional hosted-RPC key (FastNEAR: TESTNET_RPC_URL=https://rpc.testnet.fastnear.com), sent as a Bearer header.
+      NEAR_RPC_API_KEY: ${TESTNET_RPC_API_KEY:-}
       AUTOPILOT_ACCOUNT_ID: ${TESTNET_ACCOUNT_ID:?set TESTNET_ACCOUNT_ID in .env (an existing *.testnet account)}
       AUTOPILOT_ENGINE: ${TESTNET_ENGINE:-orchestrator}
       # 0 = only on demand: every cycle costs public-RPC requests (rate limited), never NEAR.

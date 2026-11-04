@@ -89,6 +89,11 @@ export async function wire(
   // In simulation the RPC transport is the in-process mock: NEAR_RPC_URL is never contacted.
   const rpc = new NearRpcClient({
     url: env.NEAR_RPC_URL,
+    // A hosted provider's key (FastNEAR etc.); headers are never logged. Not sent to the in-process simulation mock.
+    headers:
+      env.NEAR_RPC_API_KEY && !simulation
+        ? { authorization: `Bearer ${env.NEAR_RPC_API_KEY}` }
+        : undefined,
     fetchImpl: simulation?.fetch ?? options.fetchImpl,
     // Reads only: the client never retries a broadcast. The URL is not logged (hosted endpoints embed keys).
     onRetry: (e) =>

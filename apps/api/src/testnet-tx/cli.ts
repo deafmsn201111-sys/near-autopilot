@@ -32,6 +32,11 @@ const envSchema = z.object({
     message: 'must be a *.testnet account',
   }),
   TESTNET_RPC_URL: z.string().url().default('https://rpc.testnet.near.org'),
+  /** Optional key for a hosted RPC (e.g. FastNEAR), sent as `Authorization: Bearer`. Never printed. */
+  TESTNET_RPC_API_KEY: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(8).optional(),
+  ),
   /** Only read by `send`. A path OUTSIDE the repository, mode 600. */
   TESTNET_SIGNER_KEY_FILE: z.string().optional(),
   NEAR_NETWORK: z.enum(['testnet']).optional(),
@@ -77,7 +82,12 @@ async function main(argv: readonly string[]): Promise<number> {
   };
   const env = envSchema.parse(process.env);
   const accountId = env.TESTNET_ACCOUNT_ID;
-  const rpc = new NearRpcClient({ url: env.TESTNET_RPC_URL });
+  const rpc = new NearRpcClient({
+    url: env.TESTNET_RPC_URL,
+    headers: env.TESTNET_RPC_API_KEY
+      ? { authorization: `Bearer ${env.TESTNET_RPC_API_KEY}` }
+      : undefined,
+  });
   const database = createDatabase(env.DATABASE_URL, { max: 2 });
   try {
     await runMigrations(database.db);

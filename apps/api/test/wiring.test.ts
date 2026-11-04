@@ -88,4 +88,22 @@ describe('wire (composition root)', () => {
     expect(wired.cycle).toBeDefined();
     expect(methods).toEqual(['status']);
   });
+
+  it('sends NEAR_RPC_API_KEY as a Bearer header and no header without it', async () => {
+    const seen: (string | null)[] = [];
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      seen.push(new Headers(init?.headers).get('authorization'));
+      if (typeof init?.body !== 'string') throw new Error('expected a JSON string body');
+      const body = JSON.parse(init.body) as { id: number };
+      return new Response(
+        JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { chain_id: 'mainnet' } }),
+        { status: 200 },
+      );
+    };
+    const run = (env: ApiEnv) =>
+      wire(env, config, new InMemoryRepository(), new SilentLogger(), { fetchImpl });
+    await run({ ...mainnetEnv(), NEAR_RPC_API_KEY: 'k-test-1234567890' });
+    await run(mainnetEnv());
+    expect(seen).toEqual(['Bearer k-test-1234567890', null]);
+  });
 });
