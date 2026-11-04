@@ -9,7 +9,10 @@ import {
   proposals,
   runs,
   sql,
+  type Column,
   type Database,
+  type SQL,
+  type Table,
 } from '@near-autopilot/db';
 import type { Provenance } from '@near-autopilot/core';
 import type {
@@ -21,6 +24,14 @@ import type {
 } from '../repository';
 
 type ProposalRow = typeof proposals.$inferSelect;
+
+/**
+ * `table.column` for raw SQL. Drizzle renders a column interpolated into `sql` UNQUALIFIED ("id"), so in a correlated
+ * subquery it binds to the inner table: `where "run_id" = "id"` compared proposals.run_id with proposals.id and every
+ * run reported 0 proposals.
+ */
+const qualified = (table: Table, column: Column): SQL =>
+  sql`${table}.${sql.identifier(column.name)}`;
 
 /** Rows from before migration 0001 have no network; they can only have come from the chain path. */
 const provenanceOf = (row: {
@@ -152,7 +163,7 @@ export class DrizzleRepository implements AutopilotRepository {
         error: runs.error,
         dataSource: runs.dataSource,
         network: runs.network,
-        proposalCount: sql<number>`(select count(*)::int from ${proposals} where ${proposals.runId} = ${runs.id})`,
+        proposalCount: sql<number>`(select count(*)::int from ${proposals} where ${qualified(proposals, proposals.runId)} = ${qualified(runs, runs.id)})`,
       })
       .from(runs)
       .orderBy(desc(runs.startedAt))

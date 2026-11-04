@@ -8,7 +8,8 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:db": "vitest run test/drizzle-repository.integration.test.ts"
   },
   "dependencies": {
     "@near-autopilot/agents": "workspace:*",
