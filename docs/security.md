@@ -9,6 +9,9 @@
 | Manipulated or illiquid pool                       | Operator-curated pools only; quote must be within `maxOracleDeviationBps` of oracle price       |
 | Stale data                                         | Snapshot and prices must be younger than `maxPriceAgeSeconds`                                   |
 | Plan altered after approval / approval replay      | Approval binds SHA-256 of canonical plan + TTL; executor re-verifies; approvals are single-use  |
+| Forged decision or approval (cast / copied object) | `PolicyEngine` records decisions and approvals it minted; executors check `ApprovalAuthority`   |
+| Smuggled Burrow action (e.g. Withdraw in `msg`)    | `intent_match` requires exactly the one Repay / IncreaseCollateral action for the intent token  |
+| Config says testnet, RPC serves mainnet            | `wire()` asserts the RPC `chain_id` equals `NEAR_NETWORK` before anything else, fail-closed     |
 | Runaway loop                                       | Per-action cap, rolling 24h cap, swap cooldown, one in-flight cycle, one tx per live cycle      |
 | Leveraging up                                      | No borrow/withdraw intents exist; v1 can only de-risk or rebalance spot                         |
 | Tx built against a wrong chain / contract / oracle | Burrow builders accept only `BurrowVerifier` proofs (chain id, deployed code, oracle, token)    |
@@ -34,6 +37,21 @@ Recommended setups for a testnet signer (and for anything you build yourself), s
 3. Never place a full-access private key in an environment variable or config file.
 
 Use a dedicated account holding only what the autopilot should be allowed to move.
+
+## Testnet evidence (read-only, 2026-11-04)
+
+Checked from this repository with view calls only (`status`, `view_code`, `call_function`) against
+`https://rpc.testnet.near.org`; no keys, no transactions:
+
+| Component                                   | Result                                                                                                                                                    |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Burrow `contract.1638481328.burrow.testnet` | Passes `BurrowVerifier` (chain id, exports, oracle identity); 9 assets parse; a registered account with debt parses with the current `get_account` schema |
+| Oracle `priceoracle.testnet`                | Named by Burrow `get_config`; exports verified; **returned no fresh price for any listed asset**, so no testnet decision can currently be priced          |
+| Rhea v1 `ref-finance-101.testnet`           | Has code; `get_pool` and `get_return` answer (2894 pools)                                                                                                 |
+| Rhea DCL `dclv2.ref-dev.testnet`            | Exports every source-verified method; `list_pools` needs paging (unpaged it exceeds view gas); quotes and market depth parse                              |
+
+Not verified: any transaction (no signer is shipped), the mainnet Burrow `get_account` shape, the mainnet oracle
+id. The public RPC rate-limits (HTTP 429) under the live suites; rerun or use a dedicated endpoint.
 
 ## Pre-mainnet checklist
 

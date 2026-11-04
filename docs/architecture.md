@@ -41,7 +41,7 @@ flowchart TD
   CFG[config]
   DB[db]
 
-  API --> AG & ORCH & POL & TX & NEAR & RHEA & DCL & BUR & DB & CFG & FIN & CORE
+  API --> AG & ORCH & POL & TX & NEAR & RHEA & BUR & DB & CFG & FIN & CORE
   DASH --> CFG & CORE
   AG --> FIN & CORE
   ORCH --> FIN & CORE
@@ -164,7 +164,8 @@ withdraw are intentionally not implemented. Evidence and gaps: [burrow-capabilit
 
 ### agents
 
-`HealthGuardianAgent` sizes repayments/collateral with exact bigint maths and caps by wallet holdings.
+`HealthGuardianAgent` decides on the exact health factor in basis points (`healthFactorBps`, bigint; config values
+are schema-limited to 4 decimals), sizes repayments/collateral with exact bigint maths and caps by wallet holdings.
 `RebalancerAgent` plans one capped trade and derives the slippage floor from a live quote. Agents are
 pure: they observe a snapshot and return intents.
 
@@ -177,9 +178,24 @@ injected through a port, separately authorises; a final re-check and a mode chec
 no-action decisions, stale-data protection, cycle- and action-level idempotency with an in-doubt protocol, a fail-closed
 hash-chained audit log, risk escalation, and an emergency read-only mode. It depends only on `core` and
 `financial-engine`; `policy-engine` and `tx-execution` are test-only dependencies. Persistence ports have in-memory
-reference implementations only, and it is not yet wired into `apps/api`. See [orchestrator.md](orchestrator.md).
+reference implementations only. It is wired into `apps/api` behind `AUTOPILOT_ENGINE=orchestrator`
+(`services/orchestrated-cycle.ts`), using the same snapshot service, planners, policy engine and executor as the legacy
+path; because its stores are in-memory, configuration refuses it with `EXECUTION_MODE=live`. No market-data source is
+integrated, so Market Intelligence, LP Optimizer and Capital Allocator report `insufficient_data` outside tests.
+See [orchestrator.md](orchestrator.md).
+
+### simulation (apps/api/src/simulation)
+
+`DATA_SOURCE=simulation` replaces the NEAR RPC transport with `SimulatedChain`, an in-process mock serving a
+synthetic demo portfolio (`demo-500` or `demo-5000`, see `demo-portfolios.ts`). Everything above the transport is the
+production code, unchanged. It is dry-run only, never opens a socket, refuses `send_tx`, and every run/proposal row and
+DTO is labelled `dataSource: "simulation"`; the dashboard shows a permanent SIMULATION banner.
 
 ### policy-engine
+
+`PolicyEngine` is also the `ApprovalAuthority` (core port): it remembers every decision it produced (bound to the
+evaluated plan's hash, single use) and every `ApprovedPlan` it minted, and executors refuse approvals it does not
+recognise. The `ApprovedPlan` brand alone is compile-time only.
 
 Config schema (strict, cross-validated) and 12 rules. The engine re-values every intent from oracle prices
 itself (never trusting the agent), checks the plan matches the intent byte-for-byte on the fields that move

@@ -30,14 +30,14 @@ packages/
   financial-engine/ Pure bigint maths: CLMM valuation, fee APR, IL, net yield (realized/marked/estimated), rebalance cost, slippage, liquidation risk, stress tests, constrained allocation (docs/financial-engine.md)
   near-adapter/     NEAR JSON-RPC client; implements core read/broadcast ports
   rhea-adapter/     Rhea (Ref v1 AMM) swap quoter + swap transaction planner
-  rhea-dcl-adapter/ Rhea/Ref v2 concentrated-liquidity (DCL): typed views, exact tick math, tx builders, ABI check
+  rhea-dcl-adapter/ Rhea/Ref v2 concentrated-liquidity (DCL): typed views, exact tick math, tx builders, ABI check (not used by the API yet)
   burrow-adapter/   Burrow markets/accounts/oracle readers, exact health-factor/LTV/stress maths, verified repay and collateral builders
   agents/           Health guardian and rebalancer (pure decision logic)
-  orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; not yet wired into apps/api)
+  orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; AUTOPILOT_ENGINE=orchestrator, dry-run only)
   policy-engine/    Rules + the only code that can mint an ApprovedPlan
   tx-execution/     Planner registry, live executor, explicit dry-run executor
   db/               Drizzle schema, client, SQL migrations
-config/             autopilot.example.json (policy, agents, pools)
+config/             autopilot.example.json (mainnet ids), autopilot.testnet.example.json (testnet ids)
 docs/               architecture.md, security.md, financial-engine.md, orchestrator.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md
 ```
 
@@ -51,8 +51,8 @@ Requirements: Node 22+, pnpm 9.15+, Docker (for Postgres).
 ```bash
 pnpm install                      # generates pnpm-lock.yaml on first run: commit it
 pnpm format                       # one-time: normalise formatting with Prettier before the first CI run
-cp .env.example .env              # then edit: API_TOKEN, NEAR_RPC_URL, AUTOPILOT_ACCOUNT_ID, ...
-cp config/autopilot.example.json config/autopilot.json   # then edit (see below)
+cp .env.example .env              # testnet + dry-run by default; edit API_TOKEN, AUTOPILOT_ACCOUNT_ID, ...
+cp config/autopilot.testnet.example.json config/autopilot.json   # then edit (see below)
 
 docker compose up -d postgres
 pnpm dev                          # API on :4000, dashboard on :3000 (migrations run on API start)
@@ -67,6 +67,21 @@ curl -X POST -H "Authorization: Bearer $API_TOKEN" http://localhost:4000/v1/runs
 ```
 
 Set `CYCLE_INTERVAL_SECONDS` to run on a schedule (0 = off).
+
+### Demo without a wallet: simulation mode
+
+`DATA_SOURCE=simulation` runs the full production pipeline (adapters, Burrow verifier, planners, policy engine,
+dry-run executor) against an in-process **mock** NEAR RPC serving a synthetic portfolio. Nothing is read from or sent
+to any network, every row and API response is labelled `simulation`, and the dashboard shows a SIMULATION banner.
+
+| `SIMULATION_PORTFOLIO` | Synthetic position (demo prices: NEAR $3, USDt $1)            | What happens                                                  |
+| ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
+| `demo-500`             | gross $500: 120 wNEAR collateral, 200 USDt debt, HF ~1.28     | guardian repays ~$40 USDt; policy approves; dry-run, not sent |
+| `demo-5000`            | gross $5,000: 1150 wNEAR collateral, 2000 USDt debt, HF ~1.23 | needed repay ~$464 exceeds the $100 per-action cap; rejected  |
+
+Use it with `config/autopilot.testnet.example.json` and `NEAR_NETWORK=testnet` (the demo tokens must be allowlisted).
+`AUTOPILOT_ENGINE=orchestrator` runs the multi-agent orchestrator instead of the legacy guardian; both are covered by
+`apps/api/test/simulation.test.ts`.
 
 ### Configuring the autopilot
 
@@ -128,6 +143,11 @@ Response shapes live in `packages/core/src/api-contracts.ts` and are shared with
   Responses are strictly Zod-validated so a mismatch fails closed. Evidence and gaps:
   [docs/burrow-capability-matrix.md](docs/burrow-capability-matrix.md), and run the checklist in
   [docs/security.md](docs/security.md#pre-mainnet-checklist) on testnet first.
+- Testnet: Burrow, its oracle and both Rhea contracts were confirmed with read-only calls (docs/security.md), but the
+  testnet oracle currently reports **no prices**, so chain-mode testnet runs cannot price a decision. Use simulation
+  to demonstrate behaviour.
+- The orchestrator engine is dry-run only (in-memory audit/idempotency stores) and has no market-data source, so its
+  LP Optimizer and Capital Allocator report `insufficient_data` outside tests.
 - Rhea quoting is single-hop through operator-listed pools only.
 - Proposals that exceed the approval threshold are recorded as `requires_approval` and held; there is no
   approval UI yet.
