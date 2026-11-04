@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { loadApiEnv, type ApiEnv } from '@near-autopilot/config';
 import { accountId, portfolioDtoSchema } from '@near-autopilot/core';
-import { SilentLogger } from '@near-autopilot/core/testing';
+import { FixedClock, SilentLogger } from '@near-autopilot/core/testing';
 import { parseAutopilotConfig } from '../src/autopilot-config';
 import { toPortfolioDto } from '../src/presenters';
+import { DEMO_PORTFOLIOS } from '../src/simulation/demo-portfolios';
+import { SimulatedChain } from '../src/simulation/simulated-chain';
 import { wire } from '../src/wiring';
 import { InMemoryRepository } from './in-memory-repository';
 
@@ -88,6 +91,39 @@ describe.each(['legacy', 'orchestrator'])('simulation, %s engine', (engine) => {
   });
 });
 
+/** Ranked de-risk candidates the guardian emits for demo-500. */
+const GUARDIAN_KINDS = ['lending.repay', 'lending.supply_collateral'];
+
+describe('orchestrator run report', () => {
+  it('records what every agent did, including insufficient_data, in the run snapshot', async () => {
+    const { result, repo } = await simulate({
+      AUTOPILOT_ENGINE: 'orchestrator',
+      SIMULATION_PORTFOLIO: 'demo-500',
+    });
+    const { agents } = z
+      .object({
+        agents: z.array(
+          z.object({
+            agent: z.string(),
+            event: z.string(),
+            proposals: z.array(z.object({ kind: z.string(), reasonCode: z.string().optional() })),
+          }),
+        ),
+      })
+      .parse(repo.snapshots.get(result.run.id));
+    // No market-data source is integrated: three agents honestly report they cannot act; only the guardian
+    // (which works from the position alone) proposes.
+    expect(
+      agents.map((a) => [a.agent, a.event, a.proposals.map((p) => p.reasonCode ?? p.kind)]),
+    ).toEqual([
+      ['market-intelligence', 'output', ['insufficient_data']],
+      ['lp-optimizer', 'output', ['insufficient_data']],
+      ['liquidation-guardian', 'output', GUARDIAN_KINDS],
+      ['capital-allocator', 'output', ['insufficient_data']],
+    ]);
+  });
+});
+
 describe('simulation data is labelled and valued as documented', () => {
   it.each([
     ['demo-500', { wallet: '140.00', supplied: '360.00', borrowed: '200.00', net: '300.00' }],
@@ -117,4 +153,46 @@ describe('simulation data is labelled and valued as documented', () => {
       wire(envFor({}), narrowed, new InMemoryRepository(), new SilentLogger()),
     ).rejects.toThrow('policy allowlists must include wrap.testnet');
   });
+});
+
+describe('the simulated chain cannot accept a transaction', () => {
+  const chain = new SimulatedChain({
+    network: 'testnet',
+    accountId: accountId(ACCOUNT),
+    burrowContractId: accountId('contract.1638481328.burrow.testnet'),
+    burrowOracleId: accountId('priceoracle.testnet'),
+    rheaContractId: accountId('ref-finance-101.testnet'),
+    portfolio: DEMO_PORTFOLIOS['demo-500'],
+    clock: new FixedClock(new Date('2026-11-04T10:00:00Z')),
+  });
+  const rpc = async (method: string, params: unknown) => {
+    const response = await chain.fetch('https://ignored.invalid', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    });
+    return (await response.json()) as { result?: unknown; error?: { message: string } };
+  };
+
+  it.each(['send_tx', 'broadcast_tx_commit', 'broadcast_tx_async', 'EXPERIMENTAL_tx_status'])(
+    'refuses %s',
+    async (method) => {
+      const reply = await rpc(method, { signed_tx_base64: 'AAAA' });
+      expect(reply.result).toBeUndefined();
+      expect(reply.error?.message).toContain('nothing can be sent');
+    },
+  );
+
+  it.each(['view_access_key', 'view_access_key_list'])(
+    'does not serve %s, so no signer can obtain a nonce',
+    async (requestType) => {
+      const reply = await rpc('query', {
+        request_type: requestType,
+        finality: 'final',
+        account_id: ACCOUNT,
+        public_key: 'ed25519:11111111111111111111111111111111',
+      });
+      expect(reply.result).toBeUndefined();
+      expect(reply.error?.message).toContain('does not serve');
+    },
+  );
 });

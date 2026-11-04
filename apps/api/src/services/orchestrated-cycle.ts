@@ -11,6 +11,8 @@ import {
 } from '@near-autopilot/core';
 import {
   candidateToIntent,
+  type AuditEntry,
+  type AuditLog,
   type CycleReport,
   type EscalationEvent,
   type Notifier,
@@ -24,6 +26,8 @@ export interface OrchestratedCycleDeps {
   readonly accountId: AccountId;
   readonly executionMode: ExecutionMode;
   readonly orchestrator: Orchestrator;
+  /** The orchestrator's audit log, read back for the per-agent outcome summary. */
+  readonly audit: Pick<AuditLog, 'entries'>;
   readonly repo: AutopilotRepository;
   readonly clock: Clock;
   readonly ids: IdGenerator;
@@ -68,6 +72,7 @@ export class OrchestratedCycle {
           reasons: report.decision?.reasons ?? [],
           advisories: report.decision?.advisories ?? [],
           escalations: report.escalations,
+          agents: agentOutcomes(await this.deps.audit.entries(), runId),
         }),
       });
       logger.info('orchestrator cycle finished', {
@@ -143,6 +148,24 @@ export class OrchestratedCycle {
       updatedAt: now,
     };
   }
+}
+
+/**
+ * What each agent did this cycle, from the orchestrator's audit trail: its accepted output items (including
+ * `no_action` with the reason code, e.g. `insufficient_data`), or that it errored, timed out or was skipped. Without
+ * this an idle agent and a broken one look the same from outside.
+ */
+export function agentOutcomes(
+  entries: readonly AuditEntry[],
+  cycleKey: string,
+): Array<Record<string, unknown>> {
+  const outcomes: Array<Record<string, unknown>> = [];
+  for (const e of entries) {
+    if (e.cycleKey !== cycleKey || !e.type.startsWith('agent.')) continue;
+    const { agent, ...rest } = e.payload;
+    outcomes.push({ agent, event: e.type.slice('agent.'.length), ...rest });
+  }
+  return outcomes;
 }
 
 function statusOf(

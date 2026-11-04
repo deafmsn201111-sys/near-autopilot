@@ -155,10 +155,13 @@ export async function wire(
   const cachedSnapshots = new CachedSnapshotService(snapshots);
 
   const common = { accountId: env.AUTOPILOT_ACCOUNT_ID, executionMode: env.EXECUTION_MODE };
+  // In-memory: why this engine is dry-run only (packages/config). The cycle reads it back to report per-agent outcomes.
+  const orchestratorAudit = new InMemoryAuditLog();
   const cycle =
     env.AUTOPILOT_ENGINE === 'orchestrator'
       ? new OrchestratedCycle({
           ...common,
+          audit: orchestratorAudit,
           // Same snapshot source, planners, policy engine and executor as the legacy path: one execution pipeline.
           orchestrator: new Orchestrator({
             accountId: env.AUTOPILOT_ACCOUNT_ID,
@@ -178,8 +181,7 @@ export async function wire(
             policy,
             executor,
             history: { stats: (account, since) => repo.getExecutionStats(account, since) },
-            // In-memory: why this engine is dry-run only (packages/config).
-            audit: new InMemoryAuditLog(),
+            audit: orchestratorAudit,
             idempotency: new InMemoryIdempotencyStore(),
             control: new InMemoryControlStore(systemClock.now()),
             notifier: new RepositoryNotifier(repo, logger),

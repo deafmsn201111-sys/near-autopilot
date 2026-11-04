@@ -457,6 +457,7 @@ export class Orchestrator {
           rejectedExcerpt: parsed.issues.length > 0 ? safeExcerpt(raw, 500) : null,
           proposals: parsed.proposals.map((p) => ({
             kind: p.proposal.kind,
+            ...(p.proposal.kind === 'no_action' ? { reasonCode: p.proposal.reasonCode } : {}),
             rationale: excerpt(p.proposal.rationale),
           })),
         },
