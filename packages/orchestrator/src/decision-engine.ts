@@ -564,7 +564,12 @@ export function decide(input: EvaluationInput): Decision {
     if (a.tier !== b.tier) return a.tier - b.tier;
     if (a.netBenefitUsdMicro !== b.netBenefitUsdMicro)
       return a.netBenefitUsdMicro > b.netBenefitUsdMicro ? -1 : 1;
-    // Among risk reductions: the cheapest effective one (least wallet value consumed), then the healthier result.
+    // Among risk reductions: one that restores the target beats a partial fix, however cheap the partial fix is;
+    // then the cheapest effective one (least wallet value consumed), then the healthier result.
+    const reaches = (c: typeof a): boolean =>
+      c.riskEffect !== null &&
+      (c.riskEffect.hfAfterWad === null || c.riskEffect.hfAfterWad >= target);
+    if (reaches(a) !== reaches(b)) return reaches(a) ? -1 : 1;
     const ua = a.riskEffect?.valueUsedUsdMicro ?? 0n;
     const ub = b.riskEffect?.valueUsedUsdMicro ?? 0n;
     if (ua !== ub) return ua < ub ? -1 : 1;

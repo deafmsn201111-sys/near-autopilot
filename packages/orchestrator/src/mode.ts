@@ -21,10 +21,14 @@ export class ModeController {
 
   /** Never throws. An unreadable store yields a synthetic read-only state. */
   async current(): Promise<ControlState> {
+    return (await this.read()).state;
+  }
+
+  private async read(): Promise<{ state: ControlState; synthetic: boolean }> {
     try {
-      return await this.store.load();
+      return { state: await this.store.load(), synthetic: false };
     } catch (error) {
-      return {
+      const state: ControlState = {
         mode: 'read_only',
         reason: `control state unreadable (${error instanceof Error ? error.message : String(error)}); failing safe`,
         since: this.clock.now(),
@@ -33,11 +37,22 @@ export class ModeController {
         blindCycles: 0,
         quarantined: {},
       };
+      return { state, synthetic: true };
     }
   }
 
-  private async update(patch: (s: ControlState) => ControlState): Promise<ControlState> {
-    const next = patch(await this.current());
+  /**
+   * Applies `patch` and persists it. When the stored state could not be read, the patch was applied to the synthetic
+   * fail-safe state (no quarantines, zeroed counters); saving that would silently erase the real state, so it is
+   * only kept in memory, except for an explicit emergency read-only, which is worth persisting regardless.
+   */
+  private async update(
+    patch: (s: ControlState) => ControlState,
+    persistIfUnreadable = false,
+  ): Promise<ControlState> {
+    const { state, synthetic } = await this.read();
+    const next = patch(state);
+    if (synthetic && !persistIfUnreadable) return next;
     try {
       await this.store.save(next);
     } catch {
@@ -60,13 +75,16 @@ export class ModeController {
   engageReadOnly(reason: string, by: string): Promise<ControlState> {
     if (!by.trim() || !reason.trim())
       throw new RangeError('engaging read-only mode needs an actor and a reason');
-    return this.update((s) => ({
-      ...s,
-      mode: 'read_only',
-      reason,
-      since: this.clock.now(),
-      changedBy: by,
-    }));
+    return this.update(
+      (s) => ({
+        ...s,
+        mode: 'read_only',
+        reason,
+        since: this.clock.now(),
+        changedBy: by,
+      }),
+      true,
+    );
   }
 
   /** Operator action: set any mode, including loosening. Needs a named actor and a reason; resets the failure counters. */

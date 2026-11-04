@@ -89,6 +89,9 @@ export function checkDataQuality(args: {
   let marketUsable = false;
   if (!market) {
     issues.push({ code: 'MARKET_UNAVAILABLE', blocking: false, detail: 'no market data' });
+  } else if (Number.isNaN(market.asOf.getTime())) {
+    // NaN compares false against every limit, so without this an invalid date would count as fresh.
+    issues.push({ code: 'MARKET_STALE', blocking: false, detail: 'market timestamp is invalid' });
   } else if (ageS(market.asOf) < -f.maxFutureSkewSeconds) {
     issues.push({
       code: 'FUTURE_TIMESTAMP',

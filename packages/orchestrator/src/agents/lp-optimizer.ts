@@ -1,6 +1,7 @@
 import { tickAtSqrtRatio } from '@near-autopilot/financial-engine';
 import { evaluateLpReposition } from '../lp-economics';
 import type { ProposalAgent } from '../ports';
+import { MAX_PROPOSALS_PER_OUTPUT } from '../proposals';
 import type { AgentObservation } from '../types';
 import { envelope, noAction } from './envelope';
 
@@ -44,8 +45,9 @@ export class LpOptimizerAgent implements ProposalAgent {
     return envelope(
       this.id,
       obs,
+      // Stay inside the envelope cap (advisory output; positions are already in a stable id order).
       proposals.length > 0
-        ? proposals
+        ? proposals.slice(0, MAX_PROPOSALS_PER_OUTPUT)
         : [noAction('no_edge', 'no re-centring clears the payback hurdle')],
     );
   }

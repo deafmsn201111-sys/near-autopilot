@@ -355,11 +355,16 @@ export class Orchestrator {
     let state = await this.mode.current();
 
     if (!snapshot) {
-      await this.mode.recordBlindCycle(true);
+      // Without a snapshot we cannot even tell whether a borrow is open, so assume one might be: after the same number
+      // of blind cycles that pages when data is stale while borrowing, page here too.
+      const blind = (await this.mode.recordBlindCycle(true)).blindCycles;
+      const paging = blind >= cfg.execution.staleCyclesBeforePage;
       await this.escalate(
-        'warn',
-        'SNAPSHOT_UNAVAILABLE',
-        'no snapshot could be taken; no action is possible',
+        paging ? 'page' : 'warn',
+        paging ? 'GUARDIAN_BLIND' : 'SNAPSHOT_UNAVAILABLE',
+        paging
+          ? `${blind} consecutive cycle(s) without any snapshot; an open borrow (if any) is unmonitored`
+          : 'no snapshot could be taken; no action is possible',
         cycleKey,
         null,
         escalations,

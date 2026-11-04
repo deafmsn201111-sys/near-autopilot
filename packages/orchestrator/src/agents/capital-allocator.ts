@@ -104,7 +104,11 @@ export class CapitalAllocatorAgent implements ProposalAgent {
           'the asset to buy is not estimated to yield more than the asset to sell',
         ),
       ]);
-    const drift = Math.max(-delta(sell), delta(buy));
+    // The threshold is about how far the portfolio is from its target, so measure the RAW drift; the turnover cap
+    // only limits how much of it one trade corrects (a cap below the threshold must not disable rebalancing).
+    const drift = Math.max(
+      ...assets.map((a) => Math.abs((target.get(a.token) ?? 0) - (current.get(a.token) ?? 0))),
+    );
     if (drift < config.allocation.driftThresholdBps)
       return envelope(this.id, obs, [
         noAction(

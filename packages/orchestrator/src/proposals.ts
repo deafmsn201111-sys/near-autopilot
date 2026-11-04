@@ -65,7 +65,9 @@ const isoDate = z
   .transform((v) => new Date(v));
 
 const token = accountIdSchema;
-const identifier = z.string().regex(/^[A-Za-z0-9_.:-]{1,64}$/);
+// Rhea DCL ids look like `usdt.fakes.testnet|wrap.testnet|2000` (pool) and `<pool>#<n>` (position), so `|` and `#`
+// must be allowed; still no whitespace, quotes or control characters. 160 covers two 64-char account ids + suffix.
+const identifier = z.string().regex(/^[A-Za-z0-9_.:|#-]{1,160}$/);
 
 const base = { rationale: text(MAX_RATIONALE_LENGTH) };
 

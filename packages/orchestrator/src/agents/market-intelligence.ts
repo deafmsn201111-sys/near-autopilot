@@ -1,5 +1,6 @@
 import type { TokenId, UnitPrice } from '@near-autopilot/core';
 import type { ProposalAgent } from '../ports';
+import { MAX_PROPOSALS_PER_OUTPUT } from '../proposals';
 import type { AgentObservation } from '../types';
 import { envelope, noAction } from './envelope';
 
@@ -43,7 +44,7 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       ...(obs.snapshot.lending?.collateral ?? []).map((b) => b.token),
       ...(obs.snapshot.lending?.borrowed ?? []).map((b) => b.token),
     ]);
-    const proposals: Record<string, unknown>[] = [];
+    const proposals: Array<Record<string, unknown> & { severity: number }> = [];
     for (const token of [...tokens].sort()) {
       const oracle = obs.snapshot.prices.get(token);
       const reference = market.referencePrices.get(token);
@@ -87,10 +88,17 @@ export class MarketIntelligenceAgent implements ProposalAgent {
           });
       }
     }
+    // The envelope schema caps the proposal count; exceeding it would get the WHOLE output rejected and every caution
+    // signal lost. Keep the most severe ones (stable order otherwise): any one of them already defers discretionary trades.
+    const kept = proposals
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => b.p.severity - a.p.severity || a.i - b.i)
+      .slice(0, MAX_PROPOSALS_PER_OUTPUT)
+      .map(({ p }) => p);
     return envelope(
       this.id,
       obs,
-      proposals.length > 0 ? proposals : [noAction('healthy', 'no abnormal conditions found')],
+      kept.length > 0 ? kept : [noAction('healthy', 'no abnormal conditions found')],
     );
   }
 }
