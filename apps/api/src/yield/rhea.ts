@@ -1,6 +1,6 @@
 import type { DclPool } from '@near-autopilot/rhea-dcl-adapter';
 import type { RheaPoolInfo, RheaPoolVolume } from '@near-autopilot/rhea-adapter';
-import { compareDecimal, deviationBps, type Decimal } from '../market-data/decimal';
+import { compareDecimal, deviationBps, formatDecimal, type Decimal } from '../market-data/decimal';
 import type { YieldLimits } from './burrow';
 import { add, dec, div, fromRaw, mul } from './math';
 import type { BlockRef, PoolObservation, YieldEstimate, YieldNetwork, YieldReason } from './model';
@@ -131,10 +131,25 @@ export function rheaV1Estimate(input: RheaV1Input): YieldEstimate {
   const prevInputs = Array.isArray(input.previous?.raw.volumesIn)
     ? (input.previous.raw.volumesIn as unknown[]).map((v) => (typeof v === 'string' ? v : ''))
     : null;
+  // The start of the period must itself have been a sound observation: it may only have lacked a period of its own.
+  const startFlaws = (input.previous?.reasonCodes ?? []).filter(
+    (c) => c !== 'MISSING_YIELD_DATA' && c !== 'UNVERIFIED_POOL',
+  );
+  const breakdown: Record<string, unknown> = {};
   if (!input.previous || !prevInputs) {
     reasons.push({
       code: 'MISSING_YIELD_DATA',
       detail: `no earlier observation at least ${input.minPeriodSeconds} s old: a fee APR needs an observation period`,
+    });
+  } else if (input.previous.blockHeight >= block.height) {
+    reasons.push({
+      code: 'INVALID_YIELD_DATA',
+      detail: `start observation (block ${input.previous.blockHeight}) is not before this one (block ${block.height})`,
+    });
+  } else if (startFlaws.length > 0) {
+    reasons.push({
+      code: 'INVALID_YIELD_DATA',
+      detail: `start observation (block ${input.previous.blockHeight}) failed validation: ${[...new Set(startFlaws)].join(', ')}`,
     });
   } else {
     period = Math.floor((block.timestamp.getTime() - input.previous.observedAt.getTime()) / 1000);
@@ -164,9 +179,44 @@ export function rheaV1Estimate(input: RheaV1Input): YieldEstimate {
       }
       if (total.mantissa >= 0n && valued.tvlUsd.mantissa > 0n && period > 0) {
         volumeUsd = total;
+        // Fees are charged on the INPUT of each swap, so input volumes count every swap exactly once.
         const lpShare = dec(BigInt(pool.totalFeeBps * (10_000 - input.adminFeeBps)), -8);
+        const grossFees = mul(total, dec(BigInt(pool.totalFeeBps), -4));
         const feesUsd = mul(total, lpShare);
         apr = div(mul(feesUsd, dec(SECONDS_PER_YEAR)), mul(valued.tvlUsd, dec(BigInt(period))));
+        // For comparison only: the same fees on the start and on the average pool value (start valued at today's
+        // prices). The reported APR uses the END value.
+        const prevReserves = Array.isArray(input.previous.raw.reserves)
+          ? (input.previous.raw.reserves as unknown[]).map((v) =>
+              typeof v === 'string' && /^\d+$/.test(v) ? BigInt(v) : -1n,
+            )
+          : [];
+        const [pa = -1n, pb = -1n] = prevReserves;
+        const start =
+          pa > 0n && pb > 0n ? valuePool([pa, pb], priced.decimals, priced.prices) : null;
+        Object.assign(breakdown, {
+          periodStart: input.previous.observedAt.toISOString(),
+          periodEnd: block.timestamp.toISOString(),
+          volumeInRaw: volumes.map((v, i) => (v.input - BigInt(prevInputs[i] ?? '0')).toString()),
+          volumeUsd: formatDecimal(total),
+          grossFeesUsd: formatDecimal(grossFees),
+          lpFeesUsd: formatDecimal(feesUsd),
+          endPooledUsd: formatDecimal(valued.tvlUsd),
+          startPooledUsdAtCurrentPrices: start ? formatDecimal(start.tvlUsd) : null,
+          aprOnAveragePooledUsd: start
+            ? formatDecimal(
+                div(
+                  mul(feesUsd, dec(SECONDS_PER_YEAR * 2n)),
+                  mul(add(valued.tvlUsd, start.tvlUsd), dec(BigInt(period))),
+                ),
+              )
+            : null,
+        });
+        if (compareDecimal(apr, dec(BigInt(input.limits.maxAprBps), -4)) > 0)
+          reasons.push({
+            code: 'INVALID_YIELD_DATA',
+            detail: `fee APR above the ${input.limits.maxAprBps / 100} % plausibility limit`,
+          });
       }
     }
   }
@@ -206,6 +256,7 @@ export function rheaV1Estimate(input: RheaV1Input): YieldEstimate {
       volumesIn: volumes.map((v) => v.input.toString()),
       volumesOut: volumes.map((v) => v.output.toString()),
       previousBlockHeight: input.previous?.blockHeight ?? null,
+      ...breakdown,
     },
   };
 }

@@ -449,6 +449,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     );
     expect(prev?.blockHeight).toBe(100);
     expect(prev?.raw).toEqual({ volumesIn: ['100', '0'] });
+    expect(prev?.reasonCodes).toEqual(['UNVERIFIED_POOL']);
     expect(await store.previous('rhea_v1', 'pool:34', t0, 3_600)).toBeNull();
     // Data may be READ from testnet or mainnet (shadow analysis); any other value is refused.
     await expect(

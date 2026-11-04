@@ -236,6 +236,7 @@ const v1 = (over: Partial<Parameters<typeof rheaV1Estimate>[0]> = {}) =>
       observedAt: new Date(BLOCK.timestamp.getTime() - 86_400_000),
       blockHeight: 900,
       raw: { volumesIn: ['0', '0'] },
+      reasonCodes: [],
     },
     minPeriodSeconds: 3_600,
     maxPeriodSeconds: 604_800,
@@ -264,6 +265,7 @@ describe('Rhea v1 LP fee APR', () => {
         observedAt: new Date(BLOCK.timestamp.getTime() - 700_000_000),
         blockHeight: 1,
         raw: { volumesIn: ['0', '0'] },
+        reasonCodes: [],
       },
     });
     expect(codes(old)).toContain('STALE_YIELD_DATA');
@@ -273,10 +275,79 @@ describe('Rhea v1 LP fee APR', () => {
         observedAt: new Date(BLOCK.timestamp.getTime() - 86_400_000),
         blockHeight: 1,
         raw: { volumesIn: [(11n * 10n ** 24n).toString(), '0'] },
+        reasonCodes: [],
       },
     });
     expect(codes(down)).toContain('INVALID_YIELD_DATA');
     expect(down.apr).toBeNull();
+  });
+
+  it('records the breakdown: volume, gross and LP fees, end and start pool value, APR on the average', () => {
+    const e = v1({
+      previous: {
+        observedAt: new Date(BLOCK.timestamp.getTime() - 86_400_000),
+        blockHeight: 900,
+        raw: {
+          volumesIn: ['0', '0'],
+          reserves: [(1000n * 10n ** 24n).toString(), (4000n * 10n ** 6n).toString()],
+        },
+        reasonCodes: ['MISSING_YIELD_DATA'],
+      },
+    });
+    expect(e.validationStatus).toBe('valid');
+    expect(e.raw).toMatchObject({
+      volumeUsd: '400',
+      grossFeesUsd: '1.2',
+      lpFeesUsd: '0.96',
+      endPooledUsd: '8000',
+      startPooledUsdAtCurrentPrices: '8000',
+      aprOnAveragePooledUsd: '0.0438',
+      volumeInRaw: [(10n * 10n ** 24n).toString(), (360n * 10n ** 6n).toString()],
+    });
+  });
+
+  it('zero volume over the period is a measured 0 % APR, not missing data', () => {
+    const e = v1({
+      volumes: [
+        { input: 0n, output: 0n },
+        { input: 0n, output: 0n },
+      ],
+    });
+    expect(e.validationStatus).toBe('valid');
+    expect(e.apr && formatDecimal(e.apr)).toBe('0');
+  });
+
+  it('rejects a start observation that is not earlier, or that failed validation itself', () => {
+    const at = new Date(BLOCK.timestamp.getTime() - 86_400_000);
+    const same = v1({
+      previous: {
+        observedAt: at,
+        blockHeight: BLOCK.height,
+        raw: { volumesIn: ['0', '0'] },
+        reasonCodes: [],
+      },
+    });
+    expect(codes(same)).toContain('INVALID_YIELD_DATA');
+    expect(same.apr).toBeNull();
+    const flawed = v1({
+      previous: {
+        observedAt: at,
+        blockHeight: 900,
+        raw: { volumesIn: ['0', '0'] },
+        reasonCodes: ['MISSING_YIELD_DATA', 'INVALID_YIELD_DATA'],
+      },
+    });
+    expect(flawed.reasons.find((r) => r.code === 'INVALID_YIELD_DATA')?.detail).toContain(
+      'start observation',
+    );
+    expect(flawed.apr).toBeNull();
+  });
+
+  it('an implausible fee APR is computed but rejected', () => {
+    const e = v1({ limits: { ...LIMITS, maxAprBps: 100 } }); // 4.38 % > 1 %
+    expect(e.apr && formatDecimal(e.apr)).toBe('0.0438');
+    expect(e.validationStatus).toBe('rejected');
+    expect(codes(e)).toEqual(['INVALID_YIELD_DATA']);
   });
 
   it('a pool outside the allowlist is observed only (UNVERIFIED_POOL), never auto-added', () => {
@@ -565,5 +636,25 @@ describe('yield audit trail', () => {
     expect(p.blockHeight).toBe(500);
     expect(p.counts.valid).toBe(1);
     expect(JSON.stringify(p)).toContain('UNVERIFIED_POOL');
+  });
+});
+
+describe('Rhea v1 pool reader', () => {
+  it('a pool response without total_fee is refused, never read as a 0 % fee', async () => {
+    const { RheaPoolReader } = await import('@near-autopilot/rhea-adapter');
+    const reader = new RheaPoolReader(
+      {
+        async view() {
+          return {
+            pool_kind: 'SIMPLE_POOL',
+            token_account_ids: [WRAP, USDC],
+            amounts: ['1', '1'],
+            shares_total_supply: '1',
+          };
+        },
+      },
+      accountId('v2.ref-finance.near'),
+    );
+    await expect(reader.getPool(4512)).rejects.toThrow('total_fee');
   });
 });

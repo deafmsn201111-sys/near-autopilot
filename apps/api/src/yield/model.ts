@@ -118,6 +118,8 @@ export interface PoolObservation {
   readonly observedAt: Date;
   readonly blockHeight: number;
   readonly raw: Readonly<Record<string, unknown>>;
+  /** Rejection codes the observation itself carried when it was recorded. */
+  readonly reasonCodes: readonly string[];
 }
 
 export interface PoolHistory {

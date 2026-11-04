@@ -61,6 +61,7 @@ export class DrizzleYieldStore implements YieldReportSink, PoolHistory {
         blockTimestamp: yieldObservations.blockTimestamp,
         blockHeight: yieldObservations.blockHeight,
         raw: yieldObservations.raw,
+        reasons: yieldObservations.reasons,
       })
       .from(yieldObservations)
       .where(
@@ -77,6 +78,13 @@ export class DrizzleYieldStore implements YieldReportSink, PoolHistory {
       observedAt: row.blockTimestamp,
       blockHeight: row.blockHeight,
       raw: row.raw as Record<string, unknown>,
+      reasonCodes: Array.isArray(row.reasons)
+        ? (row.reasons as unknown[]).flatMap((r) =>
+            r && typeof r === 'object' && typeof (r as { code?: unknown }).code === 'string'
+              ? [(r as { code: string }).code]
+              : [],
+          )
+        : [],
     };
   }
 

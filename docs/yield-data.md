@@ -40,6 +40,11 @@ in its place. Read retries are those of `NearRpcClient` (bounded, backoff, `Retr
   `apr = lp_fee_usd / pooled_usd × 31 536 000 / period_s`. `admin_fee_bps` is read from `metadata` (2000 on testnet).
   Period: at least `minObservationSeconds` (1 h), at most `maxObservationSeconds` (7 d); otherwise no APR. Historical
   fees are not a forecast.
+  The start observation is the latest stored one at least `minObservationSeconds` older; it must be from an earlier
+  block and must itself have passed every check except the missing period (`MISSING_YIELD_DATA`/`UNVERIFIED_POOL`),
+  otherwise `INVALID_YIELD_DATA`. A computed fee APR above `maxAprBps` is rejected. Fees are charged on swap INPUT, so
+  only input volumes are summed (each swap once). The APR base is the END pool value; the stored `raw` also records
+  the volume per token, gross and LP fees, the start pool value at current prices and the APR on the average value.
 - DCL: pool state is collected and validated (tokens, decimals, state, value, cumulative fees) but **no APR is
   computed** at this stage (it needs in-range liquidity and fee growth). Only configured pools are read, one `get_pool`
   each; the 11k+ testnet pools are never listed in a cycle (unpaged `list_pools` exceeds the view gas limit).
