@@ -97,10 +97,21 @@ export const auditEvents = pgTable(
     runId: text('run_id'),
     proposalId: text('proposal_id'),
     payload: jsonb('payload').$type<unknown>().notNull(),
+    /**
+     * Hash chain (migration 0011): one chain per deployment, `<dataSource>:<network>`. Null on rows written before the
+     * chain existed. hash = sha256(prev_hash || canonical entry); see apps/api/src/evidence/chain.ts.
+     */
+    chain: text('chain'),
+    seq: bigint('seq', { mode: 'number' }),
+    prevHash: text('prev_hash'),
+    hash: text('hash'),
   },
   (t) => [
     index('audit_events_at_idx').on(t.at),
     index('audit_events_proposal_idx').on(t.proposalId),
+    uniqueIndex('audit_events_chain_seq_uq')
+      .on(t.chain, t.seq)
+      .where(sql`${t.chain} IS NOT NULL`),
   ],
 );
 

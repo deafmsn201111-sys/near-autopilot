@@ -213,7 +213,7 @@ export class AutopilotCycle {
     const decision = policy.evaluate({ intent, plan, snapshot, history });
     // Every verdict is stored with its inputs BEFORE it is acted on; if that fails, nothing is executed.
     await repo.insertPolicyVerdict(
-      verdictRecord(decision, { intent, plan, snapshot, history }, 'legacy', runId),
+      verdictRecord(decision, { intent, plan, snapshot, history }, 'legacy', runId, policy.config),
     );
     const decided = {
       ...empty,

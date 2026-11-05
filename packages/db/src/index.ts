@@ -8,6 +8,7 @@ export {
   eq,
   getTableColumns,
   getTableName,
+  gt,
   gte,
   inArray,
   isNotNull,

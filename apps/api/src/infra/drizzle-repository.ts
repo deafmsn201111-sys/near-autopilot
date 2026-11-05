@@ -18,6 +18,7 @@ import {
   type Table,
 } from '@near-autopilot/db';
 import type { Provenance } from '@near-autopilot/core';
+import { auditHash, chainOf, GENESIS, storedPayload } from '../evidence/chain';
 import type {
   AuditEvent,
   AutopilotRepository,
@@ -117,13 +118,35 @@ export class DrizzleRepository implements AutopilotRepository {
       .where(eq(proposals.id, id));
   }
 
+  /**
+   * Appends to this deployment's hash chain. One transaction holding an advisory lock on the chain: read the head,
+   * hash the new entry onto it, insert. Concurrent writers (API, collector) queue on the lock; the unique (chain, seq)
+   * index makes a fork impossible even without it. Throws if the entry cannot be stored (callers fail closed).
+   */
   async appendAudit(event: AuditEvent): Promise<void> {
-    await this.db.insert(auditEvents).values({
-      at: event.at,
-      type: event.type,
-      runId: event.runId,
-      proposalId: event.proposalId,
-      payload: event.payload,
+    const chain = chainOf(this.provenance);
+    await this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`audit:${chain}`}))`);
+      const [head] = await tx
+        .select({ seq: auditEvents.seq, hash: auditEvents.hash })
+        .from(auditEvents)
+        .where(eq(auditEvents.chain, chain))
+        .orderBy(desc(auditEvents.seq))
+        .limit(1);
+      const seq = (head?.seq ?? 0) + 1;
+      const prevHash = head?.hash ?? GENESIS;
+      const payload = storedPayload(event.payload);
+      const entry = {
+        seq,
+        at: event.at,
+        type: event.type,
+        runId: event.runId,
+        proposalId: event.proposalId,
+        payload,
+      };
+      await tx
+        .insert(auditEvents)
+        .values({ ...entry, chain, prevHash, hash: auditHash(prevHash, entry) });
     });
   }
 

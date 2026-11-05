@@ -24,7 +24,8 @@ Each decision carries:
 
 Both decision paths (the legacy cycle and the orchestrator) store every verdict **before** acting on it: if the
 write fails, the cycle stops and nothing is executed. Rows are append-only and keep the full evaluation input
-(`intent`, `plan`, `snapshot`, `history` as canonical JSON) so a decision can be re-evaluated later. The table refuses
+(`intent`, `plan`, `snapshot`, `history` as canonical JSON, and since stage 4 the policy `config`), so a decision can
+be re-evaluated with `pnpm audit:replay` ([audit-evidence.md](audit-evidence.md)). The table refuses
 a verdict that contradicts its outcome (`policy_verdicts_consistent_check`). Migration `0009` only adds the table.
 
 `GET /v1/policy/verdicts?limit=50&verdict=BLOCK` (bearer token) lists them, newest first, without the input.

@@ -10,6 +10,8 @@ import type {
   YieldDataDto,
 } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
+import { chainOf } from './evidence/chain';
+import type { EvidenceStore } from './evidence/store';
 import { toPortfolioDto, toProposalDto, toRunDto, toRouteDto, toVerdictDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
 import { disabledYieldView } from './yield/presenter';
@@ -27,6 +29,8 @@ export interface ServerDeps {
   /** Mainnet reference market data (testnet profile); absent means not used by this deployment. */
   readonly marketData?: { current(): Promise<MarketDataDto> };
   readonly yieldData?: { current(): Promise<YieldDataDto> };
+  /** This deployment's audit hash chain in Postgres (absent in tests that do not need it). */
+  readonly evidence?: Pick<EvidenceStore, 'latest' | 'verify'>;
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -47,6 +51,8 @@ const verdictQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   verdict: z.enum(['ALLOW', 'WARN', 'BLOCK']).optional(),
 });
+
+const auditQuery = z.object({ limit: z.coerce.number().int().min(1).max(500).default(50) });
 
 const routeQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -126,6 +132,24 @@ export function buildServer(
       q.origin === undefined ? { limit: q.limit } : { limit: q.limit, origin: q.origin },
     );
     return { routes: rows.map(toRouteDto) };
+  });
+
+  /** The newest entries of this deployment's audit hash chain, each with seq, prev_hash and hash. */
+  app.get('/v1/audit', async (request) => {
+    const { limit } = auditQuery.parse(request.query);
+    const chain = chainOf(deps.provenance);
+    const rows = deps.evidence ? await deps.evidence.latest(chain, limit) : [];
+    return {
+      chain,
+      entries: rows.map((r) => ({ ...r, at: r.at.toISOString() })),
+    };
+  });
+
+  /** Re-verifies this deployment's whole chain from the database, seq 1 to head. */
+  app.get('/v1/audit/verify', async () => {
+    const chain = chainOf(deps.provenance);
+    if (!deps.evidence) return { chain, ok: false, entries: 0, error: 'no evidence store' };
+    return deps.evidence.verify(chain);
   });
 
   app.get('/v1/testnet-transactions', async (request) => {

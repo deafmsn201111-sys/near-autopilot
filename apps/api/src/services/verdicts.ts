@@ -1,16 +1,19 @@
 import { toJsonSafe, type PolicyDecision } from '@near-autopilot/core';
-import type { PolicyInput } from '@near-autopilot/policy-engine';
+import type { PolicyConfig, PolicyInput } from '@near-autopilot/policy-engine';
 import type { AutopilotRepository, PolicyVerdictRecord } from '../repository';
 
 /**
  * A policy decision as stored in `policy_verdicts`: verdict, every check, policy version, snapshot id, plan hash and
- * the exact evaluation input (JSON-safe; bigint as decimal text, Date as ISO), so the decision can be re-evaluated.
+ * the exact evaluation input (JSON-safe; bigint as decimal text, Date as ISO) AND the policy config it ran under, so the
+ * decision can be re-evaluated from this row alone (`pnpm audit:replay`). The config's hash is part of policyVersion,
+ * so a stored config that was altered no longer matches its version.
  */
 export function verdictRecord(
   decision: PolicyDecision,
   input: PolicyInput,
   engine: PolicyVerdictRecord['engine'],
   runId: string | null,
+  config: PolicyConfig,
 ): PolicyVerdictRecord {
   return {
     id: decision.id,
@@ -32,12 +35,16 @@ export function verdictRecord(
       plan: input.plan,
       snapshot: input.snapshot,
       history: input.history,
+      config,
     }),
   };
 }
 
 /** The orchestrator's VerdictSink over the repository (the cycle key stands in for a run id). */
-export const repositoryVerdictSink = (repo: Pick<AutopilotRepository, 'insertPolicyVerdict'>) => ({
+export const repositoryVerdictSink = (
+  repo: Pick<AutopilotRepository, 'insertPolicyVerdict'>,
+  config: PolicyConfig,
+) => ({
   record: (decision: PolicyDecision, input: PolicyInput, cycleKey: string) =>
-    repo.insertPolicyVerdict(verdictRecord(decision, input, 'orchestrator', cycleKey)),
+    repo.insertPolicyVerdict(verdictRecord(decision, input, 'orchestrator', cycleKey, config)),
 });

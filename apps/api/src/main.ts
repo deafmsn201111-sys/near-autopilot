@@ -1,3 +1,4 @@
+import { EvidenceStore } from './evidence/store';
 import { loadApiEnv, EnvValidationError } from '@near-autopilot/config';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
 import { loadAutopilotConfig } from './autopilot-config';
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
       }),
       provenance,
       testnetTransactions: testnetTxView(new DrizzleTestnetTxLedger(database.db)),
+      evidence: new EvidenceStore(database.db),
       marketData: marketDataView(market, env.NEAR_NETWORK),
       yieldData: yieldDataView(yields),
     },

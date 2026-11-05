@@ -49,6 +49,28 @@ const make = (cycleError?: Error) => {
     repo,
     policy,
     provenance,
+    evidence: {
+      latest: async (chain: string, limit: number) =>
+        [1, 2, 3]
+          .reverse()
+          .slice(0, limit)
+          .map((seq) => ({
+            seq,
+            at: new Date(seq * 1000),
+            type: `t${seq}`,
+            runId: null,
+            proposalId: null,
+            payload: { chain },
+            prevHash: '0'.repeat(64),
+            hash: String(seq).repeat(64),
+          })),
+      verify: async (chain: string) => ({
+        chain,
+        ok: true as const,
+        entries: 3,
+        head: { seq: 3, hash: '3'.repeat(64) },
+      }),
+    },
     snapshots: {
       take: async () => {
         throw new Error('not needed');
@@ -205,6 +227,22 @@ describe('HTTP API', () => {
     expect((await server.inject({ url: '/v1/routes?origin=x', headers: auth })).statusCode).toBe(
       400,
     );
+  });
+
+  it("serves this deployment's audit chain and its verification, behind auth", async () => {
+    const server = make();
+    expect((await server.inject('/v1/audit')).statusCode).toBe(401);
+    expect((await server.inject('/v1/audit/verify')).statusCode).toBe(401);
+    const chain = `${provenance.dataSource}:${provenance.network}`;
+    const a = (await server.inject({ url: '/v1/audit?limit=2', headers: auth })).json<{
+      chain: string;
+      entries: Array<{ seq: number; at: string; payload: unknown }>;
+    }>();
+    expect(a.chain).toBe(chain);
+    expect(a.entries.map((e) => e.seq)).toEqual([3, 2]);
+    expect(a.entries[0]).toMatchObject({ at: '1970-01-01T00:00:03.000Z', payload: { chain } });
+    const v = (await server.inject({ url: '/v1/audit/verify', headers: auth })).json<unknown>();
+    expect(v).toEqual({ chain, ok: true, entries: 3, head: { seq: 3, hash: '3'.repeat(64) } });
   });
 
   it('serves the testnet transaction ledger read-only, behind auth', async () => {

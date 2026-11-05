@@ -316,7 +316,7 @@ export async function wire(
             quoter,
             planner: planners,
             policy,
-            verdicts: repositoryVerdictSink(repo),
+            verdicts: repositoryVerdictSink(repo, policy.config),
             executor,
             history: { stats: (account, since) => repo.getExecutionStats(account, since) },
             audit: orchestratorAudit,

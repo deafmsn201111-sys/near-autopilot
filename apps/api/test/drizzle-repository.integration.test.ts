@@ -70,7 +70,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(11);
+    expect(applied.rows[0]?.n).toBe(12);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -254,6 +254,81 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     );
     expect(rows.rows.map((r) => r.type)).toEqual(['escalation_warn']);
     await expect(repo.ping()).resolves.toBeUndefined();
+  });
+
+  it('the audit chain lives in the database: it continues across a restart and concurrent writers never fork it', async () => {
+    const { EvidenceStore } = await import('../src/evidence/store');
+    const p = { dataSource: 'simulation', network: 'mainnet' } as const;
+    const event = (i: number) => ({
+      at: new Date(Date.UTC(2026, 10, 6, 9, 0, 0, i)),
+      type: 'proposal_dry_run',
+      runId: `run-${i}`,
+      proposalId: null,
+      payload: { i, big: 10n ** 30n + BigInt(i), when: new Date(0), nested: { z: 1, a: [i] } },
+    });
+    const first = new DrizzleRepository(handle.db, p);
+    for (let i = 1; i <= 3; i += 1) await first.appendAudit(event(i));
+    // "Restart": a new process, a new repository, a new pool. The chain picks up at seq 4, not at genesis.
+    const url = new URL(adminUrl ?? '');
+    url.pathname = `/${dbName}`;
+    const restarted = createDatabase(url.toString(), { max: 4 });
+    try {
+      const api = new DrizzleRepository(restarted.db, p);
+      const collector = new DrizzleRepository(handle.db, p);
+      // Two writers (API and collector), 20 appends racing.
+      await Promise.all(
+        Array.from({ length: 20 }, (_, k) => (k % 2 ? api : collector).appendAudit(event(4 + k))),
+      );
+    } finally {
+      await restarted.close();
+    }
+    const store = new EvidenceStore(handle.db);
+    const r = await store.verify('simulation:mainnet', 7); // small pages: the verifier pages too
+    expect(r).toMatchObject({ ok: true, entries: 23, head: { seq: 23 } });
+    // Other deployments have their own chain.
+    await new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' }).appendAudit(
+      event(99),
+    );
+    expect(await store.verify('chain:testnet')).toMatchObject({ ok: true, entries: 1 });
+    expect((await store.chains()).chains.map((c) => c.chain)).toContain('simulation:mainnet');
+  });
+
+  it('chained rows cannot be changed or deleted; a change made around the trigger is found by verify', async () => {
+    const { EvidenceStore } = await import('../src/evidence/store');
+    const store = new EvidenceStore(handle.db);
+    await expect(
+      handle.db.execute(
+        sql`update audit_events set payload = '{"forged":true}' where chain = 'simulation:mainnet' and seq = 5`,
+      ),
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      handle.db.execute(
+        sql`delete from audit_events where chain = 'simulation:mainnet' and seq = 5`,
+      ),
+    ).rejects.toThrow(/append-only/);
+    // The table owner can still bypass the trigger; the chain does not depend on it.
+    await handle.db.execute(sql`alter table audit_events disable trigger audit_events_append_only`);
+    try {
+      await handle.db.execute(
+        sql`update audit_events set payload = '{"forged":true}' where chain = 'simulation:mainnet' and seq = 5`,
+      );
+      expect(await store.verify('simulation:mainnet')).toMatchObject({
+        ok: false,
+        entries: 4,
+        brokenAt: { seq: 5, kind: 'hash' },
+      });
+    } finally {
+      await handle.db.execute(
+        sql`alter table audit_events enable trigger audit_events_append_only`,
+      );
+    }
+    // A forked seq is refused by the unique index.
+    await expect(
+      handle.db.execute(
+        sql`insert into audit_events (at, type, payload, chain, seq, prev_hash, hash)
+            values (now(), 'x', '{}', 'chain:testnet', 1, ${'0'.repeat(64)}, ${'f'.repeat(64)})`,
+      ),
+    ).rejects.toThrow();
   });
 
   it('testnet transaction ledger: u128 amounts round-trip, status changes are compare-and-set', async () => {

@@ -3,10 +3,11 @@ import type { AuditEntry, AuditEntryInput, AuditLog } from '@near-autopilot/orch
 import type { AutopilotRepository } from '../repository';
 
 /**
- * Write-through audit log for the orchestrator: the tamper-evident chain stays in memory (that is what `entries()` and
- * `verify()` read), and every entry is ALSO written to Postgres `audit_events` before `append` returns. If the database
- * write fails, `append` throws, and the orchestrator refuses to execute anything it could not record. So agent
- * outputs, decisions, escalations and execution events survive a restart even though the in-process chain does not.
+ * Write-through audit log for the orchestrator. The orchestrator keeps its own per-process chain in memory (what
+ * `entries()` and `verify()` read; its seq/hash are kept in the payload), and every entry is ALSO appended to the
+ * DURABLE chain in Postgres `audit_events` (see evidence/chain.ts) before `append` returns. That one survives restarts
+ * and is checked by `pnpm audit:verify`. If the database write fails, `append` throws and the orchestrator refuses to
+ * execute anything it could not record.
  */
 export class PersistentAuditLog implements AuditLog {
   constructor(
