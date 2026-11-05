@@ -31,8 +31,33 @@ export interface ReferenceAsset {
   }[];
   /** Sources further apart than this make the asset `price_disputed`. */
   readonly maxDeviationBps: number;
+  /** Exchange last-trade markets (public, no key). A USDT quote is converted with the corroborated USDT/USD price. */
+  readonly exchanges?: readonly ExchangeMarket[];
+  /** Stricter resolution: see AssetPriceStatus. */
+  readonly quorum?: { readonly min: number; readonly maxDeviationBps: number };
+  /** This asset's corroborated price converts other assets' quotes in this currency to USD. */
+  readonly convertsQuote?: 'USDT';
   readonly note: string;
 }
+
+export interface ExchangeMarket {
+  readonly source: 'coinbase' | 'kraken' | 'binance';
+  /** Coinbase product id, Kraken pair, Binance symbol. */
+  readonly symbol: string;
+  readonly quote: 'USD' | 'USDT';
+}
+
+/**
+ * NEAR/USD from three exchanges besides the oracles. Checked on 2026-11-05 (no key): Coinbase
+ * /products/NEAR-USD/ticker, Kraken /0/public/Trades?pair=NEARUSD, Binance /api/v3/trades?symbol=NEARUSDT.
+ * Quorum: 2 providers within 150 bps of their median, each at most 180 s old.
+ */
+const NEAR_EXCHANGES: readonly ExchangeMarket[] = [
+  { source: 'coinbase', symbol: 'NEAR-USD', quote: 'USD' },
+  { source: 'kraken', symbol: 'NEARUSD', quote: 'USD' },
+  { source: 'binance', symbol: 'NEARUSDT', quote: 'USDT' },
+];
+const NEAR_QUORUM = { min: 2, maxDeviationBps: 150 } as const;
 
 export const REFERENCE_ASSETS: readonly ReferenceAsset[] = [
   {
@@ -49,6 +74,8 @@ export const REFERENCE_ASSETS: readonly ReferenceAsset[] = [
       { key: 'near:wrap.near', symbol: 'wNEAR', decimals: 24 },
     ],
     maxDeviationBps: 200,
+    exchanges: NEAR_EXCHANGES,
+    quorum: NEAR_QUORUM,
     note: 'wrap.testnet wraps testnet NEAR 1:1, which has no market value; priced as mainnet NEAR for analysis only',
   },
   {
@@ -73,6 +100,7 @@ export const REFERENCE_ASSETS: readonly ReferenceAsset[] = [
       },
     ],
     maxDeviationBps: 100,
+    convertsQuote: 'USDT',
     note: 'a freely minted test token named after bridged USDT; priced as USDT for analysis only',
   },
   {
@@ -128,6 +156,8 @@ export const MAINNET_ASSETS: readonly ReferenceAsset[] = [
       { key: 'near:wrap.near', symbol: 'wNEAR', decimals: 24 },
     ],
     maxDeviationBps: 200,
+    exchanges: NEAR_EXCHANGES,
+    quorum: NEAR_QUORUM,
     note: 'mainnet wNEAR, priced as NEAR',
   },
   {
@@ -144,6 +174,7 @@ export const MAINNET_ASSETS: readonly ReferenceAsset[] = [
       { key: 'near:usdt.tether-token.near', symbol: 'USDt', decimals: 6 },
     ],
     maxDeviationBps: 100,
+    convertsQuote: 'USDT',
     note: 'native USDt on NEAR mainnet',
   },
   {

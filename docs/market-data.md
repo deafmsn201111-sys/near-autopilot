@@ -34,10 +34,21 @@ the expected symbol and decimals. Any mismatch leaves the asset `unpriced`. Ever
    confidence interval wider than 2 % of the price.
 2. **DefiLlama coins API** (priority 2, no key). Rejected: older than 180 s, future, non-positive, symbol or decimals
    not as mapped, DefiLlama confidence below 0.9.
+3. **Exchanges, NEAR only** (no key, `apps/api/src/market-data/exchanges.ts`): the last trade of Coinbase `NEAR-USD`
+   (`/products/NEAR-USD/ticker`), Kraken `NEARUSD` (`/0/public/Trades`) and Binance `NEARUSDT`
+   (`data-api.binance.vision/api/v3/trades`), exact decimal strings with the trade's own time. Rejected: last trade
+   older than 180 s, more than 5 s in the future, non-positive. The Binance USDT quote is multiplied by the
+   **corroborated** USDT/USD price (Pyth + DefiLlama) and takes the older of the two timestamps; without a
+   corroborated USDT price it is `unavailable` (USDT is never assumed to be 1.00).
 
-Per asset (`resolveAsset` in `apps/api/src/market-data/service.ts`):
+NEAR (`quorum` in `assets.ts`): one vote per provider (its highest-priority valid key), the median of the votes, and
+every vote within **150 bps** of the median agrees. At least **2** agreeing providers → **`corroborated`**, priced at
+the median observation (a real quote, not an average); outliers are excluded and named in the reason. Fewer → no
+price (`price_disputed` if providers answered but disagree, else `unpriced`). NEAR has **no single-source fallback**.
 
-- valid prices further apart than the asset's limit (NEAR 200 bps, stablecoins 100 bps) → **`price_disputed`**: no
+Other assets (`resolveAsset` in `apps/api/src/market-data/service.ts`):
+
+- valid prices further apart than the asset's limit (stablecoins 100 bps) → **`price_disputed`**: no
   price, excluded from every decision until reviewed;
 - two different providers valid and agreeing → **`corroborated`**; the Pyth price is used;
 - one provider valid → **`single_source`**: used, and flagged on the dashboard and in Postgres;

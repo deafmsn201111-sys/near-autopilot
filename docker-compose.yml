@@ -113,6 +113,9 @@ services:
       PYTH_API_KEY: ${PYTH_API_KEY:-}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
+      COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
+      KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
+      BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
     volumes:
       - ./config/autopilot.testnet.local.json:/etc/autopilot/autopilot.json:ro
     ports:
@@ -175,6 +178,9 @@ services:
       PYTH_API_KEY: ${PYTH_API_KEY:-}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
+      COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
+      KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
+      BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
     volumes:
       - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
     ports:
@@ -231,6 +237,9 @@ services:
       PYTH_API_KEY: ${PYTH_API_KEY:-}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
+      COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
+      KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
+      BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
       COLLECTOR_REGISTRY_EVERY: ${COLLECTOR_REGISTRY_EVERY:-4}
       COLLECTOR_HEALTH_PORT: 4100

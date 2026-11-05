@@ -10,12 +10,14 @@ import {
   toUnitPrice,
 } from '../src/market-data/decimal';
 import { HttpJsonClient, MarketHttpError } from '../src/market-data/http';
+import { ExchangeSource, fetchLastTrade } from '../src/market-data/exchanges';
 import {
   REFERENCE_LABEL,
   type MarketReport,
   type PriceObservation,
+  type SourceName,
 } from '../src/market-data/model';
-import { ReferenceMarketData, resolveAsset } from '../src/market-data/service';
+import { convertQuotes, ReferenceMarketData, resolveAsset } from '../src/market-data/service';
 import { DefiLlamaSource, PythSource } from '../src/market-data/sources';
 
 const NOW = new Date('2026-11-04T12:00:00Z');
@@ -129,7 +131,7 @@ const llamaCoins = (
 };
 
 const obs = (
-  source: 'pyth' | 'defillama',
+  source: SourceName,
   price: string,
   status: PriceObservation['status'] = 'valid',
 ): PriceObservation => ({
@@ -172,8 +174,8 @@ describe('resolveAsset (consensus)', () => {
     expect(r.crossCheck?.source).toBe('defillama');
     expect(r.label).toBe(REFERENCE_LABEL);
   });
-  it('fallback: Pyth unavailable -> DefiLlama alone, flagged single_source', () => {
-    const r = resolveAsset(NEAR, [obs('pyth', '0', 'unavailable'), obs('defillama', '3.99')], 24);
+  it('fallback (no quorum, stablecoins): Pyth unavailable -> DefiLlama alone, flagged single_source', () => {
+    const r = resolveAsset(USDT, [obs('pyth', '0', 'unavailable'), obs('defillama', '0.999')], 6);
     expect(r.status).toBe('single_source');
     expect(r.chosen?.source).toBe('defillama');
   });
@@ -491,7 +493,8 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
     ]);
     const report = await market.report();
     const by = (t: string) => report.assets.find((a) => a.testnetToken === t);
-    expect(by('wrap.testnet')?.status).toBe('price_disputed');
+    // NEAR has a quorum: DefiLlama alone (whose two keys even disagree) is one provider, never enough.
+    expect(by('wrap.testnet')?.status).toBe('unpriced');
     expect(by('usdt.fakes.testnet')?.status).toBe('single_source');
     expect(report.sources.find((s) => s.source === 'pyth')?.health).toBe('unavailable');
     const { prices } = await new ReferencePriceOracle(market).getPrices([
@@ -500,6 +503,64 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
     ] as TokenId[]);
     expect(prices.has('wrap.testnet' as TokenId)).toBe(false);
     expect(prices.has('usdt.fakes.testnet' as TokenId)).toBe(true);
+  });
+
+  it('end to end: Pyth for USDT, NEAR from the exchange quorum with Binance converted through USDT/USD', async () => {
+    const f = fakeFetch([
+      ['/v2/price_feeds', pythFeeds],
+      // NEAR feed refused (as on the live key), stablecoins entitled.
+      ['/v2/updates/price/latest?ids[]=c415', () => json({ error: 'not entitled' }, 403)],
+      ['/v2/updates/price/latest', () => pythLatest()],
+      ['/prices/current/', () => llamaCoins({ 'coingecko:near': { timestamp: nowS - 449 } })],
+      ['/chart/', () => json({ coins: {} })],
+      [
+        '/products/NEAR-USD/ticker',
+        () => json({ price: '3.7065', time: new Date(NOW.getTime() - 3_000).toISOString() }),
+      ],
+      [
+        '/0/public/Trades',
+        () =>
+          json({ error: [], result: { NEARUSD: [['3.7082', '1', nowS - 5, 's', 'l', '', 1]] } }),
+      ],
+      ['/api/v3/trades', () => json([{ price: '3.7110', time: NOW.getTime() - 2_000 }])],
+    ]);
+    const http = new HttpJsonClient({ fetchImpl: f.impl, ...noSleep });
+    const llama = new DefiLlamaSource({
+      baseUrl: 'https://llama.test',
+      http,
+      freshness: { maxAgeMs: 180_000, maxFutureSkewMs: 5_000 },
+    });
+    const market = new ReferenceMarketData({
+      assets: REFERENCE_ASSETS,
+      sources: [
+        new PythSource({ baseUrl: 'https://hermes.test', apiKey: 'k-12345678', http }),
+        llama,
+        new ExchangeSource({ name: 'coinbase', baseUrl: 'https://cb.test', http }),
+        new ExchangeSource({ name: 'kraken', baseUrl: 'https://kr.test', http }),
+        new ExchangeSource({ name: 'binance', baseUrl: 'https://bn.test', http }),
+      ],
+      testnetDecimals: async (t) =>
+        REFERENCE_ASSETS.find((a) => a.testnetToken === t)?.testnetDecimals ?? null,
+      now: () => NOW,
+      ids: () => 'r1',
+    });
+    const report = await market.report();
+    const near = report.assets.find((a) => a.testnetToken === 'wrap.testnet');
+    expect(near?.status).toBe('corroborated');
+    // coinbase 3.7065, kraken 3.7082, binance 3.711 x 0.9999 (Pyth USDT) = 3.7106289. DefiLlama's coingecko key is
+    // stale, so its vote is near:wrap.near (4.00): an outlier, excluded and named.
+    expect(near?.chosen?.source).toBe('kraken');
+    expect(near?.reason).toContain('outliers excluded: defillama');
+    const binance = near?.observations.find((o) => o.source === 'binance');
+    expect(binance?.assetId).toBe('binance:NEARUSDT×USDT/USD(pyth)');
+    expect(formatDecimal(binance!.priceUsd!)).toBe('3.7106289');
+    expect(report.sources.map((s) => s.source)).toEqual([
+      'pyth',
+      'defillama',
+      'coinbase',
+      'kraken',
+      'binance',
+    ]);
   });
 
   it('every source down: no prices at all (never zero), market context null', async () => {
@@ -537,5 +598,168 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
     advance(31_000);
     await market.report();
     expect(recorded).toHaveLength(2);
+  });
+});
+
+describe('NEAR/USD quorum (2 providers within 150 bps of the median)', () => {
+  it('one valid provider is NOT enough for NEAR: unpriced, no single-source fallback', () => {
+    const r = resolveAsset(NEAR, [obs('pyth', '0', 'unavailable'), obs('defillama', '3.99')], 24);
+    expect(r.status).toBe('unpriced');
+    expect(r.priceUsd).toBeNull();
+    expect(r.reason).toContain('quorum not met: 1 of 2');
+  });
+  it('three exchanges agree, DefiLlama stale: corroborated at the median observation', () => {
+    const r = resolveAsset(
+      NEAR,
+      [
+        obs('defillama', '3.80', 'stale'),
+        obs('coinbase', '3.7065'),
+        obs('kraken', '3.7082'),
+        obs('binance', '3.7051'),
+      ],
+      24,
+    );
+    expect(r.status).toBe('corroborated');
+    expect(r.chosen?.source).toBe('coinbase'); // median of 3.7051 / 3.7065 / 3.7082
+    expect(formatDecimal(r.priceUsd!)).toBe('3.7065');
+    expect(Number(r.spreadBps)).toBeLessThanOrEqual(150);
+    expect(r.reason).toBeNull();
+  });
+  it('one outlier is excluded and named; the rest still form the quorum', () => {
+    const r = resolveAsset(
+      NEAR,
+      [
+        obs('defillama', '3.90'),
+        obs('coinbase', '3.70'),
+        obs('kraken', '3.71'),
+        obs('binance', '3.705'),
+      ],
+      24,
+    );
+    expect(r.status).toBe('corroborated');
+    expect(r.chosen?.source).toBe('binance'); // lower middle of 3.70 / 3.705 / 3.71 / 3.90
+    expect(r.reason).toContain('outliers excluded: defillama');
+  });
+  it('two providers 200 bps apart (inside the old 200 bps limit) no longer agree: price_disputed', () => {
+    const r = resolveAsset(NEAR, [obs('coinbase', '3.70'), obs('kraken', '3.774')], 24);
+    expect(r.status).toBe('price_disputed');
+    expect(r.priceUsd).toBeNull();
+  });
+  it('a USDT quote is never compared unconverted', () => {
+    const usdtQuoted: PriceObservation = { ...obs('binance', '3.70'), quoteCurrency: 'USDT' };
+    const r = resolveAsset(NEAR, [obs('coinbase', '3.70'), usdtQuoted], 24);
+    expect(r.status).toBe('unpriced');
+  });
+});
+
+describe('convertQuotes (Binance NEAR/USDT -> USD)', () => {
+  const usdtQuote: PriceObservation = {
+    ...obs('binance', '3.70'),
+    assetId: 'binance:NEARUSDT',
+    quoteCurrency: 'USDT',
+    publishedAt: new Date(NOW.getTime() - 1_000),
+  };
+  const usdt = (status: 'corroborated' | 'single_source') =>
+    ({
+      ...resolveAsset(USDT, [obs('pyth', '0.9988'), obs('defillama', '0.9989')], 6),
+      status,
+      chosen: { ...obs('pyth', '0.9988'), publishedAt: new Date(NOW.getTime() - 30_000) },
+    }) as const;
+  it('multiplies by the corroborated USDT/USD price and keeps the older timestamp', () => {
+    const [c] = convertQuotes([usdtQuote], usdt('corroborated'), NOW);
+    expect(c?.quoteCurrency).toBe('USD');
+    expect(formatDecimal(c!.priceUsd!)).toBe('3.69556');
+    expect(c?.ageMs).toBe(30_000);
+    expect(c?.assetId).toBe('binance:NEARUSDT×USDT/USD(pyth)');
+    expect(c?.status).toBe('valid');
+  });
+  it('without a corroborated USDT price the quote is unavailable (USDT is never assumed to be 1.00)', () => {
+    for (const u of [usdt('single_source'), null]) {
+      const [c] = convertQuotes([usdtQuote], u, NOW);
+      expect(c?.status).toBe('unavailable');
+      expect(c?.priceUsd).toBeNull();
+    }
+  });
+});
+
+describe('exchange sources (last trade, public, no key)', () => {
+  const http = (routes: Array<[string, () => Response]>) => {
+    const f = fakeFetch(routes);
+    return { f, http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }) };
+  };
+  it('parses Coinbase ticker, Kraken trades (latest row) and Binance trades exactly', async () => {
+    const { http: h } = http([
+      [
+        '/products/NEAR-USD/ticker',
+        () => json({ price: '3.7065', time: '2026-11-04T11:59:58.395Z' }),
+      ],
+      [
+        '/0/public/Trades',
+        () =>
+          json({
+            error: [],
+            result: {
+              NEARUSD: [
+                ['3.70820', '67.4', nowS - 9.5, 's', 'l', '', 1],
+                ['3.70810', '67.4', nowS - 4.25, 's', 'l', '', 2],
+              ],
+              last: '1',
+            },
+          }),
+      ],
+      ['/api/v3/trades', () => json([{ price: '3.71100000', time: NOW.getTime() - 2_000 }])],
+    ]);
+    const cb = await fetchLastTrade(h, 'https://cb.test', {
+      source: 'coinbase',
+      symbol: 'NEAR-USD',
+      quote: 'USD',
+    });
+    expect(formatDecimal(cb.price!)).toBe('3.7065');
+    const kr = await fetchLastTrade(h, 'https://kr.test', {
+      source: 'kraken',
+      symbol: 'NEARUSD',
+      quote: 'USD',
+    });
+    expect(formatDecimal(kr.price!)).toBe('3.7081');
+    expect(kr.at?.getTime()).toBe(NOW.getTime() - 4_250);
+    const bn = await fetchLastTrade(h, 'https://bn.test', {
+      source: 'binance',
+      symbol: 'NEARUSDT',
+      quote: 'USDT',
+    });
+    expect(formatDecimal(bn.price!)).toBe('3.711');
+  });
+  it('a trade older than 180 s is stale; an error response makes the market unavailable', async () => {
+    const { http: h } = http([
+      [
+        '/products/NEAR-USD/ticker',
+        () => json({ price: '3.70', time: new Date(NOW.getTime() - 181_000).toISOString() }),
+      ],
+      ['/0/public/Trades', () => json({ error: ['EQuery:Unknown asset pair'] })],
+    ]);
+    const cb = await new ExchangeSource({
+      name: 'coinbase',
+      baseUrl: 'https://cb.test',
+      http: h,
+    }).observe([NEAR], NOW);
+    expect(cb.observations.get(NEAR.testnetToken)?.[0]?.status).toBe('stale');
+    expect(cb.status.health).toBe('degraded');
+    const kr = await new ExchangeSource({
+      name: 'kraken',
+      baseUrl: 'https://kr.test',
+      http: h,
+    }).observe([NEAR], NOW);
+    expect(kr.observations.get(NEAR.testnetToken)?.[0]?.status).toBe('unavailable');
+    expect(kr.status.health).toBe('unavailable');
+  });
+  it('assets without a market on the exchange get no observation and no request', async () => {
+    const { http: h, f } = http([]);
+    const r = await new ExchangeSource({
+      name: 'binance',
+      baseUrl: 'https://bn.test',
+      http: h,
+    }).observe([USDT], NOW);
+    expect(r.observations.size).toBe(0);
+    expect(f.calls).toHaveLength(0);
   });
 });

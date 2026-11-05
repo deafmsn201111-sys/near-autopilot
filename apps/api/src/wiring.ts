@@ -54,6 +54,7 @@ import { MAINNET_ASSETS, REFERENCE_ASSETS } from './market-data/assets';
 import { HttpJsonClient } from './market-data/http';
 import type { MarketDataProvider, MarketReportSink } from './market-data/model';
 import { ReferenceMarketData } from './market-data/service';
+import { ExchangeSource } from './market-data/exchanges';
 import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
 import { MAINNET_PRICE_LABEL, usable } from './market-data/model';
@@ -426,10 +427,25 @@ function referenceMarket(
   return new ReferenceMarketData({
     assets: shadow ? MAINNET_ASSETS : REFERENCE_ASSETS,
     ...(shadow ? { label: MAINNET_PRICE_LABEL, executionNetwork: 'none' as const } : {}),
-    // Priority: Pyth first, DefiLlama second.
+    // Priority: Pyth first, DefiLlama second; then the exchanges (NEAR/USD quorum, see assets.ts).
     sources: [
       new PythSource({ baseUrl: env.PYTH_HERMES_URL, apiKey: env.PYTH_API_KEY, http }),
       llama,
+      ...(
+        [
+          ['coinbase', env.COINBASE_URL],
+          ['kraken', env.KRAKEN_URL],
+          ['binance', env.BINANCE_URL],
+        ] as const
+      ).map(
+        ([name, baseUrl]) =>
+          new ExchangeSource({
+            name,
+            baseUrl,
+            http,
+            freshness: { maxAgeMs: 180_000, maxFutureSkewMs: 5_000 },
+          }),
+      ),
     ],
     history: llama,
     testnetDecimals: async (token) =>

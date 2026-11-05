@@ -155,14 +155,17 @@ export const testnetTxResponseSchema = z.object({
   transactions: z.array(testnetTxDtoSchema),
 });
 export type TestnetTxResponse = z.infer<typeof testnetTxResponseSchema>;
+/** Price providers: two oracles/aggregators and three exchanges (NEAR/USD quorum). */
+export const marketSourceSchema = z.enum(['pyth', 'defillama', 'coinbase', 'kraken', 'binance']);
 /** One source's value for one asset (always MAINNET market data). */
 export const marketObservationDtoSchema = z.object({
-  source: z.enum(['pyth', 'defillama']),
+  source: marketSourceSchema,
   network: z.literal('mainnet'),
   assetId: z.string(),
   contract: z.string().nullable(),
   priceUsd: z.string().nullable(),
-  quoteCurrency: z.literal('USD'),
+  /** Always USD once resolved; a USDT exchange quote is converted first (the asset id names the conversion). */
+  quoteCurrency: z.enum(['USD', 'USDT']),
   confidence: z.string().nullable(),
   publishedAt: z.string().nullable(),
   fetchedAt: z.string(),
@@ -206,7 +209,7 @@ export const marketDataDtoSchema = z.object({
   fetchedAt: z.string().nullable(),
   sources: z.array(
     z.object({
-      source: z.enum(['pyth', 'defillama']),
+      source: marketSourceSchema,
       health: z.enum(['ok', 'degraded', 'unavailable']),
       detail: z.string().nullable(),
     }),

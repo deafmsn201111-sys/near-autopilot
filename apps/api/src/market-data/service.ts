@@ -1,5 +1,6 @@
 import type { ReferenceAsset } from './assets';
-import { deviationBps } from './decimal';
+import { compareDecimal, deviationBps } from './decimal';
+import { mul, truncate } from '../yield/math';
 import {
   REFERENCE_LABEL,
   type AssetPrice,
@@ -50,7 +51,10 @@ export function resolveAsset(
           : `testnet decimals ${testnetDecimals} differ from the mapping (${asset.testnetDecimals})`,
     };
   }
-  const valid = observations.filter((o) => o.status === 'valid' && o.priceUsd !== null);
+  // Only USD quotes are comparable; a USDT quote must have gone through convertQuotes first.
+  const valid = observations.filter(
+    (o) => o.status === 'valid' && o.priceUsd !== null && o.quoteCurrency === 'USD',
+  );
   if (valid.length === 0) {
     return {
       ...base,
@@ -63,6 +67,7 @@ export function resolveAsset(
           .join('; ') || 'no source',
     };
   }
+  if (asset.quorum) return resolveQuorum(asset, valid, base);
   let spread = 0n;
   for (const a of valid)
     for (const b of valid) {
@@ -92,6 +97,122 @@ export function resolveAsset(
     reason:
       providers.size >= 2 ? null : `only ${chosen?.source ?? 'one source'} returned a valid price`,
   };
+}
+
+const maxSpread = (xs: readonly PriceObservation[]): bigint => {
+  let spread = 0n;
+  for (const a of xs)
+    for (const b of xs) {
+      if (a === b || !a.priceUsd || !b.priceUsd) continue;
+      const d = deviationBps(a.priceUsd, b.priceUsd);
+      if (d > spread) spread = d;
+    }
+  return spread;
+};
+
+/**
+ * Quorum resolution (NEAR): one observation per provider (its highest-priority valid key), the median of those, and
+ * every provider within `quorum.maxDeviationBps` of the median agrees. At least `quorum.min` agreeing providers:
+ * `corroborated`, priced at the median observation (a real observation, never an average). Fewer: no price —
+ * `price_disputed` if enough providers answered but disagree, else `unpriced`. There is no single-source fallback.
+ */
+function resolveQuorum(
+  asset: ReferenceAsset,
+  valid: readonly PriceObservation[],
+  base: Pick<
+    AssetPrice,
+    'testnetToken' | 'referenceSymbol' | 'mainnetContract' | 'observations' | 'label'
+  >,
+): AssetPrice {
+  const q = asset.quorum ?? { min: 2, maxDeviationBps: asset.maxDeviationBps };
+  const none = { priceUsd: null, chosen: null, crossCheck: null } as const;
+  const perProvider: PriceObservation[] = [];
+  for (const o of valid)
+    if (o.priceUsd && o.quoteCurrency === 'USD' && !perProvider.some((x) => x.source === o.source))
+      perProvider.push(o);
+  if (perProvider.length < q.min)
+    return {
+      ...base,
+      ...none,
+      spreadBps: perProvider.length > 1 ? maxSpread(perProvider) : null,
+      status: 'unpriced',
+      reason: `quorum not met: ${perProvider.length} of ${q.min} required providers valid (${
+        perProvider.map((o) => o.source).join(', ') || 'none'
+      })`,
+    };
+  const sorted = [...perProvider].sort((a, b) =>
+    a.priceUsd && b.priceUsd ? compareDecimal(a.priceUsd, b.priceUsd) : 0,
+  );
+  const median = sorted[Math.floor((sorted.length - 1) / 2)];
+  const agree = sorted.filter(
+    (o) =>
+      median?.priceUsd &&
+      o.priceUsd &&
+      deviationBps(o.priceUsd, median.priceUsd) <= BigInt(q.maxDeviationBps),
+  );
+  const outliers = sorted.filter((o) => !agree.includes(o));
+  const outlierText = outliers
+    .map(
+      (o) =>
+        `${o.source} ${o.priceUsd && median?.priceUsd ? deviationBps(o.priceUsd, median.priceUsd) : '?'} bps`,
+    )
+    .join(', ');
+  if (agree.length < q.min || !median)
+    return {
+      ...base,
+      ...none,
+      spreadBps: maxSpread(sorted),
+      status: 'price_disputed',
+      reason: `quorum not met: ${agree.length} of ${q.min} providers within ${q.maxDeviationBps} bps of the median (${outlierText}): excluded until reviewed`,
+    };
+  return {
+    ...base,
+    priceUsd: median.priceUsd,
+    chosen: median,
+    crossCheck: agree.find((o) => o !== median) ?? null,
+    spreadBps: maxSpread(agree),
+    status: 'corroborated',
+    reason:
+      outliers.length > 0
+        ? `quorum ${agree.length}/${sorted.length}; outliers excluded: ${outlierText}`
+        : null,
+  };
+}
+
+/**
+ * Converts USDT-quoted observations to USD with a corroborated USDT/USD price (never a single-source one). The
+ * converted observation keeps its own status, takes the OLDER of the two timestamps, and names the conversion in its
+ * asset id. Without a usable USDT price the observation becomes `unavailable`: nothing is assumed to be 1.00.
+ */
+export function convertQuotes(
+  observations: readonly PriceObservation[],
+  usdt: AssetPrice | null,
+  now: Date,
+): PriceObservation[] {
+  return observations.map((o) => {
+    if (o.quoteCurrency !== 'USDT') return o;
+    const rate = usdt?.status === 'corroborated' ? usdt.priceUsd : null;
+    if (!rate || !usdt?.chosen)
+      return {
+        ...o,
+        priceUsd: null,
+        quoteCurrency: 'USD',
+        status: o.status === 'valid' ? 'unavailable' : o.status,
+        reason: o.reason ?? 'no corroborated USDT/USD price to convert the USDT quote',
+      };
+    const times = [o.publishedAt, usdt.chosen.publishedAt].flatMap((d) =>
+      d && !Number.isNaN(d.getTime()) ? [d.getTime()] : [],
+    );
+    const publishedAt = times.length === 2 ? new Date(Math.min(...times)) : o.publishedAt;
+    return {
+      ...o,
+      assetId: `${o.assetId}×USDT/USD(${usdt.chosen.source})`,
+      priceUsd: o.priceUsd ? truncate(mul(o.priceUsd, rate)) : null,
+      quoteCurrency: 'USD',
+      publishedAt,
+      ageMs: publishedAt ? now.getTime() - publishedAt.getTime() : o.ageMs,
+    };
+  });
 }
 
 export interface ReferenceMarketDataOptions {
@@ -163,13 +284,17 @@ export class ReferenceMarketData implements MarketDataProvider {
     const decimals = await Promise.all(
       assets.map((a) => this.o.testnetDecimals(a.testnetToken).catch(() => null)),
     );
+    const label = this.o.label ?? REFERENCE_LABEL;
+    const raw = (a: ReferenceAsset) =>
+      results.flatMap((r) => r.observations.get(a.testnetToken) ?? []);
+    // USDT/USD first (it never needs a conversion itself), then everything with its USDT quotes converted.
+    const usdtIndex = assets.findIndex((a) => a.convertsQuote === 'USDT');
+    const usdtAsset = usdtIndex >= 0 ? assets[usdtIndex] : undefined;
+    const usdt = usdtAsset
+      ? resolveAsset(usdtAsset, raw(usdtAsset), decimals[usdtIndex] ?? null, label)
+      : null;
     const resolved = assets.map((a, i) =>
-      resolveAsset(
-        a,
-        results.flatMap((r) => r.observations.get(a.testnetToken) ?? []),
-        decimals[i] ?? null,
-        this.o.label ?? REFERENCE_LABEL,
-      ),
+      resolveAsset(a, convertQuotes(raw(a), usdt, now), decimals[i] ?? null, label),
     );
     const keyOf = (a: AssetPrice) =>
       a.chosen?.source === 'defillama'

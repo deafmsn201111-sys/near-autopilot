@@ -1,4 +1,5 @@
 import type { Decimal } from '../market-data/decimal';
+import type { SourceName } from '../market-data/model';
 
 /**
  * Autonomous shadow collector: MAINNET, READ-ONLY. Everything here is analytics on public chain state and public price
@@ -12,7 +13,7 @@ export type PriceQuality = 'OK' | 'LOW_CONFIDENCE' | 'UNPRICED';
 export interface TokenPrice {
   readonly usd: Decimal;
   readonly quality: Exclude<PriceQuality, 'UNPRICED'>;
-  readonly source: 'pyth' | 'defillama';
+  readonly source: SourceName;
   readonly sourceAssetId: string;
 }
 

@@ -283,7 +283,9 @@ export const priceObservations = pgTable(
     id: text('id').primaryKey(),
     snapshotId: text('snapshot_id').notNull(),
     asset: text('asset').notNull(),
-    source: text('source', { enum: ['pyth', 'defillama'] }).notNull(),
+    source: text('source', {
+      enum: ['pyth', 'defillama', 'coinbase', 'kraken', 'binance'],
+    }).notNull(),
     sourceAssetId: text('source_asset_id').notNull(),
     priceUsd: text('price_usd'),
     quoteCurrency: text('quote_currency').notNull(),

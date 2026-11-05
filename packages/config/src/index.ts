@@ -96,6 +96,10 @@ const apiEnvRaw = z.object({
   PYTH_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
   PYTH_HERMES_URL: z.string().url().default('https://hermes.pyth.network'),
   DEFILLAMA_URL: z.string().url().default('https://coins.llama.fi'),
+  /** Public exchange market data (no key): last-trade prices, the independent NEAR/USD quorum. */
+  COINBASE_URL: z.string().url().default('https://api.exchange.coinbase.com'),
+  KRAKEN_URL: z.string().url().default('https://api.kraken.com'),
+  BINANCE_URL: z.string().url().default('https://data-api.binance.vision'),
 });
 
 export interface ApiEnv {
@@ -126,6 +130,9 @@ export interface ApiEnv {
   readonly PYTH_API_KEY: string | undefined;
   readonly PYTH_HERMES_URL: string;
   readonly DEFILLAMA_URL: string;
+  readonly COINBASE_URL: string;
+  readonly KRAKEN_URL: string;
+  readonly BINANCE_URL: string;
 }
 
 export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
@@ -265,6 +272,9 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     PYTH_API_KEY: env.PYTH_API_KEY,
     PYTH_HERMES_URL: env.PYTH_HERMES_URL,
     DEFILLAMA_URL: env.DEFILLAMA_URL,
+    COINBASE_URL: env.COINBASE_URL,
+    KRAKEN_URL: env.KRAKEN_URL,
+    BINANCE_URL: env.BINANCE_URL,
   };
 }
 

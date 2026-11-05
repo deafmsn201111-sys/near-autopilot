@@ -11,7 +11,8 @@ export type PriceLabel = typeof REFERENCE_LABEL | typeof MAINNET_PRICE_LABEL;
 export type ExecutionNetwork = 'testnet' | 'none';
 export const DATA_FLOW_LABEL = 'MAINNET MARKET DATA → TESTNET EXECUTION';
 
-export type SourceName = 'pyth' | 'defillama';
+export type ExchangeName = 'coinbase' | 'kraken' | 'binance';
+export type SourceName = 'pyth' | 'defillama' | ExchangeName;
 
 /** Why one source's value for one asset is, or is not, usable. Only `valid` observations are ever used. */
 export type ObservationStatus =
@@ -31,8 +32,9 @@ export interface PriceObservation {
   /** Pyth feed id, or DefiLlama coin key. */
   readonly assetId: string;
   readonly contract: string | null;
+  /** In `quoteCurrency`. A USDT quote is converted to USD (see convertQuotes) before it is ever resolved. */
   readonly priceUsd: Decimal | null;
-  readonly quoteCurrency: 'USD';
+  readonly quoteCurrency: 'USD' | 'USDT';
   /** Source-reported confidence (Pyth: confidence interval in USD; DefiLlama: 0..1 score), as text. */
   readonly confidence: string | null;
   readonly publishedAt: Date | null;
@@ -43,6 +45,8 @@ export interface PriceObservation {
 }
 
 /**
+ * Assets with a `quorum` (NEAR) follow a stricter rule instead: at least `quorum.min` different providers within
+ * `quorum.maxDeviationBps` of their median; the price is the median observation; outliers are excluded and named.
  * - `corroborated`: at least two PROVIDERS returned valid prices within the asset's deviation limit.
  * - `single_source`: exactly one provider is valid (all of its keys agree). Usable, flagged.
  * - `price_disputed`: valid prices disagree beyond the limit. Excluded from every decision until reviewed.
