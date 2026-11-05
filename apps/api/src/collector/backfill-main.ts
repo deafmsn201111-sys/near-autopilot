@@ -50,8 +50,15 @@ async function main(): Promise<void> {
     .parse(arg('skip-within-hours') ?? 3);
   const only = arg('pools')?.split(',').filter(Boolean);
   const logger = createJsonLogger(env.LOG_LEVEL);
+  // The FastNEAR key of the read RPC is sent to the archival RPC only when that is FastNEAR too (same provider).
+  const key =
+    new URL(MAINNET_ARCHIVAL_RPC_URL).hostname.endsWith('.fastnear.com') &&
+    env.MAINNET_READ_RPC_API_KEY
+      ? env.MAINNET_READ_RPC_API_KEY
+      : undefined;
   const rpc = new NearRpcClient({
     url: MAINNET_ARCHIVAL_RPC_URL,
+    headers: key ? { authorization: `Bearer ${key}` } : undefined,
     maxConcurrent: 2,
     onRetry: (e) =>
       logger.warn('archival rpc retry', { method: e.method, attempt: e.attempt, kind: e.kind }),
@@ -67,7 +74,12 @@ async function main(): Promise<void> {
       if (id === null || !decimals.success || (only && !only.includes(p.poolKey))) return [];
       return [{ poolKey: p.poolKey, poolId: id, tokens: p.tokens, decimals: decimals.data }];
     });
-    logger.info('backfill start', { pools: targets.length, days, stepHours });
+    logger.info('backfill start', {
+      pools: targets.length,
+      days,
+      stepHours,
+      keyed: key !== undefined,
+    });
     const summary = await runBackfill(
       {
         rpc,
