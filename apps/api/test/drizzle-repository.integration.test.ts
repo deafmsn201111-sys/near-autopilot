@@ -68,7 +68,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(8);
+    expect(applied.rows[0]?.n).toBe(9);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -479,6 +479,43 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     await expect(
       handle.db.execute(
         sql`update yield_observations set yield_type = 'lending_borrow', validation_status = 'valid'`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('price observations accept every provider of the NEAR quorum, and nothing else', async () => {
+    const { CollectorStore } = await import('../src/collector/store');
+    const store = new CollectorStore(handle.db);
+    const base = {
+      network: 'mainnet' as const,
+      contract: null,
+      priceUsd: { mantissa: 37065n, exponent: -4 },
+      quoteCurrency: 'USD' as const,
+      confidence: null,
+      publishedAt: new Date(),
+      fetchedAt: new Date(),
+      ageMs: 1_000,
+      status: 'valid' as const,
+      reason: null,
+      asset: 'wrap.near',
+    };
+    // Live regression: migration 0007's CHECK knew only pyth/defillama, so every cycle after the quorum failed.
+    await store.insertPrices(
+      'snap-quorum',
+      (['pyth', 'defillama', 'coinbase', 'kraken', 'binance'] as const).map((source) => ({
+        ...base,
+        source,
+        assetId: `${source}:NEAR`,
+      })),
+    );
+    const n = await handle.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from price_observations where snapshot_id = 'snap-quorum'`,
+    );
+    expect(n.rows[0]?.n).toBe(5);
+    await expect(
+      handle.db.execute(
+        sql`insert into price_observations (id, snapshot_id, asset, source, source_asset_id, quote_currency, observed_at, status)
+            values ('x', 's', 'a', 'okx', 'k', 'USD', now(), 'valid')`,
       ),
     ).rejects.toThrow();
   });
