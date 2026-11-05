@@ -122,6 +122,11 @@ docker compose logs -f api          # structured JSON logs
 docker compose stop                 # stop, keep data   |   docker compose start   # resume
 ```
 
+Two images serve every API and dashboard container: `near-autopilot-api:local` (built by `api`) and
+`near-autopilot-dashboard:local` (built by `dashboard`). The testnet / shadow / analytics services reuse them, so a
+rebuild runs each Dockerfile once instead of once per service: `docker compose build api dashboard`, then
+`docker compose --profile shadow --profile testnet up -d` to restart whatever runs the old image.
+
 The `pgdata` volume survives `stop`, `down` and reboots (`restart: unless-stopped` brings the stack back when Docker
 Desktop starts). `docker compose down -v` deletes the database: don't, unless you mean it. Switch portfolio with
 `SIMULATION_PORTFOLIO=demo-5000` in `.env` and `docker compose up -d api`.
