@@ -197,6 +197,30 @@ export class CollectorStore {
       );
   }
 
+  /** Active, tracked, model-SUPPORTED v1 pools (the ones with fee windows): what the history backfill re-reads. */
+  async backfillTargets(): Promise<PoolRow[]> {
+    return this.db
+      .select()
+      .from(rheaPools)
+      .where(
+        and(
+          eq(rheaPools.active, true),
+          eq(rheaPools.family, 'v1'),
+          eq(rheaPools.modelStatus, 'SUPPORTED'),
+          inArray(rheaPools.category, ['LIQUID', 'ANALYTICS_ELIGIBLE', 'LP_SIMULATION_ELIGIBLE']),
+        ),
+      );
+  }
+
+  /** Timestamps of every stored point of one pool (backfill skips targets that already have a point nearby). */
+  async pointTimes(poolKey: string): Promise<Date[]> {
+    const rows = await this.db
+      .select({ at: rheaPoolObservations.blockTimestamp })
+      .from(rheaPoolObservations)
+      .where(eq(rheaPoolObservations.poolKey, poolKey));
+    return rows.map((r) => r.at);
+  }
+
   /**
    * Latest stored point. With `withVolumes`, the latest point that carries cumulative volumes: a registry-scan
    * reading has none, so it can neither start a fee window nor serve as the base of a volume regression check.

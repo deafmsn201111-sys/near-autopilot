@@ -25,6 +25,16 @@ export async function finalBlock(rpc: Pick<NearRpcClient, 'call'>): Promise<Bloc
   };
 }
 
+/** The block at one height (an archival node for old heights). Throws if the height has no block (skipped). */
+export async function blockAt(rpc: Pick<NearRpcClient, 'call'>, height: number): Promise<BlockRef> {
+  const parsed = blockSchema.safeParse(await rpc.call('block', { block_id: height }));
+  if (!parsed.success) throw new UnexpectedResponseError('block', 'malformed block header');
+  return {
+    height: parsed.data.header.height,
+    timestamp: new Date(Number(BigInt(parsed.data.header.timestamp_nanosec) / 1_000_000n)),
+  };
+}
+
 /** ContractViewer pinned to one block height (read-only `call_function` views; nothing is ever signed). */
 export class PinnedViewer implements ContractViewer {
   constructor(

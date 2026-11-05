@@ -35,3 +35,24 @@ Validation, formulas and storage are those of [yield-data.md](yield-data.md). Th
 `reward_per_day × 365 × price_reward / (boosted_shares × value per supply share)` (base rate, a supplier without a
 booster); it needs a usable reward-token price (BRRR has only a 0.7-confidence DefiLlama price, so it is
 `MISSING_PRICE`). A Rhea v1 fee APR needs two observations at least `minObservationSeconds` (1 h) apart.
+
+## History backfill (archival RPC, read-only)
+
+The 24H / 7D / 30D fee windows need a reading that old. `backfill-main.ts` re-reads every active, tracked,
+model-supported v1 pool at one past block per day (default 90 days) through an **archival** RPC
+(`MAINNET_ARCHIVAL_RPC_URL`, default `https://archival-rpc.mainnet.fastnear.com`; its chain id must be `mainnet`):
+`get_pool`, `get_pool_volumes` and the exchange `metadata`, all view calls pinned to the block height. Nothing is signed.
+
+```bash
+docker compose --profile shadow exec shadow-collector node --import tsx src/collector/backfill-main.ts --days 90
+```
+
+- The block is a real block within 10 minutes of the target time; its own timestamp is stored.
+- TVL of a past state uses DefiLlama **historical** prices at the block time (within 2 h; confidence >= 0.9 OK,
+  > = 0.5 LOW_CONFIDENCE). NEAR is OK only if a Coinbase 5-minute candle agrees within 150 bps; disagreeing -> no NEAR
+  > price (the point is stored without TVL).
+- A pool that did not exist yet, or whose tokens differ, is skipped and counted `missing`.
+- Rows are ordinary `rhea_pool_observations` (`snapshot_id = backfill:<run time>`, `raw.backfill` names the source and
+  the prices used). Re-runs skip targets with a stored point within 3 h. The window math and every check are unchanged:
+  a window across a fee change or a volume decrease is still `DATA_INVALID`.
+- Volume in USD over a window is valued at current prices, as for live windows.

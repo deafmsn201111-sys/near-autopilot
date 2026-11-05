@@ -13,7 +13,12 @@ import type { AutopilotConfig } from '../autopilot-config';
 import { MAINNET_ASSETS } from '../market-data/assets';
 import { formatDecimal } from '../market-data/decimal';
 import type { HttpJsonClient } from '../market-data/http';
-import type { MarketDataProvider, MarketReport, PriceObservation } from '../market-data/model';
+import {
+  usable,
+  type MarketDataProvider,
+  type MarketReport,
+  type PriceObservation,
+} from '../market-data/model';
 import type { AutopilotRepository } from '../repository';
 import { DEMO_PORTFOLIOS, demoAssets, type DemoPortfolioId } from '../simulation/demo-portfolios';
 import { wire } from '../wiring';
@@ -173,17 +178,19 @@ export class ShadowCollector {
       snapshotId = `${id}:s`;
       const now = this.d.now();
 
-      // 1. Curated prices: Pyth (per feed) + DefiLlama, cross-checked (also persisted to market_prices).
+      // 1. Curated prices: Pyth (per feed) + DefiLlama + the NEAR exchange quorum (also persisted to market_prices).
       const market = await timed('prices.curated', async () => {
         const r = await this.d.market.report();
-        const pyth = r.sources.find((s) => s.source === 'pyth');
+        const unusable = r.assets.filter((a) => !usable(a)).map((a) => a.referenceSymbol);
         return {
           value: r,
           records: r.assets.length,
-          detail: r.sources
-            .map((s) => `${s.source}:${s.health}${s.detail ? ` (${s.detail})` : ''}`)
-            .join('; '),
-          degraded: pyth?.health !== 'ok',
+          detail: [
+            ...(unusable.length > 0 ? [`unpriced: ${unusable.join(', ')}`] : []),
+            ...r.sources.map((s) => `${s.source}:${s.health}${s.detail ? ` (${s.detail})` : ''}`),
+          ].join('; '),
+          // Degraded when a curated asset has no usable price; one failing provider is only reported in the detail.
+          degraded: unusable.length > 0,
         };
       });
 
