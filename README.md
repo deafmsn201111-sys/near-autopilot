@@ -41,8 +41,10 @@ in Postgres and visible in the dashboard.
 
 ```
 apps/
-  api/            Fastify HTTP API + pipeline orchestration (composition root)
-  dashboard/      Next.js dashboard (talks to the API over HTTP only)
+  api/            Fastify HTTP API + pipeline orchestration (composition root); also the MAINNET read-only
+                  shadow collector (src/collector) and the read-only analytics API (src/analytics)
+  dashboard/      Next.js dashboard for the autopilot APIs (talks to the API over HTTP only)
+  analytics/      Next.js analytics dashboard for the collector's data (read-only, talks to the analytics API only)
 packages/
   core/             Shared types, ports (interfaces), Zod schemas, wire contracts, errors
   config/           Environment validation (Zod)
@@ -56,8 +58,10 @@ packages/
   policy-engine/    Rules + the only code that can mint an ApprovedPlan
   tx-execution/     Planner registry, live executor, explicit dry-run executor
   db/               Drizzle schema, client, SQL migrations
-config/             autopilot.example.json (mainnet ids), autopilot.testnet.example.json (testnet ids)
-docs/               architecture.md, security.md, financial-engine.md, orchestrator.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md
+config/             autopilot.example.json (mainnet ids), autopilot.testnet.example.json (testnet ids),
+                    autopilot.shadow.example.json (mainnet read-only shadow profile)
+docs/               architecture.md, security.md, financial-engine.md, orchestrator.md, market-data.md, yield-data.md,
+                    mainnet-shadow.md, testnet-transactions.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md
 ```
 
 Dependency direction is enforced mechanically (ESLint + `scripts/check-boundaries.mjs`, both driven by
@@ -139,7 +143,7 @@ A ready-made profile runs it next to the simulation stack (same Postgres; each A
 cp config/autopilot.testnet.example.json config/autopilot.testnet.local.json   # set policy.signerAccountId
 # .env: TESTNET_ACCOUNT_ID=<your-account>.testnet   (optional: TESTNET_RPC_URL, TESTNET_ENGINE)
 docker compose --profile testnet up -d --build
-# simulation: dashboard http://127.0.0.1:3001, API :4000   |   testnet: dashboard http://127.0.0.1:3002, API :4001
+# simulation: dashboard http://127.0.0.1:3004, API :4000   |   testnet: dashboard http://127.0.0.1:3002, API :4001
 docker compose --profile testnet stop    # keeps data
 ```
 
@@ -158,6 +162,38 @@ DCL pools, read-only at one block, validated): [docs/yield-data.md](docs/yield-d
 pnpm --filter @near-autopilot/burrow-adapter test:live     # BURROW_LIVE=1
 pnpm --filter @near-autopilot/rhea-dcl-adapter test:live   # RHEA_DCL_LIVE=1
 ```
+
+### Mainnet read-only analytics: shadow collector and analytics dashboard
+
+Profile `shadow` also runs an autonomous **collector** that reads MAINNET with view calls only (no signer exists, no
+transaction is built or sent, no LLM is called) and stores everything in Postgres:
+
+- every Rhea v1 and DCL pool (full registry rescan every `COLLECTOR_REGISTRY_EVERY` cycles, and after downtime longer
+  than that), classified as `DISCOVERED / LIQUID / LOW_LIQUIDITY / UNSUPPORTED / DATA_INVALID / ANALYTICS_ELIGIBLE /
+LP_SIMULATION_ELIGIBLE` with reason codes. Discovery never allowlists a pool;
+- all Burrow markets (supply / borrow APR, utilisation, limits, reward programmes);
+- prices per source (Pyth, DefiLlama), with freshness, confidence and divergence checks;
+- fee windows 1H / 24H / 7D / 30D from cumulative pool volumes, an LP entry simulation (fees, impermanent loss,
+  entry/exit cost, gas) and a strategy comparison for the simulated demo portfolios, all from one snapshot per cycle.
+
+```bash
+docker compose --profile shadow up -d --build
+# analytics dashboard http://127.0.0.1:3001 (analytics API :4003)   |   shadow autopilot dashboard :3003, API :4002
+docker compose --profile shadow logs -f shadow-collector   # one JSON line per cycle: status, records, duration
+```
+
+The cycle interval is `SHADOW_CYCLE_INTERVAL_SECONDS` (default 900 s, counted from the end of a cycle). Opening the
+dashboard never triggers a read from the chain: it only shows what the collector stored. Without `PYTH_API_KEY` the
+collector uses DefiLlama only and marks every cycle `partial`. Details: [docs/mainnet-shadow.md](docs/mainnet-shadow.md).
+
+| Port (127.0.0.1) | Service                                     | Profile   |
+| ---------------- | ------------------------------------------- | --------- |
+| 3001             | analytics dashboard (collector data)        | `shadow`  |
+| 3002             | testnet autopilot dashboard                 | `testnet` |
+| 3003             | shadow autopilot dashboard                  | `shadow`  |
+| 3004             | simulation autopilot dashboard              | default   |
+| 4000 – 4003      | API: simulation, testnet, shadow, analytics | as above  |
+| 5432             | Postgres (volume `pgdata`)                  | default   |
 
 ### Testnet transactions (manual, confirmed, capped)
 

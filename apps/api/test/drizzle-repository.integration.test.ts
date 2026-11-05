@@ -519,6 +519,24 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     await store.insertPoolObservations([{ ...row, id: 'a' }]);
     await store.insertPoolObservations([{ ...row, id: 'b' }]); // same pool + block: ignored, not duplicated
     expect(await store.poolHistory('v1:1', new Date(0))).toHaveLength(1);
+    // A registry-scan reading carries no cumulative volumes: it must never start a fee window or the history, even
+    // when it is the oldest point (every pool's first reading comes from a registry scan).
+    const scanAt = new Date(at.getTime() - 3_600_000);
+    await store.insertPoolObservations([
+      { ...row, id: 'scan', blockHeight: 5, blockTimestamp: scanAt, volumesIn: null },
+    ]);
+    const later = new Date(at.getTime() + 900_000);
+    await store.insertPoolObservations([
+      { ...row, id: 'c', blockHeight: 20, blockTimestamp: later, volumesIn: ['5', '5'] },
+    ]);
+    expect((await store.poolPointAtOrBefore('v1:1', null))?.blockHeight).toBe(10);
+    expect((await store.poolPointAtOrBefore('v1:1', scanAt))?.blockHeight).toBeUndefined();
+    expect((await store.poolPointAtOrBefore('v1:1', at))?.blockHeight).toBe(10);
+    await store.insertPoolObservations([
+      { ...row, id: 'scan2', blockHeight: 30, blockTimestamp: later, volumesIn: null },
+    ]);
+    expect((await store.lastPoolPoint('v1:1'))?.blockHeight).toBe(30);
+    expect((await store.lastPoolPoint('v1:1', true))?.blockHeight).toBe(20);
     const pool = {
       poolKey: 'v1:1',
       contract: 'v2.ref-finance.near',

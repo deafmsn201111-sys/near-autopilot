@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   lte,
   marketSnapshots,
   portfolioAnalyses,
@@ -196,11 +197,22 @@ export class CollectorStore {
       );
   }
 
-  async lastPoolPoint(poolKey: string): Promise<PoolPoint | null> {
+  /**
+   * Latest stored point. With `withVolumes`, the latest point that carries cumulative volumes: a registry-scan
+   * reading has none, so it can neither start a fee window nor serve as the base of a volume regression check.
+   */
+  async lastPoolPoint(poolKey: string, withVolumes = false): Promise<PoolPoint | null> {
     const [r] = await this.db
       .select()
       .from(rheaPoolObservations)
-      .where(eq(rheaPoolObservations.poolKey, poolKey))
+      .where(
+        withVolumes
+          ? and(
+              eq(rheaPoolObservations.poolKey, poolKey),
+              isNotNull(rheaPoolObservations.volumesIn),
+            )
+          : eq(rheaPoolObservations.poolKey, poolKey),
+      )
       .orderBy(desc(rheaPoolObservations.blockHeight))
       .limit(1);
     return r ? toPoint(r) : null;
@@ -211,26 +223,26 @@ export class CollectorStore {
       await this.db.insert(rheaPoolObservations).values(part).onConflictDoNothing();
   }
 
-  /** Window endpoints: latest point at or before `before` (start) - or the first point when `before` is null. */
+  /**
+   * Fee-window start: the latest point at or before `before`, or the first point when `before` is null. Only points
+   * with cumulative volumes qualify (a window needs volumes at both ends); a registry-scan reading without them is
+   * skipped, never used as "the start of history".
+   */
   async poolPointAtOrBefore(poolKey: string, before: Date | null): Promise<PoolPoint | null> {
-    const q = this.db
+    const pool = and(
+      eq(rheaPoolObservations.poolKey, poolKey),
+      isNotNull(rheaPoolObservations.volumesIn),
+    );
+    const [r] = await this.db
       .select()
       .from(rheaPoolObservations)
-      .where(
-        before
-          ? and(
-              eq(rheaPoolObservations.poolKey, poolKey),
-              lte(rheaPoolObservations.blockTimestamp, before),
-            )
-          : eq(rheaPoolObservations.poolKey, poolKey),
-      )
+      .where(before ? and(pool, lte(rheaPoolObservations.blockTimestamp, before)) : pool)
       .orderBy(
         before
           ? desc(rheaPoolObservations.blockTimestamp)
           : asc(rheaPoolObservations.blockTimestamp),
       )
       .limit(1);
-    const [r] = await q;
     return r ? toPoint(r) : null;
   }
 

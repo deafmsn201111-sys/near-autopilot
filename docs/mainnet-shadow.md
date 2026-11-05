@@ -1,6 +1,10 @@
 # Mainnet read-only shadow analysis
 
-`docker compose --profile shadow up -d` → API `:4002`, dashboard `:3003`.
+`docker compose --profile shadow up -d` → API `:4002`, dashboard `:3003`; shadow collector, analytics API `:4003` and
+analytics dashboard `:3001` (see the README section "Mainnet read-only analytics").
+
+A pool's fee history starts at its first stored reading **with cumulative volumes**: the registry-scan reading that
+first discovers a pool carries none, so it never starts a fee window or the history used for LP eligibility.
 
 A **simulated** demo portfolio (`SHADOW_PORTFOLIO=demo-500 | demo-5000`, served by the in-process mock RPC) is analysed
 by the full orchestrator with **real mainnet data read with view calls only**:

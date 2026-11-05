@@ -407,7 +407,15 @@ export class ShadowCollector {
       // History exists only for pools tracked before: no per-pool queries for the thousands of untracked ones.
       const known = existing.has(pool.poolKey);
       const previous = known ? await this.d.store.lastPoolPoint(pool.poolKey) : null;
-      const first = previous ? await this.d.store.poolPointAtOrBefore(pool.poolKey, null) : null;
+      // Fee history starts at the first reading WITH cumulative volumes (a registry-scan reading has none).
+      const previousWithVolumes = previous?.volumesIn
+        ? previous
+        : known
+          ? await this.d.store.lastPoolPoint(pool.poolKey, true)
+          : null;
+      const first = previousWithVolumes
+        ? await this.d.store.poolPointAtOrBefore(pool.poolKey, null)
+        : null;
       const historySeconds = first
         ? Math.round((block.timestamp.getTime() - first.at.getTime()) / 1000)
         : 0;
@@ -439,8 +447,8 @@ export class ShadowCollector {
         const regress =
           previous.blockHeight >= block.height ||
           (pool.volumesIn &&
-            previous.volumesIn &&
-            pool.volumesIn.some((v, i) => v < BigInt(previous.volumesIn?.[i] ?? '0')));
+            previousWithVolumes?.volumesIn &&
+            pool.volumesIn.some((v, i) => v < BigInt(previousWithVolumes.volumesIn?.[i] ?? '0')));
         if (regress) quality = 'DATA_INVALID';
       }
       if (tracked)
