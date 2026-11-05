@@ -107,6 +107,11 @@ const apiEnvRaw = z.object({
   ONE_CLICK_URL: z
     .union([z.literal(''), z.string().url()])
     .default('https://1click.chaindefuser.com'),
+  /**
+   * Existing MAINNET account a 1Click dry quote is addressed to (1Click refuses accounts that do not exist). Nothing
+   * is ever sent to it. Unset or empty = AUTOPILOT_ACCOUNT_ID.
+   */
+  ONE_CLICK_QUOTE_ACCOUNT: optionalAccountId,
 });
 
 export interface ApiEnv {
@@ -142,6 +147,8 @@ export interface ApiEnv {
   readonly BINANCE_URL: string;
   /** '' when disabled. */
   readonly ONE_CLICK_URL: string;
+  /** undefined = AUTOPILOT_ACCOUNT_ID. */
+  readonly ONE_CLICK_QUOTE_ACCOUNT: AccountId | undefined;
 }
 
 export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
@@ -285,6 +292,7 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     KRAKEN_URL: env.KRAKEN_URL,
     BINANCE_URL: env.BINANCE_URL,
     ONE_CLICK_URL: env.ONE_CLICK_URL,
+    ONE_CLICK_QUOTE_ACCOUNT: env.ONE_CLICK_QUOTE_ACCOUNT,
   };
 }
 

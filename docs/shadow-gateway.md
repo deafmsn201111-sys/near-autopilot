@@ -34,8 +34,10 @@ in the module) and `apps/api/test/simulation.test.ts` (ALLOW reaches the gateway
 - **1Click** dry quotes carry no deposit address. An answer that has one anyway is refused and never read. Without a
   JWT, 1Click adds its own app fee (20 bps at the time of writing). The fee is already inside `amountOut` and is
   recorded as `feeBps`. Quotes take 5–25 s.
-- **1Click privacy:** it receives the token pair, the amount and the configured account id (`AUTOPILOT_ACCOUNT_ID`,
-  `shadow-demo.near` in the shadow profile). Nothing else is sent.
+- **1Click privacy:** it receives the token pair, the amount and an account id: `ONE_CLICK_QUOTE_ACCOUNT`, else
+  `AUTOPILOT_ACCOUNT_ID`. Nothing else is sent. 1Click refuses accounts that do not exist. The shadow profile's demo id
+  `shadow-demo.near` does not exist on mainnet, so that profile quotes for `near`, an existing top-level account. A dry
+  quote sends it nothing.
 - **Turning 1Click off:** set `ONE_CLICK_URL=` (empty).
 
 ## Choosing the route

@@ -69,7 +69,10 @@ export async function probeRoutes(
  * own market report, so the record lines up with everything else stored for that snapshot.
  */
 export function collectorRouteProbe(o: {
-  readonly env: Pick<ApiEnv, 'RHEA_CONTRACT_ID' | 'ONE_CLICK_URL' | 'AUTOPILOT_ACCOUNT_ID'>;
+  readonly env: Pick<
+    ApiEnv,
+    'RHEA_CONTRACT_ID' | 'ONE_CLICK_URL' | 'ONE_CLICK_QUOTE_ACCOUNT' | 'AUTOPILOT_ACCOUNT_ID'
+  >;
   readonly config: AutopilotConfig;
   readonly repo: Pick<AutopilotRepository, 'insertExecutionRoute'>;
   readonly logger: Logger;
@@ -111,7 +114,7 @@ export function collectorRouteProbe(o: {
       prices: new ReferencePriceOracle({ report: async () => market, latest: () => market }),
       gasPrice: () => gasPrice(rpc),
       nearToken: accountIdSchema.parse('wrap.near'),
-      account: o.env.AUTOPILOT_ACCOUNT_ID,
+      account: o.env.ONE_CLICK_QUOTE_ACCOUNT ?? o.env.AUTOPILOT_ACCOUNT_ID,
       limits: {
         maxQuoteAgeSeconds: o.config.policy.maxPriceAgeSeconds,
         maxOracleDeviationBps: o.config.policy.maxOracleDeviationBps,

@@ -252,7 +252,7 @@ export async function wire(
         quotesMainnet || env.NEAR_NETWORK === 'mainnet' ? 'wrap.near' : 'wrap.testnet',
       ),
       exchange: env.RHEA_CONTRACT_ID,
-      account: env.AUTOPILOT_ACCOUNT_ID,
+      account: env.ONE_CLICK_QUOTE_ACCOUNT ?? env.AUTOPILOT_ACCOUNT_ID,
       limits: {
         maxQuoteAgeSeconds: config.policy.maxPriceAgeSeconds,
         maxOracleDeviationBps: config.policy.maxOracleDeviationBps,

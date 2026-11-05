@@ -184,6 +184,8 @@ services:
       KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
       BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
       ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
+      # shadow-demo.near does not exist on mainnet and 1Click refuses it; a dry quote sends nothing to this account.
+      ONE_CLICK_QUOTE_ACCOUNT: ${ONE_CLICK_QUOTE_ACCOUNT:-near}
     volumes:
       - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
     ports:
@@ -244,6 +246,8 @@ services:
       KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
       BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
       ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
+      # shadow-demo.near does not exist on mainnet and 1Click refuses it; a dry quote sends nothing to this account.
+      ONE_CLICK_QUOTE_ACCOUNT: ${ONE_CLICK_QUOTE_ACCOUNT:-near}
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
       COLLECTOR_REGISTRY_EVERY: ${COLLECTOR_REGISTRY_EVERY:-4}
       COLLECTOR_HEALTH_PORT: 4100
