@@ -11,6 +11,7 @@ import {
   type TransactionSigner,
 } from '@near-autopilot/core';
 import { verifyApproval } from './approval';
+import { refuseUnsafeKey } from './key-guard';
 
 export interface TransactionExecutorDeps {
   readonly signer: TransactionSigner;
@@ -20,6 +21,11 @@ export interface TransactionExecutorDeps {
   readonly logger: Logger;
   /** The policy engine that minted the approvals this executor may run. */
   readonly approvals: ApprovalAuthority;
+  /**
+   * Decides whether the signing key may sign this plan. Default `refuseUnsafeKey` (full-access keys are refused).
+   * Overridden only by tests that exercise pipeline mechanics, never in wiring.
+   */
+  readonly keyGuard?: typeof refuseUnsafeKey;
 }
 
 const rejected = (mode: ExecutionResult['mode'], error: string): ExecutionResult => ({
@@ -68,6 +74,12 @@ export class TransactionExecutor implements PlanExecutor {
     let signedHash: string | null = null;
     try {
       const chain = await contextProvider.getContext(signer.accountId, signer.publicKey);
+      // The key's permission comes from the same chain query as the nonce: checked on every transaction, before signing.
+      const refusal = (this.deps.keyGuard ?? refuseUnsafeKey)(chain.permission, approved.plan);
+      if (refusal) {
+        logger.warn('signing refused: unsafe key', { intentId: approved.plan.intentId, refusal });
+        return rejected('live', refusal);
+      }
       const signed = await signer.sign(approved.plan, chain);
       signedHash = signed.hash;
       logger.info('broadcasting transaction', {

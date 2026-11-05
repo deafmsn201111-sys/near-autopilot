@@ -6,6 +6,16 @@ import type { NearRpcClient } from './rpc-client';
 const accessKeySchema = z.object({
   nonce: z.number().int().nonnegative(),
   block_hash: z.string().min(32),
+  permission: z.union([
+    z.literal('FullAccess'),
+    z.object({
+      FunctionCall: z.object({
+        receiver_id: z.string(),
+        method_names: z.array(z.string()),
+        allowance: z.string().regex(/^\d+$/).nullable(),
+      }),
+    }),
+  ]),
 });
 
 export class NearChainContextProvider implements ChainContextProvider {
@@ -26,6 +36,20 @@ export class NearChainContextProvider implements ChainContextProvider {
         'malformed response (is the key registered?)',
       );
     }
-    return { nonce: BigInt(parsed.data.nonce) + 1n, blockHash: parsed.data.block_hash };
+    const p = parsed.data.permission;
+    return {
+      nonce: BigInt(parsed.data.nonce) + 1n,
+      blockHash: parsed.data.block_hash,
+      permission:
+        p === 'FullAccess'
+          ? { kind: 'full_access' }
+          : {
+              kind: 'function_call',
+              receiverId: p.FunctionCall.receiver_id,
+              methodNames: p.FunctionCall.method_names,
+              allowance:
+                p.FunctionCall.allowance === null ? null : BigInt(p.FunctionCall.allowance),
+            },
+    };
   }
 }

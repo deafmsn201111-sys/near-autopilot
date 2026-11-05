@@ -14,7 +14,13 @@ import {
 } from '@near-autopilot/core';
 import { planHash } from '@near-autopilot/core/hash';
 import { FixedClock, SilentLogger, TestApprovalAuthority } from '@near-autopilot/core/testing';
-import { DryRunExecutor, PlannerRegistry, TransactionExecutor, verifyApproval } from '../src';
+import {
+  assertNotFullAccessKey,
+  DryRunExecutor,
+  PlannerRegistry,
+  TransactionExecutor,
+  verifyApproval,
+} from '../src';
 
 const ALICE = accountId('alice.near');
 const NOW = new Date('2026-11-03T12:00:00Z');
@@ -29,10 +35,18 @@ const plan: PlannedTransaction = {
       methodName: 'ft_transfer_call',
       args: { amount: '1' },
       gas: 1n,
-      deposit: 1n,
+      // Zero: a function-call key (the only kind the executor signs with) cannot attach a deposit.
+      deposit: 0n,
     },
   ],
 };
+/** A function-call key scoped to exactly this plan's receiver and method. */
+const SCOPED_KEY = {
+  kind: 'function_call',
+  receiverId: 'wrap.near',
+  methodNames: ['ft_transfer_call'],
+  allowance: null,
+} as const;
 
 // Test-only minting; in production only PolicyEngine.approve produces these.
 const authority = new TestApprovalAuthority();
@@ -54,8 +68,9 @@ class RecordingSigner implements TransactionSigner {
   }
 }
 class FixedContext implements ChainContextProvider {
+  constructor(private readonly permission: ChainContext['permission'] = SCOPED_KEY) {}
   async getContext(): Promise<ChainContext> {
-    return { nonce: 7n, blockHash: 'b'.repeat(44) };
+    return { nonce: 7n, blockHash: 'b'.repeat(44), permission: this.permission };
   }
 }
 class ScriptedBroadcaster implements TransactionBroadcaster {
@@ -68,11 +83,15 @@ class ScriptedBroadcaster implements TransactionBroadcaster {
   }
 }
 
-const build = (outcome: BroadcastResult | Error, signer = new RecordingSigner()) => {
+const build = (
+  outcome: BroadcastResult | Error,
+  signer = new RecordingSigner(),
+  permission: ChainContext['permission'] = SCOPED_KEY,
+) => {
   const broadcaster = new ScriptedBroadcaster(outcome);
   const executor = new TransactionExecutor({
     signer,
-    contextProvider: new FixedContext(),
+    contextProvider: new FixedContext(permission),
     broadcaster,
     clock: new FixedClock(NOW),
     logger: new SilentLogger(),
@@ -107,6 +126,16 @@ describe('verifyApproval', () => {
   });
 });
 
+describe('assertNotFullAccessKey (live start-up)', () => {
+  it('stops start-up on a full-access key and accepts a function-call key', async () => {
+    const signer = new RecordingSigner();
+    await expect(
+      assertNotFullAccessKey(new FixedContext({ kind: 'full_access' }), signer),
+    ).rejects.toThrow(/^FULL_ACCESS_KEY_REFUSED/);
+    await expect(assertNotFullAccessKey(new FixedContext(), signer)).resolves.toBeUndefined();
+  });
+});
+
 describe('TransactionExecutor', () => {
   it('signs and broadcasts an approved plan', async () => {
     const { executor, signer, broadcaster } = build({
@@ -118,6 +147,52 @@ describe('TransactionExecutor', () => {
     expect(result).toEqual({ status: 'success', mode: 'live', txHash: 'TX1', error: null });
     expect(signer.signed).toEqual([plan]);
     expect(broadcaster.sent[0]?.hash).toBe('hash-7');
+  });
+
+  it('REFUSES a full-access key: nothing is signed or sent', async () => {
+    const { executor, signer, broadcaster } = build(
+      { txHash: 'TX', status: 'success', failureReason: null },
+      new RecordingSigner(),
+      { kind: 'full_access' },
+    );
+    const r = await executor.execute(approve());
+    expect(r).toMatchObject({ status: 'rejected', mode: 'live', txHash: null });
+    expect(r.error).toMatch(/^FULL_ACCESS_KEY_REFUSED/);
+    expect(signer.signed).toEqual([]);
+    expect(broadcaster.sent).toEqual([]);
+  });
+
+  it.each([
+    [
+      'another receiver',
+      { ...SCOPED_KEY, receiverId: 'usdt.tether-token.near' },
+      /SCOPE: the key is for usdt/,
+    ],
+    [
+      'another method',
+      { ...SCOPED_KEY, methodNames: ['near_deposit'] },
+      /SCOPE: the key does not allow ft_transfer_call/,
+    ],
+  ] as const)('refuses a function-call key for %s', async (_n, permission, reason) => {
+    const { executor, signer } = build(
+      { txHash: 'TX', status: 'success', failureReason: null },
+      new RecordingSigner(),
+      permission,
+    );
+    expect((await executor.execute(approve())).error).toMatch(reason);
+    expect(signer.signed).toEqual([]);
+  });
+
+  it('refuses a plan with a deposit on a function-call key (the 1-yocto ft_transfer_call of every real plan)', async () => {
+    const { executor, signer } = build({ txHash: 'TX', status: 'success', failureReason: null });
+    const withDeposit = {
+      ...plan,
+      actions: plan.actions.map((a) => ({ ...a, deposit: 1n })),
+    };
+    expect((await executor.execute(approve(withDeposit))).error).toMatch(
+      /^FUNCTION_CALL_KEY_DEPOSIT: ft_transfer_call attaches 1 yoctoNEAR/,
+    );
+    expect(signer.signed).toEqual([]);
   });
 
   it('reports on-chain failure without throwing', async () => {

@@ -21,7 +21,8 @@
     "db:migrate": "pnpm --filter @near-autopilot/db run migrate",
     "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "audit:verify": "pnpm --filter @near-autopilot/api run audit:verify",
-    "audit:replay": "pnpm --filter @near-autopilot/api run audit:replay"
+    "audit:replay": "pnpm --filter @near-autopilot/api run audit:replay",
+    "demo:attack": "pnpm --filter @near-autopilot/api run demo:attack"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

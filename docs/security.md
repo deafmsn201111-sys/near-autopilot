@@ -32,11 +32,60 @@ material. If you fork this project to change that, it is a deliberate security d
 Recommended setups for a testnet signer (and for anything you build yourself), strongest first:
 
 1. KMS/HSM- or MPC-backed signing behind the `TransactionSigner` interface.
-2. A **function-call access key** restricted to the allowlisted token/protocol contracts and `ft_transfer_call`,
-   with a gas allowance, rather than a full-access key. Policy limits are a second line of defence, not the first.
+2. A **function-call access key** restricted to one contract and its methods, with a gas allowance.
 3. Never place a full-access private key in an environment variable or config file.
 
 Use a dedicated account holding only what the autopilot should be allowed to move.
+
+### Full-access keys are refused (enforced, not advice)
+
+The live executor never signs with a full-access key (`packages/tx-execution/src/key-guard.ts`). It checks twice:
+
+- **At start-up:** with `EXECUTION_MODE=live`, the composition root reads the signing key's permission
+  (`view_access_key`). A full-access key stops the process before any cycle runs.
+- **Before every signature:** the permission arrives in the same chain query as the nonce.
+
+**What is refused:**
+
+- `full_access`: always.
+- `function_call`: refused unless the key's receiver is the transaction's receiver, the key allows the method, and no
+  action attaches a deposit. The NEAR runtime rejects a function-call key on a call with a deposit anyway; refusing
+  first gives a clear reason instead of a failed receipt.
+
+**Consequence: no current plan can be signed autonomously.** Every plan the planners build is an `ft_transfer_call`,
+which NEP-141 requires to carry exactly 1 yoctoNEAR, so none passes this guard. This is intended: an autopilot holding
+a full-access key has no ceiling. Live autonomous execution needs a custody design that does not hand it one, such as
+an MPC or delegated signer with its own limits. Until then every deployment runs dry-run.
+
+The manual testnet tool (`testnet-tx`) is separate. It signs one previewed transaction at a time, only after a human
+confirms that exact transaction, and it needs a full-access key because it attaches deposits.
+
+## Attack demo: `pnpm demo:attack`
+
+The demo runs hand-written attack **fixtures** through the real defences: the policy engine, the agent-output parser,
+the Shadow Gateway and the live executor's key guard. Every fixture is labelled `FIXTURE: synthetic attack input, not
+market or chain data`. Nothing touches a network. The one live executor involved has a fake signer that counts calls.
+
+| Attack                          | Stopped by                                  | Result                                     |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------ |
+| Prompt injection: a transfer    | agent-output parser                         | discarded: `FORBIDDEN_FIELD`, `SCHEMA`     |
+| Prompt injection: impersonation | agent-output parser                         | discarded: `WRONG_AGENT`, agent suspicious |
+| Foreign recipient               | policy `action_shape` (recipient allowlist) | BLOCK                                      |
+| Extra Withdraw in Burrow msg    | policy `intent_match`                       | BLOCK                                      |
+| Stale oracle price (10 min)     | policy `price_freshness`                    | BLOCK                                      |
+| Thin pool (40% below oracle)    | policy `oracle_deviation`                   | BLOCK                                      |
+| Forged approval                 | Shadow Gateway (approval authenticity)      | refused                                    |
+| Full-access signing key         | live executor key guard                     | refused, 0 signed, 0 sent                  |
+
+**Controls:** two legitimate actions (a $40 repayment and a fair $30 swap) pass the same defences with ALLOW. So the
+attacks are blocked for their specific defect, not by a policy that blocks everything. Each policy attack fails
+exactly one check: the one it targets.
+
+**The log** is `docs/evidence/demo-attack.log.jsonl`. It is deterministic: a test fails if the committed log differs
+from what a run produces. The attack verdicts also replay (`audit:replay`) to the same verdict.
+
+`--persist` additionally stores the verdicts and one audit event per attack in Postgres. They are stored as
+`simulation:testnet` rows with run id `demo-attack:<time>`, and the audit chain makes them permanent.
 
 ## Testnet evidence (read-only, 2026-11-04)
 

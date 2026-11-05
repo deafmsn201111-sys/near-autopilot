@@ -86,9 +86,23 @@ export interface ProtocolPlanner {
   plan(intent: ActionIntent, signerId: AccountId): Promise<PlannedTransaction>;
 }
 
+/** What an access key may sign, as the chain reports it (`view_access_key`). */
+export type AccessKeyPermission =
+  | { readonly kind: 'full_access' }
+  | {
+      readonly kind: 'function_call';
+      readonly receiverId: string;
+      /** Empty = any method of `receiverId`. */
+      readonly methodNames: readonly string[];
+      /** Remaining gas allowance in yoctoNEAR; null = unlimited. */
+      readonly allowance: bigint | null;
+    };
+
 export interface ChainContext {
   readonly nonce: bigint;
   readonly blockHash: string;
+  /** The signing key's permission, read in the same query as the nonce. Executors refuse unsafe keys on it. */
+  readonly permission: AccessKeyPermission;
 }
 
 export interface ChainContextProvider {
@@ -108,7 +122,11 @@ export interface SignedTransaction {
 export interface TransactionSigner {
   readonly accountId: AccountId;
   readonly publicKey: string;
-  sign(transaction: PlannedTransaction, context: ChainContext): Promise<SignedTransaction>;
+  /** Signs with the nonce and block hash; the key permission is the executor's concern, not the signer's. */
+  sign(
+    transaction: PlannedTransaction,
+    context: Pick<ChainContext, 'nonce' | 'blockHash'>,
+  ): Promise<SignedTransaction>;
 }
 
 export interface BroadcastResult {

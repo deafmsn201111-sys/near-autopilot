@@ -127,7 +127,37 @@ describe('NearChainContextProvider', () => {
       accountId('alice.near'),
       'ed25519:abc',
     );
-    expect(ctx).toEqual({ nonce: 101n, blockHash: hash });
+    expect(ctx).toEqual({ nonce: 101n, blockHash: hash, permission: { kind: 'full_access' } });
+  });
+
+  it('reads a function-call key with its scope and allowance', async () => {
+    const { fetchImpl } = stubFetch([
+      {
+        body: {
+          result: {
+            nonce: 5,
+            block_hash: 'H'.repeat(44),
+            permission: {
+              FunctionCall: {
+                receiver_id: 'wrap.near',
+                method_names: ['near_deposit'],
+                allowance: '250000000000000000000000',
+              },
+            },
+          },
+        },
+      },
+    ]);
+    const ctx = await new NearChainContextProvider(client(fetchImpl)).getContext(
+      accountId('alice.near'),
+      'ed25519:abc',
+    );
+    expect(ctx.permission).toEqual({
+      kind: 'function_call',
+      receiverId: 'wrap.near',
+      methodNames: ['near_deposit'],
+      allowance: 250_000_000_000_000_000_000_000n,
+    });
   });
 });
 

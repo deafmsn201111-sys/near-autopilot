@@ -296,7 +296,7 @@ export function makeWorld(opts: WorldOptions = {}) {
   };
   const contextProvider: ChainContextProvider = {
     async getContext() {
-      return { nonce: 1n, blockHash: 'bh' };
+      return { nonce: 1n, blockHash: 'bh', permission: { kind: 'full_access' as const } };
     },
   };
   const broadcaster: TransactionBroadcaster = {
@@ -318,6 +318,9 @@ export function makeWorld(opts: WorldOptions = {}) {
           clock,
           logger,
           approvals: engine,
+          // These scenarios test pipeline mechanics (idempotency, escalation, audit) after signing; the key guard
+          // itself (which refuses this full-access key) is tested in tx-execution.
+          keyGuard: () => null,
         })
       : new DryRunExecutor({ clock, logger, approvals: engine });
   const executor: PlanExecutor = {

@@ -38,7 +38,7 @@ export class SignerConfigurationError extends Error {}
  */
 export function encodeUnsigned(
   tx: PlannedTransaction,
-  context: ChainContext,
+  context: Pick<ChainContext, 'nonce' | 'blockHash'>,
   publicKey: string,
 ): { transaction: Transaction; bytes: Uint8Array; hash: Uint8Array } {
   const transaction = createTransaction(
@@ -129,7 +129,10 @@ export class NearKeyPairSigner implements TransactionSigner {
     return new NearKeyPairSigner(accountId, keyPair.getPublicKey().toString(), keyPair);
   }
 
-  async sign(tx: PlannedTransaction, context: ChainContext): Promise<SignedTransaction> {
+  async sign(
+    tx: PlannedTransaction,
+    context: Pick<ChainContext, 'nonce' | 'blockHash'>,
+  ): Promise<SignedTransaction> {
     if (tx.signerId !== this.accountId) {
       throw new SignerConfigurationError(
         `refusing to sign for ${tx.signerId}: this signer is ${this.accountId}`,

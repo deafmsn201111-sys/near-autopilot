@@ -40,7 +40,12 @@ import {
 } from '@near-autopilot/orchestrator';
 import { PolicyEngine } from '@near-autopilot/policy-engine';
 import { RheaPlanner, RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
-import { DryRunExecutor, PlannerRegistry, TransactionExecutor } from '@near-autopilot/tx-execution';
+import {
+  assertNotFullAccessKey,
+  DryRunExecutor,
+  PlannerRegistry,
+  TransactionExecutor,
+} from '@near-autopilot/tx-execution';
 import type { AutopilotConfig } from './autopilot-config';
 import type { AutopilotRepository } from './repository';
 import { loadSigner } from './signer';
@@ -208,9 +213,12 @@ export async function wire(
     }
     if (signer.accountId !== env.AUTOPILOT_ACCOUNT_ID)
       throw new Error('Signer account does not match AUTOPILOT_ACCOUNT_ID');
+    const contextProvider = new NearChainContextProvider(rpc);
+    // Refuse to start with a full-access key; every transaction is checked again before signing.
+    await assertNotFullAccessKey(contextProvider, signer);
     executor = new TransactionExecutor({
       signer,
-      contextProvider: new NearChainContextProvider(rpc),
+      contextProvider,
       broadcaster: new NearTransactionBroadcaster(rpc),
       clock: systemClock,
       logger,
