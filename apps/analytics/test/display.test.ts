@@ -12,6 +12,12 @@ describe('token labels (symbols are untrusted)', () => {
       impersonates: false,
     });
     expect(label('wrap.near', new Map())).toMatchObject({ symbol: 'wNEAR', verified: true });
+    // Two bridges, one asset: both ETH contracts are curated, neither is flagged.
+    expect(label('eth.bridge.near', new Map())).toMatchObject({
+      symbol: 'ETH',
+      impersonates: false,
+    });
+    expect(label('aurora', new Map())).toMatchObject({ symbol: 'ETH', impersonates: false });
   });
 
   it('another contract reporting a curated symbol is flagged as an impersonation', () => {

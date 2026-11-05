@@ -35,6 +35,7 @@ export const CURATED: Readonly<Record<string, { symbol: string; name: string }>>
     name: 'Aurora (Rainbow bridge)',
   },
   aurora: { symbol: 'ETH', name: 'Ether (Aurora bridge)' },
+  'eth.bridge.near': { symbol: 'ETH', name: 'Ether (Omni bridge)' },
   'zec.omft.near': { symbol: 'ZEC', name: 'Zcash (Omni bridge)' },
   'nbtc.bridge.near': { symbol: 'nBTC', name: 'NEAR BTC bridge' },
   'token.v2.ref-finance.near': { symbol: 'REF', name: 'Ref Finance' },

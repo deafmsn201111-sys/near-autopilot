@@ -445,6 +445,7 @@ td.dim,
 }
 td a {
   text-decoration: none;
+  white-space: nowrap;
 }
 td a:hover {
   text-decoration: underline;
