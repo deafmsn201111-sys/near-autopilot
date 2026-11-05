@@ -55,7 +55,7 @@ packages/
   burrow-adapter/   Burrow markets/accounts/oracle readers, exact health-factor/LTV/stress maths, verified repay and collateral builders
   agents/           Health guardian and rebalancer (pure decision logic)
   orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; AUTOPILOT_ENGINE=orchestrator, dry-run only)
-  policy-engine/    Rules + the only code that can mint an ApprovedPlan
+  policy-engine/    12 checks -> ALLOW / WARN / BLOCK verdict with policy version and snapshot id (stored in policy_verdicts, docs/policy-verdicts.md); the only code that can mint an ApprovedPlan
   tx-execution/     Planner registry, live executor, explicit dry-run executor
   db/               Drizzle schema, client, SQL migrations
 config/             autopilot.example.json (mainnet ids), autopilot.testnet.example.json (testnet ids),

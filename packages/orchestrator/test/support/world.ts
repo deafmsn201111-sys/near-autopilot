@@ -335,6 +335,16 @@ export function makeWorld(opts: WorldOptions = {}) {
     },
   };
 
+  /** Verdicts the orchestrator stored, with the executor call count at the moment each was stored. */
+  const verdicts: { verdict: string; cycleKey: string; executedBefore: number }[] = [];
+  let verdictsDown = false;
+  const verdictSink = {
+    async record(decision: { verdict: string }, _input: unknown, cycleKey: string) {
+      if (verdictsDown) throw new Error('verdict store unavailable');
+      verdicts.push({ verdict: decision.verdict, cycleKey, executedBefore: spies.execute });
+    },
+  };
+
   const events: EscalationEvent[] = [];
   const notifier: Notifier & { fail: boolean } = {
     fail: false,
@@ -371,6 +381,7 @@ export function makeWorld(opts: WorldOptions = {}) {
     quoter,
     planner: planners,
     policy,
+    verdicts: verdictSink,
     executor,
     history: executionHistory,
     audit,
@@ -384,6 +395,10 @@ export function makeWorld(opts: WorldOptions = {}) {
   let n = 0;
   return {
     orchestrator,
+    verdicts,
+    verdictsFail: () => {
+      verdictsDown = true;
+    },
     clock,
     audit,
     idempotency,

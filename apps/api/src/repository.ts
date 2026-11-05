@@ -1,5 +1,8 @@
 import type {
   ExecutionMode,
+  PolicyCheck,
+  PolicyDecision,
+  PolicyVerdict,
   PolicyViolation,
   ProposalStatus,
   Provenance,
@@ -45,6 +48,25 @@ export type ProposalPatch = Partial<
   >
 > & { readonly updatedAt: Date };
 
+/** One persisted policy decision (table policy_verdicts). `input` is the canonical, JSON-safe evaluation input. */
+export interface PolicyVerdictRecord {
+  readonly id: string;
+  readonly evaluatedAt: Date;
+  readonly engine: 'legacy' | 'orchestrator';
+  readonly runId: string | null;
+  readonly intentId: string;
+  readonly intentKind: string;
+  readonly verdict: PolicyVerdict;
+  readonly outcome: PolicyDecision['outcome'];
+  readonly policyVersion: string;
+  readonly snapshotId: string;
+  readonly planHash: string;
+  readonly valueUsdMicro: bigint | null;
+  readonly checks: readonly PolicyCheck[];
+  readonly violations: readonly PolicyViolation[];
+  readonly input: unknown;
+}
+
 export interface AuditEvent {
   readonly at: Date;
   readonly type: string;
@@ -74,6 +96,12 @@ export interface AutopilotRepository {
   insertProposal(proposal: ProposalRecord): Promise<void>;
   updateProposal(id: string, patch: ProposalPatch): Promise<void>;
   appendAudit(event: AuditEvent): Promise<void>;
+  /** Append-only. Written for EVERY evaluation, before anything is executed. */
+  insertPolicyVerdict(verdict: PolicyVerdictRecord): Promise<void>;
+  listPolicyVerdicts(options: {
+    limit: number;
+    verdict?: PolicyVerdict;
+  }): Promise<Array<PolicyVerdictRecord & Provenance>>;
   /** Lists return only rows written under this repository's own provenance (simulation never mixes with chain). */
   /** Live, executed proposals only: spend since `since` and the most recent execution time. */
   getExecutionStats(accountId: string, since: Date): Promise<PolicyHistory>;

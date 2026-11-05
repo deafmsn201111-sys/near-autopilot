@@ -105,6 +105,44 @@ export const auditEvents = pgTable(
 );
 
 /**
+ * Every policy decision, with all its checks and the exact inputs it was made on (intent, plan, snapshot, history as
+ * canonical JSON), so it can be re-evaluated later. `verdict` is ALLOW / WARN / BLOCK; `policy_version` identifies the
+ * rules and the config in force; `snapshot_id` is the content hash of the snapshot. Append-only.
+ */
+export const policyVerdicts = pgTable(
+  'policy_verdicts',
+  {
+    id: text('id').primaryKey(),
+    evaluatedAt: ts('evaluated_at').notNull(),
+    engine: text('engine', { enum: ['legacy', 'orchestrator'] }).notNull(),
+    runId: text('run_id'),
+    intentId: text('intent_id').notNull(),
+    intentKind: text('intent_kind').notNull(),
+    verdict: text('verdict', { enum: ['ALLOW', 'WARN', 'BLOCK'] }).notNull(),
+    outcome: text('outcome', { enum: ['approve', 'require_approval', 'reject'] }).notNull(),
+    policyVersion: text('policy_version').notNull(),
+    snapshotId: text('snapshot_id').notNull(),
+    planHash: text('plan_hash').notNull(),
+    /** Policy-engine valuation in micro-USD, as text. */
+    valueUsdMicro: text('value_usd_micro'),
+    checks: jsonb('checks')
+      .$type<Array<{ rule: string; result: 'PASS' | 'WARN' | 'BLOCK'; messages: string[] }>>()
+      .notNull(),
+    violations: jsonb('violations')
+      .$type<Array<{ rule: string; message: string; severity: 'reject' | 'approval' }>>()
+      .notNull(),
+    input: jsonb('input').$type<unknown>().notNull(),
+    dataSource: text('data_source', { enum: ['chain', 'simulation'] }).notNull(),
+    network: text('network', { enum: ['mainnet', 'testnet'] }).notNull(),
+  },
+  (t) => [
+    index('policy_verdicts_evaluated_idx').on(t.evaluatedAt),
+    index('policy_verdicts_intent_idx').on(t.intentId),
+    index('policy_verdicts_verdict_idx').on(t.verdict, t.evaluatedAt),
+  ],
+);
+
+/**
  * Manually confirmed TESTNET transactions (apps/api testnet-tx). prepared -> approved -> submitted -> confirmed, or
  * rejected / failed / expired / unknown. Amounts in yoctoNEAR as decimal strings (u128 exceeds bigint columns).
  */

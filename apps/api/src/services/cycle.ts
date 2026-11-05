@@ -1,3 +1,4 @@
+import { verdictRecord } from './verdicts';
 import {
   AutopilotError,
   describeIntent,
@@ -210,6 +211,10 @@ export class AutopilotCycle {
       new Date(clock.now().getTime() - DAY_MS),
     );
     const decision = policy.evaluate({ intent, plan, snapshot, history });
+    // Every verdict is stored with its inputs BEFORE it is acted on; if that fails, nothing is executed.
+    await repo.insertPolicyVerdict(
+      verdictRecord(decision, { intent, plan, snapshot, history }, 'legacy', runId),
+    );
     const decided = {
       ...empty,
       valueUsdMicro: decision.valueUsdMicro,

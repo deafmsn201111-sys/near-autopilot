@@ -40,8 +40,10 @@ afterEach(async () => {
   app = undefined;
 });
 
+let lastRepo: InMemoryRepository | undefined;
 const make = (cycleError?: Error) => {
   const repo = new InMemoryRepository();
+  lastRepo = repo;
   app = buildServer({
     apiToken: TOKEN,
     repo,
@@ -100,6 +102,62 @@ describe('HTTP API', () => {
         (await server.inject({ url: '/v1/proposals?limit=5', headers: auth })).json(),
       ),
     ).toEqual({ proposals: [] });
+  });
+
+  it('lists stored policy verdicts behind auth, filterable, without the evaluation input', async () => {
+    const server = make();
+    const base = {
+      engine: 'legacy' as const,
+      runId: 'r1',
+      intentKind: 'swap',
+      policyVersion: 'rules-2026.11.1+cfg:0123456789abcdef',
+      snapshotId: `sha256:${'a'.repeat(64)}`,
+      planHash: 'b'.repeat(64),
+      valueUsdMicro: 50_000_000n,
+      violations: [],
+      input: { secretish: 'not returned' },
+    };
+    await lastRepo?.insertPolicyVerdict({
+      ...base,
+      id: 'v1',
+      evaluatedAt: new Date('2026-11-05T10:00:00Z'),
+      intentId: 'i1',
+      verdict: 'ALLOW',
+      outcome: 'approve',
+      checks: [{ rule: 'kill_switch', result: 'PASS', messages: [] }],
+    });
+    await lastRepo?.insertPolicyVerdict({
+      ...base,
+      id: 'v2',
+      evaluatedAt: new Date('2026-11-05T10:01:00Z'),
+      intentId: 'i2',
+      verdict: 'BLOCK',
+      outcome: 'reject',
+      checks: [
+        { rule: 'kill_switch', result: 'BLOCK', messages: ['Autopilot is disabled by policy'] },
+      ],
+      violations: [
+        { rule: 'kill_switch', message: 'Autopilot is disabled by policy', severity: 'reject' },
+      ],
+    });
+    expect((await server.inject('/v1/policy/verdicts')).statusCode).toBe(401);
+    const all = (await server.inject({ url: '/v1/policy/verdicts', headers: auth })).json<{
+      verdicts: Array<Record<string, unknown>>;
+    }>();
+    expect(all.verdicts.map((v) => v.id)).toEqual(['v2', 'v1']);
+    expect(all.verdicts[0]).toMatchObject({
+      verdict: 'BLOCK',
+      valueUsdMicro: '50000000',
+      network: 'mainnet',
+    });
+    expect(all.verdicts[0]).not.toHaveProperty('input');
+    const blocked = (
+      await server.inject({ url: '/v1/policy/verdicts?verdict=BLOCK', headers: auth })
+    ).json<{ verdicts: unknown[] }>();
+    expect(blocked.verdicts).toHaveLength(1);
+    expect(
+      (await server.inject({ url: '/v1/policy/verdicts?verdict=MAYBE', headers: auth })).statusCode,
+    ).toBe(400);
   });
 
   it('serves the testnet transaction ledger read-only, behind auth', async () => {

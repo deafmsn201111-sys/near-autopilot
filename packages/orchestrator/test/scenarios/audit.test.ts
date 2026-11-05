@@ -153,6 +153,27 @@ describe('scenario: decision audit log', () => {
     });
   });
 
+  it('every policy verdict is stored before the plan is executed', async () => {
+    const w = makeWorld({ lending: { collateralNear: 100, debtUsdt: 290 } });
+    const r = await w.orchestrator.runCycle('verdicts');
+    expect(r.status).toBe('dry_run');
+    expect(w.verdicts.length).toBeGreaterThan(0);
+    expect(w.verdicts[0]).toMatchObject({
+      verdict: 'ALLOW',
+      cycleKey: 'verdicts',
+      executedBefore: 0,
+    });
+    expect(w.spies.execute).toBe(1);
+  });
+
+  it('a verdict that cannot be stored is never acted on', async () => {
+    const w = makeWorld({ lending: { collateralNear: 100, debtUsdt: 290 } });
+    w.verdictsFail();
+    const r = await w.orchestrator.runCycle('verdicts-down');
+    expect(w.spies.execute).toBe(0);
+    expect(r.status).toBe('aborted');
+  });
+
   it('model output is stored only as a bounded excerpt, never in full', async () => {
     const huge = 'A'.repeat(500_000);
     const client: LlmClient = {

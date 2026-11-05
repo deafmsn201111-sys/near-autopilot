@@ -3,6 +3,7 @@ import type { PolicyHistory } from '@near-autopilot/policy-engine';
 import type {
   AuditEvent,
   AutopilotRepository,
+  PolicyVerdictRecord,
   ProposalPatch,
   ProposalRecord,
   RunRecord,
@@ -15,6 +16,7 @@ export class InMemoryRepository implements AutopilotRepository {
   readonly runs = new Map<string, RunRecord>();
   readonly proposals = new Map<string, ProposalRecord>();
   readonly audit: AuditEvent[] = [];
+  readonly verdicts: PolicyVerdictRecord[] = [];
   readonly snapshots = new Map<string, unknown>();
   /** Test hook to simulate prior live executions. */
   executionHistory: PolicyHistory = { spentLast24hUsdMicro: 0n, lastExecutedAt: null };
@@ -63,6 +65,20 @@ export class InMemoryRepository implements AutopilotRepository {
   }
   async appendAudit(event: AuditEvent): Promise<void> {
     this.audit.push(event);
+  }
+  async insertPolicyVerdict(v: PolicyVerdictRecord): Promise<void> {
+    this.log.push(`verdict:${v.verdict}`);
+    this.verdicts.push(v);
+  }
+  async listPolicyVerdicts(options: {
+    limit: number;
+    verdict?: PolicyVerdictRecord['verdict'];
+  }): Promise<Array<PolicyVerdictRecord & Provenance>> {
+    return [...this.verdicts]
+      .reverse()
+      .filter((v) => options.verdict === undefined || v.verdict === options.verdict)
+      .slice(0, options.limit)
+      .map((v) => ({ ...v, ...this.provenance }));
   }
   async getExecutionStats(): Promise<PolicyHistory> {
     return this.executionHistory;

@@ -10,7 +10,7 @@ import type {
   YieldDataDto,
 } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
-import { toPortfolioDto, toProposalDto, toRunDto } from './presenters';
+import { toPortfolioDto, toProposalDto, toRunDto, toVerdictDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
 import { disabledYieldView } from './yield/presenter';
 
@@ -41,6 +41,11 @@ export function isAuthorized(header: string | undefined, token: string): boolean
 const limitQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   runId: z.string().min(1).max(100).optional(),
+});
+
+const verdictQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  verdict: z.enum(['ALLOW', 'WARN', 'BLOCK']).optional(),
 });
 
 export function buildServer(
@@ -99,6 +104,15 @@ export function buildServer(
   });
 
   app.get('/v1/policy', async () => deps.policy);
+
+  /** Stored policy verdicts (newest first): verdict, every check, policy version, snapshot id. Inputs are omitted. */
+  app.get('/v1/policy/verdicts', async (request) => {
+    const q = verdictQuery.parse(request.query);
+    const rows = await deps.repo.listPolicyVerdicts(
+      q.verdict === undefined ? { limit: q.limit } : { limit: q.limit, verdict: q.verdict },
+    );
+    return { verdicts: rows.map(toVerdictDto) };
+  });
 
   app.get('/v1/testnet-transactions', async (request) => {
     const { limit } = limitQuery.parse(request.query);

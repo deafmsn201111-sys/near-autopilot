@@ -55,6 +55,7 @@ import { HttpJsonClient } from './market-data/http';
 import type { MarketDataProvider, MarketReportSink } from './market-data/model';
 import { ReferenceMarketData } from './market-data/service';
 import { ExchangeSource } from './market-data/exchanges';
+import { repositoryVerdictSink } from './services/verdicts';
 import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
 import { MAINNET_PRICE_LABEL, usable } from './market-data/model';
@@ -266,6 +267,7 @@ export async function wire(
             quoter,
             planner: planners,
             policy,
+            verdicts: repositoryVerdictSink(repo),
             executor,
             history: { stats: (account, since) => repo.getExecutionStats(account, since) },
             audit: orchestratorAudit,

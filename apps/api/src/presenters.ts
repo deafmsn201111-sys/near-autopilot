@@ -12,7 +12,7 @@ import {
 import type { GuardianConfig } from '@near-autopilot/agents';
 import { valuePortfolio, tokenValueUsd } from '@near-autopilot/financial-engine';
 import type { PolicyConfig } from '@near-autopilot/policy-engine';
-import type { ProposalRecord, RunRecord } from './repository';
+import type { PolicyVerdictRecord, ProposalRecord, RunRecord } from './repository';
 import { pricingOf } from './services/outcome';
 
 /**
@@ -120,5 +120,27 @@ export function toPolicyDto(
       triggerHealthFactor: guardian.triggerHealthFactor,
       targetHealthFactor: guardian.targetHealthFactor,
     },
+  };
+}
+
+/** A stored verdict for the HTTP API: everything but the (large) evaluation input. */
+export function toVerdictDto(v: PolicyVerdictRecord & Provenance) {
+  return {
+    id: v.id,
+    evaluatedAt: v.evaluatedAt.toISOString(),
+    engine: v.engine,
+    runId: v.runId,
+    intentId: v.intentId,
+    intentKind: v.intentKind,
+    verdict: v.verdict,
+    outcome: v.outcome,
+    policyVersion: v.policyVersion,
+    snapshotId: v.snapshotId,
+    planHash: v.planHash,
+    valueUsdMicro: v.valueUsdMicro === null ? null : v.valueUsdMicro.toString(),
+    checks: v.checks,
+    violations: v.violations,
+    dataSource: v.dataSource,
+    network: v.network,
   };
 }

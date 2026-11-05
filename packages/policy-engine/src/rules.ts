@@ -329,17 +329,26 @@ export const cooldown: Rule = ({ intent, history, config, now }) => {
     : [];
 };
 
-export const DEFAULT_RULES: readonly Rule[] = [
-  killSwitch,
-  signerRule,
-  dataFreshness,
-  nativeReserve,
-  contractAllowlist,
-  tokenAllowlist,
-  actionShape,
-  intentMatchesPlan,
-  valueLimits,
-  swapSlippage,
-  oracleDeviation,
-  cooldown,
+/** A rule with a stable id: the check name in every verdict, whatever violation codes the rule emits. */
+export interface NamedRule {
+  readonly id: string;
+  readonly check: Rule;
+}
+
+/** Bump when a rule's logic changes; config changes are covered by the config hash in `policyVersion`. */
+export const RULES_VERSION = 'rules-2026.11.1';
+
+export const DEFAULT_RULES: readonly NamedRule[] = [
+  { id: 'kill_switch', check: killSwitch },
+  { id: 'signer', check: signerRule },
+  { id: 'price_freshness', check: dataFreshness },
+  { id: 'native_reserve', check: nativeReserve },
+  { id: 'contract_allowlist', check: contractAllowlist },
+  { id: 'token_allowlist', check: tokenAllowlist },
+  { id: 'action_shape', check: actionShape },
+  { id: 'intent_match', check: intentMatchesPlan },
+  { id: 'value_limits', check: valueLimits },
+  { id: 'max_slippage', check: swapSlippage },
+  { id: 'oracle_deviation', check: oracleDeviation },
+  { id: 'cooldown', check: cooldown },
 ];

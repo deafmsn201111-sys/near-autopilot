@@ -19,6 +19,7 @@ import {
   rheaPoolObservations,
   burrowMarkets,
   burrowMarketObservations,
+  policyVerdicts,
   portfolioAnalyses,
   type DatabaseHandle,
   type Table,
@@ -68,7 +69,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(9);
+    expect(applied.rows[0]?.n).toBe(10);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -87,6 +88,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       burrowMarkets,
       burrowMarketObservations,
       portfolioAnalyses,
+      policyVerdicts,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
@@ -480,6 +482,40 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       handle.db.execute(
         sql`update yield_observations set yield_type = 'lending_borrow', validation_status = 'valid'`,
       ),
+    ).rejects.toThrow();
+  });
+
+  it('policy verdicts round-trip per deployment; verdict and outcome must agree', async () => {
+    const shadow = new DrizzleRepository(handle.db, {
+      dataSource: 'simulation',
+      network: 'mainnet',
+    });
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    const v = {
+      id: 'pv-1',
+      evaluatedAt: new Date('2026-11-05T10:00:00Z'),
+      engine: 'orchestrator' as const,
+      runId: 'cycle-1',
+      intentId: 'i-1',
+      intentKind: 'lending.repay',
+      verdict: 'BLOCK' as const,
+      outcome: 'reject' as const,
+      policyVersion: 'rules-2026.11.1+cfg:0123456789abcdef',
+      snapshotId: `sha256:${'c'.repeat(64)}`,
+      planHash: 'd'.repeat(64),
+      valueUsdMicro: 123_456_789_012n,
+      checks: [{ rule: 'kill_switch', result: 'BLOCK' as const, messages: ['off'] }],
+      violations: [{ rule: 'kill_switch', message: 'off', severity: 'reject' as const }],
+      input: { snapshot: { nativeBalance: '15000000000000000000000000' } },
+    };
+    await shadow.insertPolicyVerdict(v);
+    const [row] = await shadow.listPolicyVerdicts({ limit: 5 });
+    expect(row).toMatchObject({ ...v, dataSource: 'simulation', network: 'mainnet' });
+    expect(await chain.listPolicyVerdicts({ limit: 5 })).toEqual([]);
+    expect(await shadow.listPolicyVerdicts({ limit: 5, verdict: 'ALLOW' })).toEqual([]);
+    // The table refuses a verdict that contradicts its outcome.
+    await expect(
+      shadow.insertPolicyVerdict({ ...v, id: 'pv-2', verdict: 'ALLOW' }),
     ).rejects.toThrow();
   });
 

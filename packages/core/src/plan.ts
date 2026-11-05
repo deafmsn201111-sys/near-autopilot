@@ -29,14 +29,35 @@ export interface PolicyViolation {
   readonly severity: 'reject' | 'approval';
 }
 
+/** The decision as a reader sees it: ALLOW (approve), WARN (a human must approve), BLOCK (reject). */
+export type PolicyVerdict = 'ALLOW' | 'WARN' | 'BLOCK';
+
+/** One rule's result. Every rule runs every time, so a verdict always lists every check, passed or not. */
+export interface PolicyCheck {
+  readonly rule: string;
+  readonly result: 'PASS' | 'WARN' | 'BLOCK';
+  readonly messages: readonly string[];
+}
+
+export const verdictOf = (outcome: PolicyOutcome): PolicyVerdict =>
+  outcome === 'approve' ? 'ALLOW' : outcome === 'require_approval' ? 'WARN' : 'BLOCK';
+
 export interface PolicyDecision {
   readonly id: string;
   readonly intentId: string;
   readonly outcome: PolicyOutcome;
+  readonly verdict: PolicyVerdict;
   readonly violations: readonly PolicyViolation[];
+  readonly checks: readonly PolicyCheck[];
   readonly evaluatedAt: Date;
   /** Valuation the policy engine computed itself (micro-USD); never taken from the agent. */
   readonly valueUsdMicro: bigint | null;
+  /** `<rules version>+cfg:<sha256 of the canonical policy config, 16 hex>`: changes whenever a rule or limit does. */
+  readonly policyVersion: string;
+  /** `sha256:<hex>` of the canonical snapshot the decision was made on (prices, balances, risk, tokens). */
+  readonly snapshotId: string;
+  /** sha256 of the canonical plan; an approval is bound to it. */
+  readonly planHash: string;
 }
 
 /**

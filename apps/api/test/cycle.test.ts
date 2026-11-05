@@ -190,7 +190,16 @@ describe('AutopilotCycle', () => {
     });
     expect(proposals[0]?.planHash).toBeTruthy();
     expect(executor.executed).toHaveLength(1);
-    expect(repo.log).toEqual(['insert:approved', 'update:dry_run']);
+    // The verdict is stored first, then the approved proposal, then the execution result.
+    expect(repo.log).toEqual(['verdict:ALLOW', 'insert:approved', 'update:dry_run']);
+    const [v] = repo.verdicts;
+    expect(v).toMatchObject({ engine: 'legacy', verdict: 'ALLOW', outcome: 'approve' });
+    expect(v?.policyVersion).toMatch(/^rules-2026\.11\.1\+cfg:[0-9a-f]{16}$/);
+    expect(v?.snapshotId).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(v?.planHash).toBe(proposals[0]?.planHash);
+    expect(v?.checks).toHaveLength(12);
+    expect(v?.checks.every((c) => c.result === 'PASS')).toBe(true);
+    expect((v?.input as { plan: unknown }).plan).toBeTruthy();
     expect(repo.audit.map((a) => a.type)).toEqual(['proposal_approved', 'execution_dry_run']);
     expect(repo.snapshots.get(run.id)).toBeTruthy();
   });

@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   or,
+  policyVerdicts,
   proposals,
   runs,
   sql,
@@ -19,6 +20,7 @@ import type { Provenance } from '@near-autopilot/core';
 import type {
   AuditEvent,
   AutopilotRepository,
+  PolicyVerdictRecord,
   ProposalPatch,
   ProposalRecord,
   RunRecord,
@@ -123,6 +125,46 @@ export class DrizzleRepository implements AutopilotRepository {
     });
   }
 
+  async insertPolicyVerdict(v: PolicyVerdictRecord): Promise<void> {
+    await this.db.insert(policyVerdicts).values({
+      id: v.id,
+      evaluatedAt: v.evaluatedAt,
+      engine: v.engine,
+      runId: v.runId,
+      intentId: v.intentId,
+      intentKind: v.intentKind,
+      verdict: v.verdict,
+      outcome: v.outcome,
+      policyVersion: v.policyVersion,
+      snapshotId: v.snapshotId,
+      planHash: v.planHash,
+      valueUsdMicro: v.valueUsdMicro === null ? null : v.valueUsdMicro.toString(),
+      checks: v.checks.map((c) => ({ ...c, messages: [...c.messages] })),
+      violations: v.violations.map((x) => ({ ...x })),
+      input: v.input,
+      ...this.provenance,
+    });
+  }
+
+  async listPolicyVerdicts(options: {
+    limit: number;
+    verdict?: PolicyVerdictRecord['verdict'];
+  }): Promise<Array<PolicyVerdictRecord & Provenance>> {
+    const own = this.ownRows(policyVerdicts);
+    const rows = await this.db
+      .select()
+      .from(policyVerdicts)
+      .where(
+        options.verdict === undefined ? own : and(own, eq(policyVerdicts.verdict, options.verdict)),
+      )
+      .orderBy(desc(policyVerdicts.evaluatedAt))
+      .limit(options.limit);
+    return rows.map((r) => ({
+      ...r,
+      valueUsdMicro: r.valueUsdMicro === null ? null : BigInt(r.valueUsdMicro),
+    }));
+  }
+
   async getExecutionStats(
     accountId: string,
     since: Date,
@@ -197,7 +239,7 @@ export class DrizzleRepository implements AutopilotRepository {
    * Rows of this deployment's provenance only, so a simulation API and a testnet API sharing one database never show
    * each other's data. Rows from before migration 0001 have no network and count as mainnet (see provenanceOf).
    */
-  private ownRows(table: typeof runs | typeof proposals): SQL | undefined {
+  private ownRows(table: typeof runs | typeof proposals | typeof policyVerdicts): SQL | undefined {
     return and(
       eq(table.dataSource, this.provenance.dataSource),
       this.provenance.network === 'mainnet'

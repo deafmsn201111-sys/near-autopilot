@@ -26,6 +26,7 @@ import type {
   MarketProvider,
   Notifier,
   PolicyGate,
+  VerdictSink,
   ProposalAgent,
   QuoteProvider,
   Severity,
@@ -45,6 +46,8 @@ export interface OrchestratorDeps {
   readonly planner: IntentPlanner;
   /** The policy engine. The orchestrator can ask it questions; it cannot configure, bypass or override it. */
   readonly policy: PolicyGate;
+  /** Where every verdict is stored before it is acted on. Optional: the orchestrator's audit log also records it. */
+  readonly verdicts?: VerdictSink;
   /** Signs and sends (or dry-runs) an ApprovedPlan. Wrapped so that read-only mode is enforced here too. */
   readonly executor: PlanExecutor;
   readonly history: ExecutionHistory;
@@ -646,6 +649,8 @@ export class Orchestrator {
       }
       const history = await d.history.stats(d.accountId, new Date(now.getTime() - DAY_MS));
       const verdict = d.policy.evaluate({ intent, plan, snapshot, history });
+      // Stored before anything else happens with it; a failure here aborts the cycle (nothing is executed).
+      await d.verdicts?.record(verdict, { intent, plan, snapshot, history }, cycleKey);
       policySummaries.push({
         intentId: intent.id,
         proposalId: candidate.proposalId,
@@ -662,6 +667,9 @@ export class Orchestrator {
           proposalId: candidate.proposalId,
           intentId: intent.id,
           outcome: verdict.outcome,
+          verdict: verdict.verdict,
+          policyVersion: verdict.policyVersion,
+          snapshotId: verdict.snapshotId,
           violations: verdict.violations,
           valueUsdMicro: verdict.valueUsdMicro,
         },

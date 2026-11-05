@@ -342,3 +342,67 @@ describe('policyConfigSchema', () => {
     expect(USDT).toBeTruthy();
   });
 });
+
+describe('PolicyEngine verdicts (ALLOW / WARN / BLOCK with every check)', () => {
+  const RULES = [
+    'kill_switch',
+    'signer',
+    'price_freshness',
+    'native_reserve',
+    'contract_allowlist',
+    'token_allowlist',
+    'action_shape',
+    'intent_match',
+    'value_limits',
+    'max_slippage',
+    'oracle_deviation',
+    'cooldown',
+  ];
+
+  it('ALLOW lists all 12 checks as PASS, with policy version, snapshot id and plan hash', () => {
+    const { engine } = makeEngine();
+    const i = input();
+    const d = engine.evaluate(i);
+    expect(d.verdict).toBe('ALLOW');
+    expect(d.checks.map((c) => c.rule)).toEqual(RULES);
+    expect(d.checks.every((c) => c.result === 'PASS' && c.messages.length === 0)).toBe(true);
+    expect(d.policyVersion).toBe(engine.version);
+    expect(d.policyVersion).toMatch(/^rules-2026\.11\.1\+cfg:[0-9a-f]{16}$/);
+    expect(d.snapshotId).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(d.planHash).toBe(planHash(i.plan));
+  });
+
+  it('WARN when only an approval-severity check fails; BLOCK when any check rejects', () => {
+    const { engine: warnEngine } = makeEngine(makeConfig({ approvalThresholdUsd: 10 }));
+    const warn = warnEngine.evaluate(input());
+    expect(warn.verdict).toBe('WARN');
+    expect(warn.checks.find((c) => c.rule === 'value_limits')?.result).toBe('WARN');
+    expect(warn.checks.filter((c) => c.result !== 'PASS')).toHaveLength(1);
+
+    const { engine } = makeEngine(makeConfig({ enabled: false, approvalThresholdUsd: 10 }));
+    const block = engine.evaluate(input());
+    expect(block.verdict).toBe('BLOCK');
+    expect(block.checks.find((c) => c.rule === 'kill_switch')).toMatchObject({
+      result: 'BLOCK',
+      messages: ['Autopilot is disabled by policy'],
+    });
+    // No short-circuit: the other checks still ran and are reported.
+    expect(block.checks).toHaveLength(12);
+    expect(block.checks.find((c) => c.rule === 'value_limits')?.result).toBe('WARN');
+  });
+
+  it('policy version follows the config; snapshot id follows the snapshot content only', () => {
+    const a = makeEngine().engine;
+    const b = makeEngine().engine;
+    const c = makeEngine(makeConfig({ maxSlippageBps: 50 })).engine;
+    expect(a.version).toBe(b.version);
+    expect(c.version).not.toBe(a.version);
+    const same1 = a.evaluate(input());
+    const same2 = b.evaluate(input());
+    expect(same1.snapshotId).toBe(same2.snapshotId);
+    const other = a.evaluate(
+      input(swapIntent(), { snapshot: makeSnapshot({ nativeBalance: 2n * 10n ** 24n }) }),
+    );
+    expect(other.snapshotId).not.toBe(same1.snapshotId);
+  });
+});

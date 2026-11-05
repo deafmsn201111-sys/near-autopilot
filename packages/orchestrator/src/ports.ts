@@ -74,6 +74,20 @@ export interface PolicyGate {
   approve(plan: PlannedTransaction, decision: PolicyDecision): ApprovedPlan;
 }
 
+/** Persists every policy decision with its exact inputs (fail closed: a verdict that cannot be stored is not acted on). */
+export interface VerdictSink {
+  record(
+    decision: PolicyDecision,
+    input: {
+      intent: ActionIntent;
+      plan: PlannedTransaction;
+      snapshot: PortfolioSnapshot;
+      history: PolicyHistoryView;
+    },
+    cycleKey: string,
+  ): Promise<void>;
+}
+
 /* ------------------------------ operations ------------------------------ */
 
 export type Severity = 'info' | 'warn' | 'page';
