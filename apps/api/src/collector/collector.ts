@@ -53,10 +53,24 @@ export interface CollectorDeps {
   readonly limits: YieldLimits;
   /** Full registry rescan every N cycles (and whenever the registry is empty). */
   readonly registryEvery: number;
+  /** ...and whenever the last completed scan is older than this (e.g. after downtime). */
+  readonly registryMaxAgeSeconds: number;
   readonly portfolios: readonly DemoPortfolioId[];
   readonly horizonDays: number;
   readonly gasUsdPerTx: number;
   readonly dclContract: AccountId | null;
+}
+
+/** A full registry rescan is due: none yet, every Nth cycle, or the last one is too old. */
+export function registryScanDue(
+  state: { cycles: number; lastAt: Date } | null,
+  every: number,
+  maxAgeSeconds: number,
+  now: Date,
+): boolean {
+  if (state === null) return true;
+  if (state.cycles + 1 >= every) return true;
+  return now.getTime() - state.lastAt.getTime() >= maxAgeSeconds * 1000;
 }
 
 export interface CycleSummary {
@@ -97,8 +111,12 @@ export class ShadowCollector {
         error: 'a cycle is running',
       };
     const startedAt = this.d.now();
-    const since = await this.d.store.cyclesSinceRegistryScan();
-    const registryScan = since === null || since + 1 >= this.d.registryEvery;
+    const registryScan = registryScanDue(
+      await this.d.store.registryScanState(),
+      this.d.registryEvery,
+      this.d.registryMaxAgeSeconds,
+      startedAt,
+    );
     if (!(await this.d.store.startCycle(id, trigger, startedAt, registryScan)))
       return {
         id,
@@ -237,7 +255,7 @@ export class ShadowCollector {
 
       // 7. The agents' yield report (configured pools, allowlist) at the SAME block, marked scheduled.
       const yieldReport = await timed('yields.agents', async () => {
-        const r = await this.d.yields.reportAt(block, 'scheduled');
+        const r = await this.d.yields.reportAt(block, trigger);
         return {
           value: r,
           records: r.estimates.length,

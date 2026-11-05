@@ -87,7 +87,8 @@ export class CollectorStore {
       .where(eq(collectorCycles.status, 'running'));
   }
 
-  async cyclesSinceRegistryScan(): Promise<number | null> {
+  /** Completed cycles since the last completed registry scan, and when that scan started. */
+  async registryScanState(): Promise<{ cycles: number; lastAt: Date } | null> {
     const [last] = await this.db
       .select({ at: collectorCycles.startedAt })
       .from(collectorCycles)
@@ -103,7 +104,7 @@ export class CollectorStore {
     const r = await this.db.execute<{ n: number }>(
       sql`select count(*)::int as n from collector_cycles where started_at > ${last.at} and status in ('success','partial')`,
     );
-    return r.rows[0]?.n ?? 0;
+    return { cycles: r.rows[0]?.n ?? 0, lastAt: last.at };
   }
 
   async insertSnapshot(row: typeof marketSnapshots.$inferInsert) {

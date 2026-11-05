@@ -67,6 +67,7 @@ async function main(): Promise<void> {
       maxAgeSeconds: orchestrator?.freshness?.maxMarketAgeSeconds ?? 300,
     },
     registryEvery: c.COLLECTOR_REGISTRY_EVERY,
+    registryMaxAgeSeconds: c.COLLECTOR_REGISTRY_EVERY * c.SHADOW_CYCLE_INTERVAL_SECONDS,
     portfolios: ['demo-500', 'demo-5000'],
     horizonDays: c.COLLECTOR_HORIZON_DAYS,
     gasUsdPerTx: orchestrator?.swap?.estimatedGasUsd ?? 0.05,

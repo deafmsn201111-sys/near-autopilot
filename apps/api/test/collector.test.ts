@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildAnalyticsServer } from '../src/analytics/server';
+import { registryScanDue } from '../src/collector/collector';
 import { feeWindow, type PoolPoint } from '../src/collector/history';
 import { impermanentLoss, simulateLpEntry, swapCostUsd, swapOut } from '../src/collector/lp';
 import { DEFAULT_FILTER, type DiscoveredPool, type TokenPrice } from '../src/collector/model';
@@ -122,6 +123,18 @@ const pt = (h: number, s: number, vol: [string, string], tvl = '2000000'): PoolP
   feeBps: 30,
   adminFeeBps: 2_000,
   tvlUsd: tvl,
+});
+
+describe('registry rescan schedule', () => {
+  const now = new Date('2026-11-05T02:25:00Z');
+  const minsAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+  it('scans first, then every 4th cycle, and also after downtime longer than 4 intervals', () => {
+    expect(registryScanDue(null, 4, 3600, now)).toBe(true);
+    expect(registryScanDue({ cycles: 1, lastAt: minsAgo(30) }, 4, 3600, now)).toBe(false);
+    expect(registryScanDue({ cycles: 3, lastAt: minsAgo(45) }, 4, 3600, now)).toBe(true);
+    // Docker was down for hours: only one cycle since the scan, but it is stale.
+    expect(registryScanDue({ cycles: 1, lastAt: minsAgo(240) }, 4, 3600, now)).toBe(true);
+  });
 });
 
 describe('fee windows', () => {
