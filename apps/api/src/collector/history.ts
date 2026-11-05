@@ -68,6 +68,32 @@ const empty = (
 });
 
 /**
+ * USD value of the input volume traded between two readings: the increase of each token's cumulative input volume,
+ * valued at the CURRENT price. Null when a reading has no volumes, a token has no price or decimals, or a cumulative
+ * volume decreased. Needs no pool value, so it can be used before the pool is valued (LP eligibility).
+ */
+export function volumeUsdBetween(
+  start: PoolPoint,
+  end: PoolPoint,
+  tokens: readonly string[],
+  decimals: ReadonlyMap<string, number | null>,
+  prices: ReadonlyMap<string, TokenPrice>,
+): Decimal | null {
+  if (!start.volumesIn || !end.volumesIn) return null;
+  let volume: Decimal = dec(0n);
+  for (let k = 0; k < tokens.length; k += 1) {
+    const t = tokens[k] ?? '';
+    const p = prices.get(t);
+    const d = decimals.get(t) ?? null;
+    const a = big(start.volumesIn[k]);
+    const b = big(end.volumesIn[k]);
+    if (!p || d === null || a === null || b === null || b < a) return null;
+    volume = add(volume, mul(fromRaw(b - a, d), p.usd));
+  }
+  return volume;
+}
+
+/**
  * Fee yield of a two-token constant-product pool over one window, from cumulative input volumes (fees are charged on
  * swap input, so each swap is counted once). The window is [the latest point at least `seconds` before the end, end].
  * Every point in between must have increasing block heights and non-decreasing cumulative volumes, or DATA_INVALID.
@@ -146,18 +172,18 @@ export function feeWindow(
         inWindow.length,
       );
   }
-  let volume: Decimal = dec(0n);
-  let low = false;
-  for (let k = 0; k < tokens.length; k += 1) {
-    const t = tokens[k] ?? '';
-    const p = prices.get(t);
-    const d = decimals.get(t) ?? null;
-    if (!p || d === null)
-      return empty(window, 'LOW_CONFIDENCE', `${t}: no usable price`, inWindow.length);
-    if (p.quality !== 'OK') low = true;
-    const delta = (big(end.volumesIn?.[k]) ?? 0n) - (big(start.volumesIn?.[k]) ?? 0n);
-    volume = add(volume, mul(fromRaw(delta, d), p.usd));
-  }
+  const unpriced = tokens.find((t) => !prices.get(t) || (decimals.get(t) ?? null) === null);
+  if (unpriced !== undefined)
+    return empty(window, 'LOW_CONFIDENCE', `${unpriced}: no usable price`, inWindow.length);
+  const low = tokens.some((t) => prices.get(t)?.quality !== 'OK');
+  const volume = volumeUsdBetween(start, end, tokens, decimals, prices);
+  if (volume === null)
+    return empty(
+      window,
+      'DATA_INVALID',
+      'cumulative volume decreased or unreadable',
+      inWindow.length,
+    );
   const fee = end.feeBps ?? null;
   const admin = end.adminFeeBps ?? null;
   if (fee === null || admin === null)

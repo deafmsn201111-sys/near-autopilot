@@ -3,13 +3,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import { registryScanDue } from '../src/collector/collector';
-import { feeWindow, type PoolPoint } from '../src/collector/history';
+import { feeWindow, volumeUsdBetween, type PoolPoint } from '../src/collector/history';
 import { impermanentLoss, simulateLpEntry, swapCostUsd, swapOut } from '../src/collector/lp';
 import { DEFAULT_FILTER, type DiscoveredPool, type TokenPrice } from '../src/collector/model';
 import { longTailPrices } from '../src/collector/prices';
 import { classifyPool } from '../src/collector/rhea-discovery';
 import type { CollectorStore } from '../src/collector/store';
-import { parseDecimal, type Decimal } from '../src/market-data/decimal';
+import { formatDecimal, parseDecimal, type Decimal } from '../src/market-data/decimal';
 import { HttpJsonClient } from '../src/market-data/http';
 
 const NEAR = 'wrap.near';
@@ -134,6 +134,27 @@ describe('registry rescan schedule', () => {
     expect(registryScanDue({ cycles: 3, lastAt: minsAgo(45) }, 4, 3600, now)).toBe(true);
     // Docker was down for hours: only one cycle since the scan, but it is stale.
     expect(registryScanDue({ cycles: 1, lastAt: minsAgo(240) }, 4, 3600, now)).toBe(true);
+  });
+});
+
+describe('history volume for LP eligibility', () => {
+  it('is computed without a pool value (the current reading is not valued yet) and fails closed', () => {
+    const first = pt(1, 0, ['0', '0']);
+    const current = { ...pt(2, 40_000, ['57000000000', '0']), tvlUsd: null }; // 57,000 USDC in, not yet valued
+    const volume = volumeUsdBetween(first, current, [USDC, NEAR], DECIMALS, PRICES);
+    expect(volume && formatDecimal(volume)).toBe('57000');
+    // ...and it makes the pool LP_SIMULATION_ELIGIBLE under the unchanged criteria.
+    expect(classify(pool(), { historySeconds: 40_000, windowVolumeUsd: volume }).category).toBe(
+      'LP_SIMULATION_ELIGIBLE',
+    );
+    // A registry-scan reading without volumes, a decreasing volume or an unpriced token gives no volume.
+    expect(
+      volumeUsdBetween({ ...first, volumesIn: null }, current, [USDC, NEAR], DECIMALS, PRICES),
+    ).toBeNull();
+    expect(
+      volumeUsdBetween(pt(1, 0, ['9', '0']), pt(2, 9, ['8', '0']), [USDC, NEAR], DECIMALS, PRICES),
+    ).toBeNull();
+    expect(volumeUsdBetween(first, current, [USDC, NEAR], DECIMALS, new Map())).toBeNull();
   });
 });
 

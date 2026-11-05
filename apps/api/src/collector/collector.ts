@@ -11,7 +11,7 @@ import { NearTokenReader, type NearRpcClient } from '@near-autopilot/near-adapte
 import type { CycleReport } from '@near-autopilot/orchestrator';
 import type { AutopilotConfig } from '../autopilot-config';
 import { MAINNET_ASSETS } from '../market-data/assets';
-import { formatDecimal, parseDecimal } from '../market-data/decimal';
+import { formatDecimal } from '../market-data/decimal';
 import type { HttpJsonClient } from '../market-data/http';
 import type { MarketDataProvider, MarketReport, PriceObservation } from '../market-data/model';
 import type { AutopilotRepository } from '../repository';
@@ -23,7 +23,14 @@ import type { BlockRef, YieldReport } from '../yield/model';
 import { finalBlock, PinnedViewer } from '../yield/pinned-viewer';
 import type { YieldService } from '../yield/service';
 import { burrowMarkets, compareStrategies, type BurrowMarketView } from './analysis';
-import { feeWindow, WINDOWS, type FeeWindow, type PoolPoint, type WindowName } from './history';
+import {
+  feeWindow,
+  volumeUsdBetween,
+  WINDOWS,
+  type FeeWindow,
+  type PoolPoint,
+  type WindowName,
+} from './history';
 import { simulateLpEntry, swapCostUsd, type LpSimResult } from './lp';
 import type {
   CollectorFilter,
@@ -420,19 +427,16 @@ export class ShadowCollector {
         ? Math.round((block.timestamp.getTime() - first.at.getTime()) / 1000)
         : 0;
       // Volume over the stored history (needed for LP eligibility), from the first point to this reading.
-      let windowVolumeUsd = null;
-      if (first && pool.volumesIn) {
-        const w = feeWindow(
-          'SINCE_FIRST',
-          [first, this.point(pool, block, null, metadataAdmin)],
-          pool.tokens,
-          this.decimals,
-          prices,
-          now,
-          3_600,
-        );
-        windowVolumeUsd = w.volumeUsd ? parseDecimal(w.volumeUsd) : null;
-      }
+      const windowVolumeUsd =
+        first && pool.volumesIn
+          ? volumeUsdBetween(
+              first,
+              this.point(pool, block, null, metadataAdmin),
+              pool.tokens,
+              this.decimals,
+              prices,
+            )
+          : null;
       const c = classifyPool({
         pool,
         decimals: this.decimals,
