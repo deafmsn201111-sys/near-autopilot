@@ -2,10 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
+import { Nav } from '../components/Nav';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'near-autopilot analytics (shadow)',
+  title: 'NEAR Autopilot · analytics',
   description: 'Mainnet read-only analytics: Rhea, Burrow, prices, LP simulation, demo portfolios',
   robots: { index: false, follow: false },
 };
@@ -16,26 +17,29 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <div className="shadow-banner" role="status">
-          SHADOW MODE — MAINNET READ-ONLY — NO TRANSACTIONS
+        <div className="shell">
+          <aside className="sidebar">
+            <Link href="/" className="brand">
+              <b>NEAR Autopilot</b>
+              <span>analytics</span>
+            </Link>
+            <div className="env" role="status">
+              <b>
+                <span className="badge warning" aria-hidden="true">
+                  <i>!</i>
+                </span>
+                Shadow mode
+              </b>
+              <span>Mainnet read-only. No signer, no transactions.</span>
+            </div>
+            <Nav />
+            <div className="sidebar-foot">
+              Stored data only: opening a page never collects anything. Refreshes every 20 s.
+            </div>
+          </aside>
+          <main>{children}</main>
         </div>
-        <header className="top">
-          <Link href="/" className="brand">
-            near-autopilot analytics
-          </Link>
-          <nav aria-label="Primary">
-            <Link href="/">Overview</Link>
-            <Link href="/rhea">Rhea</Link>
-            <Link href="/burrow">Burrow</Link>
-            <Link href="/prices">Prices</Link>
-            <Link href="/lp">LP</Link>
-            <Link href="/portfolios">Portfolios</Link>
-            <Link href="/strategies">Strategies</Link>
-            <Link href="/collector">Collector</Link>
-          </nav>
-        </header>
         <AutoRefresh seconds={20} />
-        <main>{children}</main>
       </body>
     </html>
   );

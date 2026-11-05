@@ -318,6 +318,46 @@ export class ShadowCollector {
         }),
       });
 
+      // 7b. Token metadata (symbol, decimals) for display: only tokens not stored yet, a bounded number per cycle.
+      await timed('tokens.metadata', async () => {
+        const known = new Set((await this.d.store.tokenMetadata()).map((t) => t.token));
+        const missing = (await this.d.store.displayTokens(400)).filter((t) => !known.has(t));
+        const batch = missing.slice(0, 300);
+        const rows: Array<{
+          token: string;
+          symbol: string;
+          decimals: number;
+          blockHeight: number;
+          fetchedAt: Date;
+        }> = [];
+        let failed = 0;
+        for (const t of batch) {
+          const id = accountIdSchema.safeParse(t);
+          if (!id.success) {
+            failed += 1;
+            continue;
+          }
+          try {
+            const m = await tokens.getMetadata(id.data);
+            rows.push({
+              token: t,
+              symbol: m.symbol.slice(0, 64),
+              decimals: m.decimals,
+              blockHeight: block.height,
+              fetchedAt: now,
+            });
+          } catch {
+            failed += 1; // no or malformed ft_metadata: the dashboard shows the contract id
+          }
+        }
+        await this.d.store.upsertTokenMetadata(rows);
+        return {
+          value: null,
+          records: rows.length,
+          detail: `${rows.length} new, ${failed} without readable metadata, ${missing.length - batch.length} left for later cycles`,
+        };
+      });
+
       // 8. Both demo portfolios on this one snapshot.
       if (market && yieldReport && markets && poolViews)
         await timed('portfolios', async () => {
@@ -431,10 +471,12 @@ export class ShadowCollector {
     const views: PoolView[] = [];
     const obsRows = [];
     const existing = new Map((await this.d.store.trackedPools()).map((p) => [p.poolKey, p]));
+    // History is whatever is stored, not the current category: a pool demoted for a cycle keeps its fee history.
+    const withHistory = await this.d.store.poolsWithHistory();
     const metadataAdmin = await this.adminFeeBps(viewer);
     for (const pool of pools) {
       // History exists only for pools tracked before: no per-pool queries for the thousands of untracked ones.
-      const known = existing.has(pool.poolKey);
+      const known = withHistory.has(pool.poolKey);
       const previous = known ? await this.d.store.lastPoolPoint(pool.poolKey) : null;
       // Fee history starts at the first reading WITH cumulative volumes (a registry-scan reading has none).
       const previousWithVolumes = previous?.volumesIn

@@ -11,11 +11,14 @@ import {
   isNotNull,
   lte,
   marketSnapshots,
+  ne,
+  or,
   portfolioAnalyses,
   priceObservations,
   rheaPoolObservations,
   rheaPools,
   sql,
+  tokenMetadata,
   type Database,
 } from '@near-autopilot/db';
 import { formatDecimal } from '../market-data/decimal';
@@ -180,24 +183,52 @@ export class CollectorStore {
     return gone.length;
   }
 
-  async trackedPools(): Promise<PoolRow[]> {
+  /**
+   * Pools re-read every cycle: active pools in a tracked category, AND active pools demoted only because a price was
+   * missing (price_quality UNPRICED) that had a PRICED observation in the last 24 h. Without the second part, one
+   * transient price gap dropped a pool from tracking for good (it was never re-read, so it could never be re-priced)
+   * and the next registry scan treated it as new. The criteria are not relaxed: every cycle still classifies it.
+   */
+  async trackedPools(now: Date = new Date()): Promise<PoolRow[]> {
+    const since = new Date(now.getTime() - 24 * 3_600_000);
+    const recentlyPriced = this.db
+      .selectDistinct({ poolKey: rheaPoolObservations.poolKey })
+      .from(rheaPoolObservations)
+      .where(
+        and(
+          gte(rheaPoolObservations.blockTimestamp, since),
+          isNotNull(rheaPoolObservations.volumesIn),
+          ne(rheaPoolObservations.priceQuality, 'UNPRICED'),
+        ),
+      );
     return this.db
       .select()
       .from(rheaPools)
       .where(
         and(
           eq(rheaPools.active, true),
-          inArray(rheaPools.category, [
-            'LIQUID',
-            'ANALYTICS_ELIGIBLE',
-            'LP_SIMULATION_ELIGIBLE',
-            'UNSUPPORTED',
-          ]),
+          or(
+            inArray(rheaPools.category, [
+              'LIQUID',
+              'ANALYTICS_ELIGIBLE',
+              'LP_SIMULATION_ELIGIBLE',
+              'UNSUPPORTED',
+            ]),
+            and(eq(rheaPools.priceQuality, 'UNPRICED'), inArray(rheaPools.poolKey, recentlyPriced)),
+          ),
         ),
       );
   }
 
-  /** Active, tracked, model-SUPPORTED v1 pools (the ones with fee windows): what the history backfill re-reads. */
+  /** Pools with stored fee history (any observation with cumulative volumes), whatever their category now. */
+  async poolsWithHistory(): Promise<Set<string>> {
+    const rows = await this.db
+      .selectDistinct({ poolKey: rheaPoolObservations.poolKey })
+      .from(rheaPoolObservations)
+      .where(isNotNull(rheaPoolObservations.volumesIn));
+    return new Set(rows.map((r) => r.poolKey));
+  }
+
   async backfillTargets(): Promise<PoolRow[]> {
     return this.db
       .select()
@@ -333,6 +364,52 @@ export class CollectorStore {
       .orderBy(desc(marketSnapshots.takenAt))
       .limit(1);
     return s ?? null;
+  }
+
+  /** Every stored token's symbol and decimals (display only). */
+  async tokenMetadata() {
+    return this.db.select().from(tokenMetadata);
+  }
+
+  /** Insert or refresh token metadata (a contract may change its own metadata; the latest read wins). */
+  async upsertTokenMetadata(rows: readonly (typeof tokenMetadata.$inferInsert)[]) {
+    for (let i = 0; i < rows.length; i += 200)
+      await this.db
+        .insert(tokenMetadata)
+        .values(rows.slice(i, i + 200))
+        .onConflictDoUpdate({
+          target: tokenMetadata.token,
+          set: {
+            symbol: sql`excluded.symbol`,
+            decimals: sql`excluded.decimals`,
+            blockHeight: sql`excluded.block_height`,
+            fetchedAt: sql`excluded.fetched_at`,
+          },
+        });
+  }
+
+  /** Tokens the dashboards show: every Burrow market, every priced token, and the tokens of the `limit` largest pools. */
+  async displayTokens(limit: number): Promise<string[]> {
+    const pools = await this.db
+      .select({ tokens: rheaPools.tokens })
+      .from(rheaPools)
+      .orderBy(sql`${rheaPools.tvlUsd}::numeric desc nulls last`)
+      .limit(limit);
+    const markets = await this.db.select({ token: burrowMarkets.token }).from(burrowMarkets);
+    const snapshot = await this.latestSnapshot();
+    const priced = snapshot
+      ? await this.db
+          .selectDistinct({ asset: priceObservations.asset })
+          .from(priceObservations)
+          .where(eq(priceObservations.snapshotId, snapshot.id))
+      : [];
+    return [
+      ...new Set([
+        ...pools.flatMap((p) => p.tokens),
+        ...markets.map((m) => m.token),
+        ...priced.map((p) => p.asset),
+      ]),
+    ];
   }
 
   async pools() {

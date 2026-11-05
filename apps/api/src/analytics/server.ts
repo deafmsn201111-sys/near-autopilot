@@ -142,21 +142,38 @@ export function buildAnalyticsServer(
         const divergence =
           a && b && a.mantissa > 0n && b.mantissa > 0n ? Number(deviationBps(a, b)) : null;
         const ref = MAINNET_ASSETS.find((x) => x.testnetToken === asset);
+        // Every source of this asset (Pyth, DefiLlama and the NEAR exchanges), one row each. The status is judged on the
+        // USD-quoted valid ones: a USDT quote (Binance) is shown as quoted, converted only inside the price service.
+        const sources = [...new Set(rows.map((r) => r.source))].sort().map((src) => pick(src));
+        const usdValid = sources.flatMap((r) =>
+          r && r.status === 'valid' && r.quoteCurrency === 'USD' && r.priceUsd
+            ? [parseDecimal(r.priceUsd)]
+            : [],
+        );
+        let spread: number | null = null;
+        for (const x of usdValid)
+          for (const y of usdValid)
+            if (x && y && x.mantissa > 0n && y.mantissa > 0n) {
+              const d = Number(deviationBps(x, y));
+              spread = spread === null ? d : Math.max(spread, d);
+            }
         const status =
-          !a && !b
+          usdValid.length === 0
             ? 'UNAVAILABLE'
-            : a && b
-              ? ref && divergence !== null && divergence > ref.maxDeviationBps
+            : usdValid.length === 1
+              ? 'SINGLE_SOURCE'
+              : ref && spread !== null && spread > ref.maxDeviationBps
                 ? 'LOW_CONFIDENCE'
-                : 'OK'
-              : 'SINGLE_SOURCE';
+                : 'CORROBORATED';
         return {
           asset,
           curated: curated.includes(asset),
           pyth,
           defillama: llama,
           divergenceBps: divergence,
+          spreadBps: spread,
           maxDeviationBps: ref?.maxDeviationBps ?? null,
+          sources,
           status,
         };
       });
@@ -247,6 +264,13 @@ export function buildAnalyticsServer(
       history: await deps.store.poolHistory(key, new Date(now().getTime() - 30 * 86_400_000)),
     };
   });
+
+  /** Symbols and decimals as the token contracts report them (untrusted labels; the UI marks curated ones). */
+  app.get('/v1/analytics/tokens', async () => ({
+    tokens: (await deps.store.tokenMetadata())
+      .map((t) => ({ token: t.token, symbol: t.symbol, decimals: t.decimals }))
+      .sort((a, b) => (a.token < b.token ? -1 : 1)),
+  }));
 
   app.get('/v1/analytics/burrow/markets', async () => ({
     markets: (await deps.store.markets()).map((m) => ({

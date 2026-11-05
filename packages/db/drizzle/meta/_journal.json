@@ -85,6 +85,13 @@
       "when": 1793960000000,
       "tag": "0011_audit_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793970000000,
+      "tag": "0012_token_metadata",
+      "breakpoints": true
     }
   ]
 }

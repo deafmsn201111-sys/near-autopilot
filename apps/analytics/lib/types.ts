@@ -121,6 +121,8 @@ export interface Market {
 }
 
 export interface PriceObs {
+  source: string;
+  quoteCurrency: string;
   priceUsd: string | null;
   confidence: string | null;
   publishedAt: string | null;
@@ -135,8 +137,10 @@ export interface PriceRow {
   asset: string;
   curated: boolean;
   divergenceBps: number | null;
+  spreadBps: number | null;
   maxDeviationBps: number | null;
   status: string;
+  sources: (PriceObs | null)[];
   pyth: PriceObs | null;
   defillama: PriceObs | null;
 }

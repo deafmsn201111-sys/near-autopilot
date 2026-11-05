@@ -154,6 +154,19 @@ export const policyVerdicts = pgTable(
 );
 
 /**
+ * NEP-141 token metadata as the token contract reports it (`ft_metadata`), read by the collector (view call) so the
+ * dashboards can show a symbol instead of a contract id. The symbol is UNTRUSTED (any contract can call itself
+ * "USDC"): display code marks only curated contracts as verified.
+ */
+export const tokenMetadata = pgTable('token_metadata', {
+  token: text('token').primaryKey(),
+  symbol: text('symbol').notNull(),
+  decimals: integer('decimals').notNull(),
+  blockHeight: integer('block_height').notNull(),
+  fetchedAt: ts('fetched_at').notNull(),
+});
+
+/**
  * Shadow Gateway routing (append-only): venues quoted for an approved plan or a reference probe, and the venue chosen.
  * Quotes only; nothing in this table was signed or sent.
  */

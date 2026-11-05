@@ -21,6 +21,7 @@ import {
   burrowMarketObservations,
   executionRoutes,
   policyVerdicts,
+  tokenMetadata,
   portfolioAnalyses,
   type DatabaseHandle,
   type Table,
@@ -70,7 +71,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(12);
+    expect(applied.rows[0]?.n).toBe(13);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -91,6 +92,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       portfolioAnalyses,
       policyVerdicts,
       executionRoutes,
+      tokenMetadata,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
@@ -647,6 +649,90 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     });
     expect(await chain.findPolicyVerdict('pv-1')).toBeNull();
     expect(await shadow.findPolicyVerdict('nope')).toBeNull();
+  });
+
+  it('token metadata: insert, refresh on conflict, and the display token set', async () => {
+    const { CollectorStore } = await import('../src/collector/store');
+    const store = new CollectorStore(handle.db);
+    const at = new Date('2026-11-06T10:00:00Z');
+    await store.upsertTokenMetadata([
+      { token: 'wrap.near', symbol: 'wNEAR', decimals: 24, blockHeight: 1, fetchedAt: at },
+      { token: 'x.near', symbol: 'X', decimals: 18, blockHeight: 1, fetchedAt: at },
+    ]);
+    await store.upsertTokenMetadata([
+      { token: 'x.near', symbol: 'X2', decimals: 18, blockHeight: 2, fetchedAt: at },
+    ]);
+    const rows = await store.tokenMetadata();
+    expect(rows.find((r) => r.token === 'x.near')).toMatchObject({ symbol: 'X2', blockHeight: 2 });
+    expect(rows).toHaveLength(2);
+    await expect(
+      store.upsertTokenMetadata([
+        { token: 'bad.near', symbol: 'B', decimals: 99, blockHeight: 1, fetchedAt: at },
+      ]),
+    ).rejects.toThrow();
+    expect(Array.isArray(await store.displayTokens(10))).toBe(true);
+  });
+
+  it('tracking survives a transient price gap, but not a real loss of liquidity or a day without prices', async () => {
+    const { CollectorStore } = await import('../src/collector/store');
+    const store = new CollectorStore(handle.db);
+    const now = new Date('2026-11-06T12:00:00Z');
+    const pool = (key: string, category: string, priceQuality: string) => ({
+      poolKey: key,
+      contract: 'v2.ref-finance.near',
+      family: 'dcl' as const,
+      poolType: 'SIMPLE_POOL',
+      tokens: ['a', 'b'],
+      firstSeenAt: now,
+      lastSeenAt: now,
+      lastBlockHeight: 1,
+      feeBps: 30,
+      tvlUsd: null,
+      priceQuality,
+      category,
+      modelStatus: 'SUPPORTED',
+      reasons: [],
+      active: true,
+      latest: {},
+    });
+    const obs = (key: string, hoursAgo: number, priceQuality: string, volumes = true) => ({
+      id: `${key}@${hoursAgo}`,
+      snapshotId: 's',
+      poolKey: key,
+      blockHeight: 1_000 - hoursAgo,
+      blockTimestamp: new Date(now.getTime() - hoursAgo * 3_600_000),
+      reserves: ['1', '2'],
+      volumesIn: volumes ? ['1', '1'] : null,
+      feeBps: 30,
+      adminFeeBps: 2000,
+      tvlUsd: null,
+      priceQuality,
+      quality: 'OK',
+      raw: {},
+    });
+    await store.upsertPools([
+      pool('dcl:t901', 'LIQUID', 'OK'),
+      pool('dcl:t902', 'DISCOVERED', 'UNPRICED'), // priced an hour ago: a price gap -> keep tracking
+      pool('dcl:t903', 'DISCOVERED', 'UNPRICED'), // never priced -> no
+      pool('dcl:t904', 'DISCOVERED', 'UNPRICED'), // last priced 30 h ago -> no
+      pool('dcl:t905', 'LOW_LIQUIDITY', 'OK'), // priced, really illiquid -> no
+    ]);
+    await store.insertPoolObservations([
+      obs('dcl:t902', 1, 'OK'),
+      obs('dcl:t903', 1, 'UNPRICED'),
+      obs('dcl:t904', 30, 'OK'),
+      obs('dcl:t905', 1, 'OK'),
+      obs('dcl:t906', 2, 'OK', false),
+    ]);
+    const tracked = (await store.trackedPools(now))
+      .map((p) => p.poolKey)
+      .filter((k) => k >= 'dcl:t900');
+    expect(tracked.sort()).toEqual(['dcl:t901', 'dcl:t902']);
+    const history = await store.poolsWithHistory();
+    expect(['dcl:t902', 'dcl:t903', 'dcl:t904', 'dcl:t905'].every((k) => history.has(k))).toBe(
+      true,
+    );
+    expect(history.has('dcl:t906')).toBe(false); // a registry-scan reading (no volumes) is not fee history
   });
 
   it('price observations accept every provider of the NEAR quorum, and nothing else', async () => {
