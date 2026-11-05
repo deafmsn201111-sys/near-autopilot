@@ -1,6 +1,9 @@
 import { formatDecimal, parseDecimal, type Decimal } from '../market-data/decimal';
-import { add, dec, div, fromRaw, mul } from '../yield/math';
+import { add, dec, div, fromRaw, mul, truncate } from '../yield/math';
 import type { TokenPrice } from './model';
+
+/** Persisted window figures: 18 fractional digits, so they parse back (parseDecimal caps at 60). */
+const text = (d: Decimal): string => formatDecimal(truncate(d));
 
 /** A stored pool observation, as the window math needs it. */
 export interface PoolPoint {
@@ -219,14 +222,14 @@ export function feeWindow(
     startAt: start.at.toISOString(),
     endAt: end.at.toISOString(),
     seconds,
-    volumeUsd: formatDecimal(volume),
-    grossFeesUsd: formatDecimal(gross),
-    adminFeesUsd: formatDecimal(adminFees),
-    lpFeesUsd: formatDecimal(lp),
-    avgTvlUsd: formatDecimal(avgTvl),
-    endTvlUsd: formatDecimal(endTvl),
-    realizedYield: formatDecimal(realized),
-    annualizedApr: formatDecimal(annual),
+    volumeUsd: text(volume),
+    grossFeesUsd: text(gross),
+    adminFeesUsd: text(adminFees),
+    lpFeesUsd: text(lp),
+    avgTvlUsd: text(avgTvl),
+    endTvlUsd: text(endTvl),
+    realizedYield: text(realized),
+    annualizedApr: text(annual),
     confidence,
   };
 }

@@ -40,4 +40,13 @@ export function toWad(d: Decimal): bigint {
 /** Fraction -> basis points, floored (for limits and display). */
 export const toBps = (d: Decimal): bigint => (toWad(d) * 10_000n) / SCALE;
 
+/**
+ * d truncated toward zero to `digits` fractional digits (default 18). Products of exact decimals grow
+ * without bound; values written as text must stay readable by parseDecimal (at most 60 digits).
+ */
+export function truncate(d: Decimal, digits = SCALE_DIGITS): Decimal {
+  if (d.exponent >= -digits) return d;
+  return dec(d.mantissa / pow10(-digits - d.exponent), -digits);
+}
+
 export const isNegative = (d: Decimal): boolean => d.mantissa < 0n;

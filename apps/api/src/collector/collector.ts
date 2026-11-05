@@ -18,7 +18,7 @@ import type { AutopilotRepository } from '../repository';
 import { DEMO_PORTFOLIOS, demoAssets, type DemoPortfolioId } from '../simulation/demo-portfolios';
 import { wire } from '../wiring';
 import type { YieldLimits } from '../yield/burrow';
-import { fromRaw, mul, toWad } from '../yield/math';
+import { fromRaw, mul, toWad, truncate } from '../yield/math';
 import type { BlockRef, YieldReport } from '../yield/model';
 import { finalBlock, PinnedViewer } from '../yield/pinned-viewer';
 import type { YieldService } from '../yield/service';
@@ -466,7 +466,7 @@ export class ShadowCollector {
           volumesIn: pool.volumesIn ? pool.volumesIn.map(String) : null,
           feeBps: pool.feeBps,
           adminFeeBps: pool.family === 'v1' ? metadataAdmin : null,
-          tvlUsd: c.tvlUsd ? formatDecimal(c.tvlUsd) : null,
+          tvlUsd: c.tvlUsd ? formatDecimal(truncate(c.tvlUsd)) : null,
           priceQuality: c.priceQuality,
           quality,
           raw: { ...pool.raw },

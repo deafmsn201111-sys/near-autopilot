@@ -212,6 +212,40 @@ describe('fee windows', () => {
       'INSUFFICIENT_HISTORY',
     );
   });
+  it('window figures stay readable: long TVL and price digits do not overflow parseDecimal', () => {
+    // Live regression (pool v1:4512): annualizedApr was written with 68 fractional digits, which
+    // parseDecimal (cap 60) rejected, so the LP simulation reported "fee window incomplete".
+    const tvl = '1958053.314072817217405372267099256136';
+    const prices = new Map<string, TokenPrice>([
+      [NEAR, price('1.873219876543210987654321')],
+      [USDC, price('0.999876543210987654321')],
+    ]);
+    const w = feeWindow(
+      '1H',
+      [
+        pt(1, 0, ['0', '0'], tvl),
+        pt(2, 3_607, ['123456789123', '98765432109876543210987654'], tvl),
+      ],
+      [USDC, NEAR],
+      DECIMALS,
+      prices,
+      at(3_700),
+      3_600,
+    );
+    expect(w.quality).toBe('OK');
+    for (const v of [
+      w.volumeUsd,
+      w.lpFeesUsd,
+      w.avgTvlUsd,
+      w.endTvlUsd,
+      w.realizedYield,
+      w.annualizedApr,
+    ]) {
+      expect(v).not.toBeNull();
+      expect(parseDecimal(v as string)).not.toBeNull();
+      expect((v as string).split('.')[1]?.length ?? 0).toBeLessThanOrEqual(18);
+    }
+  });
 });
 
 describe('LP entry math', () => {
