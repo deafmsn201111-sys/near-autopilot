@@ -84,9 +84,29 @@ export class HttpJsonClient {
 
   /** GET and parse JSON. Headers (e.g. an Authorization bearer) are sent but never included in any error. */
   async getJson(url: string, headers: Readonly<Record<string, string>> = {}): Promise<unknown> {
+    return this.request(url, headers, null);
+  }
+
+  /**
+   * POST a JSON body and parse the JSON answer. Only for requests that are SAFE TO REPEAT (a quote, a read): it is
+   * retried like a GET. A 400 carries the server's own `message` (never the request headers).
+   */
+  async postJson(
+    url: string,
+    body: unknown,
+    headers: Readonly<Record<string, string>> = {},
+  ): Promise<unknown> {
+    return this.request(url, headers, JSON.stringify(body));
+  }
+
+  private async request(
+    url: string,
+    headers: Readonly<Record<string, string>>,
+    body: string | null,
+  ): Promise<unknown> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.sem.run(() => this.once(url, headers));
+        return await this.sem.run(() => this.once(url, headers, body));
       } catch (error) {
         const e =
           error instanceof MarketHttpError
@@ -104,15 +124,30 @@ export class HttpJsonClient {
     }
   }
 
-  private async once(url: string, headers: Readonly<Record<string, string>>): Promise<unknown> {
+  private async once(
+    url: string,
+    headers: Readonly<Record<string, string>>,
+    body: string | null,
+  ): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.o.timeoutMs);
     let response: Response;
     try {
-      response = await this.fetchImpl(url, {
-        headers: { accept: 'application/json', ...headers },
-        signal: controller.signal,
-      });
+      response = await this.fetchImpl(
+        url,
+        body === null
+          ? { headers: { accept: 'application/json', ...headers }, signal: controller.signal }
+          : {
+              method: 'POST',
+              headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                ...headers,
+              },
+              body,
+              signal: controller.signal,
+            },
+      );
     } catch {
       throw controller.signal.aborted
         ? new MarketHttpError('timeout', `no response within ${this.o.timeoutMs} ms`, true)
@@ -132,6 +167,10 @@ export class HttpJsonClient {
     if (s === 404) throw new MarketHttpError('not_found', 'HTTP 404', false);
     if (s === 408 || s === 504) throw new MarketHttpError('timeout', `HTTP ${s}`, true);
     if (s >= 500) throw new MarketHttpError('unavailable', `HTTP ${s}`, true);
+    if (s === 400) {
+      const m = /"message"\s*:\s*"([^"]{0,200})/.exec(await response.text().catch(() => ''));
+      throw new MarketHttpError('http_error', `HTTP 400${m ? `: ${m[1]}` : ''}`, false);
+    }
     if (!response.ok) throw new MarketHttpError('http_error', `HTTP ${s}`, false);
     const text = await response.text();
     try {

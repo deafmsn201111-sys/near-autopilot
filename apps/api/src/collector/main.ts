@@ -1,3 +1,4 @@
+import { collectorRouteProbe } from '../gateway/probe';
 import { createServer } from 'node:http';
 import { loadApiEnv } from '@near-autopilot/config';
 import { createDatabase } from '@near-autopilot/db';
@@ -72,6 +73,14 @@ async function main(): Promise<void> {
     horizonDays: c.COLLECTOR_HORIZON_DAYS,
     gasUsdPerTx: orchestrator?.swap?.estimatedGasUsd ?? 0.05,
     dclContract: env.RHEA_DCL_CONTRACT_ID ?? null,
+    routeProbe: collectorRouteProbe({
+      env,
+      config,
+      repo,
+      logger,
+      ids: () => uuidGenerator.next(),
+      now: () => new Date(),
+    }),
   });
   await store.closeAbandoned(new Date());
 

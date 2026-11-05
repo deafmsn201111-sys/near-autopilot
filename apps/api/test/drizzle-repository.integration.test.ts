@@ -19,6 +19,7 @@ import {
   rheaPoolObservations,
   burrowMarkets,
   burrowMarketObservations,
+  executionRoutes,
   policyVerdicts,
   portfolioAnalyses,
   type DatabaseHandle,
@@ -69,7 +70,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(10);
+    expect(applied.rows[0]?.n).toBe(11);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -89,6 +90,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       burrowMarketObservations,
       portfolioAnalyses,
       policyVerdicts,
+      executionRoutes,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
@@ -517,6 +519,59 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     await expect(
       shadow.insertPolicyVerdict({ ...v, id: 'pv-2', verdict: 'ALLOW' }),
     ).rejects.toThrow();
+  });
+
+  it('execution routes round-trip per deployment; a routed row names its venue, others do not', async () => {
+    const shadow = new DrizzleRepository(handle.db, {
+      dataSource: 'simulation',
+      network: 'mainnet',
+    });
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    const r = {
+      id: 'route-1',
+      createdAt: new Date('2026-11-05T19:00:00Z'),
+      origin: 'probe' as const,
+      outcome: 'routed' as const,
+      decisionId: null,
+      intentId: null,
+      planHash: null,
+      tokenIn: 'wrap.near',
+      tokenOut: 'usdc.near',
+      amountIn: 2_739_726_027_397_260_273_972_603n,
+      chosenVenue: 'rhea',
+      advantageBps: 12,
+      reason: 'rhea nets 12 bps more',
+      quotes: { gasPriceYocto: '100000000', scored: [] },
+    };
+    await shadow.insertExecutionRoute(r);
+    expect(await shadow.listExecutionRoutes({ limit: 5 })).toEqual([
+      { ...r, dataSource: 'simulation', network: 'mainnet' },
+    ]);
+    expect(await shadow.listExecutionRoutes({ limit: 5, origin: 'gateway' })).toEqual([]);
+    expect(await chain.listExecutionRoutes({ limit: 5 })).toEqual([]);
+    await expect(
+      shadow.insertExecutionRoute({ ...r, id: 'route-2', chosenVenue: null }),
+    ).rejects.toThrow();
+    await expect(
+      shadow.insertExecutionRoute({ ...r, id: 'route-3', outcome: 'refused' }),
+    ).rejects.toThrow();
+    await expect(
+      shadow.insertExecutionRoute({ ...r, id: 'route-4', chosenVenue: 'some-dex' }),
+    ).rejects.toThrow();
+  });
+
+  it('findPolicyVerdict sees only its own deployment', async () => {
+    const shadow = new DrizzleRepository(handle.db, {
+      dataSource: 'simulation',
+      network: 'mainnet',
+    });
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    expect(await shadow.findPolicyVerdict('pv-1')).toEqual({
+      verdict: 'BLOCK',
+      planHash: 'd'.repeat(64),
+    });
+    expect(await chain.findPolicyVerdict('pv-1')).toBeNull();
+    expect(await shadow.findPolicyVerdict('nope')).toBeNull();
   });
 
   it('price observations accept every provider of the NEAR quorum, and nothing else', async () => {

@@ -12,7 +12,12 @@ import {
 import type { GuardianConfig } from '@near-autopilot/agents';
 import { valuePortfolio, tokenValueUsd } from '@near-autopilot/financial-engine';
 import type { PolicyConfig } from '@near-autopilot/policy-engine';
-import type { PolicyVerdictRecord, ProposalRecord, RunRecord } from './repository';
+import type {
+  ExecutionRouteRecord,
+  PolicyVerdictRecord,
+  ProposalRecord,
+  RunRecord,
+} from './repository';
 import { pricingOf } from './services/outcome';
 
 /**
@@ -142,5 +147,28 @@ export function toVerdictDto(v: PolicyVerdictRecord & Provenance) {
     violations: v.violations,
     dataSource: v.dataSource,
     network: v.network,
+  };
+}
+
+/** A Shadow Gateway routing record for the HTTP API (u128 amounts as decimal strings). */
+export function toRouteDto(r: ExecutionRouteRecord & Provenance) {
+  return {
+    id: r.id,
+    createdAt: r.createdAt.toISOString(),
+    origin: r.origin,
+    outcome: r.outcome,
+    decisionId: r.decisionId,
+    intentId: r.intentId,
+    planHash: r.planHash,
+    tokenIn: r.tokenIn,
+    tokenOut: r.tokenOut,
+    amountIn: r.amountIn === null ? null : r.amountIn.toString(),
+    chosenVenue: r.chosenVenue,
+    advantageBps: r.advantageBps,
+    reason: r.reason,
+    quotes: r.quotes,
+    executed: false as const,
+    dataSource: r.dataSource,
+    network: r.network,
   };
 }

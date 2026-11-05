@@ -143,6 +143,38 @@ export const policyVerdicts = pgTable(
 );
 
 /**
+ * Shadow Gateway routing (append-only): venues quoted for an approved plan or a reference probe, and the venue chosen.
+ * Quotes only; nothing in this table was signed or sent.
+ */
+export const executionRoutes = pgTable(
+  'execution_routes',
+  {
+    id: text('id').primaryKey(),
+    createdAt: ts('created_at').notNull(),
+    origin: text('origin', { enum: ['gateway', 'probe'] }).notNull(),
+    outcome: text('outcome', { enum: ['routed', 'no_route', 'not_a_swap', 'refused'] }).notNull(),
+    decisionId: text('decision_id'),
+    intentId: text('intent_id'),
+    planHash: text('plan_hash'),
+    tokenIn: text('token_in'),
+    tokenOut: text('token_out'),
+    /** Raw input amount as decimal text (u128). */
+    amountIn: text('amount_in'),
+    chosenVenue: text('chosen_venue'),
+    advantageBps: integer('advantage_bps'),
+    reason: text('reason').notNull(),
+    quotes: jsonb('quotes').$type<unknown>().notNull(),
+    dataSource: text('data_source', { enum: ['chain', 'simulation'] }).notNull(),
+    network: text('network', { enum: ['mainnet', 'testnet'] }).notNull(),
+  },
+  (t) => [
+    index('execution_routes_created_idx').on(t.createdAt),
+    index('execution_routes_origin_idx').on(t.origin, t.createdAt),
+    index('execution_routes_decision_idx').on(t.decisionId),
+  ],
+);
+
+/**
  * Manually confirmed TESTNET transactions (apps/api testnet-tx). prepared -> approved -> submitted -> confirmed, or
  * rejected / failed / expired / unknown. Amounts in yoctoNEAR as decimal strings (u128 exceeds bigint columns).
  */

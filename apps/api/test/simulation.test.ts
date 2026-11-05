@@ -54,7 +54,7 @@ const simulate = async (over: Record<string, string>) => {
 
 describe.each(['legacy', 'orchestrator'])('simulation, %s engine', (engine) => {
   it('demo-500: the guardian repays ~$40, policy approves, the dry-run executor never sends', async () => {
-    const { result, simulation } = await simulate({
+    const { result, simulation, repo } = await simulate({
       AUTOPILOT_ENGINE: engine,
       SIMULATION_PORTFOLIO: 'demo-500',
     });
@@ -71,13 +71,22 @@ describe.each(['legacy', 'orchestrator'])('simulation, %s engine', (engine) => {
     expect(p?.valueUsdMicro).toBeGreaterThan(39_000_000n);
     expect(p?.valueUsdMicro).toBeLessThan(41_000_000n);
     expect(new Set(simulation?.methods)).toEqual(new Set(['status', 'query']));
+    // Through the Shadow Gateway: it found the stored ALLOW for this exact plan; a repay has no second venue.
+    expect(repo.routes).toMatchObject([
+      { origin: 'gateway', outcome: 'not_a_swap', chosenVenue: null },
+    ]);
+    const v = repo.verdicts.find((x) => x.id === repo.routes[0]?.decisionId);
+    expect(v).toMatchObject({ verdict: 'ALLOW', planHash: repo.routes[0]?.planHash });
   });
 
   it('demo-5000: the needed repay (~$464) exceeds the $100 per-action limit and policy rejects it', async () => {
-    const { result } = await simulate({
+    const { result, repo } = await simulate({
       AUTOPILOT_ENGINE: engine,
       SIMULATION_PORTFOLIO: 'demo-5000',
     });
+    // BLOCK never reaches the gateway: no approval exists to hand it.
+    expect(repo.routes).toEqual([]);
+    expect(repo.verdicts.every((v) => v.verdict === 'BLOCK')).toBe(true);
     const repay = result.proposals.find((p) => p.kind === 'lending.repay');
     expect(repay?.status).toBe('rejected');
     expect(repay?.violations.map((v) => v.rule)).toContain('max_action_value');

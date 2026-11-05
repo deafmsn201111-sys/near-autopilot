@@ -13,7 +13,8 @@ export interface RheaPlannerOptions {
   readonly swapGas?: bigint;
 }
 
-const DEFAULT_SWAP_GAS = 180_000_000_000_000n;
+/** Gas the planner attaches to a Rhea swap (`ft_transfer_call` + exchange callbacks), 180 Tgas. */
+export const DEFAULT_SWAP_GAS = 180_000_000_000_000n;
 
 /**
  * Builds an instant swap as `ft_transfer_call` on the input token with a swap-actions message

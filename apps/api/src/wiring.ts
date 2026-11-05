@@ -56,6 +56,9 @@ import type { MarketDataProvider, MarketReportSink } from './market-data/model';
 import { ReferenceMarketData } from './market-data/service';
 import { ExchangeSource } from './market-data/exchanges';
 import { repositoryVerdictSink } from './services/verdicts';
+import { OneClickClient } from './gateway/one-click';
+import { ShadowGateway } from './gateway/shadow-gateway';
+import { gasPrice, OneClickVenue, RheaVenue, type Venue } from './gateway/venues';
 import { DefiLlamaSource, PythSource } from './market-data/sources';
 import { SimulatedChain } from './simulation/simulated-chain';
 import { MAINNET_PRICE_LABEL, usable } from './market-data/model';
@@ -84,6 +87,8 @@ export interface WireOptions {
     readonly market: MarketDataProvider;
     readonly yields: YieldDataProvider;
     readonly viewer: ContractViewer;
+    /** The same read-only mainnet RPC (the gateway reads the gas price from it). */
+    readonly rpc?: { call(method: string, params: unknown): Promise<unknown> };
   };
   /** Receives every orchestrator cycle report (the collector stores decisions per portfolio). */
   readonly onCycleReport?: (report: CycleReport) => void;
@@ -212,7 +217,51 @@ export async function wire(
       approvals: policy,
     });
   } else {
-    executor = new DryRunExecutor({ clock: systemClock, logger, approvals: policy });
+    // SHADOW GATEWAY: the dry-run boundary. Re-checks the STORED verdict, then the approval (dry-run executor), then
+    // quotes the venues and records the best execution. No signer exists on this path.
+    const quotesMainnet = mainnetViewer !== null;
+    const venues: Venue[] = [
+      new RheaVenue(mainnetViewer ?? viewer, {
+        contractId: env.RHEA_CONTRACT_ID,
+        pools: new StaticPoolRegistry(config.rhea.pools),
+      }),
+    ];
+    // 1Click knows mainnet tokens only: quoted when the trade is priced on mainnet market data (shadow).
+    if (quotesMainnet && env.MARKET_DATA === 'mainnet-live' && env.ONE_CLICK_URL !== '')
+      venues.push(
+        new OneClickVenue(
+          new OneClickClient({
+            http: new HttpJsonClient({
+              fetchImpl: options.marketFetchImpl,
+              timeoutMs: 30_000,
+              maxRetries: 1,
+              maxConcurrent: 1,
+            }),
+            baseUrl: env.ONE_CLICK_URL,
+          }),
+        ),
+      );
+    const gasRpc = mainnetRead ?? shared?.rpc ?? rpc;
+    executor = new ShadowGateway({
+      inner: new DryRunExecutor({ clock: systemClock, logger, approvals: policy }),
+      repo,
+      venues,
+      prices: oracle,
+      gasPrice: () => gasPrice(gasRpc),
+      nearToken: accountIdSchema.parse(
+        quotesMainnet || env.NEAR_NETWORK === 'mainnet' ? 'wrap.near' : 'wrap.testnet',
+      ),
+      exchange: env.RHEA_CONTRACT_ID,
+      account: env.AUTOPILOT_ACCOUNT_ID,
+      limits: {
+        maxQuoteAgeSeconds: config.policy.maxPriceAgeSeconds,
+        maxOracleDeviationBps: config.policy.maxOracleDeviationBps,
+        slippageBps: config.policy.maxSlippageBps,
+      },
+      clock: systemClock,
+      ids: uuidGenerator,
+      logger,
+    });
   }
 
   const agents: Agent[] = [new HealthGuardianAgent(config.guardian)];

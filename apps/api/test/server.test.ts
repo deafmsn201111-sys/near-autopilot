@@ -160,6 +160,53 @@ describe('HTTP API', () => {
     ).toBe(400);
   });
 
+  it('serves Shadow Gateway routes behind auth, newest first, filterable by origin, never as executed', async () => {
+    const server = make();
+    const base = {
+      outcome: 'routed' as const,
+      decisionId: null,
+      intentId: null,
+      planHash: null,
+      tokenIn: 'wrap.near',
+      tokenOut: 'usdc.near',
+      amountIn: 10n ** 24n,
+      chosenVenue: 'rhea',
+      advantageBps: 3,
+      reason: 'rhea nets 3 bps more',
+      quotes: { scored: [] },
+    };
+    await lastRepo?.insertExecutionRoute({
+      ...base,
+      id: 'r1',
+      createdAt: new Date('2026-11-05T10:00:00Z'),
+      origin: 'probe',
+    });
+    await lastRepo?.insertExecutionRoute({
+      ...base,
+      id: 'r2',
+      createdAt: new Date('2026-11-05T10:01:00Z'),
+      origin: 'gateway',
+    });
+    expect((await server.inject('/v1/routes')).statusCode).toBe(401);
+    const all = (await server.inject({ url: '/v1/routes', headers: auth })).json<{
+      routes: Array<Record<string, unknown>>;
+    }>();
+    expect(all.routes.map((r) => r.id)).toEqual(['r2', 'r1']);
+    expect(all.routes[1]).toMatchObject({
+      origin: 'probe',
+      amountIn: '1000000000000000000000000',
+      chosenVenue: 'rhea',
+      executed: false,
+    });
+    const probes = (await server.inject({ url: '/v1/routes?origin=probe', headers: auth })).json<{
+      routes: unknown[];
+    }>();
+    expect(probes.routes).toHaveLength(1);
+    expect((await server.inject({ url: '/v1/routes?origin=x', headers: auth })).statusCode).toBe(
+      400,
+    );
+  });
+
   it('serves the testnet transaction ledger read-only, behind auth', async () => {
     const server = make();
     expect((await server.inject({ url: '/v1/testnet-transactions' })).statusCode).toBe(401);

@@ -3,6 +3,7 @@ import {
   auditEvents,
   desc,
   eq,
+  executionRoutes,
   gte,
   isNotNull,
   isNull,
@@ -20,6 +21,7 @@ import type { Provenance } from '@near-autopilot/core';
 import type {
   AuditEvent,
   AutopilotRepository,
+  ExecutionRouteRecord,
   PolicyVerdictRecord,
   ProposalPatch,
   ProposalRecord,
@@ -165,6 +167,41 @@ export class DrizzleRepository implements AutopilotRepository {
     }));
   }
 
+  async findPolicyVerdict(
+    id: string,
+  ): Promise<Pick<PolicyVerdictRecord, 'verdict' | 'planHash'> | null> {
+    const [row] = await this.db
+      .select({ verdict: policyVerdicts.verdict, planHash: policyVerdicts.planHash })
+      .from(policyVerdicts)
+      .where(and(this.ownRows(policyVerdicts), eq(policyVerdicts.id, id)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async insertExecutionRoute(r: ExecutionRouteRecord): Promise<void> {
+    await this.db.insert(executionRoutes).values({
+      ...r,
+      amountIn: r.amountIn === null ? null : r.amountIn.toString(),
+      ...this.provenance,
+    });
+  }
+
+  async listExecutionRoutes(options: {
+    limit: number;
+    origin?: ExecutionRouteRecord['origin'];
+  }): Promise<Array<ExecutionRouteRecord & Provenance>> {
+    const own = this.ownRows(executionRoutes);
+    const rows = await this.db
+      .select()
+      .from(executionRoutes)
+      .where(
+        options.origin === undefined ? own : and(own, eq(executionRoutes.origin, options.origin)),
+      )
+      .orderBy(desc(executionRoutes.createdAt))
+      .limit(options.limit);
+    return rows.map((r) => ({ ...r, amountIn: r.amountIn === null ? null : BigInt(r.amountIn) }));
+  }
+
   async getExecutionStats(
     accountId: string,
     since: Date,
@@ -239,7 +276,9 @@ export class DrizzleRepository implements AutopilotRepository {
    * Rows of this deployment's provenance only, so a simulation API and a testnet API sharing one database never show
    * each other's data. Rows from before migration 0001 have no network and count as mainnet (see provenanceOf).
    */
-  private ownRows(table: typeof runs | typeof proposals | typeof policyVerdicts): SQL | undefined {
+  private ownRows(
+    table: typeof runs | typeof proposals | typeof policyVerdicts | typeof executionRoutes,
+  ): SQL | undefined {
     return and(
       eq(table.dataSource, this.provenance.dataSource),
       this.provenance.network === 'mainnet'

@@ -5,6 +5,7 @@ import {
   errorMessage,
   toJsonSafe,
   type AccountId,
+  type ContractViewer,
   type Logger,
 } from '@near-autopilot/core';
 import { NearTokenReader, type NearRpcClient } from '@near-autopilot/near-adapter';
@@ -71,6 +72,12 @@ export interface CollectorDeps {
   readonly horizonDays: number;
   readonly gasUsdPerTx: number;
   readonly dclContract: AccountId | null;
+  /** Shadow Gateway reference probe (Rhea vs NEAR Intents dry quotes), on this cycle's prices and pinned block. */
+  readonly routeProbe?: (
+    market: MarketReport,
+    viewer: ContractViewer,
+    rpc: Pick<NearRpcClient, 'call'>,
+  ) => Promise<{ records: number; detail: string; degraded: boolean }>;
 }
 
 /** A full registry rescan is due: none yet, every Nth cycle, or the last one is too old. */
@@ -193,6 +200,14 @@ export class ShadowCollector {
           degraded: unusable.length > 0,
         };
       });
+
+      // 1b. Route probe: reference trades quoted on Rhea (pinned block) and 1Click (dry), best execution recorded.
+      const probe = this.d.routeProbe;
+      if (market && probe)
+        await timed('routes.probe', async () => ({
+          value: null,
+          ...(await probe(market, viewer, this.d.rpc)),
+        }));
 
       // 2. Burrow: every market at the pinned block.
       const burrowAssets = await timed('burrow', async () => {
@@ -634,7 +649,7 @@ export class ShadowCollector {
     const env: ApiEnv = { ...this.d.env, SIMULATION_PORTFOLIO: pid };
     let report: CycleReport | null = null;
     const wired = await wire(env, this.d.config, this.d.repo, this.d.logger, {
-      shadowInputs: { market: fixed(market), yields: fixed(yields), viewer },
+      shadowInputs: { market: fixed(market), yields: fixed(yields), viewer, rpc: this.d.rpc },
       onCycleReport: (r) => {
         report = r;
       },

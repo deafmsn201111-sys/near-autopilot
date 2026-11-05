@@ -61,8 +61,14 @@ packages/
 config/             autopilot.example.json (mainnet ids), autopilot.testnet.example.json (testnet ids),
                     autopilot.shadow.example.json (mainnet read-only shadow profile)
 docs/               architecture.md, security.md, financial-engine.md, orchestrator.md, market-data.md, yield-data.md,
-                    mainnet-shadow.md, testnet-transactions.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md
+                    mainnet-shadow.md, testnet-transactions.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md,
+                    policy-verdicts.md, shadow-gateway.md
 ```
+
+In dry-run, every approved plan goes through the **Shadow Gateway** (`apps/api/src/gateway/`). The gateway re-checks
+the stored ALLOW verdict and the approval, then quotes Rhea pool #4512 and a NEAR Intents 1Click **dry** quote. It
+records the best execution in `execution_routes` (`GET /v1/routes`). It has no signer. See
+[docs/shadow-gateway.md](docs/shadow-gateway.md).
 
 Dependency direction is enforced mechanically (ESLint + `scripts/check-boundaries.mjs`, both driven by
 `boundaries.config.mjs`). See [docs/architecture.md](docs/architecture.md).

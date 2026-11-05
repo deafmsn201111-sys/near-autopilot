@@ -3,6 +3,7 @@ import type { PolicyHistory } from '@near-autopilot/policy-engine';
 import type {
   AuditEvent,
   AutopilotRepository,
+  ExecutionRouteRecord,
   PolicyVerdictRecord,
   ProposalPatch,
   ProposalRecord,
@@ -17,6 +18,7 @@ export class InMemoryRepository implements AutopilotRepository {
   readonly proposals = new Map<string, ProposalRecord>();
   readonly audit: AuditEvent[] = [];
   readonly verdicts: PolicyVerdictRecord[] = [];
+  readonly routes: ExecutionRouteRecord[] = [];
   readonly snapshots = new Map<string, unknown>();
   /** Test hook to simulate prior live executions. */
   executionHistory: PolicyHistory = { spentLast24hUsdMicro: 0n, lastExecutedAt: null };
@@ -79,6 +81,24 @@ export class InMemoryRepository implements AutopilotRepository {
       .filter((v) => options.verdict === undefined || v.verdict === options.verdict)
       .slice(0, options.limit)
       .map((v) => ({ ...v, ...this.provenance }));
+  }
+  async findPolicyVerdict(id: string) {
+    const v = this.verdicts.find((x) => x.id === id);
+    return v ? { verdict: v.verdict, planHash: v.planHash } : null;
+  }
+  async insertExecutionRoute(r: ExecutionRouteRecord): Promise<void> {
+    this.log.push(`route:${r.outcome}`);
+    this.routes.push(r);
+  }
+  async listExecutionRoutes(options: {
+    limit: number;
+    origin?: ExecutionRouteRecord['origin'];
+  }): Promise<Array<ExecutionRouteRecord & Provenance>> {
+    return [...this.routes]
+      .reverse()
+      .filter((r) => options.origin === undefined || r.origin === options.origin)
+      .slice(0, options.limit)
+      .map((r) => ({ ...r, ...this.provenance }));
   }
   async getExecutionStats(): Promise<PolicyHistory> {
     return this.executionHistory;

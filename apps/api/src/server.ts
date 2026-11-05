@@ -10,7 +10,7 @@ import type {
   YieldDataDto,
 } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
-import { toPortfolioDto, toProposalDto, toRunDto, toVerdictDto } from './presenters';
+import { toPortfolioDto, toProposalDto, toRunDto, toRouteDto, toVerdictDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
 import { disabledYieldView } from './yield/presenter';
 
@@ -46,6 +46,11 @@ const limitQuery = z.object({
 const verdictQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   verdict: z.enum(['ALLOW', 'WARN', 'BLOCK']).optional(),
+});
+
+const routeQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  origin: z.enum(['gateway', 'probe']).optional(),
 });
 
 export function buildServer(
@@ -112,6 +117,15 @@ export function buildServer(
       q.verdict === undefined ? { limit: q.limit } : { limit: q.limit, verdict: q.verdict },
     );
     return { verdicts: rows.map(toVerdictDto) };
+  });
+
+  /** Shadow Gateway routing records (newest first): venues quoted, venue chosen, why. Quotes only, nothing sent. */
+  app.get('/v1/routes', async (request) => {
+    const q = routeQuery.parse(request.query);
+    const rows = await deps.repo.listExecutionRoutes(
+      q.origin === undefined ? { limit: q.limit } : { limit: q.limit, origin: q.origin },
+    );
+    return { routes: rows.map(toRouteDto) };
   });
 
   app.get('/v1/testnet-transactions', async (request) => {

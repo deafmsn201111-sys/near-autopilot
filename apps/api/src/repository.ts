@@ -67,6 +67,29 @@ export interface PolicyVerdictRecord {
   readonly input: unknown;
 }
 
+/**
+ * One Shadow Gateway routing record (table execution_routes): the venues quoted for an approved plan (origin
+ * `gateway`) or for a reference trade (origin `probe`), the venue chosen and why. Nothing here was ever executed.
+ */
+export interface ExecutionRouteRecord {
+  readonly id: string;
+  readonly createdAt: Date;
+  readonly origin: 'gateway' | 'probe';
+  /** gateway: routed (a venue chosen) / no_route / not_a_swap / refused (no stored ALLOW, or the approval failed). */
+  readonly outcome: 'routed' | 'no_route' | 'not_a_swap' | 'refused';
+  readonly decisionId: string | null;
+  readonly intentId: string | null;
+  readonly planHash: string | null;
+  readonly tokenIn: string | null;
+  readonly tokenOut: string | null;
+  readonly amountIn: bigint | null;
+  readonly chosenVenue: string | null;
+  readonly advantageBps: number | null;
+  readonly reason: string;
+  /** Every venue's quote and score, JSON-safe. */
+  readonly quotes: unknown;
+}
+
 export interface AuditEvent {
   readonly at: Date;
   readonly type: string;
@@ -102,6 +125,13 @@ export interface AutopilotRepository {
     limit: number;
     verdict?: PolicyVerdict;
   }): Promise<Array<PolicyVerdictRecord & Provenance>>;
+  /** The stored verdict for a decision id (own provenance only), or null. */
+  findPolicyVerdict(id: string): Promise<Pick<PolicyVerdictRecord, 'verdict' | 'planHash'> | null>;
+  insertExecutionRoute(route: ExecutionRouteRecord): Promise<void>;
+  listExecutionRoutes(options: {
+    limit: number;
+    origin?: ExecutionRouteRecord['origin'];
+  }): Promise<Array<ExecutionRouteRecord & Provenance>>;
   /** Lists return only rows written under this repository's own provenance (simulation never mixes with chain). */
   /** Live, executed proposals only: spend since `since` and the most recent execution time. */
   getExecutionStats(accountId: string, since: Date): Promise<PolicyHistory>;

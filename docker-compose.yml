@@ -183,6 +183,7 @@ services:
       COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
       KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
       BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
+      ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
     volumes:
       - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
     ports:
@@ -242,6 +243,7 @@ services:
       COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
       KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
       BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
+      ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
       COLLECTOR_REGISTRY_EVERY: ${COLLECTOR_REGISTRY_EVERY:-4}
       COLLECTOR_HEALTH_PORT: 4100

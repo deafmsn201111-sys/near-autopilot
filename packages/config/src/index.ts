@@ -100,6 +100,13 @@ const apiEnvRaw = z.object({
   COINBASE_URL: z.string().url().default('https://api.exchange.coinbase.com'),
   KRAKEN_URL: z.string().url().default('https://api.kraken.com'),
   BINANCE_URL: z.string().url().default('https://data-api.binance.vision'),
+  /**
+   * NEAR Intents 1Click API, DRY quotes only (no JWT, no deposit address), used by the Shadow Gateway on mainnet
+   * market data. Empty = 1Click is not quoted.
+   */
+  ONE_CLICK_URL: z
+    .union([z.literal(''), z.string().url()])
+    .default('https://1click.chaindefuser.com'),
 });
 
 export interface ApiEnv {
@@ -133,6 +140,8 @@ export interface ApiEnv {
   readonly COINBASE_URL: string;
   readonly KRAKEN_URL: string;
   readonly BINANCE_URL: string;
+  /** '' when disabled. */
+  readonly ONE_CLICK_URL: string;
 }
 
 export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
@@ -275,6 +284,7 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     COINBASE_URL: env.COINBASE_URL,
     KRAKEN_URL: env.KRAKEN_URL,
     BINANCE_URL: env.BINANCE_URL,
+    ONE_CLICK_URL: env.ONE_CLICK_URL,
   };
 }
 
