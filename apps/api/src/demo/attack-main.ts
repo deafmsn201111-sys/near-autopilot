@@ -8,7 +8,7 @@ import { DrizzleRepository } from '../infra/drizzle-repository';
 import { allDefended, FIXTURE_LABEL, runAttacks } from './attack';
 
 /**
- * pnpm demo:attack [--persist]
+ * pnpm demo:attack [--out <file>] [--persist]
  *
  * Runs every attack fixture against the real defences, prints a table, and writes the log to
  * docs/evidence/demo-attack.log.jsonl (deterministic: the committed file is what a clean clone produces).
@@ -31,8 +31,19 @@ export const toLog = (entries: readonly unknown[]): string =>
 async function main(): Promise<number> {
   const persist = process.argv.includes('--persist');
   const { entries, verdicts } = await runAttacks(attackPolicy());
-  mkdirSync(dirname(LOG_FILE), { recursive: true });
-  writeFileSync(LOG_FILE, toLog(entries));
+  const outIndex = process.argv.indexOf('--out');
+  const out = outIndex >= 0 ? resolve(process.argv[outIndex + 1] ?? LOG_FILE) : LOG_FILE;
+  let written: string | null = null;
+  try {
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, toLog(entries));
+    written = out;
+  } catch (e) {
+    // e.g. inside the container (read-only source tree for the unprivileged user): say so, never pretend it was saved.
+    process.stderr.write(
+      `log NOT written to ${out}: ${e instanceof Error ? e.message : String(e)} (use --out <path>)\n`,
+    );
+  }
 
   process.stdout.write(`\n${FIXTURE_LABEL}\n\n`);
   for (const e of entries)
@@ -44,7 +55,7 @@ async function main(): Promise<number> {
   process.stdout.write(
     `\n${attacks.filter((e) => e.outcome !== 'NOT_BLOCKED').length}/${attacks.length} attacks stopped, ` +
       `${entries.length - attacks.length} controls allowed, signed ${entries.reduce((s, e) => s + e.signed, 0)}, ` +
-      `broadcast ${entries.reduce((s, e) => s + e.broadcast, 0)}. Log: docs/evidence/demo-attack.log.jsonl\n`,
+      `broadcast ${entries.reduce((s, e) => s + e.broadcast, 0)}. Log: ${written ?? 'not written'}\n`,
   );
 
   if (persist) {
