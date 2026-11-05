@@ -97,14 +97,20 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
               <th className="num">Collateral</th>
               <th>Data</th>
               <th>Allowed</th>
-              <th />
             </tr>
           </thead>
           <tbody>
             {rows.map((m) => (
               <tr key={m.token}>
                 <td>
-                  <Token id={m.token} />
+                  <Token id={m.token} />{' '}
+                  <Link
+                    className="dim"
+                    style={{ fontSize: 12 }}
+                    href={`/burrow/${encodeURIComponent(m.token)}`}
+                  >
+                    history
+                  </Link>
                 </td>
                 <td className="num">{pct(m.supplyApr)}</td>
                 <td className="num dim">
@@ -129,9 +135,6 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
                   <Status code={m.status} />
                 </td>
                 <td className="dim">{m.inExecutionAllowlist ? 'yes' : 'no'}</td>
-                <td>
-                  <Link href={`/burrow/${encodeURIComponent(m.token)}`}>History →</Link>
-                </td>
               </tr>
             ))}
           </tbody>
