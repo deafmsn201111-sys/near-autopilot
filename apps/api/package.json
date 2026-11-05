@@ -15,7 +15,9 @@
     "collector:backfill": "node --import tsx src/collector/backfill-main.ts",
     "audit:verify": "node --import tsx src/evidence/cli.ts verify",
     "audit:replay": "node --import tsx src/evidence/cli.ts replay",
-    "demo:attack": "node --import tsx src/demo/attack-main.ts"
+    "demo:attack": "node --import tsx src/demo/attack-main.ts",
+    "thesis:fetch": "node --import tsx src/thesis/fetch.ts",
+    "thesis:rebuild": "node --import tsx src/thesis/rebuild.ts"
   },
   "dependencies": {
     "@near-autopilot/agents": "workspace:*",

@@ -22,7 +22,9 @@
     "verify": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "audit:verify": "pnpm --filter @near-autopilot/api run audit:verify",
     "audit:replay": "pnpm --filter @near-autopilot/api run audit:replay",
-    "demo:attack": "pnpm --filter @near-autopilot/api run demo:attack"
+    "demo:attack": "pnpm --filter @near-autopilot/api run demo:attack",
+    "thesis:fetch": "pnpm --filter @near-autopilot/api run thesis:fetch",
+    "thesis:rebuild": "pnpm --filter @near-autopilot/api run thesis:rebuild"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

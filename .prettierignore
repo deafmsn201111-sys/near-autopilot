@@ -5,3 +5,6 @@ coverage
 .turbo
 pnpm-lock.yaml
 packages/db/drizzle
+THESIS.md
+thesis
+docs/evidence

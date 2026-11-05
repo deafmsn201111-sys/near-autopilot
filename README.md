@@ -74,6 +74,10 @@ Every audit event is appended to a **hash chain in Postgres**, which continues a
 stores its inputs and config. `pnpm audit:verify` re-checks the chains and `pnpm audit:replay` re-evaluates the
 verdicts. See [docs/audit-evidence.md](docs/audit-evidence.md).
 
+**Investment thesis:** [THESIS.md](THESIS.md). `pnpm thesis:rebuild` rebuilds it offline from the raw mainnet data
+committed in `thesis/data/raw/`: CSV, SVG charts and the document with every number. A test fails if the committed
+outputs differ from what the raw data gives. `pnpm thesis:fetch` re-reads the raw data (archival RPC, view calls only).
+
 `pnpm demo:attack` runs labelled attack fixtures (prompt injection, foreign recipient, extra Withdraw, stale price,
 thin pool, forged approval, full-access key) through the real defences. Every attack is stopped and the log is
 written to `docs/evidence/demo-attack.log.jsonl`. The live executor refuses full-access keys. See

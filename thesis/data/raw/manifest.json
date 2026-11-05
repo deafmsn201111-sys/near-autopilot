@@ -1,0 +1,582 @@
+{
+  "description": "Raw inputs of THESIS.md: mainnet view calls at one block per day through an archival RPC, and public NEAR/USD history. Read-only.",
+  "network": "mainnet",
+  "archivalRpcHost": "archival-rpc.mainnet.fastnear.com",
+  "rhea": "v2.ref-finance.near",
+  "burrow": "contract.main.burrow.near",
+  "end": "2026-11-05T00:00:00.000Z",
+  "days": 90,
+  "blocks": [
+    {
+      "height": 210237960,
+      "hash": "DhSuq8bTf976wXUTrsiY5WHaszyaWSBjfqbWsaMPp71h",
+      "timestamp": "2026-08-06T23:59:15.129Z",
+      "target": "2026-08-07T00:00:00.000Z"
+    },
+    {
+      "height": 210378659,
+      "hash": "9M8HCUQ63d1UQyABhVfa7Pomn6tVS8S4RGUcT1VAvCF8",
+      "timestamp": "2026-08-08T00:00:57.220Z",
+      "target": "2026-08-08T00:00:00.000Z"
+    },
+    {
+      "height": 210521232,
+      "hash": "EiDH6ekcJzRXUuNzw7SnmtUtbmk67VYdgCuyqpuof7vN",
+      "timestamp": "2026-08-09T00:08:35.225Z",
+      "target": "2026-08-09T00:00:00.000Z"
+    },
+    {
+      "height": 210662653,
+      "hash": "5MAGggfkjJhpJSdJZyNb3dkHwqohJ3yPeuYcpJf8M3CA",
+      "timestamp": "2026-08-09T23:59:58.524Z",
+      "target": "2026-08-10T00:00:00.000Z"
+    },
+    {
+      "height": 210804758,
+      "hash": "DTLF1wKJwAyWuPpMABxSayGvj8SEm8HNiTw7ikH4Theb",
+      "timestamp": "2026-08-11T00:07:10.560Z",
+      "target": "2026-08-11T00:00:00.000Z"
+    },
+    {
+      "height": 210944647,
+      "hash": "J4rh7wPJZN7UgLHcn91SY64uXGjWi4q2T4dEWQQnt2JB",
+      "timestamp": "2026-08-11T23:58:35.606Z",
+      "target": "2026-08-12T00:00:00.000Z"
+    },
+    {
+      "height": 211084638,
+      "hash": "9pfYkD9CVX5jbcM76GqGMFd1bD6rQu7QQYVrSkbG4VY5",
+      "timestamp": "2026-08-12T23:59:51.213Z",
+      "target": "2026-08-13T00:00:00.000Z"
+    },
+    {
+      "height": 211226049,
+      "hash": "6g5142pbt2VMBNoEMhZRYNNdFfQCkyLMnVNiNLvBvpry",
+      "timestamp": "2026-08-14T00:00:29.029Z",
+      "target": "2026-08-14T00:00:00.000Z"
+    },
+    {
+      "height": 211368463,
+      "hash": "6jjXYLtM5guzzeV1kGTZ7TCZvXEG1GmBFfMYh6cKRn7w",
+      "timestamp": "2026-08-15T00:00:05.988Z",
+      "target": "2026-08-15T00:00:00.000Z"
+    },
+    {
+      "height": 211506630,
+      "hash": "64vzr62eCLCDMxgTr7sFNEZedapRNBNoZPdg3t5rLoqG",
+      "timestamp": "2026-08-15T23:54:36.337Z",
+      "target": "2026-08-16T00:00:00.000Z"
+    },
+    {
+      "height": 211648938,
+      "hash": "234asZRfd9Pqqgz3crYb4vMLAnPATZ1SdDqF391W433k",
+      "timestamp": "2026-08-16T23:51:07.846Z",
+      "target": "2026-08-17T00:00:00.000Z"
+    },
+    {
+      "height": 211790664,
+      "hash": "8puhjtcVsK8WCAspz9wHL8hCG93PXXH621dkfUz3Pre1",
+      "timestamp": "2026-08-17T23:52:48.522Z",
+      "target": "2026-08-18T00:00:00.000Z"
+    },
+    {
+      "height": 211932760,
+      "hash": "HZhJDXRroJSHQfFEhxHcKVGHm33ZBimoSeQ6kRh4cVq3",
+      "timestamp": "2026-08-19T00:02:06.520Z",
+      "target": "2026-08-19T00:00:00.000Z"
+    },
+    {
+      "height": 212075138,
+      "hash": "Cgf8vqZK5D59k6tBDsT3S81juXeCzbwqwuZ2iJnY9nw",
+      "timestamp": "2026-08-20T00:08:17.785Z",
+      "target": "2026-08-20T00:00:00.000Z"
+    },
+    {
+      "height": 212216864,
+      "hash": "28r1mzqq3ESYcihG1ZiLddU6ftV8czyZjp1B5WiyKEKL",
+      "timestamp": "2026-08-21T00:02:46.206Z",
+      "target": "2026-08-21T00:00:00.000Z"
+    },
+    {
+      "height": 212355113,
+      "hash": "9yKEXRbA3Tb8WvSC6QP4Wbfat6sfAUaKnzPhMt6kpSZm",
+      "timestamp": "2026-08-21T23:59:54.625Z",
+      "target": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "height": 212493726,
+      "hash": "HiPdzQVp4MjcAhvtyScNDy3o1Vii7P5KpCoiRPZTyQ2J",
+      "timestamp": "2026-08-22T23:53:12.923Z",
+      "target": "2026-08-23T00:00:00.000Z"
+    },
+    {
+      "height": 212636115,
+      "hash": "5SoPmt4ocdU6b8Pg7t58AQ83rGiJ2AWzrk4Z1KK6ubPv",
+      "timestamp": "2026-08-23T23:58:59.901Z",
+      "target": "2026-08-24T00:00:00.000Z"
+    },
+    {
+      "height": 212778685,
+      "hash": "oe18v8UicfPHJMLsimUBopd4oGZW3g2BMN8K7x8mkvM",
+      "timestamp": "2026-08-25T00:05:08.742Z",
+      "target": "2026-08-25T00:00:00.000Z"
+    },
+    {
+      "height": 212919846,
+      "hash": "7gxNY9E8BKzC9MbaDAfPABiGwuQwkXLhQXf8moeD8LYr",
+      "timestamp": "2026-08-26T00:00:03.907Z",
+      "target": "2026-08-26T00:00:00.000Z"
+    },
+    {
+      "height": 213062503,
+      "hash": "DBNz7YjvxTWHxabfpBfxa5jWHXBTgxkv1M3Kq5EXTMfN",
+      "timestamp": "2026-08-27T00:07:26.394Z",
+      "target": "2026-08-27T00:00:00.000Z"
+    },
+    {
+      "height": 213201973,
+      "hash": "HaSNGnF21An6mo5tK8STpL1odR9QhPP8PsPM7jq9Gb2t",
+      "timestamp": "2026-08-28T00:02:04.494Z",
+      "target": "2026-08-28T00:00:00.000Z"
+    },
+    {
+      "height": 213342373,
+      "hash": "GFancBUMVXaTntrprxJvwc6Ese8qvvF9ptqGAJZaPDLg",
+      "timestamp": "2026-08-29T00:02:49.492Z",
+      "target": "2026-08-29T00:00:00.000Z"
+    },
+    {
+      "height": 213482714,
+      "hash": "EdaZY6dsUvVT5R4gpqj1q93tuMZ5RjCcB1Ve8uWfkRNn",
+      "timestamp": "2026-08-30T00:01:25.049Z",
+      "target": "2026-08-30T00:00:00.000Z"
+    },
+    {
+      "height": 213621762,
+      "hash": "3wL3Ctxo15kTKHQBEBGS39zV9SK4JvGhZro5NcG9wDFh",
+      "timestamp": "2026-08-30T23:57:09.028Z",
+      "target": "2026-08-31T00:00:00.000Z"
+    },
+    {
+      "height": 213761242,
+      "hash": "8okGC51NqfhRpAhbXneWFse5u3bzysd4LqvqJr1oF2L7",
+      "timestamp": "2026-09-01T00:00:00.624Z",
+      "target": "2026-09-01T00:00:00.000Z"
+    },
+    {
+      "height": 213900725,
+      "hash": "B9EYM1HxzniW2htdYbA4Zh2hb2RLkjZVN8PQxAGmL9xz",
+      "timestamp": "2026-09-02T00:03:00.178Z",
+      "target": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "height": 214037147,
+      "hash": "6jq8K16ZaA1EH31NGeHW1dsgms6xEtiSV96y7zXhiZw",
+      "timestamp": "2026-09-02T23:58:46.031Z",
+      "target": "2026-09-03T00:00:00.000Z"
+    },
+    {
+      "height": 214171217,
+      "hash": "2io37WcbNEu2vmXVSLmvKHgD1wnSFng8FRcMcx9ypSRs",
+      "timestamp": "2026-09-03T23:59:51.295Z",
+      "target": "2026-09-04T00:00:00.000Z"
+    },
+    {
+      "height": 214309987,
+      "hash": "7Hapy1faYyD9QfvMQfS2DpYcjsee98oNLW1M5pwiAwT4",
+      "timestamp": "2026-09-04T23:57:35.565Z",
+      "target": "2026-09-05T00:00:00.000Z"
+    },
+    {
+      "height": 214449919,
+      "hash": "51XKrYDyjjDiqrfRujfAuDWPM1hAFpwy3wpLGzaQperv",
+      "timestamp": "2026-09-05T23:59:06.794Z",
+      "target": "2026-09-06T00:00:00.000Z"
+    },
+    {
+      "height": 214590370,
+      "hash": "95eFYh4ZpSpQFcbhLVvgbL55AhUGfaFB5ouCKdHWjjWd",
+      "timestamp": "2026-09-07T00:07:58.358Z",
+      "target": "2026-09-07T00:00:00.000Z"
+    },
+    {
+      "height": 214729347,
+      "hash": "W5fq6J9RnCsC2z8WKvYQx6N1kEcqrtafmHUQT7xXkeU",
+      "timestamp": "2026-09-08T00:05:01.205Z",
+      "target": "2026-09-08T00:00:00.000Z"
+    },
+    {
+      "height": 214868857,
+      "hash": "8YFoBQL4PEqzFp8PF2d8Xrpjp1hMFjhMocU9q87YBh4c",
+      "timestamp": "2026-09-09T00:00:52.146Z",
+      "target": "2026-09-09T00:00:00.000Z"
+    },
+    {
+      "height": 215008458,
+      "hash": "AefB1Kpxox3geX9LQvKbFxkGNVy3D6MZLwoDyR5tx275",
+      "timestamp": "2026-09-10T00:00:54.541Z",
+      "target": "2026-09-10T00:00:00.000Z"
+    },
+    {
+      "height": 215149018,
+      "hash": "49T3xRNVSWyMMDL7d6KQYuF6iSBm4MBPUH3dMHoZsjTP",
+      "timestamp": "2026-09-10T23:58:38.875Z",
+      "target": "2026-09-11T00:00:00.000Z"
+    },
+    {
+      "height": 215287552,
+      "hash": "GZ3KxVppMaDqZzG3tYPVBEiGaADMp4GYxCs1VHg46e7v",
+      "timestamp": "2026-09-12T00:07:48.397Z",
+      "target": "2026-09-12T00:00:00.000Z"
+    },
+    {
+      "height": 215426634,
+      "hash": "E6gtA2P3FYyFPLGbXxJgf5rf8GFTK4pzTm9PTBwdNjqW",
+      "timestamp": "2026-09-13T00:00:23.251Z",
+      "target": "2026-09-13T00:00:00.000Z"
+    },
+    {
+      "height": 215566820,
+      "hash": "HxCTHScRGFmvin13BRjs3rDjc9xv39r1UVtQv7DAzKWK",
+      "timestamp": "2026-09-14T00:02:05.885Z",
+      "target": "2026-09-14T00:00:00.000Z"
+    },
+    {
+      "height": 215707114,
+      "hash": "FptnRyyDG7KPa98rBPAvbmtWKd4zJgC12ob7xu1jfLVq",
+      "timestamp": "2026-09-15T00:01:22.971Z",
+      "target": "2026-09-15T00:00:00.000Z"
+    },
+    {
+      "height": 215845977,
+      "hash": "BE1Y8XQ6UbEctb6MmxcRpa2kKM8a4xrN1TiUFTSmGynE",
+      "timestamp": "2026-09-15T23:53:53.930Z",
+      "target": "2026-09-16T00:00:00.000Z"
+    },
+    {
+      "height": 215987528,
+      "hash": "G39Gc8kinDcrDdC8ysqvPkj7p7EWRhKNvc4bYiabGprg",
+      "timestamp": "2026-09-17T00:07:23.509Z",
+      "target": "2026-09-17T00:00:00.000Z"
+    },
+    {
+      "height": 216127011,
+      "hash": "FiD9n2XszyrX5E6KbTo1GMhbBWu9rLeb3JuNy9X9qLWN",
+      "timestamp": "2026-09-17T23:58:55.381Z",
+      "target": "2026-09-18T00:00:00.000Z"
+    },
+    {
+      "height": 216269522,
+      "hash": "66KkFqAX99LDgSkyNLWjKUmyWd2VtVnLv5AHct9nprbf",
+      "timestamp": "2026-09-19T00:02:42.327Z",
+      "target": "2026-09-19T00:00:00.000Z"
+    },
+    {
+      "height": 216412075,
+      "hash": "HQjkbjxZYLkxfLDXPCSVmAdYj3vSpHWPjcNjoezKaWbJ",
+      "timestamp": "2026-09-19T23:57:58.286Z",
+      "target": "2026-09-20T00:00:00.000Z"
+    },
+    {
+      "height": 216553359,
+      "hash": "Co3DSr4SVVGAKvkJraYiWpcA6KGwPbivGubQxNarVLVW",
+      "timestamp": "2026-09-20T23:59:50.099Z",
+      "target": "2026-09-21T00:00:00.000Z"
+    },
+    {
+      "height": 216695338,
+      "hash": "GQ87kcSXiA8D5zdK8RyJqNDSdhL7Jyrv5MfDJrmooDWi",
+      "timestamp": "2026-09-21T23:52:57.614Z",
+      "target": "2026-09-22T00:00:00.000Z"
+    },
+    {
+      "height": 216835269,
+      "hash": "LJnmAPmiPXvf4nzPNzMiJjLubLp6YL2VrgqCCu5cE11",
+      "timestamp": "2026-09-22T23:59:46.562Z",
+      "target": "2026-09-23T00:00:00.000Z"
+    },
+    {
+      "height": 216976095,
+      "hash": "Avh67gKqq5Kc6AewESqtcSg6nhvFvRjr9k87M9DUqdGK",
+      "timestamp": "2026-09-23T23:59:42.681Z",
+      "target": "2026-09-24T00:00:00.000Z"
+    },
+    {
+      "height": 217119266,
+      "hash": "DJGyfBnfZARvgrVWZQW72SWKPm7FjQWVtH7aYdsHLCQw",
+      "timestamp": "2026-09-25T00:02:46.477Z",
+      "target": "2026-09-25T00:00:00.000Z"
+    },
+    {
+      "height": 217263669,
+      "hash": "27rTxsMCZv7kXRbkKXkWtm2vNu15W9SPkvGcKG5r89FT",
+      "timestamp": "2026-09-25T23:57:57.684Z",
+      "target": "2026-09-26T00:00:00.000Z"
+    },
+    {
+      "height": 217410088,
+      "hash": "H7umBQPopTsrDZWrkWVsJaAR9NKm2w5JvLmEEjRap2gU",
+      "timestamp": "2026-09-26T23:59:45.405Z",
+      "target": "2026-09-27T00:00:00.000Z"
+    },
+    {
+      "height": 217556259,
+      "hash": "9ynBrWEhpzyYkyDgPX3ezEaj7h8oWLjRWgaG7G8wLVSY",
+      "timestamp": "2026-09-28T00:02:55.812Z",
+      "target": "2026-09-28T00:00:00.000Z"
+    },
+    {
+      "height": 217702143,
+      "hash": "6QHgU1uMsUdBMiELg2PQadK5wTwz4bVAs6vaivvJUq5w",
+      "timestamp": "2026-09-29T00:04:26.451Z",
+      "target": "2026-09-29T00:00:00.000Z"
+    },
+    {
+      "height": 217846310,
+      "hash": "47imQVueUsNa3Bu1ZcRvc476mcyGsL6C92tkKwGCNyPG",
+      "timestamp": "2026-09-30T00:08:52.628Z",
+      "target": "2026-09-30T00:00:00.000Z"
+    },
+    {
+      "height": 217984951,
+      "hash": "7s1hC7UASAFjEL5cf8AwyGRLQJV5TRP6X83dawgpPwqY",
+      "timestamp": "2026-09-30T23:59:46.439Z",
+      "target": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "height": 218126892,
+      "hash": "4ACB1CxRmWDq6ZvptKMLvPz2j1SdFn93iDbJTjqKWHwe",
+      "timestamp": "2026-10-01T23:59:43.382Z",
+      "target": "2026-10-02T00:00:00.000Z"
+    },
+    {
+      "height": 218273178,
+      "hash": "25PpbFqQCFCs1UbuzDCZ9J3uktr2Zxmfgy3q8KUnBEtZ",
+      "timestamp": "2026-10-02T23:57:49.310Z",
+      "target": "2026-10-03T00:00:00.000Z"
+    },
+    {
+      "height": 218420813,
+      "hash": "688wM2Gc3fevQgfvKwNSqH37jVVhw12t6DMsirUQC1ou",
+      "timestamp": "2026-10-04T00:01:26.726Z",
+      "target": "2026-10-04T00:00:00.000Z"
+    },
+    {
+      "height": 218567934,
+      "hash": "HrxvfEaPKLHd1mQ8LY75k7yYXLdBJpwztCpgqajpso3g",
+      "timestamp": "2026-10-05T00:02:08.559Z",
+      "target": "2026-10-05T00:00:00.000Z"
+    },
+    {
+      "height": 218714303,
+      "hash": "126msfAvPt83cZbk8uRCQraW551zHWK9739WkTcTdNFZ",
+      "timestamp": "2026-10-05T23:57:17.470Z",
+      "target": "2026-10-06T00:00:00.000Z"
+    },
+    {
+      "height": 218861748,
+      "hash": "6yuHwGxBNLyeXn1QvaJjHuvCusoG4gKjdeGZy31wPW3T",
+      "timestamp": "2026-10-07T00:03:12.553Z",
+      "target": "2026-10-07T00:00:00.000Z"
+    },
+    {
+      "height": 219007485,
+      "hash": "3Bo4nWUmFwrxjFs4DubbcDmSPVRw1uvT1Soy5J5mEnUW",
+      "timestamp": "2026-10-08T00:00:47.524Z",
+      "target": "2026-10-08T00:00:00.000Z"
+    },
+    {
+      "height": 219154459,
+      "hash": "8CeZnmw7PwGgLWRgVMRwV3gsreJAVaiNBorHNr6F7Eos",
+      "timestamp": "2026-10-09T00:03:22.475Z",
+      "target": "2026-10-09T00:00:00.000Z"
+    },
+    {
+      "height": 219300790,
+      "hash": "2cQ6ChE1vYiXGPePRzTAS2JKqVKsRgyxc5E5FwbLaYaL",
+      "timestamp": "2026-10-10T00:00:04.932Z",
+      "target": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "height": 219447566,
+      "hash": "FeYb7oj5RqfFVL65x9K5bjhj7JMCWBmNKYiLZ4pGg8sv",
+      "timestamp": "2026-10-11T00:00:25.161Z",
+      "target": "2026-10-11T00:00:00.000Z"
+    },
+    {
+      "height": 219594865,
+      "hash": "HdHZ3KdHr5MWCR3t71RVrrPZY1B3G9GfP5PTQxsB4iFA",
+      "timestamp": "2026-10-12T00:00:05.301Z",
+      "target": "2026-10-12T00:00:00.000Z"
+    },
+    {
+      "height": 219740466,
+      "hash": "9XsjtKodqi9Szwe9poBXU7KTQq8KjbfSvw8q8e9wRpep",
+      "timestamp": "2026-10-13T00:00:04.977Z",
+      "target": "2026-10-13T00:00:00.000Z"
+    },
+    {
+      "height": 219879157,
+      "hash": "7XtAXgRjc4fVvXL9is239GCJ2dhvhLx1vButcxMxopXC",
+      "timestamp": "2026-10-14T00:00:02.091Z",
+      "target": "2026-10-14T00:00:00.000Z"
+    },
+    {
+      "height": 220001279,
+      "hash": "BqGAxZBCRWka53u6wYnyt9mYgEPJy2q8aeBUZv4WPDND",
+      "timestamp": "2026-10-14T23:59:51.477Z",
+      "target": "2026-10-15T00:00:00.000Z"
+    },
+    {
+      "height": 220147852,
+      "hash": "4x6H5qgRZhBSrwx9XHXdjrQj14JwDX9YtqpxboioHvPy",
+      "timestamp": "2026-10-15T23:59:19.960Z",
+      "target": "2026-10-16T00:00:00.000Z"
+    },
+    {
+      "height": 220292087,
+      "hash": "AhEcG4gUMKykPk5CsE1svGYzowi7D1rqrG2eJdCoKeMm",
+      "timestamp": "2026-10-17T00:01:01.959Z",
+      "target": "2026-10-17T00:00:00.000Z"
+    },
+    {
+      "height": 220436850,
+      "hash": "8QGhYCf45pzEhJgiReWoAF9A36FxtyqTmXvETBPiQiJJ",
+      "timestamp": "2026-10-18T00:01:22.513Z",
+      "target": "2026-10-18T00:00:00.000Z"
+    },
+    {
+      "height": 220582038,
+      "hash": "4SqPi7kfm53egYBuKwdUviHGWbR9SnrVvFN1An3eC146",
+      "timestamp": "2026-10-19T00:01:14.601Z",
+      "target": "2026-10-19T00:00:00.000Z"
+    },
+    {
+      "height": 220726536,
+      "hash": "98NhedKQdeVr7BAXBfjQ6XQZ6LzFAL5NK7eqnsZd8P3y",
+      "timestamp": "2026-10-19T23:56:07.945Z",
+      "target": "2026-10-20T00:00:00.000Z"
+    },
+    {
+      "height": 220871358,
+      "hash": "4nKpaTPcEDgee835Bq283XWznWZEXzxEhb4iFhtrgYmC",
+      "timestamp": "2026-10-21T00:00:12.956Z",
+      "target": "2026-10-21T00:00:00.000Z"
+    },
+    {
+      "height": 221014654,
+      "hash": "BEQH8PbJVMZRgexHtF3rJtuRJgBiiPKii3Bgef3jscGe",
+      "timestamp": "2026-10-21T23:51:01.900Z",
+      "target": "2026-10-22T00:00:00.000Z"
+    },
+    {
+      "height": 221162392,
+      "hash": "RHLgfkzknYFft9iap9WwC9znSQAAGQRv1kBzvu9NEdZ",
+      "timestamp": "2026-10-23T00:02:36.913Z",
+      "target": "2026-10-23T00:00:00.000Z"
+    },
+    {
+      "height": 221310102,
+      "hash": "4ap6sVEe2A9iUkdTjfGsR5tadQtXzBeWDc4RZJTWN1Hz",
+      "timestamp": "2026-10-23T23:59:57.121Z",
+      "target": "2026-10-24T00:00:00.000Z"
+    },
+    {
+      "height": 221460874,
+      "hash": "FxZM6mf31hrJnbiyxyLijBFr6xAfpobTN2ona6Szm538",
+      "timestamp": "2026-10-25T00:01:07.459Z",
+      "target": "2026-10-25T00:00:00.000Z"
+    },
+    {
+      "height": 221609982,
+      "hash": "FiP27d7PKshK5hCcF13rUrG2Fn8RUco81shKhB67NZrh",
+      "timestamp": "2026-10-26T00:00:23.478Z",
+      "target": "2026-10-26T00:00:00.000Z"
+    },
+    {
+      "height": 221760804,
+      "hash": "4gVP6q2ASXowrLp9yPBoje89e465Uqt3LmqqgHneoqrt",
+      "timestamp": "2026-10-27T00:06:43.631Z",
+      "target": "2026-10-27T00:00:00.000Z"
+    },
+    {
+      "height": 221897695,
+      "hash": "8PCVL9ajg3GqAmrWbpUqgAAsR5rochRGKz6RQpKRYHLe",
+      "timestamp": "2026-10-27T23:58:38.170Z",
+      "target": "2026-10-28T00:00:00.000Z"
+    },
+    {
+      "height": 222047572,
+      "hash": "7pJKKqrohvo9e1sbCCZkjUcJ5wCbnAwdtSyxdg2iqDfe",
+      "timestamp": "2026-10-29T00:03:41.567Z",
+      "target": "2026-10-29T00:00:00.000Z"
+    },
+    {
+      "height": 222195646,
+      "hash": "4wuywPv1o8LmbMpMZb4cfawPzuzpUQUPAdeGXjF8w5D1",
+      "timestamp": "2026-10-30T00:06:31.142Z",
+      "target": "2026-10-30T00:00:00.000Z"
+    },
+    {
+      "height": 222343654,
+      "hash": "7Jf9fFo2aqjD27FRivoEWv6iVMGdwf3A1PUg2qZE2QX5",
+      "timestamp": "2026-10-31T00:04:42.784Z",
+      "target": "2026-10-31T00:00:00.000Z"
+    },
+    {
+      "height": 222491628,
+      "hash": "ECXvktDHoiDX6adsEhUm7U9XmmAWk7hGbTMDzBLaf72F",
+      "timestamp": "2026-11-01T00:02:37.443Z",
+      "target": "2026-11-01T00:00:00.000Z"
+    },
+    {
+      "height": 222641278,
+      "hash": "Gp2YvjLcrt4kS1y2tP2jgu4veekjjbDcPMcW7VrbWKGR",
+      "timestamp": "2026-11-02T00:00:38.906Z",
+      "target": "2026-11-02T00:00:00.000Z"
+    },
+    {
+      "height": 222790329,
+      "hash": "GNEUjX428eNeYRhgqkn8CREnkZUGfnGSevNWTUeGNXQu",
+      "timestamp": "2026-11-02T23:51:45.508Z",
+      "target": "2026-11-03T00:00:00.000Z"
+    },
+    {
+      "height": 222942606,
+      "hash": "BWKb3PLV3j3ZPRV5FbSj9sacuR4LNAwaDdjvmLt2FTHv",
+      "timestamp": "2026-11-04T00:02:16.159Z",
+      "target": "2026-11-04T00:00:00.000Z"
+    },
+    {
+      "height": 223087984,
+      "hash": "741E1Z2QzbHkoEo3cAopcLCkYyERZUtK6PXqRvcHuX5",
+      "timestamp": "2026-11-04T23:59:42.643Z",
+      "target": "2026-11-05T00:00:00.000Z"
+    }
+  ],
+  "universe": {
+    "rule": "v1 SIMPLE_POOLs with wrap.near on one side, ranked by wrap.near reserve at block 223087984, top 15",
+    "candidates": 5162,
+    "pools": [
+      4512,
+      6458,
+      6724,
+      5462,
+      6065,
+      5469,
+      79,
+      4525,
+      4771,
+      4,
+      535,
+      6679,
+      2,
+      5650,
+      852
+    ]
+  },
+  "priceSources": [
+    "DefiLlama coingecko:near (historical, searchWidth 2h)",
+    "Coinbase NEAR-USD 5-minute candles"
+  ]
+}
