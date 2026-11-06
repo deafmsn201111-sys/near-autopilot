@@ -1,6 +1,7 @@
 import { createDatabase } from '@near-autopilot/db';
 import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
+import { EvidenceStore } from '../evidence/store';
 import { buildAnalyticsServer } from './server';
 
 /**
@@ -22,6 +23,7 @@ const app = buildAnalyticsServer(
   {
     apiToken: env.API_TOKEN,
     store: new CollectorStore(database.db),
+    evidence: new EvidenceStore(database.db),
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
   },
   { logger: true },

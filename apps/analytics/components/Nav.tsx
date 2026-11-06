@@ -19,8 +19,12 @@ export const NAV: readonly { group: string; links: readonly { href: string; labe
         { href: '/portfolios', label: 'Portfolios' },
         { href: '/strategies', label: 'Strategies' },
         { href: '/lp', label: 'LP simulation' },
+        { href: '/policy', label: 'Policy decisions' },
+        { href: '/routes', label: 'Execution routes' },
+        { href: '/audit', label: 'Audit trail' },
       ],
     },
+    { group: 'Research', links: [{ href: '/thesis', label: 'Investment thesis' }] },
     { group: 'System', links: [{ href: '/collector', label: 'Collector' }] },
   ];
 

@@ -3,6 +3,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { SHADOW_BANNER } from '../collector/model';
 import type { CollectorStore } from '../collector/store';
+import type { EvidenceStore } from '../evidence/store';
+import { registerEvidence } from './evidence';
 import { MAINNET_ASSETS } from '../market-data/assets';
 import { deviationBps, parseDecimal } from '../market-data/decimal';
 
@@ -13,6 +15,8 @@ import { deviationBps, parseDecimal } from '../market-data/decimal';
 export interface AnalyticsDeps {
   readonly apiToken: string;
   readonly store: CollectorStore;
+  /** Verdicts, audit chains, routes (absent in tests that do not need them). */
+  readonly evidence?: EvidenceStore;
   readonly intervalSeconds: number;
   readonly now?: () => Date;
 }
@@ -34,6 +38,7 @@ export function buildAnalyticsServer(
       await reply.code(401).send({ error: 'unauthorized' });
   });
   app.get('/health', async () => ({ ok: true }));
+  if (deps.evidence) registerEvidence(app, deps.evidence);
 
   app.get('/v1/analytics/overview', async () => {
     const [cycles, snapshot, pools, markets] = await Promise.all([

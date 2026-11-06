@@ -4,6 +4,7 @@ import {
   auditEvents,
   desc,
   eq,
+  executionRoutes,
   gt,
   isNull,
   policyVerdicts,
@@ -106,6 +107,16 @@ export class EvidenceStore {
       .from(policyVerdicts)
       .where(options.id === undefined ? undefined : eq(policyVerdicts.id, options.id))
       .orderBy(desc(policyVerdicts.evaluatedAt))
+      .limit(options.limit);
+  }
+
+  /** Shadow Gateway routing records of every deployment, newest first. */
+  async routes(options: { limit: number; origin?: 'gateway' | 'probe' }) {
+    return this.db
+      .select()
+      .from(executionRoutes)
+      .where(options.origin === undefined ? undefined : eq(executionRoutes.origin, options.origin))
+      .orderBy(desc(executionRoutes.createdAt))
       .limit(options.limit);
   }
 

@@ -631,3 +631,27 @@ details.table-view summary {
     padding: 20px 16px 48px;
   }
 }
+
+.chip.fixture {
+  background: transparent;
+  border: 1px dashed var(--serious);
+  color: var(--ink);
+}
+tr.detail td {
+  background: var(--surface-2);
+  padding: 12px 16px 16px;
+}
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px 18px;
+}
+.checks div {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.hash {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}

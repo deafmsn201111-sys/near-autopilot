@@ -97,7 +97,7 @@ export function statusOf(code: string | null | undefined): { kind: StatusKind; l
     .replace(/^\w/, (c) => c.toUpperCase())
     .replace(/\b(Lp|Dcl|Apr|Usd)\b/g, (w) => w.toUpperCase());
   if (
-    /^(ok|success|valid|healthy|routed|completed|lp_simulation_eligible|analytics_eligible|supported|high|corroborated|allow|liquid|idle)$/i.test(
+    /^(ok|success|valid|healthy|routed|completed|lp_simulation_eligible|analytics_eligible|supported|high|corroborated|allow|liquid|idle|pass|allowed|stopped)$/i.test(
       code,
     )
   )

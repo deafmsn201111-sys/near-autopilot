@@ -38,7 +38,8 @@ export const RULES = {
   burrowCloseEnoughPp: 0.005,
 } as const;
 
-export function thesisMarkdown(d: ThesisData): string {
+/** The three counts and their falsification results: one calculation for THESIS.md and the dashboard. */
+export function thesisSummary(d: ThesisData) {
   const pools = [...d.pools].sort((a, b) => b.tvlNearEnd - a.tvlNearEnd);
   const n = pools.length;
   const withNominal = pools.filter((m) => m.nominalApr24hEnd !== null);
@@ -69,6 +70,11 @@ export function thesisMarkdown(d: ThesisData): string {
       : verdict === 0
         ? 'NOT SUPPORTED'
         : `PARTLY SUPPORTED (${verdict} of 3 counts)`;
+  return { pools, n, withNominal, above, close, h1, rho, h2, markets, bClose, h3, negative500, negativeHodl, spread, idle, verdict, verdictText };
+}
+
+export function thesisMarkdown(d: ThesisData): string {
+  const { pools, n, withNominal, above, close, h1, rho, h2, markets, bClose, h3, negative500, negativeHodl, spread, idle, verdictText } = thesisSummary(d);
   const first = d.manifest.blocks[0];
   const last = d.manifest.blocks[d.manifest.blocks.length - 1];
 
