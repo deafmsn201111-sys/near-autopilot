@@ -12,6 +12,8 @@ whether each action may run. Nothing is signed unless policy approved that exact
 > **Status:** a working local demo (simulation + dry-run) and read-only testnet integration. **Mainnet execution is
 > not a finished or verified feature**, and no seed phrase, private key or wallet is needed to run anything below.
 
+**Demo walkthrough:** [DEMO.md](DEMO.md). **What comes next:** [ROADMAP.md](ROADMAP.md).
+
 ## What it does
 
 Two interchangeable decision engines feed the same pipeline
