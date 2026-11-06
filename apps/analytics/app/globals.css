@@ -609,6 +609,82 @@ td a:hover {
   height: 2px;
   border-radius: 2px;
 }
+/* reference lines (limits, thresholds): dashed axis ink, labelled in muted text, never a series colour */
+.chart .refs line {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.chart .refs text {
+  fill: var(--muted);
+  font: 11px var(--font);
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+}
+.multiples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.multiple {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 10px 12px 6px;
+}
+.multiple h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.multiple h3 .dim {
+  font-weight: 400;
+  font-size: 12px;
+}
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  padding: 12px 14px 8px;
+}
+/* sparkline in a table cell */
+.spark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.spark svg path {
+  fill: none;
+  stroke: var(--c1);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.spark svg circle {
+  fill: var(--c1);
+}
+.spark-delta {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
+}
+.spark-empty {
+  font-size: 12px;
+}
+.freshness {
+  margin: 0 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  display: grid;
+  gap: 2px;
+}
 details.table-view {
   margin-top: 8px;
   font-size: 12px;
@@ -658,4 +734,9 @@ tr.detail details[open] {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--ink-2);
+}
+.card-title {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
 }

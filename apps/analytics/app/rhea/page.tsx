@@ -1,8 +1,10 @@
 import Link from 'next/link';
+import { Sparkline } from '../../components/Sparkline';
 import { Pair } from '../../components/Token';
 import { ApiError, PageHeader, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { int, pct, poolName, usd } from '../../lib/format';
+import { index, poolSeries } from '../../lib/series';
 import type { FeeWindow, Pool } from '../../lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +44,8 @@ export default async function RheaPage({ searchParams }: { searchParams: Promise
   const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== '')).toString();
   const { data, error } = await tryApi<PoolList>(`/v1/analytics/rhea/pools?${qs}`);
   if (!data) return <ApiError what="Rhea pools" error={error} />;
+  const series = await poolSeries(24);
+  const byPool = index(series.data?.pools, (p) => p.poolKey);
   const withCategory = (c: string) =>
     `/rhea?${new URLSearchParams(Object.entries({ ...q, category: c }).filter(([, v]) => v !== '')).toString()}`;
   return (
@@ -104,6 +108,7 @@ export default async function RheaPage({ searchParams }: { searchParams: Promise
               <th>Pair</th>
               <th>Type</th>
               <th className="num">TVL</th>
+              <th>TVL 24 h</th>
               <th className="num">24h volume</th>
               <th className="num">Fee APR</th>
               <th className="num">7d yield</th>
@@ -136,6 +141,26 @@ export default async function RheaPage({ searchParams }: { searchParams: Promise
                     <span className="chip">{p.poolType.replace(/_/g, ' ').toLowerCase()}</span>
                   </td>
                   <td className="num">{usd(p.tvlUsd)}</td>
+                  <td>
+                    {byPool.has(p.poolKey) ? (
+                      <Sparkline
+                        label="TVL in USD as stored per observation, 24 h (moves with token prices, not only deposits)"
+                        points={(byPool.get(p.poolKey)?.points ?? []).map((x) => ({
+                          t: x.t,
+                          v: x.tvl,
+                        }))}
+                        format={(v) => usd(v)}
+                      />
+                    ) : (
+                      <span
+                        className="dim spark-empty"
+                        data-tip="only tracked pools are observed each cycle"
+                        tabIndex={0}
+                      >
+                        not tracked
+                      </span>
+                    )}
+                  </td>
                   <td className="num">
                     {w24?.volumeUsd ? usd(w24.volumeUsd) : <span className="dim">—</span>}
                   </td>

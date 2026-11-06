@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { LineChart } from '../../components/LineChart';
+import { Sparkline } from '../../components/Sparkline';
 import { Token } from '../../components/Token';
 import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { ts, usd } from '../../lib/format';
+import { index, priceSeries } from '../../lib/series';
 import type { PriceObs, PriceRow } from '../../lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -50,6 +53,19 @@ export default async function PricesPage() {
     snapshot: { id: string; blockHeight: number; takenAt: string } | null;
     assets: PriceRow[];
   }>('/v1/analytics/prices');
+  // One 48 h read: the spread charts use all of it, the sparklines the last 24 h.
+  const spreads = await priceSeries(48);
+  const byAsset = index(spreads.data?.assets, (a) => a.asset);
+  const dayAgo = Date.now() - 86_400_000;
+  const spark = (asset: string) => (
+    <Sparkline
+      label="median valid USD price, 24 h"
+      points={(byAsset.get(asset)?.points ?? [])
+        .filter((p) => p.t >= dayAgo)
+        .map((p) => ({ t: p.t, v: p.price }))}
+      format={(v) => usd(v, v < 10 ? 4 : 2)}
+    />
+  );
   if (!data) return <ApiError what="Prices" error={error} />;
   const curated = data.assets.filter((a) => a.curated);
   const tail = data.assets.filter((a) => !a.curated);
@@ -89,6 +105,7 @@ export default async function PricesPage() {
                 ))}
                 <th className="num">Spread</th>
                 <th>Status</th>
+                <th>24 h</th>
                 <th />
               </tr>
             </thead>
@@ -114,6 +131,7 @@ export default async function PricesPage() {
                   <td>
                     <Status code={a.status} />
                   </td>
+                  <td>{spark(a.asset)}</td>
                   <td>
                     <Link href={`/prices/${encodeURIComponent(a.asset)}`}>History →</Link>
                   </td>
@@ -122,6 +140,41 @@ export default async function PricesPage() {
             </tbody>
           </table>
         </TableWrap>
+      </Section>
+      <Section
+        title="Disagreement between sources, 48 h"
+        note="The widest gap between any two valid USD quotes of the asset in each snapshot, against the asset's limit (dashed). Above the limit the price is LOW_CONFIDENCE and the policy refuses to act on it (oracle_deviation). A gap appears only where at least two sources were valid."
+      >
+        {spreads.data ? (
+          <div className="multiples">
+            {curated.map((a) => {
+              const s = byAsset.get(a.asset);
+              const pts = (s?.points ?? []).map((p) => ({ t: p.t, v: p.spreadBps }));
+              const last = [...pts].reverse().find((p) => p.v !== null)?.v ?? null;
+              return (
+                <div className="multiple" key={a.asset}>
+                  <h3>
+                    <Token id={a.asset} />
+                    <span className="dim">
+                      now {last === null ? '—' : `${last} bps`}
+                      {s?.limitBps ? ` · limit ${s.limitBps} bps` : ''}
+                    </span>
+                  </h3>
+                  <LineChart
+                    unit="bps"
+                    width={440}
+                    height={170}
+                    zeroBased
+                    series={[{ name: 'spread', slot: 1, points: pts }]}
+                    refs={s?.limitBps ? [{ v: s.limitBps, label: 'limit' }] : []}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <ApiError what="Spread history" error={spreads.error} />
+        )}
       </Section>
       <Section title="Long-tail tokens">
         <TableWrap>
@@ -133,6 +186,7 @@ export default async function PricesPage() {
                 <th className="num">Confidence</th>
                 <th>Published</th>
                 <th>Status</th>
+                <th>24 h</th>
                 <th />
               </tr>
             </thead>
@@ -150,6 +204,7 @@ export default async function PricesPage() {
                   <td>
                     <Status code={a.status} />
                   </td>
+                  <td>{spark(a.asset)}</td>
                   <td>
                     <Link href={`/prices/${encodeURIComponent(a.asset)}`}>History →</Link>
                   </td>

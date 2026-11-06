@@ -1,8 +1,11 @@
 import Link from 'next/link';
+import { LineChart } from '../../components/LineChart';
+import { Sparkline } from '../../components/Sparkline';
 import { Token } from '../../components/Token';
-import { ApiError, Meter, PageHeader, Status, TableWrap, Tile } from '../../components/ui';
+import { ApiError, Meter, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { pct, usd, usdCompact } from '../../lib/format';
+import { index, marketSeries } from '../../lib/series';
 import type { Market } from '../../lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +20,10 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
   const status = one(sp.status);
   const { data, error } = await tryApi<{ markets: Market[] }>('/v1/analytics/burrow/markets');
   if (!data) return <ApiError what="Burrow markets" error={error} />;
+  const series = await marketSeries(48);
+  const byToken = index(series.data?.markets, (m) => m.token);
+  const points = (token: string, k: 'supplyApr' | 'borrowApr' | 'utilization') =>
+    (byToken.get(token)?.points ?? []).map((p) => ({ t: p.t, v: p[k] }));
   const all = data.markets;
   const sorters: Record<string, (a: Market, b: Market) => number> = {
     net: (a, b) => n(b.netSupplyApr) - n(a.netSupplyApr),
@@ -29,6 +36,8 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
   const best = [...ok].sort((a, b) => n(b.netSupplyApr) - n(a.netSupplyApr))[0];
   const liquidity = ok.reduce((s, m) => s + (m.availableUsd ? Number(m.availableUsd) : 0), 0);
   const statuses = ['OK', 'LOW_CONFIDENCE', 'UNPRICED', 'DATA_INVALID'];
+  // The rate charts: the valid markets with the most liquidity, in that fixed order.
+  const charted = [...ok].sort((a, b) => n(b.availableUsd) - n(a.availableUsd)).slice(0, 6);
   const href = (s: string) =>
     `/burrow?${new URLSearchParams({ ...(s ? { status: s } : {}), sort }).toString()}`;
   return (
@@ -89,6 +98,7 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
             <tr>
               <th>Asset</th>
               <th className="num">Supply APR</th>
+              <th>48 h</th>
               <th className="num">Rewards</th>
               <th className="num">Net supply</th>
               <th className="num">Borrow APR</th>
@@ -113,6 +123,14 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
                   </Link>
                 </td>
                 <td className="num">{pct(m.supplyApr)}</td>
+                <td>
+                  <Sparkline
+                    label="supply APR, 48 h"
+                    change="pp"
+                    points={points(m.token, 'supplyApr')}
+                    format={(v) => pct(v)}
+                  />
+                </td>
                 <td className="num dim">
                   {m.rewardApr ? pct(m.rewardApr) : m.activeRewardProgrammes > 0 ? 'unpriced' : '—'}
                 </td>
@@ -140,6 +158,35 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
           </tbody>
         </table>
       </TableWrap>
+      <Section
+        title="Rates over time, 48 h"
+        note="Supply and borrow APR of the six valid markets with the most available liquidity, as the contract reported them at each observation. Borrow is what a borrower pays; the gap is the protocol's spread plus reserve."
+      >
+        {series.data ? (
+          <div className="multiples">
+            {charted.map((m) => (
+              <div className="multiple" key={m.token}>
+                <h3>
+                  <Token id={m.token} />
+                  <span className="dim">utilisation {pct(m.utilization, 1)}</span>
+                </h3>
+                <LineChart
+                  unit="pct"
+                  width={440}
+                  height={190}
+                  zeroBased
+                  series={[
+                    { name: 'supply APR', slot: 1, points: points(m.token, 'supplyApr') },
+                    { name: 'borrow APR', slot: 2, points: points(m.token, 'borrowApr') },
+                  ]}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <ApiError what="Rate history" error={series.error} />
+        )}
+      </Section>
       <p className="note">
         Net supply = supply APR + confirmed base reward APR only. Borrow APR is a cost, shown for
         risk analysis, never a recommendation. {all[0]?.note}

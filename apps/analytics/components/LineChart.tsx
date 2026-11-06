@@ -13,18 +13,28 @@ export interface Series {
   readonly points: readonly { readonly t: number; readonly v: number | null }[];
 }
 
-type Unit = 'pct' | 'usd' | 'price';
+type Unit = 'pct' | 'usd' | 'price' | 'bps' | 'ratio';
+
+/** A labelled horizontal reference: a limit or a threshold, drawn dashed in axis ink (never a series colour). */
+export interface RefLine {
+  readonly v: number;
+  readonly label: string;
+}
 
 const fmt = (v: number, unit: Unit) =>
-  unit === 'pct'
-    ? `${(v * 100).toFixed(2)}%`
-    : unit === 'usd'
-      ? Math.abs(v) >= 1e6
-        ? `$${(v / 1e6).toFixed(2)}M`
-        : Math.abs(v) >= 1e4
-          ? `$${(v / 1e3).toFixed(0)}K`
-          : `$${v.toFixed(0)}`
-      : `$${v < 10 ? v.toFixed(4) : v.toFixed(2)}`;
+  unit === 'bps'
+    ? `${Math.round(v)} bps`
+    : unit === 'ratio'
+      ? v.toFixed(2)
+      : unit === 'pct'
+        ? `${(v * 100).toFixed(2)}%`
+        : unit === 'usd'
+          ? Math.abs(v) >= 1e6
+            ? `$${(v / 1e6).toFixed(2)}M`
+            : Math.abs(v) >= 1e4
+              ? `$${(v / 1e3).toFixed(0)}K`
+              : `$${v.toFixed(0)}`
+          : `$${v < 10 ? v.toFixed(4) : v.toFixed(2)}`;
 
 const when = (t: number) => new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 
@@ -46,13 +56,21 @@ export function LineChart({
   unit,
   height = 240,
   zeroBased = false,
+  refs = [],
+  tableView = true,
+  width = 900,
 }: {
   series: readonly Series[];
   unit: Unit;
   height?: number;
   zeroBased?: boolean;
+  refs?: readonly RefLine[];
+  /** Small multiples may leave the table out when one shared table sits next to them. */
+  tableView?: boolean;
+  /** viewBox width: set it near the rendered width so axis text keeps its size in small multiples. */
+  width?: number;
 }) {
-  const W = 900;
+  const W = width;
   const H = height;
   const pad = { l: 64, r: 16, t: 12, b: 28 };
   const ref = useRef<HTMLDivElement>(null);
@@ -62,7 +80,10 @@ export function LineChart({
     const times = [...new Set(series.flatMap((s) => s.points.map((p) => p.t)))].sort(
       (a, b) => a - b,
     );
-    const vals = series.flatMap((s) => s.points.flatMap((p) => (p.v === null ? [] : [p.v])));
+    const vals = [
+      ...series.flatMap((s) => s.points.flatMap((p) => (p.v === null ? [] : [p.v]))),
+      ...refs.map((r) => r.v),
+    ];
     const lo = Math.min(zeroBased ? 0 : Infinity, ...vals);
     const hi = Math.max(zeroBased ? 0 : -Infinity, ...vals);
     const yt = ticks(lo, hi === lo ? lo + (Math.abs(lo) || 1) * 0.01 : hi);
@@ -78,7 +99,7 @@ export function LineChart({
       x: (t: number) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r),
       y: (v: number) => pad.t + (1 - (v - y0) / (y1 - y0 || 1)) * (H - pad.t - pad.b),
     };
-  }, [series, zeroBased, H, pad.l, pad.r, pad.t, pad.b]);
+  }, [series, refs, zeroBased, W, H, pad.l, pad.r, pad.t, pad.b]);
 
   if (times.length < 2)
     return <p className="note">Not enough history to draw a line ({times.length} point).</p>;
@@ -106,7 +127,9 @@ export function LineChart({
     setHover(best);
   };
   const at = (s: Series, t: number) => s.points.find((p) => p.t === t)?.v ?? null;
-  const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => t0 + f * (t1 - t0));
+  // Narrow charts (small multiples) get three time labels, so they never run into each other.
+  const fractions = W < 600 ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
+  const xTicks = fractions.map((f) => t0 + f * (t1 - t0));
   const left = hover === null ? 0 : (x(hover) / W) * 100;
 
   return (
@@ -144,12 +167,22 @@ export function LineChart({
               key={t}
               x={x(t)}
               y={H - 8}
-              textAnchor={i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}
+              textAnchor={i === 0 ? 'start' : i === fractions.length - 1 ? 'end' : 'middle'}
             >
               {t1 - t0 < 3 * 86_400_000
                 ? new Date(t).toISOString().slice(5, 16).replace('T', ' ')
                 : new Date(t).toISOString().slice(5, 10)}
             </text>
+          ))}
+        </g>
+        <g className="refs">
+          {refs.map((r) => (
+            <g key={r.label}>
+              <line x1={pad.l} x2={W - pad.r} y1={y(r.v)} y2={y(r.v)} />
+              <text x={W - pad.r - 4} y={y(r.v) - 5} textAnchor="end">
+                {r.label}
+              </text>
+            </g>
           ))}
         </g>
         {series.map((s) => (
@@ -197,38 +230,40 @@ export function LineChart({
           })}
         </div>
       )}
-      <details className="table-view">
-        <summary>Table view ({times.length} points)</summary>
-        <div className="table-wrap" style={{ maxHeight: 280, overflowY: 'auto', marginTop: 6 }}>
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                {series.map((s) => (
-                  <th key={s.name} className="num">
-                    {s.name}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...times].reverse().map((t) => (
-                <tr key={t}>
-                  <td>{when(t)}</td>
-                  {series.map((s) => {
-                    const v = at(s, t);
-                    return (
-                      <td key={s.name} className="num">
-                        {v === null ? '—' : fmt(v, unit)}
-                      </td>
-                    );
-                  })}
+      {tableView && (
+        <details className="table-view">
+          <summary>Table view ({times.length} points)</summary>
+          <div className="table-wrap" style={{ maxHeight: 280, overflowY: 'auto', marginTop: 6 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  {series.map((s) => (
+                    <th key={s.name} className="num">
+                      {s.name}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+              </thead>
+              <tbody>
+                {[...times].reverse().map((t) => (
+                  <tr key={t}>
+                    <td>{when(t)}</td>
+                    {series.map((s) => {
+                      const v = at(s, t);
+                      return (
+                        <td key={s.name} className="num">
+                          {v === null ? '—' : fmt(v, unit)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

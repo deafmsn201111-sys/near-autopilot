@@ -5,6 +5,7 @@ import { SHADOW_BANNER } from '../collector/model';
 import type { CollectorStore } from '../collector/store';
 import type { EvidenceStore } from '../evidence/store';
 import { registerEvidence } from './evidence';
+import { registerSeries } from './series';
 import { MAINNET_ASSETS } from '../market-data/assets';
 import { deviationBps, parseDecimal } from '../market-data/decimal';
 
@@ -39,6 +40,24 @@ export function buildAnalyticsServer(
   });
   app.get('/health', async () => ({ ok: true }));
   if (deps.evidence) registerEvidence(app, deps.evidence);
+  registerSeries(app, deps.store, now);
+
+  /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */
+  app.get('/v1/analytics/freshness', async () => {
+    const cycles = await deps.store.recentCycles(20);
+    const last = cycles[0] ?? null;
+    const lastOk = cycles.find((c) => c.status === 'success' || c.status === 'partial') ?? null;
+    return {
+      now: now().toISOString(),
+      running: last?.status === 'running',
+      lastStatus: lastOk?.status ?? null,
+      dataAsOf: lastOk?.finishedAt ?? lastOk?.startedAt ?? null,
+      nextRunAt: last
+        ? new Date(last.startedAt.getTime() + deps.intervalSeconds * 1000).toISOString()
+        : null,
+      intervalSeconds: deps.intervalSeconds,
+    };
+  });
 
   app.get('/v1/analytics/overview', async () => {
     const [cycles, snapshot, pools, markets] = await Promise.all([

@@ -470,6 +470,63 @@ export class CollectorStore {
       .orderBy(asc(priceObservations.observedAt));
   }
 
+  /** Every price observation since `since`, slim columns only (charts and sparklines). */
+  async priceSeries(since: Date) {
+    return this.db
+      .select({
+        snapshotId: priceObservations.snapshotId,
+        asset: priceObservations.asset,
+        source: priceObservations.source,
+        priceUsd: priceObservations.priceUsd,
+        quoteCurrency: priceObservations.quoteCurrency,
+        status: priceObservations.status,
+        observedAt: priceObservations.observedAt,
+      })
+      .from(priceObservations)
+      .where(gte(priceObservations.observedAt, since))
+      .orderBy(asc(priceObservations.observedAt));
+  }
+
+  async poolTvlSeries(since: Date) {
+    return this.db
+      .select({
+        poolKey: rheaPoolObservations.poolKey,
+        at: rheaPoolObservations.blockTimestamp,
+        tvlUsd: rheaPoolObservations.tvlUsd,
+      })
+      .from(rheaPoolObservations)
+      .where(gte(rheaPoolObservations.blockTimestamp, since))
+      .orderBy(asc(rheaPoolObservations.blockTimestamp));
+  }
+
+  async marketSeries(since: Date) {
+    return this.db
+      .select({
+        token: burrowMarketObservations.token,
+        at: burrowMarketObservations.blockTimestamp,
+        supplyApr: burrowMarketObservations.supplyApr,
+        borrowApr: burrowMarketObservations.borrowApr,
+        utilization: burrowMarketObservations.utilization,
+      })
+      .from(burrowMarketObservations)
+      .where(gte(burrowMarketObservations.blockTimestamp, since))
+      .orderBy(asc(burrowMarketObservations.blockTimestamp));
+  }
+
+  /** The decision engine's risk block of every demo-portfolio analysis since `since` (not the whole result). */
+  async riskSeries(since: Date) {
+    return this.db
+      .select({
+        portfolioId: portfolioAnalyses.portfolioId,
+        at: portfolioAnalyses.createdAt,
+        risk: sql<unknown>`${portfolioAnalyses.result}->'decision'->'risk'`,
+        description: sql<string | null>`${portfolioAnalyses.result}->'portfolio'->>'description'`,
+      })
+      .from(portfolioAnalyses)
+      .where(gte(portfolioAnalyses.createdAt, since))
+      .orderBy(asc(portfolioAnalyses.createdAt));
+  }
+
   async analysesForSnapshot(snapshotId: string) {
     return this.db
       .select()

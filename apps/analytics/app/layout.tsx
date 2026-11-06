@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
+import { FreshnessNote } from '../components/FreshnessNote';
 import { Nav } from '../components/Nav';
 import './globals.css';
 
@@ -32,9 +33,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </b>
               <span>Mainnet read-only. No signer, no transactions.</span>
             </div>
+            <FreshnessNote />
             <Nav />
             <div className="sidebar-foot">
-              Stored data only: opening a page never collects anything. Refreshes every 20 s.
+              Stored data only: opening a page never collects anything. The page re-reads it every
+              20 s.
             </div>
           </aside>
           <main>{children}</main>

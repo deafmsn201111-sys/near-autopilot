@@ -66,15 +66,25 @@ export default async function ThesisPage() {
   const { data, error } = await tryApi<Thesis>('/v1/analytics/thesis');
   if (!data) return <ApiError what="Thesis" error={error} />;
   if (!data.available)
-    return <div className="callout">No thesis data in this build (thesis/data/raw is missing).</div>;
+    return (
+      <div className="callout">No thesis data in this build (thesis/data/raw is missing).</div>
+    );
   const e = data.evidence;
   const pools = [...data.pools].sort((a, b) => (b.tvlUsdEnd ?? 0) - (a.tvlUsdEnd ?? 0));
   const top3 = pools.slice(0, 3);
   const markets = [...data.burrow]
     .filter((b) => b.supplyAprEnd > 0 || b.supplyAprRealized > 0)
-    .sort((a, b) => Math.abs(b.supplyAprEnd - b.supplyAprRealized) - Math.abs(a.supplyAprEnd - a.supplyAprRealized));
+    .sort(
+      (a, b) =>
+        Math.abs(b.supplyAprEnd - b.supplyAprRealized) -
+        Math.abs(a.supplyAprEnd - a.supplyAprRealized),
+    );
   const count = (h: boolean, label: string, sub: string) => (
-    <Tile label={label} value={<Status code={h ? 'OK' : 'FAILED'} label={h ? 'holds' : 'falsified'} />} sub={sub} />
+    <Tile
+      label={label}
+      value={<Status code={h ? 'OK' : 'FAILED'} label={h ? 'holds' : 'falsified'} />}
+      sub={sub}
+    />
   );
   return (
     <>
@@ -85,15 +95,28 @@ export default async function ThesisPage() {
           <>
             Blocks {data.manifest.first.height} → {data.manifest.last.height}
             <br />
-            {data.manifest.first.timestamp.slice(0, 10)} → {data.manifest.last.timestamp.slice(0, 10)}
+            {data.manifest.first.timestamp.slice(0, 10)} →{' '}
+            {data.manifest.last.timestamp.slice(0, 10)}
           </>
         }
       />
       <div className="kpis">
         <Tile hero label="Verdict" value={`${data.verdict.counts} / 3`} sub={data.verdict.text} />
-        {count(data.verdict.h1, 'H1 · shown ≠ kept (Rhea)', `${e.nominalAboveKept} of ${e.withNominal} pools: nominal above what an LP kept; ${e.within2pp} within ${(data.rules.closeEnoughPp * 100).toFixed(0)} pp`)}
-        {count(data.verdict.h2, 'H2 · TVL does not rank outcome', `Spearman ρ = ${e.rho === null ? 'n/a' : e.rho.toFixed(2)} (falsified at ≥ ${data.rules.strongRho})`)}
-        {count(data.verdict.h3, 'H3 · shown ≠ accrued (Burrow)', `${e.burrowMarkets - e.burrowWithin} of ${e.burrowMarkets} markets off by > ${(data.rules.burrowCloseEnoughPp * 100).toFixed(1)} pp; the weakest count`)}
+        {count(
+          data.verdict.h1,
+          'H1 · shown ≠ kept (Rhea)',
+          `${e.nominalAboveKept} of ${e.withNominal} pools: nominal above what an LP kept; ${e.within2pp} within ${(data.rules.closeEnoughPp * 100).toFixed(0)} pp`,
+        )}
+        {count(
+          data.verdict.h2,
+          'H2 · TVL does not rank outcome',
+          `Spearman ρ = ${e.rho === null ? 'n/a' : e.rho.toFixed(2)} (falsified at ≥ ${data.rules.strongRho})`,
+        )}
+        {count(
+          data.verdict.h3,
+          'H3 · shown ≠ accrued (Burrow)',
+          `${e.burrowMarkets - e.burrowWithin} of ${e.burrowMarkets} markets off by > ${(data.rules.burrowCloseEnoughPp * 100).toFixed(1)} pp; the weakest count`,
+        )}
       </div>
 
       <Section
@@ -103,7 +126,11 @@ export default async function ThesisPage() {
         <div className="card">
           <Dumbbell
             clamp={[-1, 1.5]}
-            series={['Nominal APR (last 24h fees)', `LP vs HODL (${data.manifest.days}d: fees − IL)`, `Fee APR realized (${data.manifest.days}d)`]}
+            series={[
+              'Nominal APR (last 24h fees)',
+              `LP vs HODL (${data.manifest.days}d: fees − IL)`,
+              `Fee APR realized (${data.manifest.days}d)`,
+            ]}
             rows={pools.map((p) => ({
               key: String(p.pool),
               label: (
@@ -136,16 +163,26 @@ export default async function ThesisPage() {
         </div>
       </Section>
 
-      <Section title="Burrow: supply APR shown vs accrued" note="Realized = growth of the supply share price over the window, annualised. Incentives excluded from both. Largest gap first.">
+      <Section
+        title="Burrow: supply APR shown vs accrued"
+        note="Realized = growth of the supply share price over the window, annualised. Incentives excluded from both. Largest gap first."
+      >
         <div className="card">
           <Dumbbell
             series={['Supply APR shown (end block)', `Realized (${data.manifest.days}d)`]}
-            rows={markets.map((b) => ({ key: b.token, label: <Token id={b.token} />, values: [b.supplyAprEnd, b.supplyAprRealized] }))}
+            rows={markets.map((b) => ({
+              key: b.token,
+              label: <Token id={b.token} />,
+              values: [b.supplyAprEnd, b.supplyAprRealized],
+            }))}
           />
         </div>
       </Section>
 
-      <Section title="Pools" note="All figures annualised (simple). Net APR includes a round trip of two half-swaps through the pool and a gas upper bound.">
+      <Section
+        title="Pools"
+        note="All figures annualised (simple). Net APR includes a round trip of two half-swaps through the pool and a gas upper bound."
+      >
         <TableWrap>
           <table>
             <thead>
@@ -168,7 +205,11 @@ export default async function ThesisPage() {
                   <td>
                     <b>#{p.pool}</b> <Pair tokens={[p.other, WNEAR]} />
                     {e.idle.includes(p.pool) && (
-                      <span className="chip" style={{ marginLeft: 6 }} data-tip="median daily nominal APR below 0.5%: reserves, almost no trading">
+                      <span
+                        className="chip"
+                        style={{ marginLeft: 6 }}
+                        data-tip="median daily nominal APR below 0.5%: reserves, almost no trading"
+                      >
                         idle
                       </span>
                     )}
@@ -196,12 +237,15 @@ export default async function ThesisPage() {
       <Section title="Check it yourself">
         <div className="card" style={{ display: 'grid', gap: 8 }}>
           <div>
-            <code>pnpm thesis:rebuild</code> rebuilds the CSV, charts and THESIS.md offline from <code>thesis/data/raw</code>;
-            a clean clone gives byte-identical files (a test enforces it).
+            <code>pnpm thesis:rebuild</code> rebuilds the CSV, charts and THESIS.md offline from{' '}
+            <code>thesis/data/raw</code>; a clean clone gives byte-identical files (a test enforces
+            it).
           </div>
           <div>
-            Every raw point names its mainnet block; pool #4512 priced NEAR within a median {e.priceCheck.medianBps?.toFixed(0) ?? '—'} bps (max{' '}
-            {e.priceCheck.maxBps?.toFixed(0) ?? '—'} bps) of the external two-source NEAR/USD on {e.priceCheck.days} days.
+            Every raw point names its mainnet block; pool #4512 priced NEAR within a median{' '}
+            {e.priceCheck.medianBps?.toFixed(0) ?? '—'} bps (max{' '}
+            {e.priceCheck.maxBps?.toFixed(0) ?? '—'} bps) of the external two-source NEAR/USD on{' '}
+            {e.priceCheck.days} days.
           </div>
           <div className="dim">
             Counterarguments, falsification rules and limitations: THESIS.md in the repository root.
