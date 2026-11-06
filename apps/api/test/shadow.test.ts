@@ -34,6 +34,9 @@ const envFor = (over: Record<string, string> = {}): ApiEnv =>
     YIELD_DATA: 'mainnet-onchain',
     RHEA_DCL_CONTRACT_ID: 'dclv2.ref-labs.near',
     MAINNET_READ_RPC_URL: 'https://mainnet-read.invalid',
+    // A (fake) key: this suite is about read-only behaviour, not keyless throttling (one request at a time, slower
+    // retries), which would only make its deliberately failing calls slow.
+    MAINNET_READ_RPC_API_KEY: 'test-key-not-sent-anywhere',
     ...over,
   });
 
