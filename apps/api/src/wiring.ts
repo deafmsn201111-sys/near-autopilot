@@ -378,7 +378,11 @@ async function mainnetReadRpc(
     headers: env.MAINNET_READ_RPC_API_KEY
       ? { authorization: `Bearer ${env.MAINNET_READ_RPC_API_KEY}` }
       : undefined,
-    maxConcurrent: 2,
+    // Without a key the public endpoint rate-limits (HTTP 429) a full registry scan: one request at a time, more
+    // patient retries (Retry-After is honoured). With a key: two in flight, the defaults.
+    ...(env.MAINNET_READ_RPC_API_KEY
+      ? { maxConcurrent: 2 }
+      : { maxConcurrent: 1, maxRetries: 8, baseDelayMs: 1_000, maxDelayMs: 30_000 }),
     ...(fetchImpl ? { fetchImpl } : {}),
     onRetry: (e) =>
       logger.warn('mainnet read rpc retry', { method: e.method, attempt: e.attempt, kind: e.kind }),

@@ -88,8 +88,52 @@ Dependency direction is enforced mechanically (ESLint + `scripts/check-boundarie
 
 ## Quick start
 
-Requirements: Node 22 (`.nvmrc`), pnpm 9.15 (`packageManager`), Docker with Compose v2 (for Postgres, or the whole
-stack). No NEAR wallet, key or API key is needed.
+**Three commands, Docker only.** No NEAR wallet, private key or API key:
+
+```bash
+git clone <this repository> near-autopilot && cd near-autopilot
+./scripts/quickstart.sh            # or --offline: simulation only, nothing leaves the machine
+open http://127.0.0.1:3001         # analytics: policy decisions, routes, audit trail, thesis, markets
+```
+
+The script never overwrites anything. It works as follows:
+
+1. Creates `.env` with fresh random secrets (never printed) and `config/autopilot.json`, only if they are missing.
+2. Starts Postgres, the simulation autopilot (dashboard `:3004`) and the read-only mainnet analytics (`:3001`, shadow
+   autopilot `:3003`).
+3. Waits until every container is healthy.
+4. Runs one dry-run cycle, so a policy verdict, a gateway record and audit entries exist from the start.
+
+Nothing is signed or sent. Mainnet is read with view calls through a public RPC.
+
+**Without keys**, the public RPC is rate-limited, so the collector sends one request at a time and retries patiently.
+Pyth is skipped and cycles report `partial`; the NEAR price still comes from the three-exchange quorum plus DefiLlama.
+Set `MAINNET_READ_RPC_API_KEY` (FastNEAR) and `PYTH_API_KEY` in `.env` for full-speed, complete cycles.
+
+**Measured on a fresh clone** (2026-11-06, macOS, Docker Desktop with 4 GB): `./scripts/quickstart.sh` took 3 min 51 s
+to healthy containers, with no manual edits. `audit:verify` passed and `audit:replay` matched 1 of 1 verdict.
+
+What you see:
+
+| Page (`:3001`)    | What it shows                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| Policy decisions  | Every ALLOW / WARN / BLOCK with its 12 checks; the attack demo (labelled fixtures) |
+| Execution routes  | Rhea vs NEAR Intents (1Click dry quotes), net of fees and gas                      |
+| Audit trail       | The hash chains, re-verified on every load                                         |
+| Investment thesis | 90 days of mainnet data: displayed APR vs what LPs and lenders kept                |
+
+Verify without the UI, inside the running container (no Node needed on the host):
+
+```bash
+docker compose exec api node --import tsx src/evidence/cli.ts verify    # every audit chain, seq 1 to head
+docker compose exec api node --import tsx src/evidence/cli.ts replay    # every stored verdict, recomputed
+```
+
+With Node and `pnpm install`: `pnpm demo:attack` (attack fixtures against the real defences) and
+`pnpm thesis:rebuild` (thesis outputs from the committed raw data, byte-identical).
+
+**Developer setup:** Node 22 (`.nvmrc`), pnpm 9.15 (`packageManager`), Docker with Compose v2 (for Postgres, or the
+whole stack).
 
 ```bash
 pnpm install --frozen-lockfile
