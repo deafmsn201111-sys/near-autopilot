@@ -13,6 +13,7 @@ import {
   marketSnapshots,
   ne,
   or,
+  policyVerdicts,
   portfolioAnalyses,
   priceObservations,
   rheaPoolObservations,
@@ -525,6 +526,33 @@ export class CollectorStore {
       .from(portfolioAnalyses)
       .where(gte(portfolioAnalyses.createdAt, since))
       .orderBy(asc(portfolioAnalyses.createdAt));
+  }
+
+  /** The newest analyses of one demo portfolio (newest first). */
+  async analysesOf(portfolioId: string, limit: number) {
+    return this.db
+      .select()
+      .from(portfolioAnalyses)
+      .where(eq(portfolioAnalyses.portfolioId, portfolioId))
+      .orderBy(desc(portfolioAnalyses.createdAt))
+      .limit(limit);
+  }
+
+  /** Policy verdicts recorded in these runs (an analysis's run id), oldest first. */
+  async verdictsOfRuns(runIds: readonly string[]) {
+    if (runIds.length === 0) return [];
+    return this.db
+      .select({
+        runId: policyVerdicts.runId,
+        verdict: policyVerdicts.verdict,
+        intentKind: policyVerdicts.intentKind,
+        violations: policyVerdicts.violations,
+        evaluatedAt: policyVerdicts.evaluatedAt,
+        id: policyVerdicts.id,
+      })
+      .from(policyVerdicts)
+      .where(inArray(policyVerdicts.runId, [...runIds]))
+      .orderBy(asc(policyVerdicts.evaluatedAt));
   }
 
   async analysesForSnapshot(snapshotId: string) {

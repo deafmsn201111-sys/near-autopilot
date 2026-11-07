@@ -103,6 +103,40 @@ describe('opportunity ranking', () => {
     });
   });
 
+  it('Burrow supply has a net yield after gas, and a same-asset loop is listed for comparison only', () => {
+    const market = {
+      token: 'usdc.near',
+      lastSeenAt: NOW,
+      latest: {
+        status: 'OK',
+        supplyApr: '0.09',
+        netSupplyApr: '0.09',
+        borrowApr: '0.14',
+        utilization: '0.84',
+        availableUsd: '2000000',
+        canDeposit: true,
+        canBorrow: true,
+        canUseAsCollateral: true,
+        collateralFactor: 0.95,
+      },
+    };
+    const { opportunities } = rankOpportunities({
+      pools: [],
+      markets: [market],
+      simulations: [{ portfolioId: 'demo-5000', capitalUsd: 1700, lp: [] }],
+      symbols,
+      now: NOW,
+      intervalSeconds: 900,
+      gasUsdPerTx: 0.05,
+      horizonDays: 30,
+    });
+    const supply = opportunities.find((o) => o.kind === 'lending');
+    expect(supply?.netApr).toBeCloseTo(0.09 - (0.1 / 1700) * (365 / 30), 12);
+    const loop = opportunities.find((o) => o.kind === 'loop');
+    expect(loop).toMatchObject({ status: 'watch' });
+    expect(loop?.limitations[0]).toMatch(/no borrow action/);
+  });
+
   it('is deterministic for the same input', () => {
     const input = [pool('v1:a', 500_000, 0.1), pool('v1:b', 800_000, 0.08)];
     expect(rank(input)).toEqual(rank(input));

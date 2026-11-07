@@ -1,3 +1,4 @@
+import { loopFor, type LoopMarket } from './looping';
 /**
  * ONE RANKING of the DeFi opportunities the collector observed: Rhea liquidity provision and Burrow supply. Pure: it
  * reads stored rows (pools, markets, the latest demo-portfolio analyses) and returns a ranked, explained list.
@@ -55,7 +56,7 @@ export type OpportunityStatus = 'candidate' | 'watch' | 'insufficient_data';
 export interface Opportunity {
   readonly id: string;
   readonly protocol: 'rhea' | 'burrow';
-  readonly kind: 'liquidity' | 'lending';
+  readonly kind: 'liquidity' | 'lending' | 'loop';
   readonly title: string;
   readonly tokens: readonly string[];
   readonly ref: string;
@@ -232,6 +233,9 @@ export function rankOpportunities(input: {
   now: Date;
   /** Collector interval: data older than two cycles is stale. */
   intervalSeconds: number;
+  /** Gas per transaction (USD, the orchestrator's estimate) and the horizon costs are spread over. */
+  gasUsdPerTx?: number;
+  horizonDays?: number;
 }): { opportunities: Opportunity[]; excluded: Record<string, number> } {
   const { now, symbols } = input;
   const sym = (t: string) => symbols.get(t) ?? (t.length > 18 ? `${t.slice(0, 8)}…` : t);
@@ -254,6 +258,10 @@ export function rankOpportunities(input: {
   };
 
   const out: Opportunity[] = [];
+  const gas = input.gasUsdPerTx ?? 0.05;
+  const horizon = input.horizonDays ?? 30;
+  // Costs are judged on a real position size: the larger demo portfolio's idle capital ($1,000 if none is stored).
+  const refCapital = Math.max(...input.simulations.map((x) => x.capitalUsd ?? 0), 0) || 1000;
 
   for (const p of input.pools) {
     if (!p.active) continue;
@@ -438,17 +446,18 @@ export function rankOpportunities(input: {
       confidence -= 40;
       notes.push('the asset price is not confirmed by two sources');
     }
-    confidence -= 15;
+    confidence -= 10;
     notes.push('rate at current utilisation: it changes as soon as utilisation does');
     if (!fresh) {
       confidence -= 10;
       notes.push('data older than two collector cycles');
     }
     confidence = Math.max(0, confidence);
+    const burrowNet = grossApr - ((2 * gas) / refCapital) * (365 / horizon);
     const score = scoreOf(grossApr, risk.score, confidence, liquidity);
     const { status, blocker } = statusOf({
       grossApr,
-      netApr: null,
+      netApr: burrowNet,
       liquidityUsd: liquidity,
       priceOk: priceQuality === 'OK',
       risk: risk.score,
@@ -465,8 +474,8 @@ export function rankOpportunities(input: {
       grossBasis: num(x.rewardApr)
         ? 'supply rate + confirmed base rewards, at current utilisation'
         : 'supply rate at current utilisation',
-      netApr: null,
-      netBasis: null,
+      netApr: burrowNet,
+      netBasis: `$${Math.round(refCapital).toLocaleString('en-US')} for ${horizon} days: supply rate minus gas to deposit and withdraw (2 × $${gas.toFixed(2)}); no swap (the asset is already held), no impermanent loss`,
       liquidityUsd: liquidity,
       volume24hUsd: null,
       priceConfidence: priceQuality,
@@ -488,7 +497,7 @@ export function rankOpportunities(input: {
       limitations: [
         'a variable rate: not a guaranteed return',
         'no impermanent loss, but the supplied asset keeps its own price risk',
-        'net yield after gas is not simulated for lending',
+        'net yield assumes the asset is already held (no swap into it)',
       ],
       detail: {
         supplyApr: supply,
@@ -499,6 +508,72 @@ export function rankOpportunities(input: {
         activeRewardProgrammes: x.activeRewardProgrammes ?? 0,
         riskFlags: x.risk ?? [],
       },
+    });
+  }
+
+  // Same-asset loops (looping.ts): shown for comparison, never a candidate - the autopilot cannot borrow.
+  for (const m of input.markets) {
+    const l = loopFor(
+      { ...(m.latest as LoopMarket), token: m.token },
+      { equityUsd: refCapital, targetHealthFactor: 1.6, gasUsdPerTx: gas, horizonDays: horizon },
+    );
+    if (!l) continue;
+    const netApr = (l.netUsd / l.equityUsd) * (365 / l.horizonDays);
+    const risk = riskOf([
+      liquidityRisk(num((m.latest as LoopMarket).availableUsd)),
+      priceRisk('OK'),
+      {
+        name: 'leverage',
+        value: 0.8,
+        weight: RISK_WEIGHTS.structure,
+        note: `${l.leverage.toFixed(1)}× leverage: loses money if the borrow rate rises above ${(l.breakEvenBorrowApr * 100).toFixed(1)}%`,
+      },
+      historyRisk(7 * 86_400),
+    ]);
+    out.push({
+      id: `loop:${m.token}`,
+      protocol: 'burrow',
+      kind: 'loop',
+      title: `Loop ${sym(m.token)} (${l.leverage.toFixed(1)}×)`,
+      tokens: [m.token],
+      ref: m.token,
+      grossApr: l.leverage * l.supplyApr,
+      grossBasis: `supply rate on ${l.leverage.toFixed(2)}× the capital, before borrowing costs`,
+      netApr,
+      netBasis: `$${Math.round(refCapital).toLocaleString('en-US')}, ${horizon} days: L × supply − (L − 1) × borrow − gas for ${2 * (1 + 2 * l.rounds)} transactions; health factor held at 1.6`,
+      liquidityUsd: num((m.latest as LoopMarket).availableUsd),
+      volume24hUsd: null,
+      priceConfidence: 'OK',
+      dataAgeSeconds: ageOf(m.lastSeenAt),
+      fresh: ageOf(m.lastSeenAt) <= freshLimit,
+      risk,
+      confidence: {
+        score: 70,
+        level: level(70, true),
+        notes: ['rates at current utilisation; a loop is very sensitive to them'],
+      },
+      score:
+        scoreOf(
+          netApr > 0 ? netApr : 0,
+          risk.score,
+          70,
+          num((m.latest as LoopMarket).availableUsd),
+        ) / 2,
+      status: 'watch',
+      why:
+        netApr > 0
+          ? `Comparison only: ${(netApr * 100).toFixed(1)}% a year after costs, but the autopilot cannot borrow.`
+          : `Comparison only: loses ${(Math.abs(netApr) * 100).toFixed(1)}% a year after borrowing costs and gas at this size.`,
+      reasons: [
+        `Deposits ${l.leverage.toFixed(2)}× the capital at ${(l.supplyApr * 100).toFixed(2)}% and borrows ${(l.leverage - 1).toFixed(2)}× at ${(l.borrowApr * 100).toFixed(2)}%`,
+      ],
+      limitations: [
+        "the autopilot's safety policy has no borrow action: simulation only",
+        l.daysToLiquidationFromRates === null
+          ? "at today's rates the health factor does not drift down"
+          : `at today's rates the health factor reaches 1.0 in about ${Math.round(l.daysToLiquidationFromRates)} days without a top-up`,
+      ],
+      detail: { loop: l },
     });
   }
 
