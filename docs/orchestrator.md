@@ -327,17 +327,27 @@ Delivery is a port (`Notifier`). No concrete pager, chat or email implementation
 
 ## 13. Assumptions, limitations, and what you must add
 
-1. **Persistence is in-memory.** Provide durable `AuditLog`, `IdempotencyStore`, `ControlStore` with the contracts in
-   `ports.ts` (atomic `begin`, durable `markExecutionStarted`, append-only audited writes) before relying on any of the
-   safety properties across restarts.
-2. **Not wired into `apps/api`.** Wiring needs: concrete `SnapshotProvider` (the existing snapshot service), a
-   `MarketProvider` (yields, reference prices, volatility, LP position views — none exists yet), a `QuoteProvider`
-   (adapter over the Rhea quoter), `IntentPlanner` (the `PlannerRegistry`), `PolicyGate` (the `PolicyEngine`), an
-   executor, a `Notifier`, and the three stores; then a scheduler calling `runCycle(tickId)`.
+1. **Persistence (done in apps/api).** `PgControlStore` and `PgIdempotencyStore`
+   (`apps/api/src/infra/orchestrator-stores.ts`, migration 0013) keep the mode, quarantines, cycle claims, actions and
+   in-doubt executions in PostgreSQL, one scope per deployment and portfolio:
+   - `begin` is atomic across processes (primary key + row lock); a silent cycle is taken over by exactly one process;
+     a cycle that reached the executor is never re-run and freezes automation (read-only) until reconciled.
+   - The control row is versioned. A loosening decided on a stale read is refused (`ControlConflictError`); concurrent
+     tightenings merge to the stricter mode. Every change writes an append-only history row and an audit-chain entry
+     in the same transaction. Restart recovery is audited (`orchestrator.control.restored`).
+   - An unreadable store still fails safe: `load` throws and the ModeController answers read-only; `begin` throws and
+     the cycle aborts before any agent runs.
+   - Tests: `apps/api/test/orchestrator-stores.integration.test.ts` (restart with read-only, restart mid-execution,
+     repeated and concurrent keys, stale loosening, database unreachable, history append-only, chain intact).
+   - The in-process audit chain remains in memory; the durable one is `audit_events` (write-through, fails closed).
+2. **Wired into `apps/api`** behind `AUTOPILOT_ENGINE=orchestrator` (dry-run only), with the snapshot service, a
+   reference `MarketProvider`, the Rhea quoter, the planner registry, the policy engine, the Shadow Gateway executor and
+   the durable stores above. LP position views do not exist yet, so the LP Optimizer reports `insufficient_data`.
 3. **Market data is an input to be checked, not a fact.** The orchestrator cross-checks oracle prices against a second
    source only to _raise caution_; it cannot tell which source is right.
 4. **Yield and LP-fee figures are estimates.** They are projections from supplied inputs, not realised returns.
-5. **One account, one process.** There is no multi-account support and no cross-process lock.
+5. **One account per scope.** Several processes may share a scope safely (cycle claims and mode changes are atomic in
+   PostgreSQL); there is still no multi-account support within one orchestrator.
 6. **Hung agents.** A hung LLM call is cut off only if `agentTimeoutMs` is set (default off). Set it in production.
 7. **Single-asset-class view.** Risk is computed for the Burrow position in the snapshot only; no cross-protocol exposure.
 8. **LP actions are advisory.** No liquidity planner exists.

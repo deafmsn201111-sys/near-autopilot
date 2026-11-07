@@ -28,7 +28,15 @@ rules on-chain.
 
 Close the gaps that block any real use.
 
-- Durable orchestrator stores (idempotency, control) in Postgres; they are in memory today.
+- ~~Durable orchestrator stores (idempotency, control) in Postgres~~ **done** (migration 0013: restart- and race-safe,
+  audited mode changes; see docs/orchestrator.md §13).
+- ~~Product dashboard with an opportunity ranking and audited operator controls~~ **done** (docs/dashboard.md).
+- Net yield for Burrow supply (gas, entry/exit), so lending opportunities get a cost simulation like LP pools.
+- DCL pools in the analytics and the LP simulation, once the fee and position data are sufficient (`UNSUPPORTED`
+  today).
+- The investment thesis with a survivorship-bias correction: include pools that disappeared or became illiquid, split
+  by pool type, gross vs net.
+- An external audit checkpoint: periodically anchor the audit chain head outside this database (see Phase 3).
 - An approval UI for `requires_approval` proposals. Reconciliation for actions that never resolved.
 - The pre-mainnet checklist in [docs/security.md](docs/security.md#pre-mainnet-checklist).
 - First real testnet transactions, each one approved separately, to confirm the on-chain effect of the Burrow and Rhea

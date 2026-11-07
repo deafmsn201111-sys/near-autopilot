@@ -16,17 +16,17 @@ Everything below runs on a local stack started by `./scripts/quickstart.sh`. Not
 
 ## Scenes
 
-| #   | Time      | Screen                                    | Show                                                                                          |
-| --- | --------- | ----------------------------------------- | --------------------------------------------------------------------------------------------- |
-| 1   | 0:00–0:15 | title card                                | The problem                                                                                   |
-| 2   | 0:15–0:35 | terminal                                  | `git clone …`, `./scripts/quickstart.sh`, the "Ready" banner                                  |
-| 3   | 0:35–1:05 | `:3001` Overview → Rhea → Burrow → Prices | Live mainnet data; hover a token symbol (contract, NearBlocks link); price sources and quorum |
-| 4   | 1:05–1:40 | `:3004` Activity                          | Run a cycle on the simulated demo portfolio; the repay proposal is `dry_run`, no tx hash      |
-| 5   | 1:40–2:20 | `:3001` Policy decisions + terminal       | The 12 checks of one verdict; real BLOCKs on shadow mainnet; the attack demo                  |
-| 6   | 2:20–2:40 | `:3001` Execution routes                  | Rhea vs 1Click quotes for an allowed plan, `executed: false`                                  |
-| 7   | 2:40–3:05 | `:3001` Audit trail + terminal            | Chains intact (`verify`), verdicts recomputed (`replay`)                                      |
-| 8   | 3:05–3:30 | `:3001` Investment thesis                 | Verdict, the falsification rules, the weakest hypothesis                                      |
-| 9   | 3:30–3:45 | title card                                | The security model, link to the repo                                                          |
+| #   | Time      | Screen                                     | Show                                                                                             |
+| --- | --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| 1   | 0:00–0:15 | title card                                 | The problem                                                                                      |
+| 2   | 0:15–0:35 | terminal                                   | `git clone …`, `./scripts/quickstart.sh`, the "Ready" banner                                     |
+| 3   | 0:35–1:20 | `:3001` Overview → Opportunities → details | System state at a glance; the ranked opportunities; why one is ranked first (yield, costs, risk) |
+| 4   | 1:20–1:45 | `:3001` Autopilot                          | Run a market analysis; switch a demo portfolio to read-only (confirm, reason) and back           |
+| 5   | 1:40–2:20 | `:3001` Policy decisions + terminal        | The 12 checks of one verdict; real BLOCKs on shadow mainnet; the attack demo                     |
+| 6   | 2:20–2:40 | `:3001` Execution routes                   | Rhea vs 1Click quotes for an allowed plan, `executed: false`                                     |
+| 7   | 2:40–3:05 | `:3001` Audit trail + terminal             | Chains intact (`verify`), verdicts recomputed (`replay`)                                         |
+| 8   | 3:05–3:30 | `:3001` Investment thesis                  | Verdict, the falsification rules, the weakest hypothesis                                         |
+| 9   | 3:30–3:45 | title card                                 | The security model, link to the repo                                                             |
 
 ### 1. The problem
 
@@ -42,21 +42,27 @@ git clone <repository> near-autopilot && cd near-autopilot
 
 > "Docker only. No API key, no wallet. Under four minutes from a clean clone to running dashboards."
 
-### 3. Real mainnet data, read-only
+### 3. What the autopilot sees, and what it would consider
 
-Open `http://127.0.0.1:3001`. Click through Overview, Rhea pools, Burrow markets and Prices. Hover a token symbol to
-show its contract, and open one NearBlocks link.
+Open `http://127.0.0.1:3001`. The Overview answers in a few seconds: the autopilot runs in shadow mode, market data is
+up to date, all sources work, how many opportunities were found and how many pass the filters.
 
-> "This is live NEAR mainnet: Rhea pools, Burrow markets, prices from several sources with a quorum. Mainnet is read
-> with view calls only. A price older than 180 seconds is not used."
+Open **Opportunities**. Point at a high-APR pool on the watch list and say why it is not on top. Open the first
+candidate: yield before costs, net after costs (fees − impermanent loss − entry/exit − gas), the risk factors, and the
+"limits of these numbers".
 
-### 4. One autopilot cycle
+> "This is live NEAR mainnet, read with view calls only. The ranking is not APR: thin liquidity, unconfirmed prices or
+> a simulated loss after costs keep an opportunity off the shortlist. Yields are measured history, never a promise."
 
-Open `http://127.0.0.1:3004/activity` and press **Run a check now**. Show the `lending.repay` proposal with status `dry_run` and no
-transaction hash. **Point at the provenance banner (simulation, demo portfolio) and say it:**
+### 4. Operating the autopilot
 
-> "This portfolio is simulated: synthetic balances on a simulated chain. The health guardian sees the health factor
-> near its threshold and proposes a repayment. The plan passed policy, and it is a dry run: no transaction exists."
+Open **Autopilot**. Press **Run market analysis now** (confirm). Then switch _Demo portfolio $500_ to **read-only**:
+the dialog asks for a reason, the change appears under _Mode changes_ and in **Activity**. Return it to normal.
+
+> "There is no execute button: shadow mode has no wallet. What an operator can do is stop the autopilot. Read-only
+> survives a restart, every change is recorded with who and why, and the system never leaves read-only by itself."
+
+Note: each of these changes is written permanently to the audit chain; do it once, deliberately.
 
 ### 5. Policy: what is allowed, what is blocked
 

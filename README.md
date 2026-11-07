@@ -115,14 +115,48 @@ Set `MAINNET_READ_RPC_API_KEY` (FastNEAR) and `PYTH_API_KEY` in `.env` for full-
 **Measured on a fresh clone** (2026-11-06, macOS, Docker Desktop with 4 GB): `./scripts/quickstart.sh` took 3 min 51 s
 to healthy containers, with no manual edits. `audit:verify` passed and `audit:replay` matched 1 of 1 verdict.
 
-What you see:
+## Using the dashboard (`:3001`)
 
-| Page (`:3001`)    | What it shows                                                                      |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| Policy decisions  | Every ALLOW / WARN / BLOCK with its 12 checks; the attack demo (labelled fixtures) |
-| Execution routes  | Rhea vs NEAR Intents (1Click dry quotes), net of fees and gas                      |
-| Audit trail       | The hash chains, re-verified on every load                                         |
-| Investment thesis | 90 days of mainnet data: displayed APR vs what LPs and lenders kept                |
+The dashboard is built around one journey: **see the state → find an opportunity → understand it → run an analysis →
+read why the autopilot decided what it did.** Plain words first; numbers second; codes, hashes and raw data behind a
+"Technical details" disclosure.
+
+| Section                    | What you do there                                                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Overview**               | System state at a glance: autopilot mode, data freshness, data sources, NEAR price; the opportunities that pass the filters; what needs attention; activity |
+| **Opportunities**          | Every Rhea pool and Burrow market with usable data, ranked by yield, risk and data confidence together. Filters: protocol, status, risk, minimum liquidity  |
+| Opportunity details        | Yield breakdown, simulation after costs (fees, IL, entry/exit, gas), risk factors, price quality, history, and why it is ranked where it is                 |
+| **Autopilot**              | Run a market analysis now; pause/resume the scheduled analysis; switch a portfolio to read-only and back. Each asks for confirmation and a reason (audited) |
+| **Portfolio & Simulation** | The two simulated demo portfolios ($500, $5,000): liquidation risk and stress curve, strategies compared after costs, LP simulations                        |
+| **Analytics & Thesis**     | Rhea pools, Burrow markets, prices from every source, and the investment thesis tested against 90 days of mainnet data                                      |
+| **Activity & Audit**       | A plain-language activity feed; every policy decision with its 12 checks; execution routes; the tamper-evident audit chains                                 |
+| **System Health**          | API, database, collector, each data source with the reason when it fails, audit chain status                                                                |
+
+**Shadow mode.** Everything the dashboard shows is either read from NEAR mainnet (view calls) or computed from that.
+The portfolios are simulated and labelled as such. There is no wallet, no signer and deliberately no "execute"
+button: the three controls above change only the analysis schedule and the operating mode.
+
+**Reading an opportunity.** _Yield_ is what was earned in the past (LP fees of a window, or the current Burrow supply
+rate), never a promise. _Net after costs_ exists only where a stored simulation subtracted fees, impermanent loss,
+entry/exit cost and gas; otherwise it says "not simulated". _Pass the filters_ means: at least 1% a year, at least
+$50k liquidity, prices confirmed by two sources, risk under 50, and no simulated loss. A high APR on thin liquidity
+cannot take the top place (the score caps yield and halves below $50k).
+
+**Reading a policy decision.** Policy decisions shows every proposal's verdict: _Allowed_, _Allowed with warnings_ or
+_Blocked by safety rules_, with the check that failed (for example value limit, stale price, price sources disagree).
+
+### What works today, and what does not
+
+| Area                                                                                | Status                                                                           |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Mainnet market data (prices with quorum, Rhea registry and history, Burrow markets) | Implemented, read-only                                                           |
+| Opportunity ranking with risk and confidence                                        | Implemented (heuristic ordering aid, documented weights)                         |
+| Independent policy engine (12 checks), Shadow Gateway, hash-chained audit, replay   | Implemented                                                                      |
+| Durable orchestrator mode and idempotency (restart- and race-safe)                  | Implemented (PostgreSQL, migrations 0013-0014)                                   |
+| LP simulation                                                                       | Partial: two-token v1 pools only; DCL and other pool types `UNSUPPORTED`         |
+| Net yield for Burrow supply                                                         | Not simulated yet (shown as "not simulated")                                     |
+| Testnet transactions                                                                | Only manual, each one confirmed separately (`testnet-tx`), outside the autopilot |
+| Mainnet execution, wallet connection, AI assistant                                  | **Not implemented.** Planned, see [ROADMAP.md](ROADMAP.md)                       |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 
@@ -354,8 +388,9 @@ Response shapes live in `packages/core/src/api-contracts.ts` and are shared with
   prices with mainnet REFERENCE prices, which say nothing about the test tokens' own value or liquidity.
 - Pyth Hermes requires an API key since August 2026; without `PYTH_API_KEY` only DefiLlama is used and every price is
   `single_source`.
-- The orchestrator engine is dry-run only: its idempotency and control stores are in memory. Its audit entries are
-  written through to Postgres `audit_events` (fails closed), so they survive restarts. Yields come only from testnet
+- The orchestrator engine is dry-run only. Its control state (mode, quarantines) and idempotency (cycle claims,
+  actions, in-doubt executions) are durable in Postgres (migration 0013) and restart- and race-safe; its audit entries
+  are written through to `audit_events` (fails closed). Yields come only from testnet
   Burrow supply rates (testnet profile); Rhea v1 fee APRs need two observations ≥ 1 h apart and an allowlisted pool,
   DCL APRs are not computed, and there is no LP position reader, so the LP Optimizer returns `insufficient_data`.
 - The public testnet RPC is slow (~3 s per call) and rate-limits (HTTP 429). The RPC client retries reads only, with
