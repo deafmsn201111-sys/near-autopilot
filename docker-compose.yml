@@ -286,10 +286,15 @@ services:
       COLLECTOR_URL: http://shadow-collector:4100
       AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
+      # "your account" (read-only view calls): the same private RPC and key as the collector
+      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
+      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
     volumes:
       - ./evidence/checkpoints:/checkpoints:ro
+      - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
 
   analytics:
     profiles: [shadow]

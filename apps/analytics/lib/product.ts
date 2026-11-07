@@ -212,3 +212,22 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
   });
   return `${v < 0 && Number(s.replace(/,/g, '')) !== 0 ? '−' : ''}$${s}`;
 };
+
+/** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
+export const accountView = async (id: string) => {
+  const r = await tryApi<
+    Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & { accountId: string }
+  >(`/v1/analytics/account/${encodeURIComponent(id)}`);
+  return {
+    error: r.error,
+    data: r.data
+      ? ({
+          ...r.data,
+          id: 'demo-5000',
+          label: r.data.accountId,
+          simulated: true,
+          lastDecision: null,
+        } as PortfolioView)
+      : null,
+  };
+};

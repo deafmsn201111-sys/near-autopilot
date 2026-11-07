@@ -9,6 +9,7 @@ import { registerEvidence } from './evidence';
 import { registerSeries } from './series';
 import { registerActivity } from './activity';
 import { registerPortfolioView } from './portfolio-view';
+import { registerAccountView, type MainnetReadDeps } from './account-view';
 import { ControlError, type ControlService } from '../control/service';
 import { rankOpportunities, type SimulationInput } from './opportunities';
 import { MAINNET_ASSETS } from '../market-data/assets';
@@ -32,6 +33,8 @@ export interface AnalyticsDeps {
   readonly fetchImpl?: typeof fetch;
   /** Pinned public key (and file) to verify the signed audit checkpoints against. */
   readonly checkpoints?: { readonly publicKey: string; readonly file?: string | undefined };
+  /** Read-only mainnet access for "your account" (view calls only). Absent: the route is not served. */
+  readonly mainnet?: MainnetReadDeps;
 }
 
 const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
@@ -61,6 +64,7 @@ export function buildAnalyticsServer(
   registerSeries(app, deps.store, now);
   registerActivity(app, deps.store, deps.store.db, deps.intervalSeconds, now);
   registerPortfolioView(app, deps.store);
+  if (deps.mainnet) registerAccountView(app, deps.store, deps.mainnet);
   if (deps.control) registerControl(app, deps.control, deps);
 
   /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */

@@ -1813,3 +1813,30 @@ table.mini tr.total td {
     font-size: 24px;
   }
 }
+.account-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: flex-end;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+  border-radius: 16px;
+  margin-bottom: 20px;
+}
+.account-form label {
+  display: grid;
+  flex: 1 1 260px;
+}
+.account-form input[name='account'] {
+  font: 16px var(--font);
+  padding: 10px 12px;
+  border: 1px solid var(--axis);
+  border-radius: 10px;
+  background: var(--page);
+  color: var(--ink);
+}
+.account-form .muted-note {
+  flex-basis: 100%;
+  margin: 0;
+}

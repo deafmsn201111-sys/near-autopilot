@@ -96,12 +96,12 @@ interface AnalysisResult {
   lpSimulations?: { poolKey: string; status: string }[];
 }
 
-const money = (v: number) =>
+export const money = (v: number) =>
   `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) < 100 ? 2 : 0, minimumFractionDigits: Math.abs(v) < 100 ? 2 : 0 })}`;
 const micro = (v: string | null | undefined) => (v ? Number(v) / 1e6 : null);
 const wad = (v: string | null | undefined) => (v ? Number(BigInt(v) / 10n ** 12n) / 1e6 : null);
 
-function hurdle(
+export function hurdle(
   net: number | null,
   gross: number | null,
   costs: number,

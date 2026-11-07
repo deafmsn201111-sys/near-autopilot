@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
-import { ago, money, portfolioView, type PortfolioAction } from '../lib/product';
+import { accountView, ago, money, portfolioView, type PortfolioAction } from '../lib/product';
+import { AccountForm } from '../components/AccountForm';
 import { runAnalysis } from './autopilot/actions';
 
 export const dynamic = 'force-dynamic';
@@ -99,9 +100,37 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
+  const isAccount = sp.p === 'account';
+  const accountParam = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const id = portfolioOf(sp.p);
-  const { data, error } = await portfolioView(id);
-  if (!data) return <ErrorState what="Your portfolio" error={error} />;
+  if (isAccount && !accountParam)
+    return (
+      <>
+        <div className="hero-head">
+          <PortfolioSwitch current="account" path="/" withAccount />
+        </div>
+        <AccountForm />
+      </>
+    );
+  const { data, error } = isAccount ? await accountView(accountParam) : await portfolioView(id);
+  if (!data)
+    return (
+      <>
+        <div className="hero-head">
+          <PortfolioSwitch current={isAccount ? 'account' : id} path="/" withAccount />
+        </div>
+        {isAccount && <AccountForm value={accountParam} />}
+        <ErrorState
+          what={isAccount ? `Account ${accountParam}` : 'Your portfolio'}
+          error={error}
+          hint={
+            isAccount
+              ? 'Check the account name (for example alice.near). Only NEAR mainnet accounts are read.'
+              : undefined
+          }
+        />
+      </>
+    );
   const t = data.totals;
   const groups = (['wallet', 'collateral', 'deposited', 'borrowed'] as const)
     .map((w) => ({ w, rows: data.holdings.filter((h) => h.where === w) }))
@@ -110,9 +139,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <div className="hero-head">
-        <PortfolioSwitch current={id} path="/" />
+        <PortfolioSwitch current={isAccount ? 'account' : id} path="/" withAccount />
         <span className="muted-note">
-          Demo portfolio: simulated balances valued at live NEAR prices · updated {ago(data.asOf)}
+          {isAccount
+            ? `${accountParam} on NEAR mainnet · read just now, nothing is signed or sent`
+            : `Demo portfolio: simulated balances valued at live NEAR prices · updated ${ago(data.asOf)}`}
         </span>
       </div>
 
@@ -178,16 +209,18 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               impermanent loss.
             </p>
           </div>
-          <ConfirmAction
-            label="Refresh with live data"
-            title="Run a fresh analysis?"
-            description="The autopilot reads the latest prices, pools and lending rates from NEAR mainnet and recomputes every option. It takes about a minute. Nothing is bought, sold or sent."
-            confirmLabel="Run analysis"
-            action={async () => {
-              'use server';
-              return runAnalysis();
-            }}
-          />
+          {!isAccount && (
+            <ConfirmAction
+              label="Refresh with live data"
+              title="Run a fresh analysis?"
+              description="The autopilot reads the latest prices, pools and lending rates from NEAR mainnet and recomputes every option. It takes about a minute. Nothing is bought, sold or sent."
+              confirmLabel="Run analysis"
+              action={async () => {
+                'use server';
+                return runAnalysis();
+              }}
+            />
+          )}
         </div>
         {data.actions.length === 0 ? (
           <p className="muted-note">No option could be computed from the latest data.</p>
@@ -200,7 +233,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         )}
       </section>
 
-      {data.lastDecision && (
+      {!isAccount && data.lastDecision && (
         <section className="block">
           <div className="block-head">
             <h2>What the autopilot decided</h2>
