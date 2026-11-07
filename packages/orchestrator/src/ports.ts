@@ -6,6 +6,7 @@ import type {
   PolicyDecision,
   PortfolioSnapshot,
   SwapQuoteRequest,
+  TokenId,
 } from '@near-autopilot/core';
 import type { AgentId } from './proposals';
 import type { ActionStatus, AgentObservation, MarketContext, Mode, RecentAction } from './types';
@@ -43,6 +44,11 @@ export interface QuoteProvider {
   quote(
     request: SwapQuoteRequest,
   ): Promise<{ poolId: number; amountIn: bigint; amountOut: bigint } | null>;
+  /**
+   * The token pairs an allowlisted pool connects (either direction). Agents only propose swaps along them, so a
+   * proposal is never made for a trade that has no permitted route. Absent: no restriction is known.
+   */
+  pairs?(): readonly (readonly [TokenId, TokenId])[];
 }
 
 /* ------------------------------ authorisation and execution ------------------------------ */

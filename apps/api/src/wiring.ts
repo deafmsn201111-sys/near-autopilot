@@ -343,7 +343,11 @@ export async function wire(
                   config.orchestrator?.allocation?.assets.map((a) => a.token) ?? [],
                 )
               : null,
-            quoter,
+            // the same quoter, plus the pairs its allowlisted pools connect, so agents only propose routable swaps
+            quoter: {
+              quote: (r) => quoter.quote(r),
+              pairs: () => config.rhea.pools.map((p) => [p.tokenA, p.tokenB] as const),
+            },
             planner: planners,
             policy,
             verdicts: repositoryVerdictSink(repo, policy.config),

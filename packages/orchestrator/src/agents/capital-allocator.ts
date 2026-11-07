@@ -58,12 +58,39 @@ export class CapitalAllocatorAgent implements ProposalAgent {
         ),
       ]);
 
+    // Current weights, floored, remainder to the largest holding so they sum to exactly 10,000.
+    const current = new Map<string, number>();
+    let assigned = 0;
+    for (const a of assets) {
+      const w = Number(((values.get(a.token) ?? 0n) * 10_000n) / total);
+      current.set(a.token, w);
+      assigned += w;
+    }
+    const largest = [...assets].sort((x, y) =>
+      (values.get(y.token) ?? 0n) > (values.get(x.token) ?? 0n) ? 1 : -1,
+    )[0];
+    if (largest)
+      current.set(largest.token, (current.get(largest.token) ?? 0) + (10_000 - assigned));
+
+    // An asset no allowlisted pool connects to any other configured asset cannot be bought or sold here: it keeps
+    // its current weight, and the optimisation spreads the rest over the assets that can actually be traded.
+    const pairs = obs.swapPairs;
+    const routable = (a: string, b: string) =>
+      !pairs || pairs.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+    const tradable = (t: string) => assets.some((o) => o.token !== t && routable(t, o.token));
+    if (pairs && !assets.some((a) => tradable(a.token)))
+      return envelope(this.id, obs, [
+        noAction(
+          'no_edge',
+          'no allowlisted pool connects any two of the allocation assets: nothing can be traded',
+        ),
+      ]);
     let target: ReadonlyMap<string, number>;
     try {
       const input: AllocationAsset[] = assets.map((a, i) => ({
         id: a.token,
-        minBps: a.minBps,
-        maxBps: a.maxBps,
+        minBps: tradable(a.token) ? a.minBps : (current.get(a.token) ?? 0),
+        maxBps: tradable(a.token) ? a.maxBps : (current.get(a.token) ?? 0),
         estimatedYieldWad: yields[i] as bigint,
         ...(a.group ? { group: a.group } : {}),
       }));
@@ -80,20 +107,6 @@ export class CapitalAllocatorAgent implements ProposalAgent {
       ]);
     }
 
-    // Current weights, floored, remainder to the largest holding so they sum to exactly 10,000.
-    const current = new Map<string, number>();
-    let assigned = 0;
-    for (const a of assets) {
-      const w = Number(((values.get(a.token) ?? 0n) * 10_000n) / total);
-      current.set(a.token, w);
-      assigned += w;
-    }
-    const largest = [...assets].sort((x, y) =>
-      (values.get(y.token) ?? 0n) > (values.get(x.token) ?? 0n) ? 1 : -1,
-    )[0];
-    if (largest)
-      current.set(largest.token, (current.get(largest.token) ?? 0) + (10_000 - assigned));
-
     const limited = limitTurnover({
       current,
       target,
@@ -103,11 +116,31 @@ export class CapitalAllocatorAgent implements ProposalAgent {
     const ordered = [...assets.map((a) => a.token)].sort(
       (a, b) => delta(a) - delta(b) || (a < b ? -1 : 1),
     );
-    const sell = ordered[0];
-    const buy = ordered[ordered.length - 1];
+    const yieldOf = (t: string): bigint => market.estimatedYieldWad.get(t as TokenId) ?? 0n;
+    // Only pairs an allowlisted pool connects can be traded. Pick the most over-weight asset to sell and the most
+    // under-weight asset reachable from it that yields more: a proposal along a pair with no route would only be
+    // rejected for having no quote.
+    let sell: TokenId | undefined = ordered[0];
+    let buy: TokenId | undefined = ordered[ordered.length - 1];
+    if (pairs) {
+      const sells = ordered.filter((t) => delta(t) < 0);
+      const buys = [...ordered].reverse().filter((t) => delta(t) > 0);
+      const choice = sells
+        .flatMap((x) =>
+          buys.filter((y) => routable(x, y) && yieldOf(y) > yieldOf(x)).map((y) => [x, y] as const),
+        )
+        .at(0);
+      if (!choice && sells.length > 0 && buys.length > 0)
+        return envelope(this.id, obs, [
+          noAction(
+            'no_edge',
+            `no allowlisted pool connects an over-weight asset (${sells.join(', ')}) to a better-yielding under-weight one (${buys.join(', ')})`,
+          ),
+        ]);
+      [sell, buy] = choice ?? [sell, buy];
+    }
     if (!sell || !buy || sell === buy)
       return envelope(this.id, obs, [noAction('within_threshold', 'no rebalance needed')]);
-    const yieldOf = (t: string): bigint => market.estimatedYieldWad.get(t as TokenId) ?? 0n;
     if (yieldOf(buy) <= yieldOf(sell))
       return envelope(this.id, obs, [
         noAction(

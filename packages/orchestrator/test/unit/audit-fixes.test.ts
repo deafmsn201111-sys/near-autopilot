@@ -204,6 +204,71 @@ describe('capital allocator: the drift threshold looks at the real drift, not th
   });
 });
 
+describe('capital allocator: proposes only along an allowlisted route', () => {
+  const run = async (swapPairs: AgentObservation['swapPairs'], yields = { near: 2, usdt: 10 }) => {
+    const { CapitalAllocatorAgent } = await import('../../src');
+    const { WNEAR, USDT } = await import('../support/world');
+    const USDC = accountId('usdc.near');
+    const w = makeWorld({
+      lending: null,
+      wallet: { near: 100, usdt: 0 },
+      yields,
+      config: {
+        allocation: {
+          assets: [{ token: WNEAR }, { token: USDT }, { token: USDC }],
+          driftThresholdBps: 500,
+          maxTurnoverBps: 2500,
+        },
+      },
+    });
+    const snapshot = w.buildSnapshot();
+    const market = w.buildMarket();
+    const prices = new Map(snapshot.prices);
+    prices.set(USDC, prices.get(USDT) as UnitPrice);
+    const yieldsWad = new Map(market.estimatedYieldWad);
+    yieldsWad.set(USDC, 9n * 10n ** 16n); // 9 %: a little below USDt (10 %)
+    const obs: AgentObservation = {
+      now: NOW,
+      accountId: ALICE,
+      snapshot: { ...snapshot, prices },
+      market: { ...market, estimatedYieldWad: yieldsWad, referencePrices: prices },
+      risk: assessRisk(snapshot, w.config),
+      config: w.config,
+      ...(swapPairs ? { swapPairs } : {}),
+    };
+    const out = (await new CapitalAllocatorAgent().propose(obs)) as {
+      proposals: {
+        kind: string;
+        tokenIn?: string;
+        tokenOut?: string;
+        reasonCode?: string;
+        rationale: string;
+      }[];
+    };
+    return { out: out.proposals[0], WNEAR, USDT, USDC };
+  };
+
+  it('without a route to the best asset it picks the best one it CAN reach (USDC), not USDt', async () => {
+    const { WNEAR, USDC } = await import('../support/world').then(async (m) => ({
+      WNEAR: m.WNEAR,
+      USDC: accountId('usdc.near'),
+    }));
+    const { out } = await run([[WNEAR, USDC]]);
+    expect(out).toMatchObject({ kind: 'allocation.swap', tokenIn: WNEAR, tokenOut: USDC });
+  });
+
+  it('with no route at all it says so instead of proposing a swap that can never be quoted', async () => {
+    const { out } = await run([]);
+    expect(out).toMatchObject({ kind: 'no_action', reasonCode: 'no_edge' });
+    expect(out?.rationale).toMatch(/no allowlisted pool connects/);
+  });
+
+  it('without route information it behaves as before (best yield)', async () => {
+    const { out, USDT } = await run(undefined);
+    expect(out).toMatchObject({ kind: 'allocation.swap', tokenOut: USDT });
+  });
+});
+
 describe("agents explain missing market data with the provider's reasons", () => {
   const observe = async (market: AgentObservation['market'], w: ReturnType<typeof makeWorld>) => {
     const snapshot = w.buildSnapshot();

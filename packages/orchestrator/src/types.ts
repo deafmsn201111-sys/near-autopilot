@@ -88,6 +88,8 @@ export interface AgentObservation {
   readonly market: MarketContext | null;
   readonly risk: RiskState;
   readonly config: OrchestratorConfig;
+  /** Pairs an allowlisted pool connects (from the quote provider); absent when unknown. Plain data, copied per agent. */
+  readonly swapPairs?: readonly (readonly [TokenId, TokenId])[];
 }
 
 /* ------------------------------ data quality ------------------------------ */

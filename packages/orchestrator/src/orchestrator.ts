@@ -410,6 +410,7 @@ export class Orchestrator {
       market,
       risk,
       config: cfg,
+      ...(d.quoter.pairs ? { swapPairs: d.quoter.pairs() } : {}),
     };
 
     for (const agent of d.agents) {
