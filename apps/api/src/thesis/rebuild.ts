@@ -45,11 +45,55 @@ export interface ThesisData {
   readonly tvlVsNominal: number | null;
   /** The same metrics over the last 30 days, by pool id. */
   readonly pools30: ReadonlyMap<number, PoolMetrics>;
+  /**
+   * Cohorts of the same metrics: pools still in the top at the end vs pools that were in the top at the start only
+   * (they shrank: the survivorship check), and wNEAR/stablecoin vs wNEAR/volatile-token pairs.
+   */
+  readonly cohorts: readonly Cohort[];
   /** Pool #4512 (wNEAR/USDC) price in USD vs the external NEAR/USD quorum, per day: |difference| in bps. */
   readonly priceCheck: {
     readonly days: number;
     readonly medianBps: number | null;
     readonly maxBps: number | null;
+  };
+}
+
+export interface Cohort {
+  readonly key: 'survivors' | 'shrunk' | 'stable' | 'volatile';
+  readonly label: string;
+  readonly pools: readonly number[];
+  /** Medians, annualised: fees earned (gross), after impermanent loss (LP vs HODL), after costs for $5,000. */
+  readonly medianFeeApr: number | null;
+  readonly medianLpVsHodlApr: number | null;
+  readonly medianNetApr5000: number | null;
+  readonly negativeNet5000: number;
+}
+
+const STABLES = new Set([
+  '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+  'usdt.tether-token.near',
+  'dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near',
+  'a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near',
+  '6b175474e89094c44da98b954eedeac495271d0f.factory.bridge.near',
+  '853d955acef822db058eb8505911ed77f175b99e.factory.bridge.near',
+]);
+
+const median = (xs: readonly number[]): number | null => {
+  const s = [...xs].sort((a, b) => a - b);
+  if (s.length === 0) return null;
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? (s[m] ?? null) : ((s[m - 1] ?? 0) + (s[m] ?? 0)) / 2;
+};
+
+function cohort(key: Cohort['key'], label: string, list: readonly PoolMetrics[]): Cohort {
+  return {
+    key,
+    label,
+    pools: list.map((p) => p.pool),
+    medianFeeApr: median(list.map((p) => p.feeAprRealized)),
+    medianLpVsHodlApr: median(list.map((p) => p.lpVsHodlApr)),
+    medianNetApr5000: median(list.flatMap((p) => (p.netApr5000 === null ? [] : [p.netApr5000]))),
+    negativeNet5000: list.filter((p) => p.netApr5000 !== null && p.netApr5000 < 0).length,
   };
 }
 
@@ -112,8 +156,36 @@ export function computeThesis(): ThesisData {
     times,
   );
   const priced = pools.filter((p) => p.tvlUsdEnd !== null && p.netApr500 !== null);
+  const endSet = new Set(manifest.universe.endPools ?? manifest.universe.pools);
+  const cohorts: Cohort[] = [
+    cohort(
+      'survivors',
+      'still in the top 15 at the end',
+      pools.filter((p) => endSet.has(p.pool)),
+    ),
+    ...(manifest.universe.startPools
+      ? [
+          cohort(
+            'shrunk',
+            'in the top 15 at the start only (shrank)',
+            pools.filter((p) => !endSet.has(p.pool)),
+          ),
+        ]
+      : []),
+    cohort(
+      'stable',
+      'wNEAR / stablecoin',
+      pools.filter((p) => STABLES.has(p.other)),
+    ),
+    cohort(
+      'volatile',
+      'wNEAR / volatile token',
+      pools.filter((p) => !STABLES.has(p.other)),
+    ),
+  ];
   return {
     manifest,
+    cohorts,
     pools,
     daily,
     burrow,

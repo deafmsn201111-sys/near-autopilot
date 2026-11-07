@@ -39,6 +39,25 @@ export const RULES = {
 } as const;
 
 /** The three counts and their falsification results: one calculation for THESIS.md and the dashboard. */
+function shrunkText(d: ThesisData): string {
+  const n = d.cohorts.find((c) => c.key === 'shrunk')?.pools.length ?? 0;
+  return n === 1
+    ? 'One pool was large at the start but dropped out of the top 15; it is'
+    : `${n} pools were large at the start but dropped out of the top 15; they are`;
+}
+
+function cohortTable(d: ThesisData): string {
+  const p = (v: number | null) => (v === null ? 'n/a' : `${(v * 100).toFixed(1)}%`);
+  return [
+    '| Group | Pools | Gross: fee APR (median) | After IL: LP vs HODL (median) | Net, $5,000 (median) | Negative net |',
+    '|---|---|---|---|---|---|',
+    ...d.cohorts.map(
+      (c) =>
+        `| ${c.label} | ${c.pools.length} | ${p(c.medianFeeApr)} | ${p(c.medianLpVsHodlApr)} | ${p(c.medianNetApr5000)} | ${c.negativeNet5000} of ${c.pools.length} |`,
+    ),
+  ].join('\n');
+}
+
 export function thesisSummary(d: ThesisData) {
   const pools = [...d.pools].sort((a, b) => b.tvlNearEnd - a.tvlNearEnd);
   const n = pools.length;
@@ -254,6 +273,21 @@ The full series are in \`thesis/out/pools.csv\`, \`thesis/out/pools-daily.csv\` 
    in a quarter when NEAR rose, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
    ${pools.filter((m) => m.lpReturnInNearApr < m.lpVsHodlApr).length} of ${n} pools did worse than against HODL. Neither benchmark
    closes the gap to the displayed APR, which counts no price risk at all.
+
+## Survivorship and pool types
+
+${cohortTable(d)}
+
+${
+  d.manifest.universe.startPools
+    ? `The universe is the union of the top 15 at the first and at the last block. Ranking only at the end would keep
+the survivors: the pools that were still large after 90 days. ${shrunkText(d)} analysed with the same method and
+counted in every claim above.`
+    : 'The universe was ranked at the last block only: pools that shrank during the window are not included (survivorship bias).'
+}
+
+Gross is the fee APR LPs earned; after IL is LP vs HODL (fees minus impermanent loss); net also subtracts the
+round-trip cost of a $5,000 position.
 
 ## Limitations
 

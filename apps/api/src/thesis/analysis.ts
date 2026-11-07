@@ -82,6 +82,9 @@ export const manifestSchema = z.object({
     rule: z.string(),
     candidates: z.number().int(),
     pools: z.array(z.number().int()),
+    /** Survivorship fix (extend.ts): the ranking at the last and at the first block; `pools` is their union. */
+    endPools: z.array(z.number().int()).optional(),
+    startPools: z.array(z.number().int()).optional(),
   }),
 });
 

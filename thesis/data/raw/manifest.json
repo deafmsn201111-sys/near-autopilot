@@ -555,7 +555,7 @@
     }
   ],
   "universe": {
-    "rule": "v1 SIMPLE_POOLs with wrap.near on one side, ranked by wrap.near reserve at block 223087984, top 15",
+    "rule": "v1 SIMPLE_POOLs with wrap.near on one side: the union of the top 15 by wrap.near reserve at the FIRST block (210237960) and at the LAST block, so pools that shrank during the window are included (survivorship bias)",
     "candidates": 5162,
     "pools": [
       4512,
@@ -572,7 +572,42 @@
       6679,
       2,
       5650,
+      852,
+      6503
+    ],
+    "endPools": [
+      4512,
+      6458,
+      6724,
+      5462,
+      6065,
+      5469,
+      79,
+      4525,
+      4771,
+      4,
+      535,
+      6679,
+      2,
+      5650,
       852
+    ],
+    "startPools": [
+      6065,
+      4512,
+      6458,
+      6724,
+      5462,
+      4525,
+      79,
+      4,
+      5469,
+      2,
+      4771,
+      6503,
+      535,
+      5650,
+      6679
     ]
   },
   "priceSources": [

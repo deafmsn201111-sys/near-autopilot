@@ -15,25 +15,25 @@ rules that would falsify each fixed in advance:
 
 | | Count | Falsified if | Result |
 |---|---|---|---|
-| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within 2 pp of LP vs HODL in at least half the pools | 4 of 15 within 2 pp: **holds** |
-| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \|Spearman ρ\| ≥ 0.7 | ρ = 0.22: **holds** |
+| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within 2 pp of LP vs HODL in at least half the pools | 4 of 16 within 2 pp: **holds** |
+| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \|Spearman ρ\| ≥ 0.7 | ρ = 0.33: **holds** |
 | H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within 0.5 pp of realized in at least 3/4 of markets | 11 of 18 within: **holds** |
 
 ## Evidence
 
-- **Universe.** v1 SIMPLE_POOLs with wrap.near on one side, ranked by wrap.near reserve at block 223087984, top 15; 5162 candidate pools, 15 analysed.
-- **Nominal above kept.** In **13 of 15** pools the nominal 24h APR on the last day is above the
-  LP-vs-HODL return of the whole window. Median nominal 0.9%,
-  median realized fee APR 0.7%, median LP vs HODL -2.2%.
+- **Universe.** v1 SIMPLE_POOLs with wrap.near on one side: the union of the top 15 by wrap.near reserve at the FIRST block (210237960) and at the LAST block, so pools that shrank during the window are included (survivorship bias); 5162 candidate pools, 16 analysed.
+- **Nominal above kept.** In **14 of 16** pools the nominal 24h APR on the last day is above the
+  LP-vs-HODL return of the whole window. Median nominal 1.0%,
+  median realized fee APR 1.0%, median LP vs HODL -3.0%.
 - **The displayed number moves.** Over the window the daily nominal APR of a pool spans a median
-  13.4 pp between its lowest and highest day.
-- **Impermanent loss decides.** 12 of 15 pools left their LPs behind simply holding the two tokens
+  16.0 pp between its lowest and highest day.
+- **Impermanent loss decides.** 13 of 16 pools left their LPs behind simply holding the two tokens
   (LP vs HODL < 0): fees did not cover the impermanent loss.
 - **Size matters.** After round-trip costs (two half-swaps through the pool, gas upper bound), the net APR of a $500
-  position is negative in 13 of 15 pools; costs fall per dollar as the position grows (table: $5,000).
-- **TVL.** Spearman ρ between TVL and LP vs HODL = 0.22; between TVL and nominal APR =
-  0.20.
-- **Idle liquidity.** 7 of 15 pools had a median daily nominal APR below 0.5%: large reserves, almost no
+  position is negative in 14 of 16 pools; costs fall per dollar as the position grows (table: $5,000).
+- **TVL.** Spearman ρ between TVL and LP vs HODL = 0.33; between TVL and nominal APR =
+  0.15.
+- **Idle liquidity.** 7 of 16 pools had a median daily nominal APR below 0.5%: large reserves, almost no
   trading (#5462 wNEAR/chill-129, #6065 wNEAR/ZEC, #79 wNEAR/REF, #4771 wNEAR/touched, #535 wNEAR/stNEAR, #6679 wNEAR/itlx, #5650 wNEAR/purge-558). TVL there is capital parked, not capital earning.
 - **Burrow.** 7 of 18 markets accrued a supply yield more than
   0.5 pp away from the APR the contract reports today. This is the weakest count: in most markets (11 of 18) the displayed rate is close to what accrued; the gap is concentrated in the markets listed first in the Burrow table.
@@ -63,6 +63,7 @@ rules that would falsify each fixed in advance:
 | #2 wNEAR/DAI | $130,795 | 30 | 13.4% | 0.9% – 48.3% | 10.0% | -9.0% | -26.7% | -0.3% | -28.1% | -27.9% |
 | #5650 wNEAR/purge-558 | $128,901 | 10 | 0.0% | 0.0% – 1.3% | 0.1% | -1.9% | -7.6% | -0.6% | -8.2% | -8.0% |
 | #852 wNEAR/52a047ee… | $90,301 | 30 | 1.2% | 0.0% – 2.4% | 0.7% | -1.1% | -3.7% | -0.0% | -5.2% | -4.9% |
+| #6503 wNEAR/token | $55,053 | 30 | 5.1% | 0.3% – 304.7% | 20.4% | -11.3% | -27.0% | -23.2% | -28.4% | -28.1% |
 
 ### Burrow supply markets (largest gap first)
 
@@ -130,17 +131,33 @@ The full series are in `thesis/out/pools.csv`, `thesis/out/pools-daily.csv` and 
    realized base yield, and the reward token's own price risk would come on top.
 5. **"The gas cost is overstated."** It is an upper bound. For $5,000 the cost per dollar is small. The $500 column
    shows where costs matter, and the cost figures are in `pools.csv`.
-6. **"The sample is biased."** The universe is the top 15 wNEAR pools by reserve at the END block. That is
+6. **"The sample is biased."** The universe is the top 16 wNEAR pools by reserve at the END block. That is
    survivorship: pools that drained during the window are not in it, which flatters LP outcomes. So the gap is, if
    anything, understated.
 7. **"One quarter is one market regime."** Yes. Over these 90 days NEAR moved from
    1.658 to 4.012 USDC (pool #4512), and the impermanent loss of NEAR pairs follows that move. Another quarter can give other numbers. The claim
    is about what the displayed figures leave out, not about a fixed number.
 8. **"HODL is the wrong benchmark: compare with simply holding NEAR."** In NEAR terms an LP share of these pools
-   returned a median -42.7% a year (`lp_return_in_near_apr` in `pools.csv`):
+   returned a median -48.9% a year (`lp_return_in_near_apr` in `pools.csv`):
    in a quarter when NEAR rose, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
-   11 of 15 pools did worse than against HODL. Neither benchmark
+   12 of 16 pools did worse than against HODL. Neither benchmark
    closes the gap to the displayed APR, which counts no price risk at all.
+
+## Survivorship and pool types
+
+| Group | Pools | Gross: fee APR (median) | After IL: LP vs HODL (median) | Net, $5,000 (median) | Negative net |
+|---|---|---|---|---|---|
+| still in the top 15 at the end | 15 | 0.7% | -2.2% | -3.8% | 13 of 15 |
+| in the top 15 at the start only (shrank) | 1 | 20.4% | -27.0% | -28.1% | 1 of 1 |
+| wNEAR / stablecoin | 4 | 11.0% | -25.5% | -26.7% | 4 of 4 |
+| wNEAR / volatile token | 12 | 0.3% | -0.9% | -2.0% | 10 of 12 |
+
+The universe is the union of the top 15 at the first and at the last block. Ranking only at the end would keep
+the survivors: the pools that were still large after 90 days. One pool was large at the start but dropped out of the top 15; it is analysed with the same method and
+counted in every claim above.
+
+Gross is the fee APR LPs earned; after IL is LP vs HODL (fees minus impermanent loss); net also subtracts the
+round-trip cost of a $5,000 position.
 
 ## Limitations
 
