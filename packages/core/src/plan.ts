@@ -71,6 +71,8 @@ export type ApprovedPlan = Brand<
     readonly planHash: string;
     readonly approvedAt: Date;
     readonly expiresAt: Date;
+    /** Set only by `PolicyEngine.approveByOperator`: the person who confirmed a decision that required approval. */
+    readonly approvedBy?: string;
   },
   'ApprovedPlan'
 >;

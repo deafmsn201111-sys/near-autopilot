@@ -103,12 +103,49 @@ export class PolicyEngine implements ApprovalAuthority {
    * evaluated, once.
    */
   approve(plan: PlannedTransaction, decision: PolicyDecision): ApprovedPlan {
+    if (decision.outcome !== 'approve') {
+      throw new Error(`Cannot approve a plan whose decision outcome is "${decision.outcome}"`);
+    }
+    return this.mint(plan, decision, null);
+  }
+
+  /**
+   * A HUMAN approval of a decision that needs one ("require_approval": every violation is approval-severity, none is
+   * a rejection). Only for a decision this engine produced, for the exact plan it evaluated, once, within
+   * approvalTtlSeconds of the evaluation, and with a named approver. A rejected decision can never be approved, by
+   * anyone: limits such as the per-action maximum stay absolute.
+   */
+  approveByOperator(
+    plan: PlannedTransaction,
+    decision: PolicyDecision,
+    approvedBy: string,
+  ): ApprovedPlan {
+    if (!approvedBy.trim()) throw new Error('An operator approval needs a named approver');
+    if (decision.outcome !== 'require_approval') {
+      throw new Error(
+        `Only a decision that requires approval can be approved by an operator, not "${decision.outcome}"`,
+      );
+    }
+    if (decision.violations.some((v) => v.severity !== 'approval')) {
+      throw new Error('The decision has a rejecting violation; it cannot be approved');
+    }
+    const age = this.deps.clock.now().getTime() - decision.evaluatedAt.getTime();
+    if (age > this.config.approvalTtlSeconds * 1000) {
+      throw new Error(
+        `The decision is ${Math.round(age / 1000)} s old; approvals expire after ${this.config.approvalTtlSeconds} s`,
+      );
+    }
+    return this.mint(plan, decision, approvedBy.trim());
+  }
+
+  private mint(
+    plan: PlannedTransaction,
+    decision: PolicyDecision,
+    approvedBy: string | null,
+  ): ApprovedPlan {
     const evaluatedHash = this.evaluated.get(decision);
     if (evaluatedHash === undefined) {
       throw new Error('Decision was not produced by this policy engine (or was already used)');
-    }
-    if (decision.outcome !== 'approve') {
-      throw new Error(`Cannot approve a plan whose decision outcome is "${decision.outcome}"`);
     }
     if (decision.intentId !== plan.intentId) {
       throw new Error('Decision was made for a different intent than this plan');
@@ -126,6 +163,7 @@ export class PolicyEngine implements ApprovalAuthority {
       planHash: hash,
       approvedAt,
       expiresAt: new Date(approvedAt.getTime() + this.config.approvalTtlSeconds * 1000),
+      ...(approvedBy ? { approvedBy } : {}),
     }) as ApprovedPlan;
     this.issued.add(approved);
     return approved;

@@ -69,7 +69,16 @@ export class ShadowGateway implements PlanExecutor {
 
     const stored = await this.d.repo.findPolicyVerdict(approved.decisionId);
     if (!stored) return refuse('no stored policy verdict for this decision');
-    if (stored.verdict !== 'ALLOW') return refuse(`stored verdict is ${stored.verdict}, not ALLOW`);
+    // ALLOW, or WARN (the policy required a human confirmation) with an approval that names who confirmed it. The
+    // approval's authenticity is verified by the inner executor: a structural copy with approvedBy is still refused.
+    const confirmed =
+      stored.verdict === 'WARN' &&
+      typeof approved.approvedBy === 'string' &&
+      approved.approvedBy !== '';
+    if (stored.verdict !== 'ALLOW' && !confirmed)
+      return refuse(
+        `stored verdict is ${stored.verdict}, not ALLOW${stored.verdict === 'WARN' ? ' and nobody confirmed it' : ''}`,
+      );
     if (stored.planHash !== approved.planHash)
       return refuse('the stored ALLOW verdict is for a different plan');
     if (this.d.policyVersion !== undefined && stored.policyVersion !== this.d.policyVersion)

@@ -81,7 +81,7 @@ export class TestApprovalAuthority implements ApprovalAuthority {
 
   mint(
     plan: PlannedTransaction,
-    opts: { now: Date; ttlSeconds?: number; decisionId?: string },
+    opts: { now: Date; ttlSeconds?: number; decisionId?: string; approvedBy?: string },
   ): ApprovedPlan {
     const approved = {
       plan,
@@ -89,6 +89,7 @@ export class TestApprovalAuthority implements ApprovalAuthority {
       planHash: planHash(plan),
       approvedAt: opts.now,
       expiresAt: new Date(opts.now.getTime() + (opts.ttlSeconds ?? 60) * 1000),
+      ...(opts.approvedBy ? { approvedBy: opts.approvedBy } : {}),
     } as ApprovedPlan;
     this.minted.add(approved);
     return approved;

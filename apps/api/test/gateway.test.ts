@@ -354,10 +354,36 @@ describe('ShadowGateway: the verdict cannot be bypassed, nothing is ever sent', 
       await repo.insertPolicyVerdict(stored('d-2', verdict, approved.planHash));
       const r = await gw.execute(approved);
       expect(r.status).toBe('rejected');
-      expect(r.error).toBe(`stored verdict is ${verdict}, not ALLOW`);
+      expect(r.error).toMatch(new RegExp(`^stored verdict is ${verdict}, not ALLOW`));
       expect(sent).toEqual([]);
     },
   );
+
+  it('a WARN verdict passes only with an authentic approval that names who confirmed it; BLOCK never does', async () => {
+    const { gw, repo, authority } = gateway({ oneClick: false });
+    const plan = await swapPlan();
+    const confirmed = authority.mint(plan, {
+      now: NOW,
+      decisionId: 'd-w',
+      approvedBy: 'operator@test',
+    });
+    await repo.insertPolicyVerdict(stored('d-w', 'WARN', confirmed.planHash));
+    expect((await gw.execute(confirmed)).status).toBe('dry_run');
+
+    // a structural copy claiming a confirmation is still not authentic
+    const forgedBase = authority.mint(plan, { now: NOW, decisionId: 'd-f' });
+    await repo.insertPolicyVerdict(stored('d-f', 'WARN', forgedBase.planHash));
+    const forged = { ...forgedBase, approvedBy: 'attacker' } as typeof forgedBase;
+    expect((await gw.execute(forged)).error).toMatch(/not issued by the policy engine/);
+
+    const blocked = authority.mint(plan, {
+      now: NOW,
+      decisionId: 'd-b',
+      approvedBy: 'operator@test',
+    });
+    await repo.insertPolicyVerdict(stored('d-b', 'BLOCK', blocked.planHash));
+    expect((await gw.execute(blocked)).error).toBe('stored verdict is BLOCK, not ALLOW');
+  });
 
   it('refuses an ALLOW stored for a different plan', async () => {
     const { gw, repo, authority } = gateway();

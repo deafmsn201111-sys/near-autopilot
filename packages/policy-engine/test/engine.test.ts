@@ -320,6 +320,44 @@ describe('PolicyEngine.approve', () => {
   });
 });
 
+describe('PolicyEngine.approveByOperator (a human confirms a decision that needs approval)', () => {
+  const needsApproval = () => {
+    const { engine, clock } = makeEngine(makeConfig({ approvalThresholdUsd: 0.01 }));
+    const intent = swapIntent();
+    const plan = planFor(intent);
+    const decision = engine.evaluate(input(intent));
+    return { engine, clock, plan, decision };
+  };
+
+  it('approves a require_approval decision once, for the evaluated plan, with a named approver', () => {
+    const { engine, plan, decision } = needsApproval();
+    expect(decision.outcome).toBe('require_approval');
+    expect(() => engine.approve(plan, decision)).toThrow('outcome');
+    expect(() => engine.approveByOperator(plan, decision, ' ')).toThrow('named approver');
+    const approved = engine.approveByOperator(plan, decision, 'operator@test');
+    expect(engine.isAuthentic(approved)).toBe(true);
+    expect(() => engine.approveByOperator(plan, decision, 'operator@test')).toThrow('already used');
+  });
+
+  it('can never approve a rejected decision, a changed plan, or an expired one', () => {
+    const { engine: strict } = makeEngine(makeConfig({ enabled: false }));
+    const intent = swapIntent();
+    const rejected = strict.evaluate(input(intent));
+    expect(() => strict.approveByOperator(planFor(intent), rejected, 'operator')).toThrow(
+      'not "reject"',
+    );
+
+    const a = needsApproval();
+    expect(() =>
+      a.engine.approveByOperator({ ...a.plan, receiverId: BURROW }, a.decision, 'operator'),
+    ).toThrow('differs from the plan');
+
+    const b = needsApproval();
+    b.clock.advanceSeconds(121);
+    expect(() => b.engine.approveByOperator(b.plan, b.decision, 'operator')).toThrow('expire');
+  });
+});
+
 describe('policyConfigSchema', () => {
   it('rejects inconsistent limits and unknown keys', () => {
     expect(() =>

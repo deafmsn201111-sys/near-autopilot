@@ -13,7 +13,8 @@ import { AuditedYieldSink } from './yield/audit';
 import { DrizzleYieldStore } from './yield/store';
 import { DrizzleTestnetTxLedger } from './testnet-tx/ledger';
 import { testnetTxView } from './testnet-tx/presenter';
-import { systemClock, wire } from './wiring';
+import { systemClock, uuidGenerator, wire, type WireOptions } from './wiring';
+import { UserRequestService } from './services/requests';
 import { chainOf } from './evidence/chain';
 import { PgControlStore, PgIdempotencyStore } from './infra/orchestrator-stores';
 import { ModeController } from '@near-autopilot/orchestrator';
@@ -28,21 +29,54 @@ async function main(): Promise<void> {
   const provenance = { dataSource: env.DATA_SOURCE, network: env.NEAR_NETWORK } as const;
   const repo = new DrizzleRepository(database.db, provenance);
 
-  const { cycle, snapshots, policy, market, yields, control } = await wire(
-    env,
-    config,
-    repo,
-    logger,
-    {
-      marketSink: new DrizzleMarketPriceStore(database.db),
-      yieldSink: new AuditedYieldSink(new DrizzleYieldStore(database.db), repo),
-      // Durable mode and idempotency: an emergency read-only survives a restart (migration 0013).
-      orchestratorStores: (scope) => ({
-        control: new PgControlStore(database.db, scope, chainOf(provenance), systemClock),
-        idempotency: new PgIdempotencyStore(database.db, scope, systemClock),
-      }),
-    },
-  );
+  const wireOptions: WireOptions = {
+    marketSink: new DrizzleMarketPriceStore(database.db),
+    yieldSink: new AuditedYieldSink(new DrizzleYieldStore(database.db), repo),
+    // Durable mode and idempotency: an emergency read-only survives a restart (migration 0013).
+    orchestratorStores: (scope) => ({
+      control: new PgControlStore(database.db, scope, chainOf(provenance), systemClock),
+      idempotency: new PgIdempotencyStore(database.db, scope, systemClock),
+    }),
+  };
+  const wired = await wire(env, config, repo, logger, wireOptions);
+  const { cycle, snapshots, policy, market, yields, control } = wired;
+
+  // "Let the agent do it": one request service per simulated demo portfolio, through the SAME planners, policy
+  // engine and executor (dry-run) as the cycles. Only in simulation; the other portfolio is wired on first use.
+  const services = new Map<string, Promise<UserRequestService>>();
+  const serviceOf = (w: typeof wired) =>
+    new UserRequestService({
+      policy: w.policy,
+      planners: w.planners,
+      executor: w.executor,
+      snapshots: w.snapshots,
+      repo,
+      accountId: w.accountId,
+      clock: systemClock,
+      ids: uuidGenerator,
+      logger,
+    });
+  const requests =
+    env.DATA_SOURCE === 'simulation' && env.EXECUTION_MODE === 'dry-run'
+      ? (portfolio: string) => {
+          if (portfolio !== 'demo-500' && portfolio !== 'demo-5000') return Promise.resolve(null);
+          let s = services.get(portfolio);
+          if (!s) {
+            s =
+              portfolio === env.SIMULATION_PORTFOLIO
+                ? Promise.resolve(serviceOf(wired))
+                : wire(
+                    { ...env, SIMULATION_PORTFOLIO: portfolio },
+                    config,
+                    repo,
+                    logger,
+                    wireOptions,
+                  ).then(serviceOf);
+            services.set(portfolio, s);
+          }
+          return s;
+        }
+      : undefined;
   if (control) {
     // Restart recovery, audited: which mode this process starts in, as read from the database.
     const state = await new ModeController(control.store, systemClock).current();
@@ -75,6 +109,7 @@ async function main(): Promise<void> {
       }),
       provenance,
       testnetTransactions: testnetTxView(new DrizzleTestnetTxLedger(database.db)),
+      ...(requests ? { requests } : {}),
       evidence: new EvidenceStore(database.db),
       marketData: marketDataView(market, env.NEAR_NETWORK),
       yieldData: yieldDataView(yields),

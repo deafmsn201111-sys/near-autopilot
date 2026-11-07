@@ -15,6 +15,8 @@ import type { EvidenceStore } from './evidence/store';
 import { toPortfolioDto, toProposalDto, toRunDto, toRouteDto, toVerdictDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
 import { disabledYieldView } from './yield/presenter';
+import type { UserRequestService } from './services/requests';
+import { accountIdSchema } from '@near-autopilot/core';
 
 export interface ServerDeps {
   readonly apiToken: string;
@@ -31,6 +33,11 @@ export interface ServerDeps {
   readonly yieldData?: { current(): Promise<YieldDataDto> };
   /** This deployment's audit hash chain in Postgres (absent in tests that do not need it). */
   readonly evidence?: Pick<EvidenceStore, 'latest' | 'verify'>;
+  /**
+   * "Let the agent do it" (services/requests.ts): one request service per simulated demo portfolio. Absent outside
+   * simulation: on chain data no request is accepted here.
+   */
+  readonly requests?: (portfolio: string) => Promise<UserRequestService | null>;
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -179,6 +186,40 @@ export function buildServer(
           error: null,
         },
   );
+
+  if (deps.requests) {
+    const requests = deps.requests;
+    const body = z.object({
+      portfolio: z.enum(['demo-500', 'demo-5000']),
+      kind: z.enum(['supply', 'repay']),
+      token: accountIdSchema,
+      usd: z.number().positive().max(1_000_000),
+      by: z.string().trim().min(1).max(80),
+    });
+    app.post('/v1/requests', async (request, reply) => {
+      const parsed = body.safeParse(request.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: parsed.error.issues[0]?.message ?? 'invalid request' });
+      const service = await requests(parsed.data.portfolio);
+      if (!service) return reply.code(404).send({ error: 'no autopilot for this portfolio here' });
+      return service.request(parsed.data);
+    });
+    app.post('/v1/requests/:id/confirm', async (request, reply) => {
+      const parsed = z
+        .object({
+          portfolio: z.enum(['demo-500', 'demo-5000']),
+          by: z.string().trim().min(1).max(80),
+        })
+        .safeParse(request.body);
+      if (!parsed.success)
+        return reply.code(400).send({ error: 'portfolio and a named approver are required' });
+      const service = await requests(parsed.data.portfolio);
+      if (!service) return reply.code(404).send({ error: 'no autopilot for this portfolio here' });
+      return service.confirm((request.params as { id: string }).id, parsed.data.by);
+    });
+  }
 
   app.post('/v1/runs', async (_request, reply) => {
     const result = await deps.cycle.run();
