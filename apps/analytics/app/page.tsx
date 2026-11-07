@@ -116,6 +116,13 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </span>
       </div>
 
+      {!data.asOf && (
+        <div className="callout" style={{ marginBottom: 16 }}>
+          <b>The first analysis is still running.</b> On a fresh install the autopilot first reads
+          every pool and market from NEAR mainnet; without an RPC key this takes a few minutes. This
+          page fills in by itself.
+        </div>
+      )}
       <section className="hero">
         <div>
           <span className="eyebrow">Net worth</span>

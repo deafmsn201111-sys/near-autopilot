@@ -51,6 +51,9 @@ import type { CollectorStore } from './store';
 import { chainOf } from '../evidence/chain';
 import { PgControlStore, PgIdempotencyStore } from '../infra/orchestrator-stores';
 
+/** Re-read the curated prices before the portfolio analysis when the cycle's own are older than this. */
+const REFRESH_PRICES_AFTER_MS = 60_000;
+
 export interface CollectorDeps {
   readonly env: ApiEnv;
   readonly config: AutopilotConfig;
@@ -362,14 +365,28 @@ export class ShadowCollector {
         };
       });
 
-      // 8. Both demo portfolios on this one snapshot.
-      if (market && yieldReport && markets && poolViews)
+      // 8. Both demo portfolios on this one snapshot. A long cycle (a registry scan on a rate-limited public RPC takes
+      // minutes) would hand the agents prices older than the 180 s freshness limit, and every decision would be
+      // skipped as stale. The limit stays: the curated prices are re-read right before the analysis instead, when
+      // the ones from the start of the cycle are older than REFRESH_PRICES_AFTER_MS.
+      const pricesForAnalysis =
+        market && this.d.now().getTime() - market.fetchedAt.getTime() > REFRESH_PRICES_AFTER_MS
+          ? await timed('prices.refresh', async () => {
+              const r = await this.d.market.report();
+              return {
+                value: r,
+                records: r.assets.length,
+                detail: 'curated prices re-read for the portfolio analysis',
+              };
+            })
+          : market;
+      if (pricesForAnalysis && yieldReport && markets && poolViews)
         await timed('portfolios', async () => {
           for (const pid of this.d.portfolios)
             await this.analysePortfolio(
               pid,
               snapshotId ?? '',
-              market,
+              pricesForAnalysis,
               yieldReport,
               viewer,
               markets,
