@@ -104,7 +104,7 @@ On `:3001/routes`, show a recorded route: the gateway compares a Rhea quote with
 On `:3001/audit`, show the chains and their verification status. Then in a terminal:
 
 ```bash
-docker compose exec api node --import tsx src/evidence/cli.ts verify
+docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify
 docker compose exec api node --import tsx src/evidence/cli.ts replay
 ```
 

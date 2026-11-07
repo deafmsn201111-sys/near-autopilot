@@ -14,6 +14,144 @@ whether each action may run. Nothing is signed unless policy approved that exact
 
 **Demo walkthrough:** [DEMO.md](DEMO.md). **What comes next:** [ROADMAP.md](ROADMAP.md).
 
+## NEAR HACKATHON 2026
+
+Tracks: **security** (primary), **defi**, **thesis**. When and how it was built, the libraries used, and how to tell
+the hackathon work apart: [HACKATHON_BUILD.md](HACKATHON_BUILD.md).
+
+- **Whole project:** [`hackathon-submission`](https://github.com/deafmsn201111-sys/near-autopilot/tree/hackathon-submission).
+  All of it was written in the hackathon window; there is no pre-hackathon code.
+- **Changes since the git import:** [`hackathon-start...hackathon-submission`](https://github.com/deafmsn201111-sys/near-autopilot/compare/hackathon-start...hackathon-submission).
+- **About the first commit** (`232bfb7`, "Baseline: project state as found before audit fixes"): this is not
+  pre-hackathon code. The project was started on 2026-11-02 in a local browser session of Claude, with no repository
+  connected, and imported into git on 2026-11-04. The next commits audit and fix it. Git cannot prove the dates
+  before 2026-11-04; they rest on the author's statement.
+
+NEAR Autopilot is a DeFi manager for NEAR on its way to full autonomy. It guards lending positions against
+liquidation, refuses actions that lose money after costs, and analyses liquidity pools. Three levels are kept apart
+everywhere in this repository:
+
+| Level             | What                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Works now**     | Automatic decisions, a 12-check policy engine, a tamper-evident audit trail. Execution is **dry-run only**: plans are built, checked and simulated, never signed or sent. |
+| **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                     |
+| **Roadmap**       | Real execution, an on-chain guard contract, full autonomy ([ROADMAP.md](ROADMAP.md)).                                                                                     |
+
+Mainnet is read-only: signing on mainnet is locked in code, and NEAR Intents 1Click is used for dry quotes only.
+
+Every "try it" step below starts from the [Quick start](#quick-start): `./scripts/quickstart.sh`, then the dashboard on
+`http://127.0.0.1:3001`. On a fresh clone it took 6 min 13 s (2026-11-08).
+
+### Security track: give an AI money without giving it the keys
+
+**What works**
+
+- Every action an agent proposes passes a deterministic policy engine with 12 checks. The answer is ALLOW, WARN or
+  BLOCK. The checks include:
+  - allowlists of contracts, tokens and recipients;
+  - a strict parse of the Burrow message, so a hidden `Withdraw` is caught;
+  - price freshness and oracle deviation;
+  - per-action and daily USD limits;
+  - a gas budget.
+- Only the policy engine can mint an approved plan, and the approval is checked again at execution. An operator
+  approval is single-use and expires.
+- Every decision is appended to a hash chain in PostgreSQL, with ed25519-signed checkpoints.
+
+**Why the agent does not sign, not even with a function-call key**
+
+NEAR's way to give an agent limited keys is a function-call access key scoped to one contract. Such a key **cannot
+attach a deposit**, not even 1 yoctoNEAR. But every action this agent takes is a NEP-141 `ft_transfer_call`: a
+repayment or deposit on Burrow, or a swap on Rhea. NEP-141 requires exactly 1 yoctoNEAR on that call. So:
+
+- a function-call key cannot sign any of these actions: the NEAR runtime rejects them;
+- a full-access key could, but it can also add keys, deploy code and drain the account. The executor **refuses a
+  full-access key** before any cycle runs ([`key-guard.ts`](packages/tx-execution/src/key-guard.ts)).
+
+The result is deliberate: the agent cannot sign on its own, and everything runs dry-run. Real autonomous execution
+needs custody with its own limits, for example an on-chain guard contract or an MPC signer. That is on the roadmap,
+not built.
+
+The four testnet transactions in [docs/testnet-transactions.md](docs/testnet-transactions.md) were made by a separate
+manual tool. The human confirms each preview hash, and the tool has hard limits: 0.1 NEAR per operation, 1 NEAR in
+total.
+
+**Try it**
+
+1. Run `pnpm demo:attack`. You see 8 attacks stopped and 2 control actions allowed, ending in `signed 0, broadcast 0`.
+   - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
+     approval and a full-access key.
+   - The log is in `docs/evidence/demo-attack.log.jsonl`.
+2. Open `:3001` and keep the demo portfolio and Demo mode. On "Repay … of the loan", press **Let the agent do it**:
+   - enter `30`: you see "Done as a dry run", and the demo balances change under a "Changed by the agent
+     (simulated)" note;
+   - enter `80`: the policy asks for your confirmation ("exceeds auto-approval threshold $50").
+3. Open `:3001/activity`. You see your request, the policy's answer and that nothing was signed or sent.
+4. Run `docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify`. You see
+   every audit chain `ok` and `"checkpoints":"ok"`. `:3001/audit` shows the same.
+5. Open `:3001/policy`. You see stored verdicts, each check with its inputs.
+6. Run `pnpm --filter @near-autopilot/analytics test`. You see `signing-lock.test.ts` pass. It fails if any dashboard
+   source calls a wallet's signing method.
+
+**Not done**
+
+- No autonomous signing and no guard contract.
+- No TEE attestation and no counterparty-reputation service.
+- Mainnet signing is locked; the wallet connection is sign-in only.
+
+### DeFi track: protect the position, refuse value-losing actions
+
+**This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
+1Click API is called with `dry: true`, which is a constant in the client.
+
+**What works**
+
+- A read-only mainnet collector runs every 15 minutes. It reads Rhea v1 and DCL pools and Burrow markets, and prices
+  from several cross-checked sources. Everything is stored with block heights.
+- Two demo portfolios ($500 and $5,000, labelled simulated) are analysed every cycle. Each option is costed after
+  fees, swaps, gas, borrowing interest and impermanent loss.
+- An action below the hurdle is refused: a net benefit under $0.50, or a benefit under 3× its cost.
+- The health guardian repays debt or adds collateral when the Burrow health factor falls. It never borrows.
+- The Shadow Gateway compares a Rhea quote with a 1Click dry quote for each allowed plan. It records the best route
+  with `executed: false`.
+
+**Try it**
+
+1. Open `:3001`. You see the demo portfolio:
+   - holdings, net worth and the monthly result;
+   - loan safety ("safe unless NEAR falls N%");
+   - the options ranked after costs, each with its plan, costs and risks.
+2. Open `:3001/opportunities`, then a "USDC / wNEAR (concentrated …)" pool. You see a table for ±5/±15/±50 % ranges:
+   fees, divergence loss and net result, plus what actually happened over the stored window.
+3. Open `:3001/routes`. You see Rhea compared with 1Click for an allowed plan, with `executed: false`.
+4. Press **Connect wallet** and sign in with a NEAR wallet (checked with HOT). You see your own mainnet account, read
+   only: holdings, Burrow position, options. Nothing can be signed.
+
+**Not done**
+
+- No real swaps, deposits or repayments on mainnet.
+- No LP execution: pools are analysis only.
+- No Chain Signatures and no cross-chain settlement.
+
+### Thesis track: displayed APR and TVL are not the yield you keep
+
+[THESIS.md](THESIS.md) tests three counts on 90 days of NEAR mainnet data: Rhea v1 and Burrow, 91 daily blocks, from
+2026-08-06 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
+counter-evidence written out.
+
+**Try it**
+
+1. Run `pnpm install && pnpm thesis:rebuild`, then `git diff --stat`. Nothing changes: the committed CSV, SVG charts
+   and THESIS.md are exactly what the committed raw data gives. A test fails otherwise.
+2. Check any data point by hand with the archival RPC call in THESIS.md's "Reproduce" section. For example, pool 4512
+   at block 223087984 returns the same reserves as `thesis/data/raw/rhea-pools.jsonl`.
+3. Open `:3001/research`. You see the findings in plain language, with the charts.
+
+**Not done**
+
+- Rhea DCL pools are not part of the thesis yet: they are in the dashboard only.
+- No BigQuery or Intents Explorer data: the thesis uses archival RPC view calls only.
+- The window is 90 days.
+
 ## What it does
 
 Two interchangeable decision engines feed the same pipeline
@@ -53,7 +191,7 @@ packages/
   financial-engine/ Pure bigint maths: CLMM valuation, fee APR, IL, net yield (realized/marked/estimated), rebalance cost, slippage, liquidation risk, stress tests, constrained allocation (docs/financial-engine.md)
   near-adapter/     NEAR JSON-RPC client; implements core read/broadcast ports
   rhea-adapter/     Rhea (Ref v1 AMM) swap quoter + swap transaction planner
-  rhea-dcl-adapter/ Rhea/Ref v2 concentrated-liquidity (DCL): typed views, exact tick math, tx builders, ABI check (not used by the API yet)
+  rhea-dcl-adapter/ Rhea/Ref v2 concentrated-liquidity (DCL): typed views, exact tick math, tx builders, ABI check (the analytics API uses its liquidity math for the DCL estimates; no DCL transaction is built)
   burrow-adapter/   Burrow markets/accounts/oracle readers, exact health-factor/LTV/stress maths, verified repay and collateral builders
   agents/           Health guardian and rebalancer (pure decision logic)
   orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; AUTOPILOT_ENGINE=orchestrator, dry-run only)
@@ -93,7 +231,7 @@ Dependency direction is enforced mechanically (ESLint + `scripts/check-boundarie
 **Three commands, Docker only.** No NEAR wallet, private key or API key:
 
 ```bash
-git clone <this repository> near-autopilot && cd near-autopilot
+git clone https://github.com/deafmsn201111-sys/near-autopilot && cd near-autopilot
 ./scripts/quickstart.sh            # or --offline: simulation only, nothing leaves the machine
 open http://127.0.0.1:3001         # analytics: policy decisions, routes, audit trail, thesis, markets
 ```
@@ -112,8 +250,9 @@ Nothing is signed or sent. Mainnet is read with view calls through a public RPC.
 Pyth is skipped and cycles report `partial`; the NEAR price still comes from the three-exchange quorum plus DefiLlama.
 Set `MAINNET_READ_RPC_API_KEY` (FastNEAR) and `PYTH_API_KEY` in `.env` for full-speed, complete cycles.
 
-**Measured on a fresh clone** (2026-11-06, macOS, Docker Desktop with 4 GB): `./scripts/quickstart.sh` took 3 min 51 s
-to healthy containers, with no manual edits. `audit:verify` passed and `audit:replay` matched 1 of 1 verdict.
+**Measured on a fresh clone** (2026-11-08, macOS, Docker Desktop): `./scripts/quickstart.sh` took 6 min 13 s to
+healthy containers, with no manual edits, and `pnpm verify` passed. (Earlier, 2026-11-06: 3 min 51 s; `audit:verify`
+passed and `audit:replay` matched 1 of 1 verdict.)
 
 ## Using the dashboard (`:3001`)
 
@@ -128,7 +267,13 @@ Four pages for a person who wants to use the autopilot, and one area for reviewe
 | For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, controls (pause, read-only), system health, raw markets, prices, simulations, collector log                                                                     |
 
 **Shadow mode.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two portfolios ($500 and
-$5,000) are simulated and labelled as such. There is no wallet and no execute button.
+$5,000) are simulated and labelled as such.
+
+- **Let the agent do it** (Demo mode, demo portfolios): the agent plans the action, the policy runs its 12 checks,
+  and the executor runs it as a dry run. The demo balances then change as if it had been sent: a simulated ledger
+  with a "Reset demo" button. Nothing is signed or sent.
+- **Connect wallet** (HOT Connector): sign-in only, no access key added. It opens a read-only view of your own mainnet
+  account. The two mainnet modes are shown, but their signing is locked.
 
 **Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 
@@ -144,23 +289,24 @@ costs), or why the autopilot would not do it.
 
 ### What works today, and what does not
 
-| Area                                                                                | Status                                                                           |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Mainnet market data (prices with quorum, Rhea registry and history, Burrow markets) | Implemented, read-only                                                           |
-| Opportunity ranking with risk and confidence                                        | Implemented (heuristic ordering aid, documented weights)                         |
-| Independent policy engine (12 checks), Shadow Gateway, hash-chained audit, replay   | Implemented                                                                      |
-| Durable orchestrator mode and idempotency (restart- and race-safe)                  | Implemented (PostgreSQL, migrations 0013-0014)                                   |
-| LP simulation                                                                       | Partial: two-token v1 pools only; DCL and other pool types `UNSUPPORTED`         |
-| Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)        |
-| Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                         |
-| Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)      |
-| Testnet transactions                                                                | Only manual, each one confirmed separately (`testnet-tx`), outside the autopilot |
-| Mainnet execution, wallet connection, AI assistant                                  | **Not implemented.** Planned, see [ROADMAP.md](ROADMAP.md)                       |
+| Area                                                                                | Status                                                                                                                                           |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Mainnet market data (prices with quorum, Rhea registry and history, Burrow markets) | Implemented, read-only                                                                                                                           |
+| Opportunity ranking with risk and confidence                                        | Implemented (heuristic ordering aid, documented weights)                                                                                         |
+| Independent policy engine (12 checks), Shadow Gateway, hash-chained audit, replay   | Implemented                                                                                                                                      |
+| Durable orchestrator mode and idempotency (restart- and race-safe)                  | Implemented (PostgreSQL, migrations 0013-0014)                                                                                                   |
+| LP simulation                                                                       | Two-token v1 pools: stored simulation. DCL: per-range backtest from stored history (pools with confirmed prices). Other pool types `UNSUPPORTED` |
+| Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)                                                                        |
+| Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                                                                                         |
+| Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
+| Testnet transactions                                                                | Only manual, each one confirmed separately (`testnet-tx`), outside the autopilot                                                                 |
+| Wallet connection                                                                   | Sign-in only (HOT Connector) with a read-only account view; signing locked                                                                       |
+| Mainnet execution, AI assistant                                                     | **Not implemented.** Planned, see [ROADMAP.md](ROADMAP.md)                                                                                       |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 
 ```bash
-docker compose exec api node --import tsx src/evidence/cli.ts verify    # every audit chain, seq 1 to head
+docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify   # chains + signed checkpoints
 docker compose exec api node --import tsx src/evidence/cli.ts replay    # every stored verdict, recomputed
 ```
 
