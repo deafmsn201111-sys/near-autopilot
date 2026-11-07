@@ -1,4 +1,5 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import {
   confirmAgentAction,
@@ -19,6 +20,7 @@ export function AgentAction(p: {
   defaultUsd: number;
   maxUsd: number;
 }) {
+  const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const [usd, setUsd] = useState(String(Math.max(1, Math.floor(p.defaultUsd))));
   const [result, setResult] = useState<RequestOutcome | null>(null);
@@ -97,7 +99,11 @@ export function AgentAction(p: {
                   disabled={pending}
                   onClick={() => {
                     const id = result.id ?? '';
-                    start(async () => setResult(await confirmAgentAction(p.portfolio, id)));
+                    start(async () => {
+                      const r = await confirmAgentAction(p.portfolio, id);
+                      setResult(r);
+                      if (r.status === 'done') router.refresh();
+                    });
                   }}
                 >
                   {pending ? 'Running…' : 'I confirm, run it'}
@@ -112,7 +118,10 @@ export function AgentAction(p: {
               </button>
             </div>
             {result.status === 'done' && (
-              <p className="muted-note">It is now in Activity and in the audit trail.</p>
+              <p className="muted-note">
+                The demo balances above now show the result (simulated). It is also in Activity and
+                in the audit trail.
+              </p>
             )}
           </div>
         )}

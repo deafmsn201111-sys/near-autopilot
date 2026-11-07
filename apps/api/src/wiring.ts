@@ -56,7 +56,7 @@ import { OrchestratedCycle, RepositoryNotifier } from './services/orchestrated-c
 import { PersistentAuditLog } from './services/persistent-audit';
 import { orchestratorScope } from './infra/orchestrator-stores';
 import { CachedSnapshotService, SnapshotService } from './services/snapshot';
-import { DEMO_PORTFOLIOS } from './simulation/demo-portfolios';
+import { DEMO_PORTFOLIOS, type DemoPortfolio } from './simulation/demo-portfolios';
 import { ReferenceMarketProvider, ReferencePriceOracle } from './market-data/adapters';
 import { MAINNET_ASSETS, REFERENCE_ASSETS } from './market-data/assets';
 import { HttpJsonClient } from './market-data/http';
@@ -104,6 +104,8 @@ export interface WireOptions {
    * DURABLE orchestrator control and idempotency stores for a scope (PostgreSQL in production, see
    * infra/orchestrator-stores.ts). Without it (unit tests) the in-memory stores are used.
    */
+  /** The demo portfolio's CURRENT state (simulated ledger applied); default: its base amounts. Simulation only. */
+  readonly demoPortfolio?: () => DemoPortfolio;
   readonly orchestratorStores?: (scope: string) => {
     readonly control: ControlStore;
     readonly idempotency: IdempotencyStore;
@@ -128,7 +130,8 @@ export async function wire(
       'Refusing to wire live execution on mainnet: this system never signs with mainnet keys',
     );
   }
-  const simulation = env.DATA_SOURCE === 'simulation' ? simulatedChain(env, config) : null;
+  const simulation =
+    env.DATA_SOURCE === 'simulation' ? simulatedChain(env, config, options.demoPortfolio) : null;
   // In simulation the RPC transport is the in-process mock: NEAR_RPC_URL is never contacted.
   const rpc = new NearRpcClient({
     url: env.NEAR_RPC_URL,
@@ -565,7 +568,11 @@ function referenceMarket(
  * env must not bypass them) and that the policy allowlists admit the demo assets (otherwise every simulated proposal
  * would just be rejected, which demonstrates nothing).
  */
-function simulatedChain(env: ApiEnv, config: AutopilotConfig): SimulatedChain {
+function simulatedChain(
+  env: ApiEnv,
+  config: AutopilotConfig,
+  current?: () => DemoPortfolio,
+): SimulatedChain {
   if (env.EXECUTION_MODE !== 'dry-run') {
     throw new Error('DATA_SOURCE=simulation requires EXECUTION_MODE=dry-run');
   }
@@ -575,7 +582,7 @@ function simulatedChain(env: ApiEnv, config: AutopilotConfig): SimulatedChain {
     burrowContractId: env.BURROW_CONTRACT_ID,
     burrowOracleId: env.BURROW_ORACLE_ID,
     rheaContractId: env.RHEA_CONTRACT_ID,
-    portfolio: DEMO_PORTFOLIOS[env.SIMULATION_PORTFOLIO],
+    portfolio: current ?? DEMO_PORTFOLIOS[env.SIMULATION_PORTFOLIO],
     clock: systemClock,
     otherTokens: config.policy.allowedTokens,
   });

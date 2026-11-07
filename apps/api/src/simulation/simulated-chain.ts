@@ -9,7 +9,8 @@ import { demoAssets, type DemoAsset, type DemoPortfolio } from './demo-portfolio
  * the real pipeline, only the chain is fake. It never opens a socket. It cannot accept a transaction: `send_tx` and
  * access-key queries are refused, so even a misconfigured live executor could not "succeed" against it.
  *
- * State is static: dry-run never changes balances, so every cycle sees the same portfolio.
+ * State: the demo amounts with the simulated ledger applied (demo-portfolios.ts): an action the agent carried out
+ * as a dry run is reflected in the next read. No transaction exists; nothing here touches a chain.
  */
 export interface SimulatedChainOptions {
   readonly network: Network;
@@ -17,7 +18,8 @@ export interface SimulatedChainOptions {
   readonly burrowContractId: AccountId;
   readonly burrowOracleId: AccountId;
   readonly rheaContractId: AccountId;
-  readonly portfolio: DemoPortfolio;
+  /** The portfolio, or a function returning its CURRENT state (the simulated ledger applied). */
+  readonly portfolio: DemoPortfolio | (() => DemoPortfolio);
   readonly clock: Clock;
   /**
    * Other tokens the deployment tracks (its policy allowlist). They exist in the simulation with a zero balance, no
@@ -63,6 +65,11 @@ export class SimulatedChain {
   private readonly codes: ReadonlyMap<string, readonly string[]>;
   /** Every JSON-RPC method received, for tests and for proving nothing was sent. */
   readonly methods: string[] = [];
+
+  private pf(): DemoPortfolio {
+    const p = this.options.portfolio;
+    return typeof p === 'function' ? p() : p;
+  }
 
   constructor(private readonly options: SimulatedChainOptions) {
     this.assets = demoAssets(options.network);
@@ -122,7 +129,7 @@ export class SimulatedChain {
         if (account !== this.options.accountId)
           throw new RpcFault(-32000, `unknown account ${account}`);
         return {
-          amount: this.options.portfolio.nativeYocto.toString(),
+          amount: this.pf().nativeYocto.toString(),
           locked: '0',
           storage_usage: 500,
           code_hash: '11111111111111111111111111111111',
@@ -147,7 +154,7 @@ export class SimulatedChain {
   private view(contract: string, method: string, args: Record<string, unknown>): unknown {
     const o = this.options;
     const { near, usdt } = this.assets;
-    const pf = o.portfolio;
+    const pf = this.pf();
     const assetFor = (token: unknown): DemoAsset | undefined =>
       token === near.token ? near : token === usdt.token ? usdt : undefined;
 
@@ -170,7 +177,10 @@ export class SimulatedChain {
           });
           return {
             account_id: o.accountId,
-            supplied: pf.supplied.usdt > 0n ? [inner(usdt, pf.supplied.usdt)] : [],
+            supplied: [
+              ...(pf.supplied.usdt > 0n ? [inner(usdt, pf.supplied.usdt)] : []),
+              ...((pf.supplied.near ?? 0n) > 0n ? [inner(near, pf.supplied.near ?? 0n)] : []),
+            ],
             collateral: [inner(near, pf.collateral.near)],
             borrowed: [{ ...inner(usdt, pf.borrowed.usdt), apr: '0.05' }],
             farms: [],

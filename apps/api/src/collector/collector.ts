@@ -21,7 +21,7 @@ import {
   type PriceObservation,
 } from '../market-data/model';
 import type { AutopilotRepository } from '../repository';
-import { DEMO_PORTFOLIOS, demoAssets, type DemoPortfolioId } from '../simulation/demo-portfolios';
+import { demoAssets, type DemoPortfolioId } from '../simulation/demo-portfolios';
 import { wire } from '../wiring';
 import type { YieldLimits } from '../yield/burrow';
 import { fromRaw, mul, toWad, truncate } from '../yield/math';
@@ -48,6 +48,7 @@ import type {
 import { curatedPrices, longTailPrices } from './prices';
 import { classifyPool, readDclPool, readV1Pool, scanDclPools, scanV1Pools } from './rhea-discovery';
 import type { CollectorStore } from './store';
+import { DemoLedgerStore } from '../simulation/ledger';
 import { chainOf } from '../evidence/chain';
 import { PgControlStore, PgIdempotencyStore } from '../infra/orchestrator-stores';
 
@@ -723,9 +724,12 @@ export class ShadowCollector {
     prices: ReadonlyMap<string, TokenPrice>,
   ): Promise<void> {
     const env: ApiEnv = { ...this.d.env, SIMULATION_PORTFOLIO: pid };
+    // The demo portfolio as it stands: base amounts plus what the agent did to it as dry runs (demo ledger).
+    const portfolio = (await new DemoLedgerStore(this.d.store.db).current(pid)).portfolio;
     let report: CycleReport | null = null;
     const wired = await wire(env, this.d.config, this.d.repo, this.d.logger, {
       shadowInputs: { market: fixed(market), yields: fixed(yields), viewer, rpc: this.d.rpc },
+      demoPortfolio: () => portfolio,
       onCycleReport: (r) => {
         report = r;
       },
@@ -741,7 +745,6 @@ export class ShadowCollector {
       }),
     });
     const run = await wired.cycle.run();
-    const portfolio = DEMO_PORTFOLIOS[pid];
     const ids = demoAssets('mainnet');
     const pNear = prices.get(ids.near.token);
     const pUsdt = prices.get(ids.usdt.token);

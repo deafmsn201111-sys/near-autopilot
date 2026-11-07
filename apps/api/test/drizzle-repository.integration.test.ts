@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   auditCheckpoints,
   auditEvents,
+  demoLedger,
   createDatabase,
   getTableColumns,
   getTableName,
@@ -77,7 +78,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(16);
+    expect(applied.rows[0]?.n).toBe(17);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -105,6 +106,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       orchestratorActions,
       collectorControl,
       auditCheckpoints,
+      demoLedger,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))

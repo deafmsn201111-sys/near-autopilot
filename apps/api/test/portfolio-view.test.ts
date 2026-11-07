@@ -14,7 +14,7 @@ const market = (token: string, supply: string, borrow: string, cf: number) => ({
   canDeposit: true,
   availableUsd: '5000000',
 });
-const view = (healthFactor: number) =>
+const view = (healthFactor: number, nearVr = 0.99) =>
   buildPortfolioView({
     id: 'demo-5000',
     analysis: {
@@ -34,7 +34,7 @@ const view = (healthFactor: number) =>
     ]),
     markets: [
       market('usdt.tether-token.near', '0.09', '0.14', 0.95),
-      market('wrap.near', '0.003', '0.025', 0.75),
+      market('wrap.near', '0.003', '0.025', nearVr),
     ],
     symbols: new Map([['usdt.tether-token.near', 'USDt']]),
   });
@@ -57,7 +57,10 @@ describe('portfolio view (demo-5000)', () => {
     expect(repay?.grossUsd).toBeCloseTo(600 * 0.14 * (30 / 365), 9);
     expect(repay?.netUsd).toBeCloseTo(600 * 0.14 * (30 / 365) - 0.05, 9);
     expect(repay?.autopilot.verdict).toBe('not_allowed');
-    expect(view(1.3).actions.find((a) => a.id === 'repay')?.autopilot.verdict).toBe('worth_it');
+    // HF computed live from the current amounts: 1150 NEAR x $3 x vr / (2000 / 0.95); with vr 0.75 it is 1.23 < 1.5
+    expect(view(1.3, 0.75).actions.find((a) => a.id === 'repay')?.autopilot.verdict).toBe(
+      'worth_it',
+    );
   });
 
   it('lending is costed on the exact idle amount of each token, and a loop is never presented as something the autopilot does', () => {

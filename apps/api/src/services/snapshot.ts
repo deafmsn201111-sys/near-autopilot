@@ -79,6 +79,11 @@ export class CachedSnapshotService {
     private readonly nowMs: () => number = Date.now,
   ) {}
 
+  /** Drop the cached snapshot (the simulated state changed): the next read is fresh. */
+  invalidate(): void {
+    this.cached = null;
+  }
+
   take(): Promise<PortfolioSnapshot> {
     const now = this.nowMs();
     if (this.cached && now - this.cached.at < this.ttlMs) return this.cached.value;

@@ -8,6 +8,7 @@ import { ErrorState } from '../components/states';
 import { accountView, ago, money, portfolioView, type PortfolioAction } from '../lib/product';
 import { AccountForm } from '../components/AccountForm';
 import { runAnalysis } from './autopilot/actions';
+import { resetDemo } from './request-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -237,6 +238,28 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           <b>The first analysis is still running.</b> On a fresh install the autopilot first reads
           every pool and market from NEAR mainnet; without an RPC key this takes a few minutes. This
           page fills in by itself.
+        </div>
+      )}
+      {!isAccount && data.simulatedChanges && data.simulatedChanges.count > 0 && (
+        <div className="callout demo-changes" style={{ marginBottom: 16 }}>
+          <span>
+            <b>Changed by the agent (simulated).</b>{' '}
+            {data.simulatedChanges.count === 1
+              ? 'One action has run as a dry run on this demo portfolio'
+              : `${data.simulatedChanges.count} actions have run as dry runs on this demo portfolio`}
+            {data.simulatedChanges.since ? ` (the first ${ago(data.simulatedChanges.since)})` : ''}.
+            The amounts below include them; nothing was sent.
+          </span>
+          <ConfirmAction
+            label="Reset demo"
+            title="Reset this demo portfolio?"
+            description="Its balances go back to the starting amounts. The actions stay in Activity and in the audit trail."
+            confirmLabel="Reset"
+            action={async () => {
+              'use server';
+              return resetDemo(id);
+            }}
+          />
         </div>
       )}
       <section className="hero">

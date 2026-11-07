@@ -74,6 +74,12 @@ export interface RequestDeps {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly logger: Logger;
+  /** Called after an action ran (dry run included): the demo ledger records it, so the simulated balances follow. */
+  readonly onExecuted?: (e: {
+    requestId: string;
+    intent: ActionIntent;
+    valueUsd: number | null;
+  }) => Promise<void>;
 }
 
 const DAY_MS = 86_400_000;
@@ -99,6 +105,18 @@ export class UserRequestService {
       );
     const amount = rawForValueUsd(usdToMicro(input.usd), price);
     if (amount <= 0n) return this.fail(id, 'the amount is too small');
+    // Deposits and repayments are paid from the wallet: never ask for more than it holds.
+    const held = snapshot.walletBalances
+      .filter((b) => b.token === input.token)
+      .reduce((sum, b) => sum + b.raw, 0n);
+    if (amount > held) {
+      const heldUsd =
+        Number((held * price.multiplier) / 10n ** BigInt(Math.max(0, price.decimals - 6))) / 1e6;
+      return this.fail(
+        id,
+        `the wallet holds only $${heldUsd.toFixed(2)} of this token, less than the $${input.usd.toFixed(2)} asked for`,
+      );
+    }
     const base = {
       id,
       agentId: `operator/${input.by}`,
@@ -177,7 +195,7 @@ export class UserRequestService {
         expiresAt: expiresAt.toISOString(),
       };
     }
-    return this.execute(id, plan, decision, null, valueUsd);
+    return this.execute(id, intent, plan, decision, null, valueUsd);
   }
 
   async confirm(id: string, by: string): Promise<RequestResult> {
@@ -192,11 +210,12 @@ export class UserRequestService {
       return this.fail(id, 'the confirmation window expired; ask again');
     const valueUsd =
       p.decision.valueUsdMicro === null ? null : Number(p.decision.valueUsdMicro) / 1e6;
-    return this.execute(id, p.plan, p.decision, by, valueUsd);
+    return this.execute(id, p.intent, p.plan, p.decision, by, valueUsd);
   }
 
   private async execute(
     id: string,
+    intent: ActionIntent,
     plan: PlannedTransaction,
     decision: PolicyDecision,
     confirmedBy: string | null,
@@ -219,6 +238,7 @@ export class UserRequestService {
       mode: result.mode,
     });
     const ok = result.status === 'dry_run' || result.status === 'success';
+    if (ok) await this.d.onExecuted?.({ requestId: id, intent, valueUsd });
     return {
       id,
       status: ok ? 'done' : 'failed',

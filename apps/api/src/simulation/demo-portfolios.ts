@@ -29,7 +29,8 @@ export interface DemoPortfolio {
   readonly nativeYocto: bigint;
   readonly wallet: { readonly near: bigint; readonly usdt: bigint };
   readonly collateral: { readonly near: bigint };
-  readonly supplied: { readonly usdt: bigint };
+  /** Deposited on Burrow, not collateral (`near` only ever comes from a simulated deposit). */
+  readonly supplied: { readonly usdt: bigint; readonly near?: bigint };
   readonly borrowed: { readonly usdt: bigint };
 }
 
@@ -94,3 +95,45 @@ export const DEMO_PORTFOLIOS: Readonly<Record<DemoPortfolioId, DemoPortfolio>> =
     borrowed: { usdt: 2000n * USDT },
   },
 };
+
+/**
+ * THE SIMULATED LEDGER of a demo portfolio: every action the agent carried out on it as a dry run (from the dashboard's
+ * "let the agent do it"), applied in order to the base amounts above. A repayment moves USDt from the wallet to pay
+ * down the loan; a deposit moves tokens from the wallet into Burrow. Amounts are clamped to what is there, so the
+ * state can never go negative. A `reset` entry starts again from the base. Nothing here touches a chain.
+ */
+export interface LedgerEntry {
+  readonly kind: 'repay' | 'supply' | 'reset';
+  readonly asset: 'near' | 'usdt' | null;
+  readonly amountRaw: bigint;
+}
+
+const min = (a: bigint, b: bigint) => (a < b ? a : b);
+
+export function applyLedger(base: DemoPortfolio, entries: readonly LedgerEntry[]): DemoPortfolio {
+  let p: DemoPortfolio = base;
+  for (const e of entries) {
+    if (e.kind === 'reset') {
+      p = base;
+      continue;
+    }
+    if (e.kind === 'repay' && e.asset === 'usdt') {
+      const x = min(min(e.amountRaw, p.wallet.usdt), p.borrowed.usdt);
+      p = {
+        ...p,
+        wallet: { ...p.wallet, usdt: p.wallet.usdt - x },
+        borrowed: { usdt: p.borrowed.usdt - x },
+      };
+    }
+    if (e.kind === 'supply' && e.asset) {
+      const held = p.wallet[e.asset];
+      const x = min(e.amountRaw, held);
+      p = {
+        ...p,
+        wallet: { ...p.wallet, [e.asset]: held - x },
+        supplied: { ...p.supplied, [e.asset]: (p.supplied[e.asset] ?? 0n) + x },
+      };
+    }
+  }
+  return p;
+}

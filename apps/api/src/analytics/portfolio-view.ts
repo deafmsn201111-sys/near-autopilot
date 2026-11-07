@@ -2,7 +2,12 @@ import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { CollectorStore } from '../collector/store';
-import { DEMO_PORTFOLIOS, type DemoPortfolioId } from '../simulation/demo-portfolios';
+import {
+  DEMO_PORTFOLIOS,
+  type DemoPortfolio,
+  type DemoPortfolioId,
+} from '../simulation/demo-portfolios';
+import { DemoLedgerStore } from '../simulation/ledger';
 import { loopStrategies, type LoopMarket } from './looping';
 
 /**
@@ -128,8 +133,10 @@ export function buildPortfolioView(i: {
   prices: ReadonlyMap<string, number>;
   markets: readonly (LoopMarket & { token: string })[];
   symbols: ReadonlyMap<string, string>;
+  /** The demo portfolio as it stands now (simulated ledger applied); default: its base amounts. */
+  current?: { portfolio: DemoPortfolio; changes: number; since: Date | null };
 }) {
-  const p = DEMO_PORTFOLIOS[i.id];
+  const p = i.current?.portfolio ?? DEMO_PORTFOLIOS[i.id];
   const sym = (t: string) => i.symbols.get(t) ?? (t === NEAR_TOKEN ? 'wNEAR' : t.slice(0, 8));
   const near = i.prices.get(NEAR_TOKEN) ?? null;
   const usdt = i.prices.get(USDT_TOKEN) ?? null;
@@ -145,6 +152,9 @@ export function buildPortfolioView(i: {
     row('wallet', 'USDt', amt(p.wallet.usdt, 6), usdt),
     row('collateral', 'NEAR', amt(p.collateral.near, 24), near),
     ...(p.supplied.usdt > 0n ? [row('deposited', 'USDt', amt(p.supplied.usdt, 6), usdt)] : []),
+    ...((p.supplied.near ?? 0n) > 0n
+      ? [row('deposited', 'NEAR', amt(p.supplied.near ?? 0n, 24), near)]
+      : []),
     row('borrowed', 'USDt', amt(p.borrowed.usdt, 6), usdt),
   ];
   const sum = (f: (h: (typeof holdings)[number]) => boolean) =>
@@ -155,7 +165,20 @@ export function buildPortfolioView(i: {
 
   const result = (i.analysis?.result ?? {}) as AnalysisResult;
   const risk = result.decision?.risk ?? null;
-  const hf = wad(risk?.healthFactorWad);
+  // Burrow's health factor from the CURRENT amounts at live prices: collateral x vr / (debt / vr). It follows a
+  // simulated repayment at once; the stored analysis is the fallback when a price or a risk parameter is missing.
+  const vr = (t: string) => i.markets.find((m) => m.token === t)?.collateralFactor;
+  const collUsd = near === null ? null : amt(p.collateral.near, 24) * near;
+  const debtNow = usdt === null ? null : amt(p.borrowed.usdt, 6) * usdt;
+  const vrNear = vr(NEAR_TOKEN);
+  const vrUsdt = vr(USDT_TOKEN);
+  const liveHf =
+    collUsd !== null && debtNow !== null && vrNear && vrUsdt
+      ? debtNow > 0
+        ? (collUsd * vrNear) / (debtNow / vrUsdt)
+        : null
+      : undefined;
+  const hf = liveHf === undefined ? wad(risk?.healthFactorWad) : liveHf;
   const drop = hf !== null && hf > 1 ? 1 - 1 / hf : null;
   const healthLevel: Risk =
     hf === null ? 'high' : hf >= WATCH_HF ? 'low' : hf >= 1.1 ? 'medium' : 'high';
@@ -179,7 +202,28 @@ export function buildPortfolioView(i: {
   };
 
   const strategies = result.strategies ?? [];
-  const current = strategies.find((s) => s.strategy === 'CURRENT_STRUCTURE');
+  const stored = strategies.find((s) => s.strategy === 'CURRENT_STRUCTURE');
+  // The current position's monthly result from the CURRENT amounts and today's Burrow rates (deposits earn, the loan
+  // costs); the stored analysis is the fallback.
+  const r = (t: string, f: 'netSupplyApr' | 'borrowApr') => {
+    const m = i.markets.find((x) => x.token === t);
+    const v =
+      m && (m as { status?: string }).status === 'OK'
+        ? (m[f] ?? (f === 'netSupplyApr' ? m.supplyApr : null))
+        : null;
+    return v === null || v === undefined ? null : Number(v);
+  };
+  const sNear = r(NEAR_TOKEN, 'netSupplyApr');
+  const sUsdt = r(USDT_TOKEN, 'netSupplyApr');
+  const bUsdt = r(USDT_TOKEN, 'borrowApr');
+  const liveMonthly =
+    near !== null && usdt !== null && sNear !== null && sUsdt !== null && bUsdt !== null
+      ? ((amt(p.collateral.near, 24) + amt(p.supplied.near ?? 0n, 24)) * near * sNear +
+          amt(p.supplied.usdt, 6) * usdt * sUsdt -
+          amt(p.borrowed.usdt, 6) * usdt * bUsdt) *
+        (HORIZON / 365)
+      : null;
+  const current = { netReturnUsd: liveMonthly ?? stored?.netReturnUsd ?? null };
   const actions: PortfolioAction[] = [];
   for (const s of strategies) {
     if (s.strategy === 'HOLD' || s.strategy === 'CURRENT_STRUCTURE') continue;
@@ -473,6 +517,10 @@ export function buildPortfolioView(i: {
     },
     actions,
     lastDecision: i.analysis ? narrate(i.analysis.result as AnalysisResult, i.symbols) : null,
+    /** Dry-run actions applied to this demo portfolio since its last reset (simulated ledger). */
+    simulatedChanges: i.current
+      ? { count: i.current.changes, since: i.current.since?.toISOString() ?? null }
+      : null,
   };
 }
 
@@ -576,8 +624,12 @@ export function registerPortfolioView(app: FastifyInstance, store: CollectorStor
   app.get('/v1/analytics/portfolio/:id', async (req, reply) => {
     const parsed = z.object({ id: z.enum(['demo-500', 'demo-5000']) }).safeParse(req.params);
     if (!parsed.success) return reply.code(404).send({ error: 'unknown portfolio' });
-    const [ctx, [analysis]] = await Promise.all([context(), store.analysesOf(parsed.data.id, 1)]);
-    return buildPortfolioView({ id: parsed.data.id, analysis: analysis ?? null, ...ctx });
+    const [ctx, [analysis], current] = await Promise.all([
+      context(),
+      store.analysesOf(parsed.data.id, 1),
+      new DemoLedgerStore(store.db).current(parsed.data.id),
+    ]);
+    return buildPortfolioView({ id: parsed.data.id, analysis: analysis ?? null, ...ctx, current });
   });
 
   /**

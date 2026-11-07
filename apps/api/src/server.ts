@@ -38,6 +38,8 @@ export interface ServerDeps {
    * simulation: on chain data no request is accepted here.
    */
   readonly requests?: (portfolio: string) => Promise<UserRequestService | null>;
+  /** Reset a demo portfolio's simulated ledger (simulation only). */
+  readonly resetDemo?: (portfolio: 'demo-500' | 'demo-5000', by: string) => Promise<void>;
 }
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
@@ -206,6 +208,20 @@ export function buildServer(
       if (!service) return reply.code(404).send({ error: 'no autopilot for this portfolio here' });
       return service.request(parsed.data);
     });
+    const resetDemo = deps.resetDemo;
+    if (resetDemo)
+      app.post('/v1/demo/reset', async (request, reply) => {
+        const parsed = z
+          .object({
+            portfolio: z.enum(['demo-500', 'demo-5000']),
+            by: z.string().trim().min(1).max(80),
+          })
+          .safeParse(request.body);
+        if (!parsed.success)
+          return reply.code(400).send({ error: 'portfolio and a name are required' });
+        await resetDemo(parsed.data.portfolio, parsed.data.by);
+        return { reset: true };
+      });
     app.post('/v1/requests/:id/confirm', async (request, reply) => {
       const parsed = z
         .object({

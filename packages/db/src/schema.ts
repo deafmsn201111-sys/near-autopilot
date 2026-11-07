@@ -2,6 +2,7 @@ import {
   bigserial,
   bigint,
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -606,4 +607,21 @@ export const auditCheckpoints = pgTable(
     signature: text('signature').notNull(),
   },
   (t) => [uniqueIndex('audit_checkpoints_chain_seq_uq').on(t.chain, t.seq)],
+);
+
+/** Simulated ledger of the demo portfolios (migration 0016): dry-run actions applied to the demo balances. */
+export const demoLedger = pgTable(
+  'demo_ledger',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    portfolio: text('portfolio', { enum: ['demo-500', 'demo-5000'] }).notNull(),
+    at: ts('at').notNull(),
+    kind: text('kind', { enum: ['repay', 'supply', 'reset'] }).notNull(),
+    asset: text('asset', { enum: ['near', 'usdt'] }),
+    amountRaw: text('amount_raw').notNull(),
+    usd: doublePrecision('usd'),
+    requestId: text('request_id'),
+    by: text('by').notNull(),
+  },
+  (t) => [index('demo_ledger_portfolio_idx').on(t.portfolio, t.id)],
 );

@@ -19,7 +19,7 @@ const noNetwork: typeof fetch = async () => {
   throw new Error('network access attempted');
 };
 
-async function service() {
+async function service(portfolio: 'demo-500' | 'demo-5000' = 'demo-500') {
   const config = parseAutopilotConfig(
     JSON.parse(
       readFileSync(
@@ -39,7 +39,7 @@ async function service() {
     BURROW_CONTRACT_ID: 'contract.1638481328.burrow.testnet',
     BURROW_ORACLE_ID: 'priceoracle.testnet',
     DATA_SOURCE: 'simulation',
-    SIMULATION_PORTFOLIO: 'demo-500',
+    SIMULATION_PORTFOLIO: portfolio,
   });
   const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'testnet' });
   const w = await wire(env, config, repo, new SilentLogger(), {
@@ -64,6 +64,13 @@ async function service() {
 }
 
 describe('let the agent do it (simulation, dry-run)', () => {
+  it('asking for more than the wallet holds fails before anything is planned', async () => {
+    const { s } = await service(); // demo-500 wallet: 50 USDt
+    const r = await s.request({ kind: 'supply', token: USDT, usd: 80, by: 'tester' });
+    expect(r.status).toBe('failed');
+    expect(r.sentence).toMatch(/wallet holds only/);
+  });
+
   it('a small deposit passes the 12 checks and is executed as a dry run; the verdict is stored first', async () => {
     const { s, repo } = await service();
     const r = await s.request({ kind: 'supply', token: USDT, usd: 20, by: 'tester' });
@@ -72,7 +79,7 @@ describe('let the agent do it (simulation, dry-run)', () => {
   });
 
   it('above the auto-approval threshold it waits for the user, and runs once confirmed', async () => {
-    const { s } = await service();
+    const { s } = await service('demo-5000'); // wallet 600 USDt
     const r = await s.request({ kind: 'repay', token: USDT, usd: 70, by: 'tester' });
     expect(r.status).toBe('needs_approval');
     const done = await s.confirm(r.id, 'tester');
@@ -81,7 +88,7 @@ describe('let the agent do it (simulation, dry-run)', () => {
   });
 
   it('above the per-action limit it is blocked, and no confirmation can override it', async () => {
-    const { s } = await service();
+    const { s } = await service('demo-5000');
     const r = await s.request({ kind: 'repay', token: USDT, usd: 150, by: 'tester' });
     expect(r).toMatchObject({ status: 'blocked', verdict: 'BLOCK' });
     expect(r.reasons.join(' ')).toMatch(/limit/);

@@ -186,6 +186,7 @@ export interface PortfolioView {
   earnings: { monthlyNetUsd: number | null; sentence: string };
   actions: PortfolioAction[];
   lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
+  simulatedChanges?: { count: number; since: string | null } | null;
 }
 export interface AgentEntry {
   from: string;

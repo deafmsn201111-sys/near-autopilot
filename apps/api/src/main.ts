@@ -1,3 +1,9 @@
+import { DemoLedgerStore } from './simulation/ledger';
+import {
+  DEMO_PORTFOLIOS,
+  type DemoPortfolio,
+  type DemoPortfolioId,
+} from './simulation/demo-portfolios';
 import { EvidenceStore } from './evidence/store';
 import { loadApiEnv, EnvValidationError } from '@near-autopilot/config';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
@@ -38,15 +44,50 @@ async function main(): Promise<void> {
       idempotency: new PgIdempotencyStore(database.db, scope, systemClock),
     }),
   };
-  const wired = await wire(env, config, repo, logger, wireOptions);
+  // The demo portfolios' simulated ledger (migration 0016): the current state of each is loaded from the database and
+  // kept here; every action the agent carries out as a dry run, and every reset, updates it.
+  const ledger = new DemoLedgerStore(database.db);
+  const demoState = new Map<DemoPortfolioId, DemoPortfolio>();
+  const loadDemo = async (pid: DemoPortfolioId) => {
+    demoState.set(pid, (await ledger.current(pid)).portfolio);
+  };
+  const demoOf = (pid: DemoPortfolioId) => () => demoState.get(pid) ?? DEMO_PORTFOLIOS[pid];
+  if (env.DATA_SOURCE === 'simulation') await loadDemo(env.SIMULATION_PORTFOLIO);
+  const wired = await wire(env, config, repo, logger, {
+    ...wireOptions,
+    ...(env.DATA_SOURCE === 'simulation'
+      ? { demoPortfolio: demoOf(env.SIMULATION_PORTFOLIO) }
+      : {}),
+  });
   const { cycle, snapshots, policy, market, yields, control } = wired;
 
   // "Let the agent do it": one request service per simulated demo portfolio, through the SAME planners, policy
   // engine and executor (dry-run) as the cycles. Only in simulation; the other portfolio is wired on first use.
   const services = new Map<string, Promise<UserRequestService>>();
-  const serviceOf = (w: typeof wired, portfolio: string) =>
+  const asset = (token: string): 'near' | 'usdt' | null =>
+    token === 'wrap.near' || token === 'wrap.testnet'
+      ? 'near'
+      : token === 'usdt.tether-token.near' || token === 'usdt.fakes.testnet'
+        ? 'usdt'
+        : null;
+  const serviceOf = (w: typeof wired, portfolio: DemoPortfolioId) =>
     new UserRequestService({
       portfolio,
+      onExecuted: async ({ requestId, intent, valueUsd }) => {
+        if (intent.kind !== 'lending.repay' && intent.kind !== 'lending.supply') return;
+        await ledger.append({
+          portfolio,
+          kind: intent.kind === 'lending.repay' ? 'repay' : 'supply',
+          asset: asset(intent.token),
+          amountRaw: intent.amount,
+          usd: valueUsd,
+          requestId,
+          by: intent.agentId,
+          at: systemClock.now(),
+        });
+        await loadDemo(portfolio);
+        w.snapshots.invalidate();
+      },
       policy: w.policy,
       planners: w.planners,
       executor: w.executor,
@@ -66,13 +107,14 @@ async function main(): Promise<void> {
             s =
               portfolio === env.SIMULATION_PORTFOLIO
                 ? Promise.resolve(serviceOf(wired, portfolio))
-                : wire(
-                    { ...env, SIMULATION_PORTFOLIO: portfolio },
-                    config,
-                    repo,
-                    logger,
-                    wireOptions,
-                  ).then((w) => serviceOf(w, portfolio));
+                : loadDemo(portfolio)
+                    .then(() =>
+                      wire({ ...env, SIMULATION_PORTFOLIO: portfolio }, config, repo, logger, {
+                        ...wireOptions,
+                        demoPortfolio: demoOf(portfolio),
+                      }),
+                    )
+                    .then((w) => serviceOf(w, portfolio));
             services.set(portfolio, s);
           }
           return s;
@@ -111,6 +153,32 @@ async function main(): Promise<void> {
       provenance,
       testnetTransactions: testnetTxView(new DrizzleTestnetTxLedger(database.db)),
       ...(requests ? { requests } : {}),
+      ...(requests
+        ? {
+            // Start a demo portfolio again from its base amounts (audited; simulation only).
+            resetDemo: async (portfolio: DemoPortfolioId, by: string) => {
+              await ledger.append({
+                portfolio,
+                kind: 'reset',
+                asset: null,
+                amountRaw: 0n,
+                usd: null,
+                requestId: null,
+                by,
+                at: systemClock.now(),
+              });
+              await loadDemo(portfolio);
+              wired.snapshots.invalidate();
+              await repo.appendAudit({
+                at: systemClock.now(),
+                type: 'demo.reset',
+                runId: null,
+                proposalId: null,
+                payload: { portfolio, by },
+              });
+            },
+          }
+        : {}),
       evidence: new EvidenceStore(database.db),
       marketData: marketDataView(market, env.NEAR_NETWORK),
       yieldData: yieldDataView(yields),

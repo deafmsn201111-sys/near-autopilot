@@ -1867,3 +1867,10 @@ table.mini tr.total td {
   font-size: 12px;
   color: var(--muted);
 }
+.demo-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+}

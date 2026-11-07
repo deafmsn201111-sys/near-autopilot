@@ -94,3 +94,27 @@ export async function requestAgentAction(
 export async function confirmAgentAction(portfolio: string, id: string): Promise<RequestOutcome> {
   return post(`/v1/requests/${encodeURIComponent(id)}/confirm`, { portfolio, by: BY });
 }
+
+/** Start a demo portfolio again from its base amounts (its simulated ledger is reset; audited). */
+export async function resetDemo(portfolio: string): Promise<{ ok: boolean; message: string }> {
+  const base = process.env['AUTOPILOT_API_URL'];
+  if (!base) return { ok: false, message: 'The autopilot API is not configured.' };
+  try {
+    const res = await fetch(`${base}/v1/demo/reset`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        authorization: `Bearer ${getEnv().API_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ portfolio, by: BY }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    revalidatePath('/');
+    return res.ok
+      ? { ok: true, message: 'The demo portfolio is back to its starting amounts.' }
+      : { ok: false, message: `HTTP ${res.status}` };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
