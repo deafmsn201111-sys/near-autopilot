@@ -11,6 +11,7 @@ import { registerActivity } from './activity';
 import { registerPortfolioView } from './portfolio-view';
 import { registerAccountView, type MainnetReadDeps } from './account-view';
 import { ControlError, type ControlService } from '../control/service';
+import { estimateDcl, type DclEstimate } from './dcl';
 import { rankOpportunities, type SimulationInput } from './opportunities';
 import { MAINNET_ASSETS } from '../market-data/assets';
 import { deviationBps, parseDecimal } from '../market-data/decimal';
@@ -356,7 +357,58 @@ export function buildAnalyticsServer(
         lp: r.lpSimulations ?? [],
       };
     });
+    // DCL pools: estimated from their stored observations (last 7 days), with confirmed prices only.
+    const summary = (snapshot?.summary ?? {}) as {
+      prices?: { token: string; usd: string; quality: string }[];
+    };
+    const okPrices = new Map(
+      (summary.prices ?? [])
+        .filter((x) => x.quality === 'OK')
+        .map((x) => [x.token, Number(x.usd)] as const),
+    );
+    const refCapital = Math.max(...simulations.map((x) => x.capitalUsd ?? 0), 0) || 1000;
+    const dcl = new Map<string, DclEstimate>();
+    for (const p of pools) {
+      if (p.family !== 'dcl' || !p.active || p.category !== 'UNSUPPORTED') continue;
+      const latest = (p.latest ?? {}) as { decimals?: [number, number]; raw?: { feePpm?: number } };
+      const [tx, ty] = p.tokens as [string, string];
+      const px = okPrices.get(tx);
+      const py = okPrices.get(ty);
+      if (
+        px === undefined ||
+        py === undefined ||
+        !latest.decimals ||
+        latest.raw?.feePpm === undefined
+      )
+        continue;
+      const hist = await deps.store.poolHistory(
+        p.poolKey,
+        new Date(now().getTime() - 7 * 86_400_000),
+      );
+      dcl.set(
+        p.poolKey,
+        estimateDcl({
+          points: hist.map((h) => {
+            const r = (h.raw ?? {}) as Record<string, string | undefined>;
+            return {
+              at: h.blockTimestamp,
+              point: Number(r['currentPoint']),
+              liquidity: BigInt(r['liquidity'] ?? '0'),
+              feeX: BigInt(r['totalFeeXCharged'] ?? '0'),
+              feeY: BigInt(r['totalFeeYCharged'] ?? '0'),
+            };
+          }),
+          feePpm: latest.raw.feePpm,
+          decimals: latest.decimals,
+          pricesUsd: [px, py],
+          capitalUsd: refCapital,
+          horizonDays: ORCH_SWAP.horizonDays,
+          gasUsdPerTx: ORCH_SWAP.estimatedGasUsd,
+        }),
+      );
+    }
     return rankOpportunities({
+      dcl,
       pools,
       markets,
       simulations,

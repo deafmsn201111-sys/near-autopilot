@@ -24,6 +24,92 @@ interface Window {
   quality: string;
   observations?: number;
 }
+interface DclRange {
+  width: number;
+  inRangeShare: number;
+  liquidityShare: number;
+  feesUsd: number;
+  divergenceLossUsd: number;
+  swapUsd: number;
+  gasUsd: number;
+  netUsd: number;
+  feeApr: number;
+  backtest: { feesUsd: number; divergenceLossUsd: number; netUsd: number };
+}
+interface Dcl {
+  capitalUsd: number;
+  horizonDays: number;
+  windowSeconds: number;
+  observations: number;
+  maxMove: number;
+  poolLpFeesUsd: number;
+  ranges: DclRange[];
+  method: string;
+}
+
+const money2 = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
+
+/** Concentrated-liquidity pool: each simulated range, the stress estimate for the horizon and the realised backtest. */
+function DclSection({ e }: { e: Dcl }) {
+  const hours = Math.round(e.windowSeconds / 3600);
+  return (
+    <Section
+      title="Concentrated liquidity: what each range would do"
+      note={`A position of $${Math.round(e.capitalUsd).toLocaleString('en-US')} opened ${hours} hours ago (${e.observations} observations). Analysis only: nothing is executed.`}
+    >
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Range</th>
+                <th className="num">In range</th>
+                <th className="num">Fees, {e.horizonDays} days</th>
+                <th className="num">Divergence loss (stress)</th>
+                <th className="num">Swaps + gas</th>
+                <th className="num">Net, {e.horizonDays} days</th>
+                <th className="num">Last {hours} h, as it happened</th>
+              </tr>
+            </thead>
+            <tbody>
+              {e.ranges.map((r) => (
+                <tr key={r.width}>
+                  <td>±{Math.round(r.width * 100)}% of the price</td>
+                  <td className="num">{Math.round(r.inRangeShare * 100)}%</td>
+                  <td className="num">
+                    {money2(r.feesUsd)}{' '}
+                    <span className="muted-note">({(r.feeApr * 100).toFixed(1)}%/yr)</span>
+                  </td>
+                  <td className="num">{money2(-r.divergenceLossUsd)}</td>
+                  <td className="num">{money2(-(r.swapUsd + r.gasUsd))}</td>
+                  <td className={`num ${r.netUsd < 0 ? 'neg' : 'pos'}`}>
+                    <b>{money2(r.netUsd)}</b>
+                  </td>
+                  <td className={`num ${r.backtest.netUsd < 0 ? 'neg' : 'pos'}`}>
+                    {money2(r.backtest.netUsd)}{' '}
+                    <span className="muted-note">
+                      (fees {money2(r.backtest.feesUsd)}, loss{' '}
+                      {money2(r.backtest.divergenceLossUsd)})
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="note">
+          The pool&apos;s liquidity providers earned {money2(e.poolLpFeesUsd)} in that time; the
+          price moved up to {(e.maxMove * 100).toFixed(1)}%. A narrow range earns a larger share of
+          the fees but only while the price stays inside it, and loses more when the price moves.
+          The {e.horizonDays}-day loss assumes the largest move seen, scaled to the horizon (a
+          stress case); the last column is what actually happened.
+        </p>
+        <p className="note">Method: {e.method}.</p>
+      </div>
+    </Section>
+  );
+}
+
 interface Sim {
   capitalUsd?: number;
   horizonDays?: number;
@@ -50,6 +136,7 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
   const d = o.detail;
   const windows = (d['windows'] as Window[] | undefined) ?? [];
   const sim = (d['simulation'] as Sim | null | undefined) ?? null;
+  const dcl = (d['dcl'] as Dcl | null | undefined) ?? null;
   const h = data.history;
   return (
     <>
@@ -149,90 +236,95 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
 
       {o.protocol === 'rhea' ? (
         <>
-          <Section
-            title="Yield breakdown"
-            note="Realised LP fees in each window, annualised. A window needs enough observations to count."
-          >
-            {windows.length === 0 ? (
-              <EmptyState title="No fee window measured yet.">
-                The collector needs at least two observations an hour apart.
-              </EmptyState>
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Window</th>
-                      <th className="num">Volume</th>
-                      <th className="num">LP fees</th>
-                      <th className="num">Yield in window</th>
-                      <th className="num">Annualised</th>
-                      <th>Data</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {windows.map((w) => (
-                      <tr key={w.window}>
-                        <td>{w.window}</td>
-                        <td className="num">{usd(w.volumeUsd)}</td>
-                        <td className="num">{usd(w.lpFeesUsd ?? null, 2)}</td>
-                        <td className="num">{pct(w.realizedYield, 3)}</td>
-                        <td className="num">{pct(w.annualizedApr)}</td>
-                        <td>
-                          <Status code={w.quality} />
-                        </td>
+          {!dcl && (
+            <Section
+              title="Yield breakdown"
+              note="Realised LP fees in each window, annualised. A window needs enough observations to count."
+            >
+              {windows.length === 0 ? (
+                <EmptyState title="No fee window measured yet.">
+                  The collector needs at least two observations an hour apart.
+                </EmptyState>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Window</th>
+                        <th className="num">Volume</th>
+                        <th className="num">LP fees</th>
+                        <th className="num">Yield in window</th>
+                        <th className="num">Annualised</th>
+                        <th>Data</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
-          <Section
-            title="Simulation"
-            note="What a position of the demo capital would have earned, after costs. Analysis only: nothing is executed."
-          >
-            {sim ? (
-              <div className="card">
-                <Facts
-                  items={[
-                    ['Capital', usd(sim.capitalUsd ?? null)],
-                    [
-                      'Horizon',
-                      `${sim.horizonDays ?? '—'} days (fees from the ${sim.window ?? '—'} window)`,
-                    ],
-                    ['Fees earned', usd(num(sim.expectedFeesUsd), 2)],
-                    ['Impermanent loss', usd(num(sim.impermanentLossUsd), 2)],
-                    ['Entry cost (swap + impact)', usd(num(sim.entryCostUsd), 2)],
-                    ['Exit cost', usd(num(sim.exitCostUsd), 2)],
-                    ['Gas', usd(num(sim.gasUsd), 2)],
-                    [
-                      'Net result',
-                      <b
-                        key="n"
-                        className={
-                          num(sim.netReturnUsd) !== null && (num(sim.netReturnUsd) ?? 0) < 0
-                            ? 'neg'
-                            : 'pos'
-                        }
-                      >
-                        {usd(num(sim.netReturnUsd), 2)} ({sim.netReturnPct ?? '—'}%)
-                      </b>,
-                    ],
-                  ]}
-                />
-                {sim.assumptions && <p className="note">Assumptions: {sim.assumptions}</p>}
-                {sim.risks && sim.risks.length > 0 && (
-                  <p className="note">Flags: {sim.risks.join('; ')}</p>
-                )}
-              </div>
-            ) : (
-              <EmptyState title="Not simulated.">
-                Cost simulations run only for pools that are ready for simulation, against the demo
-                portfolios. <Link href="/lp">See all LP simulations →</Link>
-              </EmptyState>
-            )}
-          </Section>
+                    </thead>
+                    <tbody>
+                      {windows.map((w) => (
+                        <tr key={w.window}>
+                          <td>{w.window}</td>
+                          <td className="num">{usd(w.volumeUsd)}</td>
+                          <td className="num">{usd(w.lpFeesUsd ?? null, 2)}</td>
+                          <td className="num">{pct(w.realizedYield, 3)}</td>
+                          <td className="num">{pct(w.annualizedApr)}</td>
+                          <td>
+                            <Status code={w.quality} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
+          {dcl && <DclSection e={dcl} />}
+          {!dcl && (
+            <Section
+              title="Simulation"
+              note="What a position of the demo capital would have earned, after costs. Analysis only: nothing is executed."
+            >
+              {sim ? (
+                <div className="card">
+                  <Facts
+                    items={[
+                      ['Capital', usd(sim.capitalUsd ?? null)],
+                      [
+                        'Horizon',
+                        `${sim.horizonDays ?? '—'} days (fees from the ${sim.window ?? '—'} window)`,
+                      ],
+                      ['Fees earned', usd(num(sim.expectedFeesUsd), 2)],
+                      ['Impermanent loss', usd(num(sim.impermanentLossUsd), 2)],
+                      ['Entry cost (swap + impact)', usd(num(sim.entryCostUsd), 2)],
+                      ['Exit cost', usd(num(sim.exitCostUsd), 2)],
+                      ['Gas', usd(num(sim.gasUsd), 2)],
+                      [
+                        'Net result',
+                        <b
+                          key="n"
+                          className={
+                            num(sim.netReturnUsd) !== null && (num(sim.netReturnUsd) ?? 0) < 0
+                              ? 'neg'
+                              : 'pos'
+                          }
+                        >
+                          {usd(num(sim.netReturnUsd), 2)} ({sim.netReturnPct ?? '—'}%)
+                        </b>,
+                      ],
+                    ]}
+                  />
+                  {sim.assumptions && <p className="note">Assumptions: {sim.assumptions}</p>}
+                  {sim.risks && sim.risks.length > 0 && (
+                    <p className="note">Flags: {sim.risks.join('; ')}</p>
+                  )}
+                </div>
+              ) : (
+                <EmptyState title="Not simulated.">
+                  Cost simulations run only for pools that are ready for simulation, against the
+                  demo portfolios. <Link href="/lp">See all LP simulations →</Link>
+                </EmptyState>
+              )}
+            </Section>
+          )}
           <Section
             title="Liquidity history"
             note="Pool value in USD at each observation. It moves with token prices, not only with deposits."

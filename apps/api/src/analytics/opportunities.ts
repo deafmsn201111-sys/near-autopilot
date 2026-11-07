@@ -1,3 +1,4 @@
+import type { DclEstimate } from './dcl';
 import { loopFor, type LoopMarket } from './looping';
 /**
  * ONE RANKING of the DeFi opportunities the collector observed: Rhea liquidity provision and Burrow supply. Pure: it
@@ -115,7 +116,7 @@ function statusOf(o: {
   if (o.grossApr === null) return { status: 'insufficient_data', blocker: 'no yield measured yet' };
   const blocker =
     o.netApr !== null && o.netApr <= 0
-      ? 'the stored simulation loses money after costs'
+      ? 'the cost simulation loses money after costs'
       : o.grossApr < MIN_CANDIDATE_APR
         ? 'the yield is below 1% a year'
         : (o.liquidityUsd ?? 0) < THIN_LIQUIDITY_USD
@@ -236,6 +237,8 @@ export function rankOpportunities(input: {
   /** Gas per transaction (USD, the orchestrator's estimate) and the horizon costs are spread over. */
   gasUsdPerTx?: number;
   horizonDays?: number;
+  /** DCL (concentrated liquidity) estimates by pool key, from the stored observations (analytics/dcl.ts). */
+  dcl?: ReadonlyMap<string, DclEstimate>;
 }): { opportunities: Opportunity[]; excluded: Record<string, number> } {
   const { now, symbols } = input;
   const sym = (t: string) => symbols.get(t) ?? (t.length > 18 ? `${t.slice(0, 8)}…` : t);
@@ -265,10 +268,19 @@ export function rankOpportunities(input: {
 
   for (const p of input.pools) {
     if (!p.active) continue;
+    const dcl = p.family === 'dcl' ? input.dcl?.get(p.poolKey) : undefined;
+    if (dcl?.status === 'OK' && p.category === 'UNSUPPORTED') {
+      out.push(dclOpportunity(p, dcl, sym, ageOf(p.lastSeenAt), ageOf(p.lastSeenAt) <= freshLimit));
+      continue;
+    }
     if (!['LIQUID', 'ANALYTICS_ELIGIBLE', 'LP_SIMULATION_ELIGIBLE'].includes(p.category)) {
       exclude(
         p.category === 'UNSUPPORTED'
-          ? 'Rhea: pool model not supported yet'
+          ? p.family === 'dcl'
+            ? dcl
+              ? 'Rhea DCL: not enough history yet'
+              : 'Rhea DCL: token prices not confirmed'
+            : 'Rhea: pool model not supported yet'
           : p.category === 'LOW_LIQUIDITY'
             ? 'Rhea: too little liquidity'
             : 'Rhea: not enough data yet',
@@ -586,4 +598,108 @@ export function rankOpportunities(input: {
       (b.liquidityUsd ?? 0) - (a.liquidityUsd ?? 0),
   );
   return { opportunities: out, excluded };
+}
+
+/**
+ * A DCL pool as an opportunity: the best of the simulated ranges by net result. The net result is a STRESS estimate
+ * (largest observed move scaled to the horizon); the realised backtest of the window is shown next to it.
+ */
+function dclOpportunity(
+  p: PoolInput,
+  e: DclEstimate,
+  sym: (t: string) => string,
+  age: number,
+  fresh: boolean,
+): Opportunity {
+  const best = [...e.ranges].sort((a, b) => b.netUsd - a.netUsd)[0];
+  const grossApr = best ? best.feeApr : null;
+  const netApr = best ? best.netApr : null;
+  const tvl = num(p.tvlUsd);
+  const hours = Math.round(e.windowSeconds / 3600);
+  const short = e.windowSeconds < 7 * 86_400;
+  const structure: Factor = {
+    name: 'impermanent loss',
+    value: 0.85,
+    weight: RISK_WEIGHTS.structure,
+    note: 'concentrated liquidity: price divergence costs several times more than in a classic pool, and outside its range the position earns nothing',
+  };
+  const risk = riskOf([
+    liquidityRisk(tvl),
+    priceRisk(p.priceQuality),
+    structure,
+    historyRisk(e.windowSeconds),
+  ]);
+  let confidence = 100;
+  const notes: string[] = [];
+  if (short) {
+    confidence -= 25;
+    notes.push(`only ${hours} hours of history: a short backtest`);
+  }
+  if (p.priceQuality !== 'OK') {
+    confidence -= 40;
+    notes.push('token prices are not confirmed by two sources');
+  }
+  if (!fresh) {
+    confidence -= 10;
+    notes.push('data older than two collector cycles');
+  }
+  confidence = Math.max(0, confidence);
+  const { status, blocker } = statusOf({
+    grossApr,
+    netApr,
+    liquidityUsd: tvl,
+    priceOk: p.priceQuality === 'OK',
+    risk: risk.score,
+    confidence,
+  });
+  const pctOf = (w: number) => `±${Math.round(w * 100)}%`;
+  return {
+    id: `rhea:${p.poolKey}`,
+    protocol: 'rhea',
+    kind: 'liquidity',
+    title: `${p.tokens.map(sym).join(' / ')} (concentrated, ${((p.feeBps ?? 0) / 100).toFixed(2)}% fee)`,
+    tokens: p.tokens,
+    ref: p.poolKey,
+    grossApr,
+    grossBasis: best
+      ? `LP fees a ${pctOf(best.width)} position would have earned in the last ${hours} hours (in range ${Math.round(best.inRangeShare * 100)}% of the time), annualised`
+      : 'no estimate',
+    netApr,
+    netBasis: best
+      ? `DCL estimate on $${Math.round(e.capitalUsd).toLocaleString('en-US')} for ${e.horizonDays} days: fees − divergence loss at a stressed move − swaps − gas, annualised`
+      : null,
+    liquidityUsd: tvl,
+    volume24hUsd: null,
+    priceConfidence: p.priceQuality,
+    dataAgeSeconds: age,
+    fresh,
+    risk,
+    confidence: { score: confidence, level: level(confidence, true), notes },
+    score: scoreOf(grossApr, risk.score, confidence, tvl),
+    status,
+    why:
+      status === 'candidate'
+        ? `A ${best ? pctOf(best.width) : ''} range would have earned ${(grossApr ?? 0) * 100 > 0 ? ((grossApr ?? 0) * 100).toFixed(1) : '0'}% a year in fees, ahead of its costs.`
+        : `Watch only: ${blocker ?? 'see the risk factors'}.`,
+    reasons: [
+      `the pool's liquidity providers earned $${e.poolLpFeesUsd.toFixed(0)} in fees over ${hours} hours (after the protocol's 20%)`,
+      `the price moved up to ${(e.maxMove * 100).toFixed(1)}% in that time`,
+      liquidityRisk(tvl).note,
+      structure.note,
+    ],
+    limitations: [
+      'a backtest of the stored history, not a forecast',
+      'the divergence loss assumes the largest move seen, scaled to the horizon: a stress case',
+      'farm rewards are not included',
+    ],
+    detail: {
+      family: p.family,
+      poolType: p.poolType,
+      feeBps: p.feeBps,
+      category: p.category,
+      windows: [],
+      simulation: null,
+      dcl: e,
+    },
+  };
 }
