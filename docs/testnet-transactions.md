@@ -6,12 +6,16 @@ The autopilot itself never signs: `loadSigner()` returns `null` and `EXECUTION_M
 
 ## What it can do
 
-| Operation              | Contract       | Method            | Deposit                                  | Gas     |
-| ---------------------- | -------------- | ----------------- | ---------------------------------------- | ------- |
-| `wrap.storage_deposit` | `wrap.testnet` | `storage_deposit` | `storage_balance_bounds.min` (read live) | 30 Tgas |
-| `wrap.near_deposit`    | `wrap.testnet` | `near_deposit`    | `--amount`, 0.001 to 0.05 NEAR           | 30 Tgas |
+| Operation              | Contract       | Method                                  | Deposit                                  | Gas      |
+| ---------------------- | -------------- | --------------------------------------- | ---------------------------------------- | -------- |
+| `wrap.storage_deposit` | `wrap.testnet` | `storage_deposit`                       | `storage_balance_bounds.min` (read live) | 30 Tgas  |
+| `wrap.near_deposit`    | `wrap.testnet` | `near_deposit`                          | `--amount`, 0.001 to 0.05 NEAR           | 30 Tgas  |
+| `burrow.supply_wnear`  | `wrap.testnet` | `ft_transfer_call` to Burrow, `msg: ""` | 1 yocto; `--amount` 0.001 to 0.05 wNEAR  | 100 Tgas |
 
-Nothing else can be expressed: no swap, borrow, repay, LP, withdraw or rebalance. Adding an operation is a code
+`burrow.supply_wnear` is the same supply transaction the agent's Burrow planner builds (burrow-adapter `buildSupply`):
+a plain deposit, not collateral, nothing borrowed. It needs the account registered with Burrow; the tool does not pay
+that registration (0.1 NEAR storage deposit plus fees exceeds the per-operation limit). Nothing else can be expressed:
+no swap, borrow, repay, LP, withdraw or rebalance. Adding an operation is a code
 change in `apps/api/src/testnet-tx/operations.ts`.
 
 ## Limits (code constants in `apps/api/src/testnet-tx/model.ts`)
@@ -71,3 +75,15 @@ pnpm testnet-tx ledger                                # all records and the budg
 
 Check an outcome independently at `https://testnet.nearblocks.io/txns/<txHash>`, or with the RPC `tx` method. The
 testnet dashboard (`http://127.0.0.1:3002/activity`) lists the ledger read-only.
+
+## Sent so far (testnet, `sergetest.testnet`)
+
+| Date (UTC) | What                                                                              | Sent by                                                                                                            | Transaction                                                                                          | Cost                                |
+| ---------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| 2026-11-04 | `wrap.storage_deposit`: register with wNEAR                                       | this tool, hash confirmed by the owner                                                                             | in `pnpm testnet-tx ledger`                                                                          | 0.00125 NEAR deposit + gas          |
+| 2026-11-04 | `wrap.near_deposit` 0.05 NEAR -> wNEAR                                            | this tool, hash confirmed by the owner                                                                             | in `pnpm testnet-tx ledger`                                                                          | 0.05 NEAR wrapped + gas             |
+| 2026-11-08 | Burrow registration (`storage_deposit`, `registration_only`, 0.1 NEAR refundable) | **the owner, with NEAR CLI, outside this tool** (it exceeds the tool's per-operation limit, which stays unchanged) | [`2yY6RKJK…HT79B`](https://testnet.nearblocks.io/txns/2yY6RKJKcZyBaNyfmvPhcyd5LXWbkpv1JsNEvv3HT79B)  | 0.1 NEAR deposit + 0.00032 NEAR gas |
+| 2026-11-08 | `burrow.supply_wnear` 0.01 wNEAR into Burrow                                      | this tool, preview `bdecd078…` confirmed by the owner                                                              | [`8QM3Ufi6…RnSUs1`](https://testnet.nearblocks.io/txns/8QM3Ufi6L2PZAx5VW1GWZeF9qAmRpweXaLYHs4RnSUs1) | 0.00088 NEAR gas                    |
+
+After the last one Burrow reports 0.01 wNEAR supplied for `sergetest.testnet` (not collateral, nothing borrowed), and
+the wallet holds 0.04 wNEAR.
