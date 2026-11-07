@@ -217,6 +217,17 @@ describe('PythSource', () => {
     expect(f.calls).toHaveLength(0);
     expect(r.observations.get('wrap.testnet')?.[0]?.status).toBe('unavailable');
   });
+  it('HTTP 403 (a plan without this feed) is NOT_ENTITLED, not an outage, and is not retried', async () => {
+    const f = fakeFetch([['/v2/price_feeds', () => new Response('forbidden', { status: 403 })]]);
+    const pyth = new PythSource({
+      baseUrl: 'https://hermes.test',
+      apiKey: 'k-12345678',
+      http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
+    });
+    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
+    expect(r.observations.get('wrap.testnet')?.[0]).toMatchObject({ status: 'not_entitled' });
+    expect(f.calls).toHaveLength(1);
+  });
   it('verifies feed ids, sends the key as a bearer header, and parses exact integer prices', async () => {
     const f = fakeFetch([
       ['/v2/price_feeds', pythFeeds],
@@ -304,7 +315,7 @@ describe('PythSource', () => {
     const r = await pyth.observe(REFERENCE_ASSETS, NOW);
     expect(r.status.health).toBe('degraded');
     const near = r.observations.get(NEAR.testnetToken)?.[0];
-    expect(near?.status).toBe('unavailable');
+    expect(near?.status).toBe('not_entitled'); // 403: not on this plan (reported apart from outages)
     expect(near?.reason).toContain('not entitled');
     expect(r.observations.get(USDT.testnetToken)?.[0]?.status).toBe('valid');
     expect(

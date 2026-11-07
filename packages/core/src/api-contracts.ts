@@ -178,6 +178,7 @@ export const marketObservationDtoSchema = z.object({
     'low_confidence',
     'not_found',
     'mapping_mismatch',
+    'not_entitled',
     'unavailable',
   ]),
   reason: z.string().nullable(),

@@ -23,7 +23,9 @@ export type ObservationStatus =
   | 'low_confidence'
   | 'not_found'
   | 'mapping_mismatch'
-  | 'unavailable';
+  | 'unavailable'
+  /** HTTP 401/403: the source refuses this resource for our access level (e.g. a paid Pyth plan). Never retried. */
+  | 'not_entitled';
 
 export interface PriceObservation {
   readonly source: SourceName;

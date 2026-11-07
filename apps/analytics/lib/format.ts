@@ -107,6 +107,7 @@ const PLAIN: Record<string, { label: string; kind?: StatusKind }> = {
   UNPRICED: { label: 'No price', kind: 'serious' },
   UNAVAILABLE: { label: 'Unavailable', kind: 'critical' },
   NOT_ENTITLED: { label: 'Needs a paid plan', kind: 'serious' },
+  not_entitled: { label: 'Needs a paid plan', kind: 'serious' },
   OUTLIER: { label: 'Outlier price', kind: 'warning' },
   LP_SIMULATION_ELIGIBLE: { label: 'Ready for simulation', kind: 'good' },
   ANALYTICS_ELIGIBLE: { label: 'Analysed', kind: 'good' },

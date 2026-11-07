@@ -11,6 +11,10 @@ export interface FreshnessRules {
   readonly maxFutureSkewMs: number;
 }
 
+/** 401/403 means "not on our plan", not an outage: reported as such so nobody waits for it to come back. */
+const statusOf = (e: unknown): ObservationStatus =>
+  e instanceof MarketHttpError && e.kind === 'unauthorized' ? 'not_entitled' : 'unavailable';
+
 const errorText = (e: unknown): string =>
   e instanceof MarketHttpError ? `${e.kind}: ${e.message}` : 'request failed';
 
@@ -134,9 +138,12 @@ export class PythSource implements PriceSource {
     const fail = (
       reason: string,
       health: 'unavailable' | 'degraded' = 'unavailable',
+      status: ObservationStatus = 'unavailable',
     ): SourceResult => {
       for (const a of feeds)
-        out.set(a.testnetToken, [unavailable('pyth', a.pyth?.feedId ?? '', null, now, reason)]);
+        out.set(a.testnetToken, [
+          unavailable('pyth', a.pyth?.feedId ?? '', null, now, reason, status),
+        ]);
       return { observations: out, status: { source: 'pyth', health, detail: reason } };
     };
     if (!this.o.apiKey)
@@ -146,7 +153,7 @@ export class PythSource implements PriceSource {
     try {
       known = await this.verifyFeeds(feeds);
     } catch (e) {
-      return fail(`feed metadata: ${errorText(e)}`);
+      return fail(`feed metadata: ${errorText(e)}`, 'unavailable', statusOf(e));
     }
     const ids = feeds.flatMap((a) => {
       const feed = a.pyth;
@@ -184,16 +191,16 @@ export class PythSource implements PriceSource {
           const r = pythLatestSchema.safeParse(raw);
           if (!r.success)
             throw new MarketHttpError('invalid_response', 'unexpected price update shape', false);
-          return { id, parsed: r.data.parsed, error: null };
+          return { id, parsed: r.data.parsed, error: null, status: 'valid' as const };
         } catch (e) {
-          return { id, parsed: [], error: errorText(e) };
+          return { id, parsed: [], error: errorText(e), status: statusOf(e) };
         }
       }),
     );
     for (const f of fetched) {
       if (!f.error) continue;
       const a = feeds.find((x) => x.pyth?.feedId === f.id);
-      if (a) out.set(a.testnetToken, [unavailable('pyth', f.id, null, now, f.error)]);
+      if (a) out.set(a.testnetToken, [unavailable('pyth', f.id, null, now, f.error, f.status)]);
     }
     if (fetched.every((f) => f.error))
       return {
