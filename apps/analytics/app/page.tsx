@@ -1,5 +1,8 @@
 import { cookies } from 'next/headers';
 import { AgentAction } from '../components/AgentAction';
+
+/** The policy's per-action limit (config maxActionUsd): a larger amount is blocked, so one step never asks for more. */
+const MAX_ACTION_USD = 100;
 import { ModeSwitch, type Mode } from '../components/ModeSwitch';
 import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
@@ -89,7 +92,7 @@ function ActionControls({
       actionId={a.id}
       title={a.title}
       defaultUsd={Math.min(a.capitalUsd, 50)}
-      maxUsd={a.capitalUsd}
+      maxUsd={Math.min(a.capitalUsd, MAX_ACTION_USD)}
     />
   );
 }

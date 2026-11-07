@@ -24,9 +24,20 @@ export function AgentAction(p: {
   const dialog = useRef<HTMLDialogElement>(null);
   const [usd, setUsd] = useState(String(Math.max(1, Math.floor(p.defaultUsd))));
   const [result, setResult] = useState<RequestOutcome | null>(null);
+  // The title shows the amount being acted on (the card's own title carries the whole idle amount, and it changes
+  // once the action has run), frozen when the request is sent.
+  const [sentUsd, setSentUsd] = useState<number | null>(null);
   const [pending, start] = useTransition();
   const value = Number(usd);
   const valid = Number.isFinite(value) && value > 0 && value <= p.maxUsd;
+  const shown = sentUsd ?? (valid ? value : null);
+  const title =
+    shown === null
+      ? p.title.replace(/\$[\d,.]+ ?/, '')
+      : p.title.replace(
+          /\$[\d,.]+/,
+          `$${shown.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+        );
   return (
     <>
       <button
@@ -34,30 +45,36 @@ export function AgentAction(p: {
         className="btn primary small"
         onClick={() => {
           setResult(null);
+          setSentUsd(null);
           dialog.current?.showModal();
         }}
       >
         Let the agent do it
       </button>
-      <dialog ref={dialog} className="modal" aria-label={p.title}>
-        <h3>{p.title}</h3>
+      <dialog ref={dialog} className="modal" aria-label={title}>
+        <h3>{title}</h3>
         {!result ? (
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (valid)
-                start(async () =>
-                  setResult(await requestAgentAction(p.portfolio, p.actionId, value)),
-                );
+              if (valid) {
+                setSentUsd(value);
+                start(async () => {
+                  const r = await requestAgentAction(p.portfolio, p.actionId, value);
+                  setResult(r);
+                  if (r.status === 'done') router.refresh();
+                });
+              }
             }}
           >
             <p>
               The agent plans it, the safety policy runs its 12 checks, and it is executed as a{' '}
               <b>dry run</b>: nothing is signed or sent. Up to $50 runs automatically; above that
-              the policy asks you to confirm; above $100 it is blocked.
+              the policy asks you to confirm; above $100 the policy blocks it, so a larger amount is
+              done in several steps.
             </p>
             <label className="field">
-              Amount in USD (up to {Math.floor(p.maxUsd).toLocaleString('en-US')})
+              Amount in USD (up to {Math.floor(p.maxUsd).toLocaleString('en-US')} in one step)
               <input
                 inputMode="decimal"
                 value={usd}
