@@ -116,7 +116,11 @@ export class TestnetTxService {
     if (!isOperationId(row.operation))
       throw new TestnetTxRefused(`unknown operation ${row.operation}`);
     const fresh = await this.build(row.operation, {
-      amountYocto: row.depositYocto,
+      // the token amount: the attached deposit for wrapping, the transferred amount for a Burrow supply
+      amountYocto:
+        row.operation === 'burrow.supply_wnear'
+          ? BigInt(String(row.preview.args['amount']))
+          : row.depositYocto,
       exclude: row.id,
     });
     const material = (p: TxPreview) =>

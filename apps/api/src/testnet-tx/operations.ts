@@ -4,13 +4,20 @@ import type { TestnetChainReader } from './chain';
 import { formatNear, TGAS, YOCTO_PER_NEAR } from './model';
 
 /**
- * The ONLY operations the testnet tool can build: one contract, two methods, both on the testnet wNEAR token. No
- * swap, borrow, repay, LP, withdraw or rebalance can be expressed here. Adding an operation is a reviewed code change.
+ * The ONLY operations the testnet tool can build: two on the testnet wNEAR token, and one deposit of wNEAR into the
+ * Burrow testnet contract (the same `ft_transfer_call` with an empty message that the agent's Burrow planner builds
+ * for a supply, burrow-adapter builders.ts `buildSupply`). No swap, borrow, repay, LP, withdraw or rebalance can be
+ * expressed here. Adding an operation is a reviewed code change.
  */
 export const WRAP_TESTNET = accountId('wrap.testnet');
+export const BURROW_TESTNET = accountId('contract.1638481328.burrow.testnet');
 
-export type OperationId = 'wrap.storage_deposit' | 'wrap.near_deposit';
-export const OPERATION_IDS: readonly OperationId[] = ['wrap.storage_deposit', 'wrap.near_deposit'];
+export type OperationId = 'wrap.storage_deposit' | 'wrap.near_deposit' | 'burrow.supply_wnear';
+export const OPERATION_IDS: readonly OperationId[] = [
+  'wrap.storage_deposit',
+  'wrap.near_deposit',
+  'burrow.supply_wnear',
+];
 export const isOperationId = (v: string): v is OperationId =>
   (OPERATION_IDS as readonly string[]).includes(v);
 
@@ -49,6 +56,7 @@ export async function planOperation(
   chain: TestnetChainReader,
   options: { amountYocto?: bigint } = {},
 ): Promise<PlannedOperation> {
+  if (op === 'burrow.supply_wnear') return planBurrowSupply(signer, chain, options.amountYocto);
   const exports = await chain.exports(WRAP_TESTNET);
   const registered = storageBalance.parse(
     await chain.view(WRAP_TESTNET, 'storage_balance_of', { account_id: signer }),
@@ -133,6 +141,99 @@ export async function planOperation(
       return after - before === amount
         ? `wNEAR balance increased by exactly ${formatNear(amount)}`
         : `wNEAR balance changed by ${formatNear(after - before)}, expected ${formatNear(amount)}`;
+    },
+  };
+}
+
+/** Burrow testnet supply: the gas the agent's builder attaches to ft_transfer_call (burrow-adapter BURROW_GAS). */
+const BURROW_FT_TRANSFER_CALL_GAS = 100n * TGAS;
+
+const burrowAccount = z
+  .object({
+    supplied: z.array(z.object({ token_id: z.string(), balance: z.string().regex(/^\d+$/) })),
+  })
+  .passthrough()
+  .nullable();
+const burrowAsset = z
+  .object({
+    config: z.object({ can_deposit: z.boolean(), extra_decimals: z.number().int() }).passthrough(),
+  })
+  .passthrough()
+  .nullable();
+
+const suppliedWnear = async (chain: TestnetChainReader, signer: AccountId): Promise<bigint> => {
+  const a = burrowAccount.parse(
+    await chain.view(BURROW_TESTNET, 'get_account', { account_id: signer }),
+  );
+  return BigInt(a?.supplied.find((x) => x.token_id === WRAP_TESTNET)?.balance ?? '0');
+};
+
+/**
+ * Deposit wNEAR into Burrow (testnet) as a plain supply: earns the supply rate, NOT collateral, nothing borrowed.
+ * Refuses unless the account is already registered with Burrow (its storage deposit, 0.1 NEAR on testnet, is not
+ * something this tool pays: with fees it would exceed the 0.1 NEAR per-operation limit) and holds the wNEAR.
+ */
+async function planBurrowSupply(
+  signer: AccountId,
+  chain: TestnetChainReader,
+  amount: bigint | undefined,
+): Promise<PlannedOperation> {
+  const exports = await chain.exports(BURROW_TESTNET);
+  for (const m of ['get_account', 'get_asset', 'storage_balance_of', 'ft_on_transfer']) {
+    if (!exports.includes(m)) throw new OperationRefused(`${BURROW_TESTNET} does not export ${m}`);
+  }
+  if (amount === undefined)
+    throw new OperationRefused('burrow.supply_wnear needs --amount (wNEAR)');
+  if (amount < NEAR_DEPOSIT_MIN_YOCTO || amount > NEAR_DEPOSIT_MAX_YOCTO) {
+    throw new OperationRefused(
+      `the amount must be between ${formatNear(NEAR_DEPOSIT_MIN_YOCTO)} and ${formatNear(NEAR_DEPOSIT_MAX_YOCTO)} wNEAR`,
+    );
+  }
+  const registered = storageBalance.parse(
+    await chain.view(BURROW_TESTNET, 'storage_balance_of', { account_id: signer }),
+  );
+  if (registered === null) {
+    const bounds = storageBounds.parse(
+      await chain.view(BURROW_TESTNET, 'storage_balance_bounds', {}),
+    );
+    throw new OperationRefused(
+      `${signer} is not registered with ${BURROW_TESTNET}: its storage deposit is ${formatNear(BigInt(bounds.min))} NEAR, which with fees exceeds the ${formatNear(YOCTO_PER_NEAR / 10n)} NEAR per-operation limit, so this tool does not pay it`,
+    );
+  }
+  const asset = burrowAsset.parse(
+    await chain.view(BURROW_TESTNET, 'get_asset', { token_id: WRAP_TESTNET }),
+  );
+  if (!asset?.config.can_deposit)
+    throw new OperationRefused(`Burrow does not accept deposits of ${WRAP_TESTNET}`);
+  const held = BigInt(
+    ftBalance.parse(await chain.view(WRAP_TESTNET, 'ft_balance_of', { account_id: signer })),
+  );
+  if (held < amount) {
+    throw new OperationRefused(
+      `${signer} holds ${formatNear(held)} wNEAR, less than ${formatNear(amount)}: wrap NEAR first (wrap.near_deposit)`,
+    );
+  }
+  const before = await suppliedWnear(chain, signer);
+  // Burrow keeps balances in inner units: token amount x 10^extra_decimals (0 for wNEAR on testnet).
+  const scale = 10n ** BigInt(asset.config.extra_decimals);
+  return {
+    operation: 'burrow.supply_wnear',
+    receiverId: WRAP_TESTNET,
+    methodName: 'ft_transfer_call',
+    args: { receiver_id: BURROW_TESTNET, amount: amount.toString(), msg: '' },
+    depositYocto: 1n,
+    gas: BURROW_FT_TRANSFER_CALL_GAS,
+    expectedResult: `${formatNear(amount)} wNEAR moves from ${signer} into Burrow as a supply (not collateral, nothing borrowed): Burrow's supplied wNEAR for ${signer} goes from ${formatNear(before / scale)} to about ${formatNear(before / scale + amount)}.`,
+    risks: [
+      'The wNEAR sits in the Burrow testnet contract and earns its supply rate; taking it back needs a separate withdraw transaction.',
+      'If Burrow refuses the deposit, the token contract refunds the wNEAR; the gas is burnt either way.',
+    ],
+    verify: async (c) => {
+      const after = await suppliedWnear(c, signer);
+      const added = (after - before) / scale;
+      return added >= amount
+        ? `Burrow supplied wNEAR increased by ${formatNear(added)}`
+        : `Burrow supplied wNEAR changed by ${formatNear(added)}, expected ${formatNear(amount)}`;
     },
   };
 }

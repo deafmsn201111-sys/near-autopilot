@@ -3,6 +3,7 @@
  *
  *   pnpm testnet-tx preview wrap.storage_deposit
  *   pnpm testnet-tx preview wrap.near_deposit --amount 0.01
+ *   pnpm testnet-tx preview burrow.supply_wnear --amount 0.01   # needs the account registered with Burrow
  *   pnpm testnet-tx send <previewHash> --confirm <previewHash>     # needs TESTNET_SIGNER_KEY_FILE
  *   pnpm testnet-tx status <txHash>
  *   pnpm testnet-tx ledger
