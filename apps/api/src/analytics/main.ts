@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
 import { buildAnalyticsServer } from './server';
+import { ControlService } from '../control/service';
 
 /**
  * Read-only analytics API (Postgres only). It needs no RPC, no price API and no key other than the shared API token;
@@ -15,6 +16,7 @@ const env = z
     API_HOST: z.string().default('0.0.0.0'),
     API_PORT: z.coerce.number().int().default(4000),
     SHADOW_CYCLE_INTERVAL_SECONDS: z.coerce.number().int().min(60).default(900),
+    COLLECTOR_URL: z.string().url().optional(),
   })
   .parse(process.env);
 
@@ -25,6 +27,8 @@ const app = buildAnalyticsServer(
     store: new CollectorStore(database.db),
     evidence: new EvidenceStore(database.db),
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
+    control: new ControlService(database.db),
+    ...(env.COLLECTOR_URL ? { collectorUrl: env.COLLECTOR_URL } : {}),
   },
   { logger: true },
 );

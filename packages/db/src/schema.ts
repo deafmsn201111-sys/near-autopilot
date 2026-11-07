@@ -582,3 +582,13 @@ export const orchestratorActions = pgTable(
     index('orchestrator_actions_scope_at_idx').on(t.scope, t.at),
   ],
 );
+
+/** Operator pause of the scheduled collection (migration 0014). One row, id 'default'; absent = not paused. */
+export const collectorControl = pgTable('collector_control', {
+  id: text('id').primaryKey(),
+  paused: boolean('paused').notNull(),
+  reason: text('reason').notNull(),
+  changedBy: text('changed_by').notNull(),
+  changedAt: ts('changed_at').notNull(),
+  version: bigint('version', { mode: 'number' }).notNull(),
+});

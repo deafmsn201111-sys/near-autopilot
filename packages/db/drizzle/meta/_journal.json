@@ -99,6 +99,13 @@
       "when": 1793980000000,
       "tag": "0013_orchestrator_state",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793990000000,
+      "tag": "0014_collector_control",
+      "breakpoints": true
     }
   ]
 }

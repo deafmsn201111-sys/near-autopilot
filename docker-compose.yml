@@ -277,6 +277,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
       API_PORT: 4000
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      # internal network only: the dashboard's "Run market analysis" (token-protected, read-only collection)
+      COLLECTOR_URL: http://shadow-collector:4100
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
 
