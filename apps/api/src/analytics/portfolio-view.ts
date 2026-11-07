@@ -453,6 +453,8 @@ export function buildPortfolioView(i: {
     const nearShare = walletNearUsd !== null && idleUsd > 0 ? walletNearUsd / idleUsd : 1;
     const swap = needsSwap ? (swapCost ?? 0) * (l.token === USDT_TOKEN ? nearShare : 1) : 0;
     const net = l.netUsd - swap;
+    // Shown for comparison only when it would actually earn: a loop that loses money after costs is noise.
+    if (net <= 0) continue;
     actions.push({
       id: `loop-${l.token}`,
       kind: 'loop',
@@ -693,6 +695,21 @@ export function registerPortfolioView(app: FastifyInstance, store: CollectorStor
       { at: Date; type: string; payload: Record<string, unknown> }[]
     >();
     for (const ev of await store.requestEvents(q.portfolio, 200)) {
+      if (ev.type === 'demo.reset') {
+        const at = ev.at.toISOString();
+        entries.push({
+          from: at,
+          to: at,
+          count: 1,
+          headline: 'You reset the demo portfolio',
+          notes: [
+            'Its simulated balances went back to the starting amounts. The actions before stay listed here.',
+          ],
+          policy: [],
+          key: `reset|${at}`,
+        });
+        continue;
+      }
       const rid = ev.runId ?? '';
       byRequest.set(rid, [
         ...(byRequest.get(rid) ?? []),

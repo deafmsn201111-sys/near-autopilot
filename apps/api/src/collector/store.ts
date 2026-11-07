@@ -563,6 +563,7 @@ export class CollectorStore {
             'operator.request',
             'operator.request.result',
             'operator.request.failed',
+            'demo.reset',
           ]),
           sql`${auditEvents.payload}->>'portfolio' = ${portfolio}`,
         ),

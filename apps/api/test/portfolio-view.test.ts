@@ -69,6 +69,9 @@ describe('portfolio view (demo-5000)', () => {
     expect(v.actions.find((a) => a.id === 'lend-near')?.capitalUsd).toBe(900);
     for (const loop of v.actions.filter((a) => a.kind === 'loop'))
       expect(loop.autopilot.verdict).toBe('not_allowed');
+    // a loop is listed only when it earns after every cost
+    for (const loop of v.actions.filter((a) => a.kind === 'loop'))
+      expect(loop.netUsd ?? -1).toBeGreaterThan(0);
     // ordered by the result after costs
     const nets = v.actions.map((a) => a.netUsd ?? -Infinity);
     expect([...nets].sort((a, b) => b - a)).toEqual(nets);

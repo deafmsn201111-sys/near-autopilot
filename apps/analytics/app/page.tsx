@@ -3,6 +3,19 @@ import { AgentAction } from '../components/AgentAction';
 
 /** The policy's per-action limit (config maxActionUsd): a larger amount is blocked, so one step never asks for more. */
 const MAX_ACTION_USD = 100;
+
+/** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
+const SMALL_IDLE_USD = 50;
+
+/** Dust: worth under a cent (or, unpriced, under 0.005 tokens). Shown nowhere: it would read as "0 TOKEN". */
+const isDust = (h: { amount: number; usd: number | null }) =>
+  h.usd !== null ? h.usd < 0.01 : h.amount < 0.005;
+
+/** Small amounts keep two significant digits (0.0042 BTC is not "0"); others two decimals. */
+const amountText = (n: number) =>
+  n > 0 && n < 0.01
+    ? n.toLocaleString('en-US', { maximumSignificantDigits: 2 })
+    : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 import { ModeSwitch, type Mode } from '../components/ModeSwitch';
 import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
@@ -221,7 +234,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     );
   const t = data.totals;
   const groups = (['wallet', 'collateral', 'deposited', 'borrowed'] as const)
-    .map((w) => ({ w, rows: data.holdings.filter((h) => h.where === w) }))
+    .map((w) => ({ w, rows: data.holdings.filter((h) => h.where === w && !isDust(h)) }))
     .filter((g) => g.rows.length > 0);
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
   return (
@@ -303,7 +316,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               </b>
               {g.rows.map((r) => (
                 <span key={r.symbol} className="muted-note">
-                  {r.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} {r.symbol}
+                  {amountText(r.amount)} {r.symbol}
                 </span>
               ))}
             </div>
@@ -334,7 +347,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           )}
         </div>
         {data.actions.length === 0 ? (
-          <p className="muted-note">No option could be computed from the latest data.</p>
+          <p className="muted-note">
+            {t.idleUsd < SMALL_IDLE_USD
+              ? `${money(t.idleUsd, false)} is too small to put to work: the network fees of any move would cost more than it can earn in a month. Doing nothing is the right call here.`
+              : 'No option could be computed from the latest data.'}
+          </p>
         ) : (
           <div className="actions-list">
             {data.actions.map((a) => (

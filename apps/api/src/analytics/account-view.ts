@@ -274,32 +274,35 @@ export function registerAccountView(
           horizonDays: HORIZON,
         },
       ))
-        add({
-          id: `loop-${l.token}`,
-          kind: 'loop',
-          title: `Loop ${sym(l.token)} on Burrow (${l.leverage.toFixed(1)}× leverage)`,
-          summary: `Deposit, borrow the same token, deposit again (${l.rounds} rounds): supply rate on ${money(l.depositedUsd)}, borrow rate on ${money(l.borrowedUsd)}.`,
-          capitalUsd: l.equityUsd,
-          grossUsd: l.grossUsd,
-          costs: [
-            { label: `Interest on ${money(l.borrowedUsd)} borrowed`, usd: l.borrowCostUsd },
-            { label: 'Network fees (every round in and out)', usd: l.gasUsd },
-          ],
-          risk: 'high',
-          steps: [
-            `End state: ${money(l.depositedUsd)} deposited, ${money(l.borrowedUsd)} borrowed, health factor ${l.targetHealthFactor}.`,
-          ],
-          risks: [
-            `Loses money above a ${(l.breakEvenBorrowApr * 100).toFixed(1)}% borrow rate.`,
-            'Leverage multiplies rate and smart-contract risk.',
-          ],
-          basis:
-            "Exact leverage from Burrow's health factor for the same token on both sides; today's rates.",
-          autopilot: {
-            verdict: 'not_allowed',
-            sentence: 'The autopilot will not do this: it never borrows. Shown for comparison.',
-          },
-        });
+        // Shown for comparison only when it would actually earn after every cost (on a small amount the
+        // network fees of the rounds alone exceed the interest, so it would only be a loss on display).
+        if (l.netUsd > 0)
+          add({
+            id: `loop-${l.token}`,
+            kind: 'loop',
+            title: `Loop ${sym(l.token)} on Burrow (${l.leverage.toFixed(1)}× leverage)`,
+            summary: `Deposit, borrow the same token, deposit again (${l.rounds} rounds): supply rate on ${money(l.depositedUsd)}, borrow rate on ${money(l.borrowedUsd)}.`,
+            capitalUsd: l.equityUsd,
+            grossUsd: l.grossUsd,
+            costs: [
+              { label: `Interest on ${money(l.borrowedUsd)} borrowed`, usd: l.borrowCostUsd },
+              { label: 'Network fees (every round in and out)', usd: l.gasUsd },
+            ],
+            risk: 'high',
+            steps: [
+              `End state: ${money(l.depositedUsd)} deposited, ${money(l.borrowedUsd)} borrowed, health factor ${l.targetHealthFactor}.`,
+            ],
+            risks: [
+              `Loses money above a ${(l.breakEvenBorrowApr * 100).toFixed(1)}% borrow rate.`,
+              'Leverage multiplies rate and smart-contract risk.',
+            ],
+            basis:
+              "Exact leverage from Burrow's health factor for the same token on both sides; today's rates.",
+            autopilot: {
+              verdict: 'not_allowed',
+              sentence: 'The autopilot will not do this: it never borrows. Shown for comparison.',
+            },
+          });
     actions.sort((a, b) => (b.netUsd ?? -Infinity) - (a.netUsd ?? -Infinity));
 
     // What the current Burrow position earns or costs per month at today's rates (deposits earn, loans cost).
