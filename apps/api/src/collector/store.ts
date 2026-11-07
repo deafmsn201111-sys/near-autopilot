@@ -1,6 +1,7 @@
 import {
   and,
   asc,
+  auditEvents,
   burrowMarketObservations,
   burrowMarkets,
   collectorCycles,
@@ -543,6 +544,30 @@ export class CollectorStore {
       .from(portfolioAnalyses)
       .where(eq(portfolioAnalyses.portfolioId, portfolioId))
       .orderBy(desc(portfolioAnalyses.createdAt))
+      .limit(limit);
+  }
+
+  /** Dashboard requests ("let the agent do it") for one demo portfolio, newest first. */
+  async requestEvents(portfolio: string, limit: number) {
+    return this.db
+      .select({
+        at: auditEvents.at,
+        type: auditEvents.type,
+        runId: auditEvents.runId,
+        payload: auditEvents.payload,
+      })
+      .from(auditEvents)
+      .where(
+        and(
+          inArray(auditEvents.type, [
+            'operator.request',
+            'operator.request.result',
+            'operator.request.failed',
+          ]),
+          sql`${auditEvents.payload}->>'portfolio' = ${portfolio}`,
+        ),
+      )
+      .orderBy(desc(auditEvents.at))
       .limit(limit);
   }
 

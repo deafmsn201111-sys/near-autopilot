@@ -69,6 +69,8 @@ export interface RequestDeps {
     'insertPolicyVerdict' | 'appendAudit' | 'getExecutionStats'
   >;
   readonly accountId: AccountId;
+  /** Which demo portfolio this service acts for (recorded with every audit entry, for the Activity page). */
+  readonly portfolio?: string;
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly logger: Logger;
@@ -256,7 +258,7 @@ export class UserRequestService {
       type,
       runId: `request:${id}`,
       proposalId: null,
-      payload,
+      payload: { ...payload, portfolio: this.d.portfolio ?? null },
     });
   }
 }

@@ -308,6 +308,8 @@ services:
     environment:
       API_BASE_URL: http://analytics-api:4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      # "let the agent do it" on the demo portfolios: the shadow autopilot (simulation, dry-run only)
+      AUTOPILOT_API_URL: http://api-shadow:4000
     ports:
       - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
 

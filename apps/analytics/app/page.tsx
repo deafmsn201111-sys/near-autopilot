@@ -1,3 +1,6 @@
+import { cookies } from 'next/headers';
+import { AgentAction } from '../components/AgentAction';
+import { ModeSwitch, type Mode } from '../components/ModeSwitch';
 import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
@@ -24,7 +27,83 @@ const VERDICT = {
   no_data: { cls: 'neutral', icon: '?' },
 } as const;
 
-function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
+const AGENT_CAN = new Set(['repay', 'lend-usdt', 'lend-near']);
+
+/** What the user can do with this action, given the operating mode and whose portfolio it is. */
+function ActionControls({
+  a,
+  mode,
+  portfolio,
+}: {
+  a: PortfolioAction;
+  mode: Mode;
+  portfolio: string | null;
+}) {
+  if (portfolio === null) {
+    // a real mainnet account
+    if (mode === 'demo')
+      return (
+        <span className="locked-note">
+          Switch to a mainnet mode above to act on your own account.
+        </span>
+      );
+    if (mode === 'auto')
+      return (
+        <span className="locked-note">
+          🔒 Mainnet autopilot needs the guard contract that holds your limits on-chain (next
+          stage).
+        </span>
+      );
+    return (
+      <>
+        <button type="button" className="btn primary small" disabled>
+          🔒 Sign with your wallet
+        </button>
+        <span className="locked-note">
+          Mainnet signing is locked until the final security tests. Nothing can be sent from this
+          site yet.
+        </span>
+      </>
+    );
+  }
+  if (mode !== 'demo')
+    return (
+      <span className="locked-note">
+        Demo portfolios run in Demo mode. Switch to Demo to let the agent act.
+      </span>
+    );
+  if (!AGENT_CAN.has(a.id))
+    return (
+      <span className="locked-note">
+        {a.kind === 'loop'
+          ? 'The agent never borrows: loops are shown for comparison only.'
+          : a.kind === 'liquidity'
+            ? 'The agent cannot open liquidity positions yet: it only advises on them.'
+            : 'The agent cannot do this one as a single step yet (swap, then deposit).'}
+      </span>
+    );
+  return (
+    <AgentAction
+      portfolio={portfolio}
+      actionId={a.id}
+      title={a.title}
+      defaultUsd={Math.min(a.capitalUsd, 50)}
+      maxUsd={a.capitalUsd}
+    />
+  );
+}
+
+function ActionCard({
+  a,
+  best,
+  mode,
+  portfolio,
+}: {
+  a: PortfolioAction;
+  best: boolean;
+  mode: Mode;
+  portfolio: string | null;
+}) {
   const v = VERDICT[a.autopilot.verdict];
   const net = a.netUsd;
   return (
@@ -49,6 +128,9 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
         <i aria-hidden="true">{v.icon}</i>
         {a.autopilot.sentence}
       </p>
+      <div className="action-buttons">
+        <ActionControls a={a} mode={mode} portfolio={portfolio} />
+      </div>
       <details className="plan">
         <summary>See the plan, the costs and the risks</summary>
         <div className="plan-grid">
@@ -100,6 +182,8 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
+  const cookieMode = (await cookies()).get('autopilot-mode')?.value;
+  const mode: Mode = cookieMode === 'confirm' || cookieMode === 'auto' ? cookieMode : 'demo';
   const isAccount = sp.p === 'account';
   const accountParam = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const id = portfolioOf(sp.p);
@@ -140,6 +224,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     <>
       <div className="hero-head">
         <PortfolioSwitch current={isAccount ? 'account' : id} path="/" withAccount />
+        <ModeSwitch current={mode} />
         <span className="muted-note">
           {isAccount
             ? `${accountParam} on NEAR mainnet · read just now, nothing is signed or sent`
@@ -227,7 +312,13 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         ) : (
           <div className="actions-list">
             {data.actions.map((a) => (
-              <ActionCard key={a.id} a={a} best={a === best} />
+              <ActionCard
+                key={a.id}
+                a={a}
+                best={a === best}
+                mode={mode}
+                portfolio={isAccount ? null : id}
+              />
             ))}
           </div>
         )}

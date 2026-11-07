@@ -310,7 +310,7 @@ export function buildPortfolioView(i: {
             }
           : {
               verdict: 'not_allowed',
-              sentence: `Worth doing yourself. The autopilot repays only to protect the loan (health factor below ${WATCH_HF}), not to save interest.`,
+              sentence: `The autopilot would not do this on its own: it repays only to protect the loan (health factor below ${WATCH_HF}), not to save interest. You can ask it to.`,
             },
     });
   }
@@ -635,6 +635,61 @@ export function registerPortfolioView(app: FastifyInstance, store: CollectorStor
           key,
         });
     }
+    // The user's own requests from the dashboard, one entry each, merged in by time.
+    const byRequest = new Map<
+      string,
+      { at: Date; type: string; payload: Record<string, unknown> }[]
+    >();
+    for (const ev of await store.requestEvents(q.portfolio, 200)) {
+      const rid = ev.runId ?? '';
+      byRequest.set(rid, [
+        ...(byRequest.get(rid) ?? []),
+        { at: ev.at, type: ev.type, payload: (ev.payload ?? {}) as Record<string, unknown> },
+      ]);
+    }
+    for (const evs of byRequest.values()) {
+      const ask = evs.find((e) => e.type === 'operator.request');
+      const end = evs.find((e) => e.type !== 'operator.request');
+      const p = ask?.payload ?? {};
+      const token = String(p['token']);
+      const what =
+        p['kind'] === 'lending.repay'
+          ? `repay $${String(p['usd'])} of the loan`
+          : `deposit $${String(p['usd'])} of ${token === NEAR_TOKEN ? 'wNEAR' : (ctx.symbols.get(token) ?? token)} into Burrow`;
+      const outcome = typeof p['outcome'] === 'string' ? p['outcome'] : '';
+      const result = end?.payload ?? {};
+      const at = (end ?? ask ?? evs[0])?.at.toISOString() ?? new Date(0).toISOString();
+      const policyNote =
+        outcome === 'approve'
+          ? 'The safety policy allowed it (all 12 checks passed).'
+          : outcome === 'require_approval'
+            ? `The safety policy asked for your confirmation${result['confirmedBy'] ? ', and you confirmed it' : ''}.`
+            : outcome === 'reject'
+              ? 'The safety policy blocked it. Nothing was done.'
+              : '';
+      const resultNote =
+        end?.type === 'operator.request.result'
+          ? result['status'] === 'dry_run'
+            ? 'It ran as a dry run: simulated, nothing was signed or sent.'
+            : `The executor answered: ${String(result['status'])}.`
+          : end?.type === 'operator.request.failed'
+            ? typeof result['sentence'] === 'string'
+              ? result['sentence']
+              : 'It failed.'
+            : outcome === 'require_approval'
+              ? 'Not confirmed (it expired or is still waiting).'
+              : '';
+      entries.push({
+        from: at,
+        to: at,
+        count: 1,
+        headline: ask ? `You asked the agent to ${what}` : 'A request from the dashboard',
+        notes: [policyNote, resultNote].filter(Boolean),
+        policy: [],
+        key: `request|${at}`,
+      });
+    }
+    entries.sort((x, y) => (x.to < y.to ? 1 : -1));
     return {
       portfolio: q.portfolio,
       simulated: true,

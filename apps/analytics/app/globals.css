@@ -1840,3 +1840,30 @@ table.mini tr.total td {
   flex-basis: 100%;
   margin: 0;
 }
+.btn.small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.wallet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.wallet-id {
+  font-size: 13px;
+  font-weight: 600;
+}
+.mode-switch a {
+  white-space: nowrap;
+}
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+}
+.locked-note {
+  font-size: 12px;
+  color: var(--muted);
+}

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
 import { SubNav, TopNav } from '../components/Nav';
+import { WalletButton } from '../components/WalletButton';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               NEAR Autopilot
             </Link>
             <TopNav />
+            <WalletButton />
             <span
               className="mode-pill"
               data-tip={

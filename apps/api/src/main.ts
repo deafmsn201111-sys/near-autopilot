@@ -44,8 +44,9 @@ async function main(): Promise<void> {
   // "Let the agent do it": one request service per simulated demo portfolio, through the SAME planners, policy
   // engine and executor (dry-run) as the cycles. Only in simulation; the other portfolio is wired on first use.
   const services = new Map<string, Promise<UserRequestService>>();
-  const serviceOf = (w: typeof wired) =>
+  const serviceOf = (w: typeof wired, portfolio: string) =>
     new UserRequestService({
+      portfolio,
       policy: w.policy,
       planners: w.planners,
       executor: w.executor,
@@ -64,14 +65,14 @@ async function main(): Promise<void> {
           if (!s) {
             s =
               portfolio === env.SIMULATION_PORTFOLIO
-                ? Promise.resolve(serviceOf(wired))
+                ? Promise.resolve(serviceOf(wired, portfolio))
                 : wire(
                     { ...env, SIMULATION_PORTFOLIO: portfolio },
                     config,
                     repo,
                     logger,
                     wireOptions,
-                  ).then(serviceOf);
+                  ).then((w) => serviceOf(w, portfolio));
             services.set(portfolio, s);
           }
           return s;
