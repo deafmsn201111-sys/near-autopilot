@@ -392,7 +392,8 @@ export class ShadowCollector {
               };
             })
           : market;
-      if (pricesForAnalysis && yieldReport && markets && poolViews)
+      // Pools only feed the LP simulations: without them (RPC failure) the loan and lending are still analysed.
+      if (pricesForAnalysis && yieldReport && markets)
         await timed('portfolios', async () => {
           for (const pid of this.d.portfolios)
             await this.analysePortfolio(
@@ -402,7 +403,7 @@ export class ShadowCollector {
               yieldReport,
               viewer,
               markets,
-              poolViews,
+              poolViews ?? [],
               prices,
             );
           return { value: null, records: this.d.portfolios.length };
