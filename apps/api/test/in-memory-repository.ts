@@ -84,7 +84,7 @@ export class InMemoryRepository implements AutopilotRepository {
   }
   async findPolicyVerdict(id: string) {
     const v = this.verdicts.find((x) => x.id === id);
-    return v ? { verdict: v.verdict, planHash: v.planHash } : null;
+    return v ? { verdict: v.verdict, planHash: v.planHash, policyVersion: v.policyVersion } : null;
   }
   async insertExecutionRoute(r: ExecutionRouteRecord): Promise<void> {
     this.log.push(`route:${r.outcome}`);

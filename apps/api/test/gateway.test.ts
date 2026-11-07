@@ -259,7 +259,7 @@ function stored(id: string, verdict: PolicyVerdict, hash: string): PolicyVerdict
   };
 }
 
-function gateway(opts: { oneClick?: boolean } = {}) {
+function gateway(opts: { oneClick?: boolean; policyVersion?: string } = {}) {
   const repo = new InMemoryRepository();
   const clock = new FixedClock(NOW);
   const authority = new TestApprovalAuthority();
@@ -295,6 +295,7 @@ function gateway(opts: { oneClick?: boolean } = {}) {
     clock,
     ids: new SequentialIds('route'),
     logger: new SilentLogger(),
+    ...(opts.policyVersion ? { policyVersion: opts.policyVersion } : {}),
   });
   return { gw, repo, authority, viewer, sent };
 }
@@ -391,6 +392,16 @@ describe('ShadowGateway: the verdict cannot be bypassed, nothing is ever sent', 
     await repo.insertPolicyVerdict(stored('d-5', 'ALLOW', approved.planHash));
     expect((await gw.execute(approved)).status).toBe('dry_run');
     expect((await gw.execute(approved)).error).toMatch(/already been used/);
+  });
+
+  it('refuses an ALLOW issued under another policy version (the policy changed after approval)', async () => {
+    const { gw, repo, authority, sent } = gateway({ policyVersion: 'rules-v2+cfg:new' });
+    const approved = authority.mint(await swapPlan(), { now: NOW, decisionId: 'd-6' });
+    await repo.insertPolicyVerdict(stored('d-6', 'ALLOW', approved.planHash)); // stored under policy 'v'
+    const r = await gw.execute(approved);
+    expect(r.status).toBe('rejected');
+    expect(r.error).toMatch(/issued under policy v, not the one in force/);
+    expect(sent).toEqual([]);
   });
 
   it('a non-swap plan (a Burrow repay) is approved dry-run with nothing to route', async () => {

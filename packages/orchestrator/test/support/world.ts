@@ -32,7 +32,9 @@ import {
   MarketIntelligenceAgent,
   Orchestrator,
   orchestratorConfigSchema,
+  type ControlStore,
   type EscalationEvent,
+  type IdempotencyStore,
   type ExecutionHistory,
   type MarketContext,
   type Notifier,
@@ -101,6 +103,8 @@ export interface WorldOptions {
   pricesAgeSeconds?: number;
   /** How long reading the snapshot takes (the clock advances by this much inside take()). */
   snapshotTakesSeconds?: number;
+  /** Durable stores to run the scenario on (apps/api runs these scenarios on PostgreSQL). Default: in memory. */
+  stores?: (clock: FixedClock) => { idempotency?: IdempotencyStore; control?: ControlStore };
 }
 
 export interface Spies {
@@ -358,8 +362,11 @@ export function makeWorld(opts: WorldOptions = {}) {
   };
 
   const audit = new InMemoryAuditLog();
-  const idempotency = new InMemoryIdempotencyStore();
-  const control = new InMemoryControlStore(NOW);
+  const injected = opts.stores?.(clock) ?? {};
+  const idempotency = injected.idempotency ?? new InMemoryIdempotencyStore();
+  // Typed as the in-memory store so scenarios can use its test hooks (failLoads); those are only used without
+  // injected stores.
+  const control = (injected.control ?? new InMemoryControlStore(NOW)) as InMemoryControlStore;
   const config = orchestratorConfigSchema.parse({
     allocation: {
       assets: [{ token: WNEAR }, { token: USDT }],

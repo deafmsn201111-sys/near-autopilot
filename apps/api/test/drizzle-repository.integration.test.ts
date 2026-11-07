@@ -20,6 +20,10 @@ import {
   burrowMarkets,
   burrowMarketObservations,
   executionRoutes,
+  orchestratorActions,
+  orchestratorControl,
+  orchestratorControlHistory,
+  orchestratorCycles,
   policyVerdicts,
   tokenMetadata,
   portfolioAnalyses,
@@ -71,7 +75,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(13);
+    expect(applied.rows[0]?.n).toBe(14);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -93,6 +97,10 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       policyVerdicts,
       executionRoutes,
       tokenMetadata,
+      orchestratorControl,
+      orchestratorControlHistory,
+      orchestratorCycles,
+      orchestratorActions,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))
@@ -646,6 +654,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(await shadow.findPolicyVerdict('pv-1')).toEqual({
       verdict: 'BLOCK',
       planHash: 'd'.repeat(64),
+      policyVersion: expect.any(String) as string,
     });
     expect(await chain.findPolicyVerdict('pv-1')).toBeNull();
     expect(await shadow.findPolicyVerdict('nope')).toBeNull();

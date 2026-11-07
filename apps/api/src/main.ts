@@ -13,7 +13,10 @@ import { AuditedYieldSink } from './yield/audit';
 import { DrizzleYieldStore } from './yield/store';
 import { DrizzleTestnetTxLedger } from './testnet-tx/ledger';
 import { testnetTxView } from './testnet-tx/presenter';
-import { wire } from './wiring';
+import { systemClock, wire } from './wiring';
+import { chainOf } from './evidence/chain';
+import { PgControlStore, PgIdempotencyStore } from './infra/orchestrator-stores';
+import { ModeController } from '@near-autopilot/orchestrator';
 
 async function main(): Promise<void> {
   const env = loadApiEnv();
@@ -25,10 +28,38 @@ async function main(): Promise<void> {
   const provenance = { dataSource: env.DATA_SOURCE, network: env.NEAR_NETWORK } as const;
   const repo = new DrizzleRepository(database.db, provenance);
 
-  const { cycle, snapshots, policy, market, yields } = await wire(env, config, repo, logger, {
-    marketSink: new DrizzleMarketPriceStore(database.db),
-    yieldSink: new AuditedYieldSink(new DrizzleYieldStore(database.db), repo),
-  });
+  const { cycle, snapshots, policy, market, yields, control } = await wire(
+    env,
+    config,
+    repo,
+    logger,
+    {
+      marketSink: new DrizzleMarketPriceStore(database.db),
+      yieldSink: new AuditedYieldSink(new DrizzleYieldStore(database.db), repo),
+      // Durable mode and idempotency: an emergency read-only survives a restart (migration 0013).
+      orchestratorStores: (scope) => ({
+        control: new PgControlStore(database.db, scope, chainOf(provenance), systemClock),
+        idempotency: new PgIdempotencyStore(database.db, scope, systemClock),
+      }),
+    },
+  );
+  if (control) {
+    // Restart recovery, audited: which mode this process starts in, as read from the database.
+    const state = await new ModeController(control.store, systemClock).current();
+    await repo.appendAudit({
+      at: systemClock.now(),
+      type: 'orchestrator.control.restored',
+      runId: null,
+      proposalId: null,
+      payload: {
+        scope: control.scope,
+        mode: state.mode,
+        reason: state.reason,
+        since: state.since.toISOString(),
+      },
+    });
+    logger.info('orchestrator control state restored', { scope: control.scope, mode: state.mode });
+  }
   const app = buildServer(
     {
       apiToken: env.API_TOKEN,

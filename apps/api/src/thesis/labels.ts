@@ -11,7 +11,7 @@ export function tokenLabel(id: string): string {
     '853d955acef822db058eb8505911ed77f175b99e.factory.bridge.near': 'FRAX',
     'zec.omft.near': 'ZEC',
     'wrap.near': 'wNEAR',
-    'aurora': 'ETH (aurora)',
+    aurora: 'ETH (aurora)',
     'token.v2.ref-finance.near': 'REF',
     'token.rhealab.near': 'RHEA',
     'meta-pool.near': 'stNEAR',

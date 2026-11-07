@@ -36,7 +36,9 @@ import {
   MarketIntelligenceAgent,
   Orchestrator,
   orchestratorConfigSchema,
+  type ControlStore,
   type CycleReport,
+  type IdempotencyStore,
 } from '@near-autopilot/orchestrator';
 import { PolicyEngine } from '@near-autopilot/policy-engine';
 import { RheaPlanner, RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
@@ -52,6 +54,7 @@ import { loadSigner } from './signer';
 import { AutopilotCycle } from './services/cycle';
 import { OrchestratedCycle, RepositoryNotifier } from './services/orchestrated-cycle';
 import { PersistentAuditLog } from './services/persistent-audit';
+import { orchestratorScope } from './infra/orchestrator-stores';
 import { CachedSnapshotService, SnapshotService } from './services/snapshot';
 import { DEMO_PORTFOLIOS } from './simulation/demo-portfolios';
 import { ReferenceMarketProvider, ReferencePriceOracle } from './market-data/adapters';
@@ -97,6 +100,14 @@ export interface WireOptions {
   };
   /** Receives every orchestrator cycle report (the collector stores decisions per portfolio). */
   readonly onCycleReport?: (report: CycleReport) => void;
+  /**
+   * DURABLE orchestrator control and idempotency stores for a scope (PostgreSQL in production, see
+   * infra/orchestrator-stores.ts). Without it (unit tests) the in-memory stores are used.
+   */
+  readonly orchestratorStores?: (scope: string) => {
+    readonly control: ControlStore;
+    readonly idempotency: IdempotencyStore;
+  };
 }
 
 /**
@@ -261,6 +272,7 @@ export async function wire(
       ),
       exchange: env.RHEA_CONTRACT_ID,
       account: env.ONE_CLICK_QUOTE_ACCOUNT ?? env.AUTOPILOT_ACCOUNT_ID,
+      policyVersion: policy.version,
       limits: {
         maxQuoteAgeSeconds: config.policy.maxPriceAgeSeconds,
         maxOracleDeviationBps: config.policy.maxOracleDeviationBps,
@@ -288,8 +300,18 @@ export async function wire(
   const cachedSnapshots = new CachedSnapshotService(snapshots);
 
   const common = { accountId: env.AUTOPILOT_ACCOUNT_ID, executionMode: env.EXECUTION_MODE };
-  // Idempotency and control stores stay in memory: why this engine is dry-run only (packages/config). The cycle reads
-  // the audit back to report per-agent outcomes.
+  // Control and idempotency state: durable in PostgreSQL when the caller provides the stores (API, collector), one
+  // scope per deployment and portfolio. The cycle reads the audit back to report per-agent outcomes.
+  const scope = orchestratorScope({
+    dataSource: env.DATA_SOURCE,
+    network: env.NEAR_NETWORK,
+    accountId: env.AUTOPILOT_ACCOUNT_ID,
+    portfolio: env.DATA_SOURCE === 'simulation' ? env.SIMULATION_PORTFOLIO : undefined,
+  });
+  const stores = options.orchestratorStores?.(scope) ?? {
+    control: new InMemoryControlStore(systemClock.now()),
+    idempotency: new InMemoryIdempotencyStore(),
+  };
   // The chain is in memory; every entry is also written to Postgres audit_events (write-through, fails closed).
   const orchestratorAudit = new PersistentAuditLog(new InMemoryAuditLog(), repo, {
     dataSource: env.DATA_SOURCE,
@@ -328,8 +350,8 @@ export async function wire(
             executor,
             history: { stats: (account, since) => repo.getExecutionStats(account, since) },
             audit: orchestratorAudit,
-            idempotency: new InMemoryIdempotencyStore(),
-            control: new InMemoryControlStore(systemClock.now()),
+            idempotency: stores.idempotency,
+            control: stores.control,
             notifier: new RepositoryNotifier(repo, logger),
             clock: systemClock,
             logger,
@@ -353,7 +375,16 @@ export async function wire(
           logger,
         });
 
-  return { cycle, snapshots: cachedSnapshots, policy, simulation, market, yields };
+  return {
+    cycle,
+    snapshots: cachedSnapshots,
+    policy,
+    simulation,
+    market,
+    yields,
+    /** The orchestrator's control state (mode), for the operator endpoints; null on the legacy engine. */
+    control: env.AUTOPILOT_ENGINE === 'orchestrator' ? { scope, store: stores.control } : null,
+  };
 }
 
 /** The read-only mainnet RPC of the shadow analysis. Refuses to start unless it really serves mainnet. */

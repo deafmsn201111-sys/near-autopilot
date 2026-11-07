@@ -48,6 +48,8 @@ import type {
 import { curatedPrices, longTailPrices } from './prices';
 import { classifyPool, readDclPool, readV1Pool, scanDclPools, scanV1Pools } from './rhea-discovery';
 import type { CollectorStore } from './store';
+import { chainOf } from '../evidence/chain';
+import { PgControlStore, PgIdempotencyStore } from '../infra/orchestrator-stores';
 
 export interface CollectorDeps {
   readonly env: ApiEnv;
@@ -695,6 +697,16 @@ export class ShadowCollector {
       onCycleReport: (r) => {
         report = r;
       },
+      // Durable per-portfolio mode and idempotency (a read-only escalation survives the next cycle and a restart).
+      orchestratorStores: (scope) => ({
+        control: new PgControlStore(
+          this.d.store.db,
+          scope,
+          chainOf({ dataSource: env.DATA_SOURCE, network: env.NEAR_NETWORK }),
+          { now: this.d.now },
+        ),
+        idempotency: new PgIdempotencyStore(this.d.store.db, scope, { now: this.d.now }),
+      }),
     });
     const run = await wired.cycle.run();
     const portfolio = DEMO_PORTFOLIOS[pid];

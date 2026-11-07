@@ -70,11 +70,46 @@ export function thesisSummary(d: ThesisData) {
       : verdict === 0
         ? 'NOT SUPPORTED'
         : `PARTLY SUPPORTED (${verdict} of 3 counts)`;
-  return { pools, n, withNominal, above, close, h1, rho, h2, markets, bClose, h3, negative500, negativeHodl, spread, idle, verdict, verdictText };
+  return {
+    pools,
+    n,
+    withNominal,
+    above,
+    close,
+    h1,
+    rho,
+    h2,
+    markets,
+    bClose,
+    h3,
+    negative500,
+    negativeHodl,
+    spread,
+    idle,
+    verdict,
+    verdictText,
+  };
 }
 
 export function thesisMarkdown(d: ThesisData): string {
-  const { pools, n, withNominal, above, close, h1, rho, h2, markets, bClose, h3, negative500, negativeHodl, spread, idle, verdictText } = thesisSummary(d);
+  const {
+    pools,
+    n,
+    withNominal,
+    above,
+    close,
+    h1,
+    rho,
+    h2,
+    markets,
+    bClose,
+    h3,
+    negative500,
+    negativeHodl,
+    spread,
+    idle,
+    verdictText,
+  } = thesisSummary(d);
   const first = d.manifest.blocks[0];
   const last = d.manifest.blocks[d.manifest.blocks.length - 1];
 

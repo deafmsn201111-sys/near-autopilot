@@ -126,7 +126,9 @@ export interface AutopilotRepository {
     verdict?: PolicyVerdict;
   }): Promise<Array<PolicyVerdictRecord & Provenance>>;
   /** The stored verdict for a decision id (own provenance only), or null. */
-  findPolicyVerdict(id: string): Promise<Pick<PolicyVerdictRecord, 'verdict' | 'planHash'> | null>;
+  findPolicyVerdict(
+    id: string,
+  ): Promise<Pick<PolicyVerdictRecord, 'verdict' | 'planHash' | 'policyVersion'> | null>;
   insertExecutionRoute(route: ExecutionRouteRecord): Promise<void>;
   listExecutionRoutes(options: {
     limit: number;

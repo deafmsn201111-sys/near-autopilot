@@ -378,7 +378,13 @@ export async function runAttacks(policyConfig: PolicyConfig): Promise<AttackRun>
       inner: new DryRunExecutor({ clock: fixedClock, logger: silent, approvals: engine }),
       repo: {
         findPolicyVerdict: async (id) =>
-          id === baseline.id ? { verdict: baseline.verdict, planHash: baseline.planHash } : null,
+          id === baseline.id
+            ? {
+                verdict: baseline.verdict,
+                planHash: baseline.planHash,
+                policyVersion: baseline.policyVersion,
+              }
+            : null,
         insertExecutionRoute: async (r) => void routes.push(r.outcome),
       },
       venues: [],

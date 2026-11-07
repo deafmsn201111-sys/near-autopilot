@@ -36,6 +36,41 @@ type ProposalRow = typeof proposals.$inferSelect;
  * subquery it binds to the inner table: `where "run_id" = "id"` compared proposals.run_id with proposals.id and every
  * run reported 0 proposals.
  */
+/** A transaction handle: the same query API as the database. */
+export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * Appends one entry to `chain` INSIDE the caller's transaction, so a state change and its audit entry commit or roll
+ * back together. Takes the chain's advisory lock (held to the end of the transaction): read the head, hash the new
+ * entry onto it, insert. The unique (chain, seq) index makes a fork impossible even without the lock.
+ */
+export async function appendAuditIn(
+  tx: Tx,
+  chain: string,
+  event: AuditEvent,
+): Promise<{ chain: string; seq: number; hash: string }> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`audit:${chain}`}))`);
+  const [head] = await tx
+    .select({ seq: auditEvents.seq, hash: auditEvents.hash })
+    .from(auditEvents)
+    .where(eq(auditEvents.chain, chain))
+    .orderBy(desc(auditEvents.seq))
+    .limit(1);
+  const seq = (head?.seq ?? 0) + 1;
+  const prevHash = head?.hash ?? GENESIS;
+  const entry = {
+    seq,
+    at: event.at,
+    type: event.type,
+    runId: event.runId,
+    proposalId: event.proposalId,
+    payload: storedPayload(event.payload),
+  };
+  const hash = auditHash(prevHash, entry);
+  await tx.insert(auditEvents).values({ ...entry, chain, prevHash, hash });
+  return { chain, seq, hash };
+}
+
 const qualified = (table: Table, column: Column): SQL =>
   sql`${table}.${sql.identifier(column.name)}`;
 
@@ -125,29 +160,7 @@ export class DrizzleRepository implements AutopilotRepository {
    */
   async appendAudit(event: AuditEvent): Promise<void> {
     const chain = chainOf(this.provenance);
-    await this.db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`audit:${chain}`}))`);
-      const [head] = await tx
-        .select({ seq: auditEvents.seq, hash: auditEvents.hash })
-        .from(auditEvents)
-        .where(eq(auditEvents.chain, chain))
-        .orderBy(desc(auditEvents.seq))
-        .limit(1);
-      const seq = (head?.seq ?? 0) + 1;
-      const prevHash = head?.hash ?? GENESIS;
-      const payload = storedPayload(event.payload);
-      const entry = {
-        seq,
-        at: event.at,
-        type: event.type,
-        runId: event.runId,
-        proposalId: event.proposalId,
-        payload,
-      };
-      await tx
-        .insert(auditEvents)
-        .values({ ...entry, chain, prevHash, hash: auditHash(prevHash, entry) });
-    });
+    await this.db.transaction((tx) => appendAuditIn(tx, chain, event));
   }
 
   async insertPolicyVerdict(v: PolicyVerdictRecord): Promise<void> {
@@ -192,9 +205,13 @@ export class DrizzleRepository implements AutopilotRepository {
 
   async findPolicyVerdict(
     id: string,
-  ): Promise<Pick<PolicyVerdictRecord, 'verdict' | 'planHash'> | null> {
+  ): Promise<Pick<PolicyVerdictRecord, 'verdict' | 'planHash' | 'policyVersion'> | null> {
     const [row] = await this.db
-      .select({ verdict: policyVerdicts.verdict, planHash: policyVerdicts.planHash })
+      .select({
+        verdict: policyVerdicts.verdict,
+        planHash: policyVerdicts.planHash,
+        policyVersion: policyVerdicts.policyVersion,
+      })
       .from(policyVerdicts)
       .where(and(this.ownRows(policyVerdicts), eq(policyVerdicts.id, id)))
       .limit(1);

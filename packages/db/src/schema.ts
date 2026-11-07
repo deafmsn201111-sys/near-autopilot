@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -507,3 +508,77 @@ export type NewRunRow = typeof runs.$inferInsert;
 export type ProposalRow = typeof proposals.$inferSelect;
 export type NewProposalRow = typeof proposals.$inferInsert;
 export type AuditEventRow = typeof auditEvents.$inferSelect;
+
+/** Durable orchestrator operating mode, one row per scope (migration 0013). Optimistic concurrency via `version`. */
+export const orchestratorControl = pgTable('orchestrator_control', {
+  scope: text('scope').primaryKey(),
+  mode: text('mode', { enum: ['normal', 'risk_reduction_only', 'read_only'] }).notNull(),
+  reason: text('reason').notNull(),
+  since: ts('since').notNull(),
+  changedBy: text('changed_by').notNull(),
+  consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+  blindCycles: integer('blind_cycles').notNull().default(0),
+  quarantined: jsonb('quarantined').$type<unknown>().notNull(),
+  version: bigint('version', { mode: 'number' }).notNull(),
+  updatedAt: ts('updated_at').notNull(),
+  /** The audit entry that recorded the change that produced this version. */
+  auditChain: text('audit_chain'),
+  auditSeq: bigint('audit_seq', { mode: 'number' }),
+});
+
+/** Every change of orchestrator_control, append-only (trigger). */
+export const orchestratorControlHistory = pgTable(
+  'orchestrator_control_history',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    scope: text('scope').notNull(),
+    version: bigint('version', { mode: 'number' }).notNull(),
+    at: ts('at').notNull(),
+    previousMode: text('previous_mode'),
+    mode: text('mode').notNull(),
+    reason: text('reason').notNull(),
+    changedBy: text('changed_by').notNull(),
+    state: jsonb('state').$type<unknown>().notNull(),
+    auditChain: text('audit_chain'),
+    auditSeq: bigint('audit_seq', { mode: 'number' }),
+  },
+  (t) => [uniqueIndex('orchestrator_control_history_scope_version_uq').on(t.scope, t.version)],
+);
+
+/** Cycle-level idempotency (migration 0013). */
+export const orchestratorCycles = pgTable(
+  'orchestrator_cycles',
+  {
+    scope: text('scope').notNull(),
+    key: text('key').notNull(),
+    state: text('state', { enum: ['in_progress', 'completed', 'needs_reconciliation'] }).notNull(),
+    startedAt: ts('started_at').notNull(),
+    executionStartedFor: text('execution_started_for'),
+    summary: jsonb('summary').$type<unknown>(),
+    createdAt: ts('created_at').notNull(),
+    completedAt: ts('completed_at'),
+  },
+  (t) => [primaryKey({ name: 'orchestrator_cycles_pk', columns: [t.scope, t.key] })],
+);
+
+/** Action-level idempotency (migration 0013). */
+export const orchestratorActions = pgTable(
+  'orchestrator_actions',
+  {
+    scope: text('scope').notNull(),
+    actionKey: text('action_key').notNull(),
+    decisionId: text('decision_id').notNull(),
+    kind: text('kind').notNull(),
+    cycleKey: text('cycle_key').notNull(),
+    status: text('status', {
+      enum: ['in_flight', 'executed', 'dry_run', 'failed', 'pending_approval', 'rejected'],
+    }).notNull(),
+    at: ts('at').notNull(),
+    txHash: text('tx_hash'),
+    updatedAt: ts('updated_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ name: 'orchestrator_actions_pk', columns: [t.scope, t.actionKey, t.decisionId] }),
+    index('orchestrator_actions_scope_at_idx').on(t.scope, t.at),
+  ],
+);

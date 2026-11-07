@@ -44,6 +44,11 @@ export interface ShadowGatewayDeps {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly logger: Logger;
+  /**
+   * The version of the policy in force in this process. A stored ALLOW issued under a different policy (changed
+   * limits, rules) is refused: the approval must come from the policy that is in force when it is used.
+   */
+  readonly policyVersion?: string;
 }
 
 export class ShadowGateway implements PlanExecutor {
@@ -67,6 +72,10 @@ export class ShadowGateway implements PlanExecutor {
     if (stored.verdict !== 'ALLOW') return refuse(`stored verdict is ${stored.verdict}, not ALLOW`);
     if (stored.planHash !== approved.planHash)
       return refuse('the stored ALLOW verdict is for a different plan');
+    if (this.d.policyVersion !== undefined && stored.policyVersion !== this.d.policyVersion)
+      return refuse(
+        `the stored ALLOW was issued under policy ${stored.policyVersion}, not the one in force (${this.d.policyVersion})`,
+      );
 
     const result = await this.d.inner.execute(approved);
     if (result.status !== 'dry_run') return refuse(result.error ?? `executor: ${result.status}`);
