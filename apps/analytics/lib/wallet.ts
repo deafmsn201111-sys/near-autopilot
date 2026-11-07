@@ -1,53 +1,60 @@
 'use client';
-import { setupWalletSelector, type WalletSelector } from '@near-wallet-selector/core';
-import { setupHotWallet } from '@near-wallet-selector/hot-wallet';
-import { setupIntearWallet } from '@near-wallet-selector/intear-wallet';
-import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
-import { setupModal, type WalletSelectorModal } from '@near-wallet-selector/modal-ui';
-import { setupMyNearWallet } from '@near-wallet-selector/my-near-wallet';
+import { NearConnector } from '@hot-labs/near-connect';
 
 /**
- * WALLET CONNECTION, sign-in only. MAINNET SIGNING IS LOCKED BY ARCHITECTURE:
- *  - no access-key request and no contract id: signing in adds NO access key to the account (no state change);
+ * WALLET CONNECTION through HOT Connector (@hot-labs/near-connect): HOT, Meteor, Intear, MyNearWallet, Nightly,
+ * NEAR Mobile, OKX and more, each wallet's code running in its own sandboxed iframe. Sign-in only.
+ *
+ * MAINNET SIGNING IS LOCKED BY ARCHITECTURE:
+ *  - no limited-key sign-in option: connecting adds NO access key to the account (no state change), and only wallets
+ *    that can sign in without adding a key are offered;
  *  - this module exposes only connect / disconnect / the account id. Nothing in the dashboard calls a wallet's
- *    transaction signing methods (sign-and-send, sign-transaction, delegate actions); a test (test/signing-lock.test.ts)
- *    fails if any source file calls one. Unlocking needs a code change, a review and the final security tests.
+ *    transaction signing methods (sign-and-send, sign-transaction, delegate actions); a test
+ *    (test/signing-lock.test.ts) fails if any source file calls one. Unlocking needs a code change, a review and the
+ *    final security tests.
  */
 export const MAINNET_SIGNING = 'locked' as const;
 
-let ready: Promise<{ selector: WalletSelector; modal: WalletSelectorModal }> | null = null;
+let connector: NearConnector | null = null;
+const listeners = new Set<(accountId: string | null) => void>();
+const emit = (id: string | null) => listeners.forEach((l) => l(id));
 
-function init() {
-  ready ??= setupWalletSelector({
-    network: 'mainnet',
-    modules: [setupHotWallet(), setupMeteorWallet(), setupIntearWallet(), setupMyNearWallet()],
-  }).then((selector) => ({
-    selector,
-    modal: setupModal(selector, {
-      description:
-        'Sign in to view your portfolio. NEAR Autopilot never asks your wallet to sign a transaction.',
-    }),
-  }));
-  return ready;
+function get(): NearConnector {
+  if (!connector) {
+    connector = new NearConnector({
+      network: 'mainnet',
+      autoConnect: true,
+      features: { signInWithoutAddKey: true },
+    });
+    connector.on('wallet:signIn', (t) => emit(t.accounts[0]?.accountId ?? null));
+    connector.on('wallet:signOut', () => emit(null));
+  }
+  return connector;
 }
 
-/** The signed-in account id, or null; `onChange` is called on every change. Returns an unsubscribe function. */
+async function current(): Promise<string | null> {
+  try {
+    const { accounts } = await get().getConnectedWallet();
+    return accounts[0]?.accountId ?? null;
+  } catch {
+    return null; // nothing connected
+  }
+}
+
+/** The connected account id, or null; `onChange` is called now and on every change. Returns an unsubscribe. */
 export async function watchAccount(
   onChange: (accountId: string | null) => void,
 ): Promise<() => void> {
-  const { selector } = await init();
-  const pick = () => selector.store.getState().accounts.find((a) => a.active)?.accountId ?? null;
-  onChange(pick());
-  const sub = selector.store.observable.subscribe(() => onChange(pick()));
-  return () => sub.unsubscribe();
+  listeners.add(onChange);
+  onChange(await current());
+  return () => listeners.delete(onChange);
 }
 
 export async function connect(): Promise<void> {
-  (await init()).modal.show();
+  await get().connect();
 }
 
 export async function disconnect(): Promise<void> {
-  const { selector } = await init();
-  if (!selector.isSignedIn()) return;
-  await (await selector.wallet()).signOut();
+  await get().disconnect();
+  emit(null);
 }

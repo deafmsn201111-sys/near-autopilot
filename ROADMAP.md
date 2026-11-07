@@ -48,7 +48,7 @@ Close the gaps that block any real use.
 The safest product, and the quickest to put in front of users.
 
 - The agent proposes an action. The user sees the verdict with all 12 checks and the reasons, then signs in their own
-  wallet (NEAR Wallet Selector). The autopilot never holds a key.
+  wallet (HOT Connector (@hot-labs/near-connect)). The autopilot never holds a key.
 - Notifications (Telegram, push) carry the proposal and the reasons behind it, for example: "health factor 1.32 and
   falling; proposing a $40 repay".
 - The user edits their policy (limits, budget, allowlists, minimum balance) in the UI. Every change is audited.
