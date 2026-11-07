@@ -3,93 +3,69 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 /**
- * Seven sections, in the order of the main user journey: understand the state -> find an opportunity -> manage the
- * autopilot -> see the simulated portfolios -> research -> what happened -> diagnostics. Detailed pages live as tabs
- * inside their section (see SECTIONS); their old URLs keep working.
+ * Four product sections for a person who wants to use the autopilot. Everything technical (policy checks, audit
+ * chains, routes, sources, collector, raw markets) lives under one "For reviewers" area, out of the main navigation.
  */
-export const SECTIONS = [
-  { href: '/', label: 'Overview', icon: '◎', match: ['/'] },
-  { href: '/opportunities', label: 'Opportunities', icon: '◆', match: ['/opportunities'] },
-  { href: '/autopilot', label: 'Autopilot', icon: '▶', match: ['/autopilot'] },
-  {
-    href: '/portfolios',
-    label: 'Portfolio & Simulation',
-    icon: '▦',
-    match: ['/portfolios', '/strategies', '/lp'],
-    tabs: [
-      { href: '/portfolios', label: 'Demo portfolios' },
-      { href: '/strategies', label: 'Strategy comparison' },
-      { href: '/lp', label: 'LP simulation' },
-    ],
-  },
-  {
-    href: '/rhea',
-    label: 'Analytics & Thesis',
-    icon: '◔',
-    match: ['/rhea', '/burrow', '/prices', '/thesis'],
-    tabs: [
-      { href: '/rhea', label: 'Rhea pools' },
-      { href: '/burrow', label: 'Burrow markets' },
-      { href: '/prices', label: 'Prices' },
-      { href: '/thesis', label: 'Investment thesis' },
-    ],
-  },
-  {
-    href: '/activity',
-    label: 'Activity & Audit',
-    icon: '≡',
-    match: ['/activity', '/policy', '/routes', '/audit'],
-    tabs: [
-      { href: '/activity', label: 'Activity' },
-      { href: '/policy', label: 'Policy decisions' },
-      { href: '/routes', label: 'Execution routes' },
-      { href: '/audit', label: 'Audit trail' },
-    ],
-  },
-  {
-    href: '/system',
-    label: 'System Health',
-    icon: '♥',
-    match: ['/system', '/collector'],
-    tabs: [
-      { href: '/system', label: 'Health' },
-      { href: '/collector', label: 'Collector log' },
-    ],
-  },
+export const MAIN = [
+  { href: '/', label: 'Portfolio', match: ['/'] },
+  { href: '/opportunities', label: 'Opportunities', match: ['/opportunities'] },
+  { href: '/activity', label: 'Activity', match: ['/activity'] },
+  { href: '/research', label: 'Research', match: ['/research'] },
+] as const;
+
+export const REVIEWER_TABS = [
+  { href: '/reviewers', label: 'Start here' },
+  { href: '/policy', label: 'Safety policy' },
+  { href: '/audit', label: 'Audit trail' },
+  { href: '/routes', label: 'Execution routes' },
+  { href: '/autopilot', label: 'Controls' },
+  { href: '/system', label: 'System health' },
+  { href: '/rhea', label: 'Rhea pools' },
+  { href: '/burrow', label: 'Burrow markets' },
+  { href: '/prices', label: 'Prices' },
+  { href: '/portfolios', label: 'Portfolio risk' },
+  { href: '/strategies', label: 'Strategies' },
+  { href: '/lp', label: 'LP simulation' },
+  { href: '/thesis', label: 'Thesis data' },
+  { href: '/collector', label: 'Collector' },
 ] as const;
 
 export const isIn = (path: string, match: readonly string[]) =>
   match.some((m) => (m === '/' ? path === '/' : path === m || path.startsWith(`${m}/`)));
 
-export function Nav() {
+const inReviewers = (path: string) =>
+  isIn(
+    path,
+    REVIEWER_TABS.map((t) => t.href),
+  );
+
+export function TopNav() {
   const path = usePathname();
   return (
-    <nav className="nav" aria-label="Sections">
-      {SECTIONS.map((s) => (
-        <Link
-          key={s.href}
-          href={s.href}
-          className="nav-link"
-          aria-current={isIn(path, s.match) ? 'page' : undefined}
-        >
-          <span className="nav-icon" aria-hidden="true">
-            {s.icon}
-          </span>
+    <nav className="topnav" aria-label="Main">
+      {MAIN.map((s) => (
+        <Link key={s.href} href={s.href} aria-current={isIn(path, s.match) ? 'page' : undefined}>
           {s.label}
         </Link>
       ))}
+      <Link
+        href="/reviewers"
+        className="reviewers-link"
+        aria-current={inReviewers(path) ? 'page' : undefined}
+      >
+        For reviewers
+      </Link>
     </nav>
   );
 }
 
-/** The tabs of the current section (only for sections that have several pages). */
+/** Tabs across the technical pages, only inside the reviewers area. */
 export function SubNav() {
   const path = usePathname();
-  const section = SECTIONS.find((s) => isIn(path, s.match));
-  if (!section || !('tabs' in section)) return null;
+  if (!inReviewers(path)) return null;
   return (
-    <nav className="tabs" aria-label={`${section.label} pages`}>
-      {section.tabs.map((t) => (
+    <nav className="tabs" aria-label="Technical pages">
+      {REVIEWER_TABS.map((t) => (
         <Link
           key={t.href}
           href={t.href}

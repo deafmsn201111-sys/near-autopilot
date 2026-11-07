@@ -3,7 +3,11 @@ import { pct, usdCompact } from '../lib/format';
 import type { Opportunity } from '../lib/product';
 import { Level, Status } from './ui';
 
-const PROTOCOL = { rhea: 'Rhea · liquidity pool', burrow: 'Burrow · lending' } as const;
+const KIND = {
+  liquidity: 'Rhea · liquidity pool',
+  lending: 'Burrow · lending',
+  loop: 'Burrow · looping (comparison only)',
+} as const;
 
 export function OpportunityHead() {
   return (
@@ -26,7 +30,7 @@ export function OpportunityRow({ o }: { o: Opportunity }) {
       <div className="name">
         <b>{o.title}</b>
         <span>
-          {PROTOCOL[o.protocol]}
+          {KIND[o.kind]}
           {!o.fresh && ' · data out of date'}
         </span>
       </div>

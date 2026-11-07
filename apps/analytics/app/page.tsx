@@ -1,275 +1,217 @@
 import Link from 'next/link';
-import { OpportunityHead, OpportunityRow } from '../components/OpportunityRow';
-import { EmptyState, PageHeader, Section, Status, Tile } from '../components/ui';
+import { ConfirmAction } from '../components/ConfirmAction';
+import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
-import { tryApi } from '../lib/api';
-import { int, usd2 } from '../lib/format';
-import { activity, ago, control, opportunities, scopeName, system } from '../lib/product';
-import type { Overview } from '../lib/types';
+import { ago, money, portfolioView, type PortfolioAction } from '../lib/product';
+import { runAnalysis } from './autopilot/actions';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * The start page: in a few seconds, the state of the system, what it found, what deserves attention, what to do
- * next. Raw identifiers, hashes and long tables live on the detail pages.
- */
-export default async function OverviewPage() {
-  const [sys, opp, ctl, feed, ov] = await Promise.all([
-    system(),
-    opportunities('limit=5&status=candidate'),
-    control(),
-    activity(6),
-    tryApi<Overview>('/v1/analytics/overview'),
-  ]);
-  if (!sys.data) return <ErrorState what="The system status" error={sys.error} />;
-  const s = sys.data;
-  const modes = ctl.data?.modes ?? [];
-  const readOnly = modes.filter((m) => m.mode !== 'normal');
-  const paused = ctl.data?.collector.paused ?? false;
-  const failingSources = s.collector.sources.filter((x) => x.health !== 'ok');
-  const near = ov.data?.snapshot?.summary.prices?.find((p) => p.token === 'wrap.near');
-  const warnings: { tone: 'warning' | 'critical'; text: string; href: string }[] = [
-    ...(s.collector.stale
-      ? [
-          {
-            tone: 'critical' as const,
-            text: `Market data is out of date (last collected ${ago(s.collector.lastSuccessAt, s.now)}). Opportunities and prices may not reflect the market.`,
-            href: '/system',
-          },
-        ]
-      : []),
-    ...(paused
-      ? [
-          {
-            tone: 'warning' as const,
-            text: `Scheduled analysis is paused: ${ctl.data?.collector.reason ?? ''}`,
-            href: '/autopilot',
-          },
-        ]
-      : []),
-    ...readOnly.map((m) => ({
-      tone: 'warning' as const,
-      text: `${scopeName(m.scope).name} (${scopeName(m.scope).env}) is in ${m.mode.replace(/_/g, ' ')} mode: ${m.reason}`,
-      href: '/autopilot',
-    })),
-    ...failingSources.map((x) => ({
-      tone: 'warning' as const,
-      text: `Data source "${x.source}" is ${x.health}${x.detail ? `: ${x.detail}` : ''}.`,
-      href: '/system',
-    })),
-  ];
-  const counts = opp.data?.counts;
+type Search = Record<string, string | string[] | undefined>;
+
+const WHERE = {
+  wallet: 'In the wallet',
+  collateral: 'Deposited on Burrow (collateral)',
+  deposited: 'Deposited on Burrow',
+  borrowed: 'Borrowed from Burrow',
+} as const;
+
+const VERDICT = {
+  worth_it: { cls: 'good', icon: '✓' },
+  not_worth_it: { cls: 'warning', icon: '–' },
+  not_allowed: { cls: 'neutral', icon: 'i' },
+  no_data: { cls: 'neutral', icon: '?' },
+} as const;
+
+function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
+  const v = VERDICT[a.autopilot.verdict];
+  const net = a.netUsd;
+  return (
+    <article className={`action${best ? ' best' : ''}`}>
+      <div className="action-main">
+        <div>
+          {best && <span className="tag">Best result after costs</span>}
+          <h3>{a.title}</h3>
+          <p>{a.summary}</p>
+        </div>
+        <div className="action-result-num">
+          <span className={`big ${net !== null && net < 0 ? 'neg' : 'pos'}`}>
+            {net === null ? '—' : `${net >= 0 ? '+' : ''}${money(net, true)}`}
+          </span>
+          <span className="small">
+            per {a.horizonDays} days after costs
+            {a.netAprOnCapital !== null && ` · ${(a.netAprOnCapital * 100).toFixed(1)}% a year`}
+          </span>
+        </div>
+      </div>
+      <p className={`verdict ${v.cls}`}>
+        <i aria-hidden="true">{v.icon}</i>
+        {a.autopilot.sentence}
+      </p>
+      <details className="plan">
+        <summary>See the plan, the costs and the risks</summary>
+        <div className="plan-grid">
+          <div>
+            <h4>What would happen</h4>
+            <ol>
+              {a.steps.map((s) => (
+                <li key={s}>{s}</li>
+              ))}
+            </ol>
+          </div>
+          <div>
+            <h4>
+              The numbers, {a.horizonDays} days on {money(a.capitalUsd)}
+            </h4>
+            <table className="mini">
+              <tbody>
+                <tr>
+                  <td>Earned</td>
+                  <td className="num">{money(a.grossUsd, true)}</td>
+                </tr>
+                {a.costs.map((c) => (
+                  <tr key={c.label}>
+                    <td>{c.label}</td>
+                    <td className="num">−{money(c.usd, true)}</td>
+                  </tr>
+                ))}
+                <tr className="total">
+                  <td>You keep</td>
+                  <td className="num">{money(a.netUsd, true)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h4>Risks</h4>
+            <ul>
+              {a.risks.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="fine">{a.basis}</p>
+      </details>
+    </article>
+  );
+}
+
+export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
+  const sp = await searchParams;
+  const id = portfolioOf(sp.p);
+  const { data, error } = await portfolioView(id);
+  if (!data) return <ErrorState what="Your portfolio" error={error} />;
+  const t = data.totals;
+  const groups = (['wallet', 'collateral', 'deposited', 'borrowed'] as const)
+    .map((w) => ({ w, rows: data.holdings.filter((h) => h.where === w) }))
+    .filter((g) => g.rows.length > 0);
+  const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
   return (
     <>
-      <PageHeader
-        title="Overview"
-        lead="NEAR Autopilot watches Rhea and Burrow on NEAR mainnet, ranks the opportunities it finds, and runs every proposal through an independent safety policy. Shadow mode: it analyses and simulates, it never trades."
-      />
-
-      <div className="strip" role="status" aria-label="System status">
-        <div>
-          <span className="k">Autopilot</span>
-          <span className="v">
-            {readOnly.length === 0 ? (
-              <Status code="normal" label="Running in shadow mode" />
-            ) : (
-              <Status code="read_only" label={`${readOnly.length} scope(s) restricted`} />
-            )}
-          </span>
-          <span className="s">Analyses and simulates; never sends a transaction</span>
-        </div>
-        <div>
-          <span className="k">Market data</span>
-          <span className="v">
-            <Status
-              code={s.collector.stale ? 'STALE' : 'OK'}
-              label={s.collector.stale ? 'Out of date' : 'Up to date'}
-            />
-          </span>
-          <span className="s">
-            Collected {ago(s.collector.lastSuccessAt, s.now)} ·{' '}
-            {paused
-              ? 'scheduled runs paused'
-              : `every ${Math.round(s.collector.intervalSeconds / 60)} min`}
-          </span>
-        </div>
-        <div>
-          <span className="k">Data sources</span>
-          <span className="v">
-            <Status
-              code={failingSources.length ? 'degraded' : 'OK'}
-              label={
-                failingSources.length
-                  ? `${failingSources.length} of ${s.collector.sources.length} with problems`
-                  : `All ${s.collector.sources.length} working`
-              }
-            />
-          </span>
-          <span className="s">Prices, Rhea, Burrow, routes</span>
-        </div>
-        <div>
-          <span className="k">NEAR price</span>
-          <span className="v">{near ? usd2(near.usd) : '—'}</span>
-          <span className="s">
-            {near
-              ? `${near.quality === 'OK' ? 'confirmed by several sources' : near.quality}`
-              : 'no confirmed price'}
-          </span>
-        </div>
+      <div className="hero-head">
+        <PortfolioSwitch current={id} path="/" />
+        <span className="muted-note">
+          Demo portfolio: simulated balances valued at live NEAR prices · updated {ago(data.asOf)}
+        </span>
       </div>
 
-      <div className="kpis" style={{ marginTop: 16 }}>
-        <Tile
-          label="Opportunities found"
-          value={counts ? int(opp.data?.total) : '—'}
-          sub="Rhea pools and Burrow markets with usable data"
-          href="/opportunities"
-        />
-        <Tile
-          label="Pass the filters"
-          value={counts ? int(counts.candidate) : '—'}
-          sub="meaningful yield, deep liquidity, confirmed prices"
-          href="/opportunities?status=candidate"
-        />
-        <Tile
-          label="Watch only"
-          value={counts ? int(counts.watch) : '—'}
-          sub="measured, but a risk or data limit applies"
-          href="/opportunities?status=watch"
-        />
-        <Tile
-          label="Needs attention"
-          value={warnings.length}
-          sub={warnings.length ? 'see the warnings below' : 'nothing right now'}
-        />
-      </div>
-
-      {warnings.length > 0 && (
-        <Section title="Needs your attention">
-          <div className="opp-list">
-            {warnings.map((w) => (
-              <Link
-                key={w.text}
-                href={w.href}
-                className={`state ${w.tone === 'critical' ? 'error-state' : ''}`}
-                style={{ textDecoration: 'none', color: 'inherit' }}
-              >
-                <Status
-                  code={w.tone === 'critical' ? 'critical' : 'warn'}
-                  label={w.tone === 'critical' ? 'Important' : 'Warning'}
-                />
-                <span>{w.text}</span>
-              </Link>
-            ))}
+      <section className="hero">
+        <div>
+          <span className="eyebrow">Net worth</span>
+          <div className="hero-value">{money(t.netWorthUsd, false)}</div>
+          <span className="muted-note">
+            {money(t.assetsUsd, false)} in assets − {money(t.debtUsd, false)} borrowed
+          </span>
+        </div>
+        <div className="hero-stat">
+          <span className="eyebrow">Monthly result now</span>
+          <div className={`hero-num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}>
+            {data.earnings.monthlyNetUsd === null
+              ? '—'
+              : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
           </div>
-        </Section>
-      )}
+          <span className="muted-note">{data.earnings.sentence}</span>
+        </div>
+        <div className="hero-stat">
+          <span className="eyebrow">Loan safety</span>
+          <div className={`hero-num health-${data.health.level}`}>{data.health.label}</div>
+          <span className="muted-note">{data.health.sentence}</span>
+        </div>
+      </section>
 
-      <Section
-        title="Best opportunities right now"
-        aside={
-          <Link href="/opportunities" className="btn secondary">
-            See all opportunities
-          </Link>
-        }
-        note="Ranked by yield, risk and data confidence together, not by APR alone. Yields are measured history, not a promise."
-      >
-        {!opp.data ? (
-          <ErrorState what="Opportunities" error={opp.error} />
-        ) : opp.data.opportunities.length === 0 ? (
-          <EmptyState title="No opportunity passes the filters right now.">
-            {opp.data.counts.watch} are on the watch list: they have a yield, but thin liquidity,
-            unconfirmed prices or a simulated loss after costs keep them out.
-          </EmptyState>
+      <section className="block">
+        <h2>What you hold</h2>
+        <div className="holdings">
+          {groups.map((g) => (
+            <div className={`holding ${g.w}`} key={g.w}>
+              <span className="eyebrow">{WHERE[g.w]}</span>
+              <b>
+                {money(
+                  g.rows.reduce((s, r) => s + (r.usd ?? 0), 0),
+                  false,
+                )}
+              </b>
+              {g.rows.map((r) => (
+                <span key={r.symbol} className="muted-note">
+                  {r.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })} {r.symbol}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="block">
+        <div className="block-head">
+          <div>
+            <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
+            <p className="muted-note">
+              Best result first, after every cost: fees, swaps, gas, borrowing interest and
+              impermanent loss.
+            </p>
+          </div>
+          <ConfirmAction
+            label="Refresh with live data"
+            title="Run a fresh analysis?"
+            description="The autopilot reads the latest prices, pools and lending rates from NEAR mainnet and recomputes every option. It takes about a minute. Nothing is bought, sold or sent."
+            confirmLabel="Run analysis"
+            action={async () => {
+              'use server';
+              return runAnalysis();
+            }}
+          />
+        </div>
+        {data.actions.length === 0 ? (
+          <p className="muted-note">No option could be computed from the latest data.</p>
         ) : (
-          <div className="opp-list">
-            <OpportunityHead />
-            {opp.data.opportunities.map((o) => (
-              <OpportunityRow key={o.id} o={o} />
+          <div className="actions-list">
+            {data.actions.map((a) => (
+              <ActionCard key={a.id} a={a} best={a === best} />
             ))}
           </div>
         )}
-      </Section>
+      </section>
 
-      <div className="grid-2">
-        <Section
-          title="Market at a glance"
-          aside={
-            <Link href="/rhea" className="dim">
-              Analytics →
+      {data.lastDecision && (
+        <section className="block">
+          <div className="block-head">
+            <h2>What the autopilot decided</h2>
+            <Link href={`/activity?p=${id}`} className="link">
+              Every decision and why →
             </Link>
-          }
-        >
-          {ov.data ? (
-            <div className="kpis">
-              <Tile
-                label="Rhea pools discovered"
-                value={int(ov.data.rhea.discovered)}
-                sub={`${int(ov.data.rhea.liquid)} with real liquidity`}
-                href="/rhea"
-              />
-              <Tile
-                label="Burrow markets"
-                value={`${ov.data.burrow.supported} / ${ov.data.burrow.markets}`}
-                sub="with valid, priced data"
-                href="/burrow"
-              />
-            </div>
-          ) : (
-            <ErrorState what="Market summary" error={ov.error} />
-          )}
-        </Section>
-        <Section
-          title="Latest activity"
-          aside={
-            <Link href="/activity" className="dim">
-              All activity →
-            </Link>
-          }
-        >
-          {feed.data && feed.data.items.length > 0 ? (
-            <div className="card feed">
-              {feed.data.items.map((i) => (
-                <div className="feed-item" key={`${i.ref}-${i.at}`}>
-                  <time dateTime={i.at}>{ago(i.at, s.now)}</time>
-                  <span className={`dot ${i.tone}`} aria-hidden="true" />
-                  <div>
-                    <div className="t">{i.title}</div>
-                    <div className="r">{i.result}</div>
-                  </div>
-                </div>
+          </div>
+          <div className="decision">
+            <b>{data.lastDecision.headline}</b>
+            <span className="muted-note"> · {ago(data.asOf)}</span>
+            <ul>
+              {data.lastDecision.notes.map((n) => (
+                <li key={n}>{n}</li>
               ))}
-            </div>
-          ) : feed.data ? (
-            <EmptyState title="No activity recorded yet.">
-              The first collector cycle will appear here.
-            </EmptyState>
-          ) : (
-            <ErrorState what="Activity" error={feed.error} />
-          )}
-        </Section>
-      </div>
-
-      <Section title="What you can do">
-        <div className="actions">
-          <Link href="/opportunities" className="btn primary">
-            Explore opportunities
-          </Link>
-          <Link href="/autopilot" className="btn secondary">
-            Run a market analysis
-          </Link>
-          <Link href="/portfolios" className="btn secondary">
-            See the simulated portfolios
-          </Link>
-          <Link href="/policy" className="btn secondary">
-            Why the autopilot said no
-          </Link>
-        </div>
-        <p className="note">
-          Every action here is read-only or a recorded operator setting. Nothing on this site can
-          move funds.
-        </p>
-      </Section>
+            </ul>
+          </div>
+        </section>
+      )}
     </>
   );
 }

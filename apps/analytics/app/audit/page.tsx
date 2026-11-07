@@ -37,6 +37,16 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
     unchainedRowsBeforeMigration0011: number;
     selected: string | null;
     entries: Entry[];
+    checkpoints: {
+      configured: boolean;
+      chains: {
+        chain: string;
+        checkpoints: number;
+        latest: { seq: number; at: string } | null;
+        ok: boolean;
+        problems: string[];
+      }[];
+    } | null;
   }>(`/v1/analytics/audit?limit=60${chain ? `&chain=${encodeURIComponent(chain)}` : ''}`);
   if (!data) return <ApiError what="Audit chains" error={error} />;
   const broken = data.chains.filter((c) => !c.verification.ok);
@@ -44,7 +54,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader
         title="Audit trail"
-        lead="Every audit event of every deployment is appended to a hash chain in Postgres: each entry commits to the one before it, so a changed, removed or reordered entry breaks the chain at that point. Re-verified from the database on every page load."
+        lead="Every audit event is appended to a hash chain in Postgres: each entry commits to the one before it, so a changed, removed or reordered entry breaks the chain. After each collector cycle the head of every chain is signed with a key that is not in the database and written to a file outside it: a rewrite of the whole chain or a cut of its tail is caught too. Re-verified on every page load."
         meta={`${data.chains.length} chains`}
       />
       <div className="kpis">
@@ -63,6 +73,30 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
           label="Chained entries"
           value={int(data.chains.reduce((s, c) => s + c.entries, 0))}
           sub="seq 1 to head, recomputed"
+        />
+        <Tile
+          label="Signed checkpoints"
+          value={
+            data.checkpoints
+              ? data.checkpoints.chains.every((c) => c.ok)
+                ? `${data.checkpoints.chains.length} chains anchored`
+                : 'Mismatch!'
+              : 'not configured'
+          }
+          sub={
+            data.checkpoints ? (
+              data.checkpoints.chains.every((c) => c.ok) ? (
+                <Status code="OK" label="signatures and hashes match" />
+              ) : (
+                <Status
+                  code="FAILED"
+                  label={data.checkpoints.chains.flatMap((c) => c.problems)[0] ?? 'see below'}
+                />
+              )
+            ) : (
+              'set AUDIT_CHECKPOINT_PUBLIC_KEY'
+            )
+          }
         />
         <Tile
           label="Before the chain"

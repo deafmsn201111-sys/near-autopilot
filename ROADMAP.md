@@ -30,13 +30,12 @@ Close the gaps that block any real use.
 
 - ~~Durable orchestrator stores (idempotency, control) in Postgres~~ **done** (migration 0013: restart- and race-safe,
   audited mode changes; see docs/orchestrator.md §13).
-- ~~Product dashboard with an opportunity ranking and audited operator controls~~ **done** (docs/dashboard.md).
-- Net yield for Burrow supply (gas, entry/exit), so lending opportunities get a cost simulation like LP pools.
+- ~~Portfolio-first dashboard: actions with costs, plain-language activity, research~~ **done** (docs/dashboard.md).
+- ~~Net yield for Burrow supply~~ **done**; ~~a looping strategy~~ **done** (simulation; the autopilot cannot borrow).
 - DCL pools in the analytics and the LP simulation, once the fee and position data are sufficient (`UNSUPPORTED`
   today).
-- The investment thesis with a survivorship-bias correction: include pools that disappeared or became illiquid, split
-  by pool type, gross vs net.
-- An external audit checkpoint: periodically anchor the audit chain head outside this database (see Phase 3).
+- ~~Thesis survivorship correction, split by pool type, gross vs net~~ **done** (union of start and end rankings).
+- ~~Signed audit checkpoints outside the database~~ **done** (docs/audit-evidence.md); on-chain anchoring stays in Phase 3.
 - An approval UI for `requires_approval` proposals. Reconciliation for actions that never resolved.
 - The pre-mainnet checklist in [docs/security.md](docs/security.md#pre-mainnet-checklist).
 - First real testnet transactions, each one approved separately, to confirm the on-chain effect of the Burrow and Rhea

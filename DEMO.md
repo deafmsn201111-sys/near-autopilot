@@ -16,17 +16,17 @@ Everything below runs on a local stack started by `./scripts/quickstart.sh`. Not
 
 ## Scenes
 
-| #   | Time      | Screen                                     | Show                                                                                             |
-| --- | --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| 1   | 0:00–0:15 | title card                                 | The problem                                                                                      |
-| 2   | 0:15–0:35 | terminal                                   | `git clone …`, `./scripts/quickstart.sh`, the "Ready" banner                                     |
-| 3   | 0:35–1:20 | `:3001` Overview → Opportunities → details | System state at a glance; the ranked opportunities; why one is ranked first (yield, costs, risk) |
-| 4   | 1:20–1:45 | `:3001` Autopilot                          | Run a market analysis; switch a demo portfolio to read-only (confirm, reason) and back           |
-| 5   | 1:40–2:20 | `:3001` Policy decisions + terminal        | The 12 checks of one verdict; real BLOCKs on shadow mainnet; the attack demo                     |
-| 6   | 2:20–2:40 | `:3001` Execution routes                   | Rhea vs 1Click quotes for an allowed plan, `executed: false`                                     |
-| 7   | 2:40–3:05 | `:3001` Audit trail + terminal             | Chains intact (`verify`), verdicts recomputed (`replay`)                                         |
-| 8   | 3:05–3:30 | `:3001` Investment thesis                  | Verdict, the falsification rules, the weakest hypothesis                                         |
-| 9   | 3:30–3:45 | title card                                 | The security model, link to the repo                                                             |
+| #   | Time      | Screen                              | Show                                                                                           |
+| --- | --------- | ----------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1   | 0:00–0:15 | title card                          | The problem                                                                                    |
+| 2   | 0:15–0:35 | terminal                            | `git clone …`, `./scripts/quickstart.sh`, the "Ready" banner                                   |
+| 3   | 0:35–1:20 | `:3001` Portfolio                   | Net worth, loan safety; actions after costs; the plan behind the best one; the loop that loses |
+| 4   | 1:20–1:45 | `:3001` Autopilot                   | Run a market analysis; switch a demo portfolio to read-only (confirm, reason) and back         |
+| 5   | 1:40–2:20 | `:3001` Policy decisions + terminal | The 12 checks of one verdict; real BLOCKs on shadow mainnet; the attack demo                   |
+| 6   | 2:20–2:40 | `:3001` Execution routes            | Rhea vs 1Click quotes for an allowed plan, `executed: false`                                   |
+| 7   | 2:40–3:05 | `:3001` Audit trail + terminal      | Chains intact (`verify`), verdicts recomputed (`replay`)                                       |
+| 8   | 3:05–3:30 | `:3001` Investment thesis           | Verdict, the falsification rules, the weakest hypothesis                                       |
+| 9   | 3:30–3:45 | title card                          | The security model, link to the repo                                                           |
 
 ### 1. The problem
 
@@ -42,27 +42,23 @@ git clone <repository> near-autopilot && cd near-autopilot
 
 > "Docker only. No API key, no wallet. Under four minutes from a clean clone to running dashboards."
 
-### 3. What the autopilot sees, and what it would consider
+### 3. The portfolio and what to do with it
 
-Open `http://127.0.0.1:3001`. The Overview answers in a few seconds: the autopilot runs in shadow mode, market data is
-up to date, all sources work, how many opportunities were found and how many pass the filters.
+Open `http://127.0.0.1:3001`. The home page is the $5,000 demo portfolio: net worth, the monthly result (negative: the
+loan costs more than the deposits earn), loan safety in words. Below, **what you could do with the idle money**, best
+result after costs first. Open "See the plan" on the top card: steps, every cost, risks. Point at the loop card: it
+earns more before costs and loses after them, and the autopilot would never do it because it does not borrow.
 
-Open **Opportunities**. Point at a high-APR pool on the watch list and say why it is not on top. Open the first
-candidate: yield before costs, net after costs (fees − impermanent loss − entry/exit − gas), the risk factors, and the
-"limits of these numbers".
+> "The autopilot does not chase APR. Every option is judged after fees, swaps, gas, interest and impermanent loss, and
+> it tells you plainly whether it would do it, and why not."
 
-> "This is live NEAR mainnet, read with view calls only. The ranking is not APR: thin liquidity, unconfirmed prices or
-> a simulated loss after costs keep an opportunity off the shortlist. Yields are measured history, never a promise."
+### 4. Why the autopilot decided what it did
 
-### 4. Operating the autopilot
+Open **Activity**: every check in plain words, grouped. Show an entry where it proposed a swap and the safety policy
+blocked it ("action value above the $50 auto-approval threshold, slippage above 50 bps"). Then **Research**: four
+findings, and the table where the stablecoin pools earned the most fees and lost the most.
 
-Open **Autopilot**. Press **Run market analysis now** (confirm). Then switch _Demo portfolio $500_ to **read-only**:
-the dialog asks for a reason, the change appears under _Mode changes_ and in **Activity**. Return it to normal.
-
-> "There is no execute button: shadow mode has no wallet. What an operator can do is stop the autopilot. Read-only
-> survives a restart, every change is recorded with who and why, and the system never leaves read-only by itself."
-
-Note: each of these changes is written permanently to the audit chain; do it once, deliberately.
+> "This is why it is careful: in 90 days of mainnet data, 13 of 16 large pools left providers worse off than holding."
 
 ### 5. Policy: what is allowed, what is blocked
 

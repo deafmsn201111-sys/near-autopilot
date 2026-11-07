@@ -1,53 +1,43 @@
-# Dashboard (analytics app, `:3001`)
+# Dashboard (`:3001`)
 
-## Principles
+## Principle
 
-- **The product, not the plumbing.** Each page answers a user question first in plain words; numbers come second;
-  codes, hashes, raw JSON and SQL-level details sit behind a "Technical details" disclosure or on the Audit pages.
-- **Three levels of information.** Level 1: what is happening and what to do (Overview, status strip, warnings).
-  Level 2: analytics (yield, risk, liquidity, history, simulation). Level 3: technical (reason codes, source timestamps,
-  hashes, raw records). Levels are not mixed on one screen.
-- **Nothing decorative.** Every button calls a real endpoint; every number names its source; a missing value is shown
-  as missing ("not simulated", "—", an explained empty state), never as 0; out-of-date data is labelled.
-- **No execution.** Shadow mode has no wallet and no execute button. The only state changes are the three audited
-  operator controls.
+The product pages answer the questions of a person who wants to use the autopilot; the technical evidence is one click
+away for reviewers, not in the way. Before a screen ships: would a non-developer understand it in five seconds? Codes,
+hashes, source names and record counts never appear on a product page. Every number on a product page has a source on a
+reviewer page.
 
-## Information architecture
+## Pages
 
-| Section                | Route(s)                                        | API                                                                                     |
-| ---------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Overview               | `/`                                             | `/v1/analytics/system`, `/opportunities`, `/v1/control`, `/activity`, `/overview`       |
-| Opportunities          | `/opportunities`, `/opportunities/[id]`         | `/v1/analytics/opportunities[/:id]`                                                     |
-| Autopilot              | `/autopilot`                                    | `/v1/control`, `POST /v1/control/collector/{run,pause,resume}`, `POST /v1/control/mode` |
-| Portfolio & Simulation | `/portfolios`, `/strategies`, `/lp` (tabs)      | `/v1/analytics/portfolios`, `/risk`, `/strategies`                                      |
-| Analytics & Thesis     | `/rhea`, `/burrow`, `/prices`, `/thesis` (tabs) | `/v1/analytics/rhea/*`, `/burrow/*`, `/prices/*`, `/series/*`, `/thesis`                |
-| Activity & Audit       | `/activity`, `/policy`, `/routes`, `/audit`     | `/v1/analytics/activity`, `/policy/*`, `/routes`, `/audit`                              |
-| System Health          | `/system`, `/collector` (tabs)                  | `/v1/analytics/system`, `/collector`                                                    |
+| Page          | Route                                   | API                                                                                                |
+| ------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Portfolio     | `/?p=demo-5000` (or `demo-500`)         | `/v1/analytics/portfolio/:id`                                                                      |
+| Opportunities | `/opportunities`, `/opportunities/[id]` | `/v1/analytics/opportunities[/:id]`                                                                |
+| Activity      | `/activity?p=…`                         | `/v1/analytics/agent-activity?portfolio=…`                                                         |
+| Research      | `/research`                             | `/v1/analytics/thesis`                                                                             |
+| For reviewers | `/reviewers` and its tabs               | policy, audit (with checkpoints), routes, control, system, markets, prices, simulations, collector |
 
-Old URLs are unchanged; they became tabs of their section.
+**Portfolio** (`apps/api/src/analytics/portfolio-view.ts`): holdings are the simulated demo amounts valued at the latest
+mainnet prices; loan safety from the stored health factor ("safe unless NEAR falls X%"); the monthly result of the
+current structure; the actions, each with plan, cost breakdown, risks and the autopilot's view (`worth_it`,
+`not_worth_it` against the hurdle, `not_allowed` when the autopilot has no such action, e.g. borrowing or opening LP).
+
+**Activity** narrates each stored analysis: per-agent observations, rejected proposals with the reason in words, the
+policy verdicts of the run. Consecutive analyses with the same meaning are folded into one entry with a count.
+
+**Looping** (`looping.ts`): same-asset loops only. With Burrow's health factor `Σ collateral·vr / Σ debt/vr` and the
+same asset on both sides, HF = L·vr²/(L−1), so a target HF h gives L = h/(h−vr²) exactly. Net = L·supply − (L−1)·borrow
+− gas for every round in and out. Reports the break-even borrow rate and the days until rate drift alone would bring
+the health factor to 1.0.
 
 ## Operator controls
 
-| Control                           | Effect                                                                        | Safety                                                                                     |
-| --------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Run market analysis now           | One collector cycle (mainnet view calls, re-ranking, demo-portfolio analysis) | Token-protected, internal network only, one cycle at a time (409 otherwise)                |
-| Pause / resume scheduled analysis | Scheduled cycles are skipped while paused; manual runs still work             | `collector_control` row (migration 0014) + audit entry; needs a reason                     |
-| Read-only / normal per portfolio  | Through the orchestrator's ModeController and `PgControlStore`                | Versioned; a stale change is a conflict, never a silent success; history row + audit entry |
+Only on the reviewers' Controls page and the Portfolio "Refresh with live data" button: run an analysis now,
+pause/resume scheduled analysis, read-only/normal per portfolio. Server actions (the token never reaches the browser),
+each behind a confirmation dialog, audited. Nothing can sign, send or change a limit.
 
-All three run as Next.js server actions: the API token never reaches the browser. Each opens a confirmation dialog
-that states what will and will not happen.
+## Design and responsiveness
 
-## Design system
-
-Tokens in `app/globals.css`: one sans face; neutral surfaces; one accent; status colours (good / warning / serious /
-critical) always with an icon and a label, never colour alone; chart palette validated for colour-vision deficiency
-(dataviz method). Components: `PageHeader`, `Section`, `Tile`, `Status` (plain label, code in the tooltip), `Level`
-(risk / confidence), `Facts`, `EmptyState`, `ErrorState` (with retry), loading skeleton (`app/loading.tsx`), error
-boundary (`app/error.tsx`), `ConfirmAction` (dialog), `OpportunityRow`, charts (`LineChart`, `StressCurve`,
-`Sparkline`). Plain-language labels for backend codes live in `lib/format.ts` (`statusOf`).
-
-## Responsive behaviour
-
-Desktop: sidebar + content. At 900 px the sidebar becomes a top bar with a horizontally scrolling section menu. At
-640 px opportunity rows become cards and tiles go two-up. Wide tables scroll inside their frame; the page never scrolls
-sideways. Checked by Chrome DevTools emulation at 390 px on all main pages (`scrollWidth == clientWidth`).
+Top navigation, one column of content up to 1,120 px, large numbers with one sentence each, cards for actions with the
+details behind a disclosure. At 760 px the navigation wraps and the hero stacks; checked at 390 px with Chrome DevTools
+emulation on every product page (no sideways scrolling).

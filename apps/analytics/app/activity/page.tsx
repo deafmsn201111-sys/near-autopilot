@@ -1,65 +1,88 @@
-import Link from 'next/link';
-import { EmptyState, PageHeader } from '../../components/ui';
+import { PortfolioSwitch, portfolioOf } from '../../components/PortfolioSwitch';
 import { ErrorState } from '../../components/states';
-import { ts } from '../../lib/format';
-import { activity } from '../../lib/product';
+import { agentActivity, type AgentEntry } from '../../lib/product';
 
 export const dynamic = 'force-dynamic';
 
-const KINDS: Record<string, string> = {
-  snapshot: 'Market data',
-  analysis: 'Analysis',
-  decision: 'Proposal',
-  verdict: 'Policy decision',
-  execution: 'Dry run',
-  alert: 'Alert',
-  control: 'Settings',
-};
+type Search = Record<string, string | string[] | undefined>;
 
-/** What happened, in plain words. Each line keeps its source reference for checking against the audit trail. */
-export default async function ActivityPage() {
-  const { data, error } = await activity(120);
+const fmt = (iso: string) =>
+  new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  });
+
+function when(e: AgentEntry) {
+  return e.count === 1 ? `${fmt(e.to)} UTC` : `${fmt(e.from)} – ${fmt(e.to)} UTC`;
+}
+
+function tone(e: AgentEntry) {
+  if (e.policy.some((p) => p.verdict === 'BLOCK')) return 'warning';
+  if (e.policy.some((p) => p.verdict === 'ALLOW')) return 'good';
+  if (e.headline.startsWith('Skipped')) return 'warning';
+  return 'neutral';
+}
+
+/** Every decision of the autopilot for one portfolio, in plain words, newest first. */
+export default async function ActivityPage({ searchParams }: { searchParams: Promise<Search> }) {
+  const id = portfolioOf((await searchParams).p);
+  const { data, error } = await agentActivity(id);
   return (
     <>
-      <PageHeader
-        title="Activity"
-        lead="A readable log of what the system did: new market data, analyses, policy decisions, dry runs, alerts and setting changes. The full, tamper-evident record is on the Audit trail tab."
-      />
+      <div className="page-title">
+        <h1>Activity</h1>
+        <p>
+          Every time the autopilot looked at the portfolio: what it saw, what it wanted to do, and
+          why it did or did not. Identical checks in a row are grouped.
+        </p>
+      </div>
+      <div className="hero-head">
+        <PortfolioSwitch current={id} path="/activity" />
+        <span className="muted-note">
+          Shadow mode: proposals are checked and simulated, never sent.
+        </span>
+      </div>
       {!data ? (
-        <ErrorState what="Activity" error={error} />
-      ) : data.items.length === 0 ? (
-        <EmptyState title="Nothing has happened yet.">
-          The first collector cycle appears here within its interval.
-        </EmptyState>
+        <ErrorState what="The activity" error={error} />
+      ) : data.entries.length === 0 ? (
+        <p className="muted-note">The autopilot has not analysed this portfolio yet.</p>
       ) : (
-        <div className="card feed">
-          {data.items.map((i) => (
-            <div className="feed-item" key={`${i.ref}-${i.at}`}>
-              <time dateTime={i.at}>{ts(i.at).slice(5, 16)}</time>
-              <span className={`dot ${i.tone}`} aria-hidden="true" />
-              <div>
-                <div className="t">
-                  {i.title} <span className="chip">{KINDS[i.kind] ?? i.kind}</span>
-                  {i.environment && (
-                    <span className="chip" style={{ marginLeft: 4 }}>
-                      {i.environment}
-                    </span>
-                  )}
+        <ol className="timeline">
+          {data.entries.map((e) => (
+            <li key={`${e.from}-${e.to}`} className={`tl ${tone(e)}`}>
+              <span className="tl-dot" aria-hidden="true" />
+              <div className="tl-body">
+                <div className="tl-head">
+                  <b>{e.headline}</b>
+                  <span className="muted-note">
+                    {when(e)}
+                    {e.count > 1 && ` · ${e.count} checks`}
+                  </span>
                 </div>
-                {i.result && <div className="r">{i.result}</div>}
-                {i.explanation && <div className="e">{i.explanation}</div>}
-                <div className="e" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
-                  {i.ref}
-                </div>
+                {e.notes.length > 0 && (
+                  <ul>
+                    {e.notes.map((n) => (
+                      <li key={n}>{n}</li>
+                    ))}
+                  </ul>
+                )}
+                {e.policy.map((p, i) => (
+                  <p
+                    key={`${p.verdict}-${i}`}
+                    className={`verdict ${p.verdict === 'ALLOW' ? 'good' : 'warning'}`}
+                  >
+                    <i aria-hidden="true">{p.verdict === 'ALLOW' ? '✓' : '×'}</i>
+                    {p.sentence}
+                  </p>
+                ))}
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
-      <p className="note">
-        Looking for a specific decision? <Link href="/policy">Policy decisions</Link> lists every
-        check of every verdict; <Link href="/audit">Audit trail</Link> verifies the hash chain.
-      </p>
     </>
   );
 }

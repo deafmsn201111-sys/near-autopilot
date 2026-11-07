@@ -117,33 +117,30 @@ to healthy containers, with no manual edits. `audit:verify` passed and `audit:re
 
 ## Using the dashboard (`:3001`)
 
-The dashboard is built around one journey: **see the state → find an opportunity → understand it → run an analysis →
-read why the autopilot decided what it did.** Plain words first; numbers second; codes, hashes and raw data behind a
-"Technical details" disclosure.
+Four pages for a person who wants to use the autopilot, and one area for reviewers.
 
-| Section                    | What you do there                                                                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Overview**               | System state at a glance: autopilot mode, data freshness, data sources, NEAR price; the opportunities that pass the filters; what needs attention; activity |
-| **Opportunities**          | Every Rhea pool and Burrow market with usable data, ranked by yield, risk and data confidence together. Filters: protocol, status, risk, minimum liquidity  |
-| Opportunity details        | Yield breakdown, simulation after costs (fees, IL, entry/exit, gas), risk factors, price quality, history, and why it is ranked where it is                 |
-| **Autopilot**              | Run a market analysis now; pause/resume the scheduled analysis; switch a portfolio to read-only and back. Each asks for confirmation and a reason (audited) |
-| **Portfolio & Simulation** | The two simulated demo portfolios ($500, $5,000): liquidation risk and stress curve, strategies compared after costs, LP simulations                        |
-| **Analytics & Thesis**     | Rhea pools, Burrow markets, prices from every source, and the investment thesis tested against 90 days of mainnet data                                      |
-| **Activity & Audit**       | A plain-language activity feed; every policy decision with its 12 checks; execution routes; the tamper-evident audit chains                                 |
-| **System Health**          | API, database, collector, each data source with the reason when it fails, audit chain status                                                                |
+| Page              | What you see and do                                                                                                                                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision; "Refresh with live data" |
+| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                 |
+| **Activity**      | Every decision of the autopilot for the portfolio, in plain words: what each agent saw, what was proposed, what the safety policy said and why. Identical checks in a row are grouped                                                                                |
+| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                              |
+| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, controls (pause, read-only), system health, raw markets, prices, simulations, collector log                                                                     |
 
-**Shadow mode.** Everything the dashboard shows is either read from NEAR mainnet (view calls) or computed from that.
-The portfolios are simulated and labelled as such. There is no wallet, no signer and deliberately no "execute"
-button: the three controls above change only the analysis schedule and the operating mode.
+**Shadow mode.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two portfolios ($500 and
+$5,000) are simulated and labelled as such. There is no wallet and no execute button.
 
-**Reading an opportunity.** _Yield_ is what was earned in the past (LP fees of a window, or the current Burrow supply
-rate), never a promise. _Net after costs_ exists only where a stored simulation subtracted fees, impermanent loss,
-entry/exit cost and gas; otherwise it says "not simulated". _Pass the filters_ means: at least 1% a year, at least
-$50k liquidity, prices confirmed by two sources, risk under 50, and no simulated loss. A high APR on thin liquidity
-cannot take the top place (the score caps yield and halves below $50k).
+**Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 
-**Reading a policy decision.** Policy decisions shows every proposal's verdict: _Allowed_, _Allowed with warnings_ or
-_Blocked by safety rules_, with the check that failed (for example value limit, stale price, price sources disagree).
+- _Repay part of the loan with idle USDt_ — saves the borrow interest; the autopilot itself repays only to protect the
+  loan (health factor below 1.5).
+- _Lend idle USDt / NEAR on Burrow_, _swap NEAR to a stablecoin and lend it_ — supply rate minus gas and swap cost.
+- _Provide liquidity on Rhea_ — from the stored LP simulation: fees − impermanent loss − entry/exit − gas.
+- _Loop on Burrow_ — deposit, borrow the same asset, deposit again: leverage set exactly by Burrow's health-factor
+  formula for a target HF of 1.6. Shown for comparison; the autopilot never borrows.
+
+Each action says whether it clears the autopilot's profit bar (at least $0.50 after costs and a gain of at least 3× the
+costs), or why the autopilot would not do it.
 
 ### What works today, and what does not
 
@@ -154,7 +151,9 @@ _Blocked by safety rules_, with the check that failed (for example value limit, 
 | Independent policy engine (12 checks), Shadow Gateway, hash-chained audit, replay   | Implemented                                                                      |
 | Durable orchestrator mode and idempotency (restart- and race-safe)                  | Implemented (PostgreSQL, migrations 0013-0014)                                   |
 | LP simulation                                                                       | Partial: two-token v1 pools only; DCL and other pool types `UNSUPPORTED`         |
-| Net yield for Burrow supply                                                         | Not simulated yet (shown as "not simulated")                                     |
+| Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)        |
+| Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                         |
+| Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)      |
 | Testnet transactions                                                                | Only manual, each one confirmed separately (`testnet-tx`), outside the autopilot |
 | Mainnet execution, wallet connection, AI assistant                                  | **Not implemented.** Planned, see [ROADMAP.md](ROADMAP.md)                       |
 

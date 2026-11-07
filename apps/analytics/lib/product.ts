@@ -6,7 +6,7 @@ export type Level = 'low' | 'medium' | 'high';
 export interface Opportunity {
   id: string;
   protocol: 'rhea' | 'burrow';
-  kind: 'liquidity' | 'lending';
+  kind: 'liquidity' | 'lending' | 'loop';
   title: string;
   tokens: string[];
   ref: string;
@@ -151,4 +151,64 @@ export const inTime = (iso: string): string => {
   if (s <= 0) return 'due now';
   if (s < 90) return `in ${s} s`;
   return `in ${Math.round(s / 60)} min`;
+};
+
+export interface PortfolioAction {
+  id: string;
+  kind: 'lend' | 'liquidity' | 'loop' | 'keep';
+  title: string;
+  summary: string;
+  capitalUsd: number;
+  horizonDays: number;
+  grossUsd: number | null;
+  netUsd: number | null;
+  netAprOnCapital: number | null;
+  costs: { label: string; usd: number }[];
+  risk: Level;
+  steps: string[];
+  risks: string[];
+  basis: string;
+  autopilot: { verdict: 'worth_it' | 'not_worth_it' | 'not_allowed' | 'no_data'; sentence: string };
+}
+export interface PortfolioView {
+  id: 'demo-500' | 'demo-5000';
+  label: string;
+  simulated: true;
+  asOf: string | null;
+  holdings: {
+    where: 'wallet' | 'collateral' | 'deposited' | 'borrowed';
+    symbol: string;
+    amount: number;
+    usd: number | null;
+  }[];
+  totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
+  health: { healthFactor: number | null; level: Level; label: string; sentence: string };
+  earnings: { monthlyNetUsd: number | null; sentence: string };
+  actions: PortfolioAction[];
+  lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
+}
+export interface AgentEntry {
+  from: string;
+  to: string;
+  count: number;
+  headline: string;
+  notes: string[];
+  policy: { verdict: string; sentence: string }[];
+}
+
+export const portfolioView = (id: string) => tryApi<PortfolioView>(`/v1/analytics/portfolio/${id}`);
+export const agentActivity = (portfolio: string) =>
+  tryApi<{ entries: AgentEntry[] }>(
+    `/v1/analytics/agent-activity?portfolio=${portfolio}&limit=300`,
+  );
+
+/** $1,234 / $12.34 with a real minus sign. */
+export const money = (v: number | null | undefined, cents?: boolean): string => {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const c = cents ?? Math.abs(v) < 100;
+  const s = Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: c ? 2 : 0,
+    maximumFractionDigits: c ? 2 : 0,
+  });
+  return `${v < 0 && Number(s.replace(/,/g, '')) !== 0 ? '−' : ''}$${s}`;
 };
