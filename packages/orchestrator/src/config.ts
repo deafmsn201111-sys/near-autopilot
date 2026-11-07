@@ -70,6 +70,8 @@ export const orchestratorConfigSchema = z
         /** Do nothing unless the largest weight difference exceeds this. */
         driftThresholdBps: bps.default(500),
         maxTurnoverBps: bps.default(2_500),
+        /** Also propose depositing idle allocation assets into Burrow (plain supply, not collateral). Off by default. */
+        supplyIdle: z.boolean().default(false),
       })
       .strict()
       .default({}),

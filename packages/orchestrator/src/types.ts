@@ -170,6 +170,7 @@ export interface Rejection {
 export type CandidateAction =
   | { readonly kind: 'lending.repay'; readonly token: TokenId; readonly amount: bigint }
   | { readonly kind: 'lending.supply_collateral'; readonly token: TokenId; readonly amount: bigint }
+  | { readonly kind: 'lending.supply'; readonly token: TokenId; readonly amount: bigint }
   | {
       readonly kind: 'allocation.swap';
       readonly tokenIn: TokenId;

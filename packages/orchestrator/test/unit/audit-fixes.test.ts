@@ -14,7 +14,7 @@ import {
   parseAgentOutput,
   type AgentObservation,
 } from '../../src';
-import { ALICE, NOW, makeWorld } from '../support/world';
+import { ALICE, NOW, USDT as USDT_ID, WNEAR as WNEAR_ID, makeWorld } from '../support/world';
 
 describe('data guard: an invalid market timestamp is not "fresh"', () => {
   it('flags it and marks market data unusable (NaN used to compare false against every limit)', () => {
@@ -201,6 +201,38 @@ describe('capital allocator: the drift threshold looks at the real drift, not th
       ),
     );
     expect(parsed.proposals.map((p) => p.proposal.kind)).toEqual(['allocation.swap']);
+  });
+});
+
+describe('capital allocator: deposits idle tokens into Burrow when enabled', () => {
+  const world = (supplyIdle: boolean, usdt: number) =>
+    makeWorld({
+      lending: null,
+      wallet: { near: 0, usdt },
+      yields: { near: 2, usdt: 10 },
+      config: { allocation: { assets: [{ token: WNEAR_ID }, { token: USDT_ID }], supplyIdle } },
+    });
+  it('proposes a supply of the idle, best-yielding token, capped at the per-action limit, and it is executed dry-run', async () => {
+    const w = world(true, 500); // $500 USDt idle at 10 %
+    const report = await w.orchestrator.runCycle('supply-1');
+    expect(report.decision?.ranked[0]?.action).toMatchObject({
+      kind: 'lending.supply',
+      token: USDT_ID,
+    });
+    // capped at maxSwapUsd ($100) worth of USDt
+    const action = report.decision?.ranked[0]?.action as { amount: bigint } | undefined;
+    expect(action?.amount).toBe(100n * 10n ** 6n);
+    expect(report.status).toBe('dry_run');
+  });
+  it('is off by default, and a deposit too small to clear the hurdle is rejected as BELOW_HURDLE', async () => {
+    const off = await world(false, 500).orchestrator.runCycle('supply-off');
+    expect(off.decision?.ranked.some((r) => r.action.kind === 'lending.supply') ?? false).toBe(
+      false,
+    );
+    const small = await world(true, 3).orchestrator.runCycle('supply-small'); // $3 idle: cents of yield
+    expect(small.decision?.rejected.find((r) => r.kind === 'lending.supply')?.code).toBe(
+      'BELOW_HURDLE',
+    );
   });
 });
 

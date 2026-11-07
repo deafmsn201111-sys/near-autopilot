@@ -28,6 +28,7 @@ export const PROPOSAL_KINDS = [
   'lp.reposition',
   'lending.repay',
   'lending.supply_collateral',
+  'lending.supply',
   'allocation.swap',
 ] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
@@ -37,7 +38,7 @@ export const AGENT_CAPABILITIES: Readonly<Record<AgentId, readonly ProposalKind[
   'market-intelligence': ['no_action', 'market.signal'],
   'lp-optimizer': ['no_action', 'lp.reposition'],
   'liquidation-guardian': ['no_action', 'lending.repay', 'lending.supply_collateral'],
-  'capital-allocator': ['no_action', 'allocation.swap'],
+  'capital-allocator': ['no_action', 'allocation.swap', 'lending.supply'],
 };
 
 export const MAX_RATIONALE_LENGTH = 500;
@@ -114,6 +115,10 @@ const repay = z
 const supplyCollateral = z
   .object({ kind: z.literal('lending.supply_collateral'), token, amount: amountString, ...base })
   .strict();
+/** Deposit idle wallet tokens into Burrow to earn the supply rate (NOT as collateral). Discretionary. */
+const supply = z
+  .object({ kind: z.literal('lending.supply'), token, amount: amountString, ...base })
+  .strict();
 const swap = z
   .object({
     kind: z.literal('allocation.swap'),
@@ -131,6 +136,7 @@ const proposalSchema = z.discriminatedUnion('kind', [
   lpReposition,
   repay,
   supplyCollateral,
+  supply,
   swap,
 ]);
 export type Proposal = z.output<typeof proposalSchema>;

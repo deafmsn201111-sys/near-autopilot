@@ -98,7 +98,8 @@
           "group": "stable",
           "maxBps": 8000
         }
-      ]
+      ],
+      "supplyIdle": true
     }
   }
 }

@@ -497,11 +497,13 @@ export function narrate(r: AnalysisResult, symbols: ReadonlyMap<string, string>)
   for (const x of d?.rejected ?? []) {
     const e = x.economics;
     const what =
-      x.kind === 'allocation.swap'
-        ? e?.tokenIn && e.tokenOut
-          ? `swap ${e.valueInUsdMicro ? `${money(micro(e.valueInUsdMicro) ?? 0)} of ` : ''}${sym(e.tokenIn)} into ${sym(e.tokenOut)} to earn a better rate`
-          : 'move idle NEAR into a better-earning asset'
-        : x.kind.replace(/[._]/g, ' ');
+      x.kind === 'lending.supply'
+        ? `deposit ${e?.valueInUsdMicro ? `${money(micro(e.valueInUsdMicro) ?? 0)} of ` : ''}idle ${sym(e?.tokenIn)} into Burrow`
+        : x.kind === 'allocation.swap'
+          ? e?.tokenIn && e.tokenOut
+            ? `swap ${e.valueInUsdMicro ? `${money(micro(e.valueInUsdMicro) ?? 0)} of ` : ''}${sym(e.tokenIn)} into ${sym(e.tokenOut)} to earn a better rate`
+            : 'move idle NEAR into a better-earning asset'
+          : x.kind.replace(/[._]/g, ' ');
     const why =
       x.code === 'NO_QUOTE'
         ? 'no reliable swap price was available for that amount'
@@ -515,7 +517,7 @@ export function narrate(r: AnalysisResult, symbols: ReadonlyMap<string, string>)
   for (const x of d?.ranked ?? []) {
     const e = x.economics;
     notes.push(
-      `Proposed: ${x.action.kind === 'allocation.swap' ? `swap ${money(micro(e?.valueInUsdMicro) ?? 0)} of ${sym(x.action.tokenIn)} into ${sym(x.action.tokenOut)} (expected +${money(micro(e?.benefitUsdMicro) ?? 0)}, cost ${money(micro(e?.costUsdMicro) ?? 0)})` : x.action.kind.replace(/[._]/g, ' ')}. Sent to the safety policy.`,
+      `Proposed: ${x.action.kind === 'lending.supply' ? `deposit ${money(micro(e?.valueInUsdMicro) ?? 0)} of idle ${sym((x.action as { token?: string }).token)} into Burrow (expected +${money(micro(e?.benefitUsdMicro) ?? 0)} a month, cost ${money(micro(e?.costUsdMicro) ?? 0)})` : x.action.kind === 'allocation.swap' ? `swap ${money(micro(e?.valueInUsdMicro) ?? 0)} of ${sym(x.action.tokenIn)} into ${sym(x.action.tokenOut)} (expected +${money(micro(e?.benefitUsdMicro) ?? 0)}, cost ${money(micro(e?.costUsdMicro) ?? 0)})` : x.action.kind.replace(/[._]/g, ' ')}. Sent to the safety policy.`,
     );
   }
   const REASON: Record<string, string> = {

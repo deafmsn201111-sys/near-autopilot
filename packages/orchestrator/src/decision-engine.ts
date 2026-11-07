@@ -396,6 +396,128 @@ export function decide(input: EvaluationInput): Decision {
         break;
       }
 
+      case 'lending.supply': {
+        // Discretionary: idle wallet tokens into Burrow at the supply rate. Same gates and the same hurdle as a swap.
+        if (RISK_RANK[risk.level] >= RISK_RANK.watch) {
+          rejected.push(
+            reject(
+              p,
+              'RISK_NOT_HEALTHY',
+              `discretionary actions are suspended while position risk is ${risk.level}`,
+            ),
+          );
+          break;
+        }
+        if (effective === 'risk_reduction_only') {
+          rejected.push(
+            reject(
+              p,
+              'MODE_RISK_REDUCTION_ONLY',
+              'only risk-reducing actions are allowed in this mode',
+            ),
+          );
+          break;
+        }
+        if (!input.dataQuality.marketUsable || !input.market) {
+          rejected.push(
+            reject(
+              p,
+              'MARKET_DATA_STALE',
+              'market data is not fresh enough for a discretionary action',
+            ),
+          );
+          break;
+        }
+        const caution = severityOn(prop.token, prop.token);
+        if (caution >= 4) {
+          rejected.push(
+            reject(p, 'SIGNAL_CAUTION', `a severity-${caution} market signal covers ${prop.token}`),
+          );
+          break;
+        }
+        if (!snapshot.prices.has(prop.token)) {
+          rejected.push(reject(p, 'NO_PRICE', `${prop.token} needs an oracle price`));
+          break;
+        }
+        const held = wallet.get(prop.token) ?? 0n;
+        if (held <= 0n || prop.amount > held) {
+          rejected.push(
+            reject(
+              p,
+              'INSUFFICIENT_BALANCE',
+              `wallet holds ${held} ${prop.token}, proposal needs ${prop.amount}`,
+            ),
+          );
+          break;
+        }
+        const value = tokenValueUsd(snapshot.prices, prop.token, prop.amount);
+        if (value > limits.maxSwapUsdMicro) {
+          rejected.push(
+            reject(
+              p,
+              'EXCEEDS_ORCHESTRATOR_LIMIT',
+              `value ${value} micro-USD exceeds ${limits.maxSwapUsdMicro}`,
+            ),
+          );
+          break;
+        }
+        const y = input.market.estimatedYieldWad.get(prop.token);
+        if (y === undefined || y <= 0n) {
+          rejected.push(
+            reject(p, 'NO_YIELD_ESTIMATE', `no positive supply-rate estimate for ${prop.token}`),
+          );
+          break;
+        }
+        // ESTIMATE: the supply rate credited over the horizon (idle tokens earn nothing), against gas to deposit
+        // and later withdraw. The hurdle is the swap hurdle, unchanged.
+        const benefit = (value * y * BigInt(config.swap.horizonDays)) / (365n * WAD);
+        const cost = 2n * limits.estimatedGasUsdMicro;
+        const net = benefit - cost;
+        const multiple = BigInt(config.swap.costCoverMultiple) * (caution === 3 ? 2n : 1n);
+        if (net < limits.minNetBenefitUsdMicro || benefit < multiple * cost) {
+          rejected.push({
+            ...reject(
+              p,
+              'BELOW_HURDLE',
+              `estimated benefit ${benefit} minus cost ${cost} = ${net} micro-USD; needs >= ${limits.minNetBenefitUsdMicro} and benefit >= ${multiple}x cost`,
+            ),
+            economics: {
+              tokenIn: prop.token,
+              tokenOut: prop.token,
+              amountIn: prop.amount,
+              valueInUsdMicro: value,
+              benefitUsdMicro: benefit,
+              costUsdMicro: cost,
+              netUsdMicro: net,
+              requiredMultiple: multiple,
+              minNetUsdMicro: limits.minNetBenefitUsdMicro,
+            },
+          });
+          break;
+        }
+        const key = actionKeyOf({ kind: prop.kind, token: prop.token, amount: prop.amount });
+        if (duplicate(key)) {
+          rejected.push(
+            reject(p, 'DUPLICATE_ACTION', 'the same deposit was already made or is in flight'),
+          );
+          break;
+        }
+        candidates.push({
+          proposalId: p.proposalId,
+          agent: p.agent,
+          rationale: prop.rationale,
+          action: { kind: 'lending.supply', token: prop.token, amount: prop.amount },
+          tier: 2,
+          netBenefitUsdMicro: net,
+          basis: 'estimated',
+          economics: { valueInUsdMicro: value, benefitUsdMicro: benefit, costUsdMicro: cost },
+          riskEffect: null,
+          sizing: { requested: prop.amount, final: prop.amount },
+          actionKey: key,
+        });
+        break;
+      }
+
       case 'allocation.swap': {
         if (prop.tokenIn === prop.tokenOut) {
           rejected.push(reject(p, 'SAME_TOKEN', 'tokenIn equals tokenOut'));
@@ -663,6 +785,15 @@ export function candidateToIntent(
         token: a.token,
         amount: a.amount,
         asCollateral: true,
+      };
+    case 'lending.supply':
+      return {
+        ...base,
+        kind: 'lending.supply',
+        protocol: 'burrow',
+        token: a.token,
+        amount: a.amount,
+        asCollateral: false,
       };
     case 'allocation.swap':
       return {
