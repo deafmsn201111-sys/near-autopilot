@@ -592,3 +592,18 @@ export const collectorControl = pgTable('collector_control', {
   changedAt: ts('changed_at').notNull(),
   version: bigint('version', { mode: 'number' }).notNull(),
 });
+
+/** Signed audit checkpoints (migration 0015, append-only). The signing key is never stored in the database. */
+export const auditCheckpoints = pgTable(
+  'audit_checkpoints',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    chain: text('chain').notNull(),
+    seq: bigint('seq', { mode: 'number' }).notNull(),
+    hash: text('hash').notNull(),
+    at: ts('at').notNull(),
+    publicKey: text('public_key').notNull(),
+    signature: text('signature').notNull(),
+  },
+  (t) => [uniqueIndex('audit_checkpoints_chain_seq_uq').on(t.chain, t.seq)],
+);

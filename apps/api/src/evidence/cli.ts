@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createDatabase } from '@near-autopilot/db';
 import { policyConfigSchema, type PolicyConfig } from '@near-autopilot/policy-engine';
 import { z } from 'zod';
+import { checkpointAll, generateCheckpointKey, verifyCheckpoints } from './checkpoint';
 import { replayVerdict } from './replay';
 import { EvidenceStore } from './store';
 
@@ -13,6 +14,10 @@ import { EvidenceStore } from './store';
  *   audit:replay [--id <verdict id>] [--limit 200] [--config config/autopilot.shadow.example.json ...]
  *       Re-evaluates stored policy verdicts on their stored inputs and compares. --config supplies the policy for rows
  *       stored before configs were recorded with verdicts (used only when its version matches). Exit 1 on a mismatch.
+ *
+ *   audit:verify also checks the signed checkpoints when AUDIT_CHECKPOINT_PUBLIC_KEY is set (file: AUDIT_CHECKPOINT_FILE).
+ *   checkpoint            signs the current head of every chain (needs AUDIT_CHECKPOINT_KEY; writes the table and file)
+ *   checkpoint-keygen     prints a NEW key pair as two .env lines (the quickstart appends them to .env, unprinted)
  *
  * Output: one JSON object per line, then a summary line. DATABASE_URL is read from the environment and never printed.
  */
@@ -32,10 +37,28 @@ function loadPolicy(path: string): PolicyConfig {
 }
 
 async function main(): Promise<number> {
+  if (command === 'checkpoint-keygen') {
+    const k = generateCheckpointKey();
+    process.stdout.write(
+      `AUDIT_CHECKPOINT_KEY=${k.privateHex}\nAUDIT_CHECKPOINT_PUBLIC_KEY=${k.publicHex}\n`,
+    );
+    return 0;
+  }
   const { DATABASE_URL } = z.object({ DATABASE_URL: z.string().min(1) }).parse(process.env);
   const database = createDatabase(DATABASE_URL, { max: 2 });
   const store = new EvidenceStore(database.db);
   try {
+    if (command === 'checkpoint') {
+      const key = process.env['AUDIT_CHECKPOINT_KEY'];
+      if (!key) {
+        out({ error: 'AUDIT_CHECKPOINT_KEY is not set' });
+        return 1;
+      }
+      const file = process.env['AUDIT_CHECKPOINT_FILE'];
+      for (const c of await checkpointAll(database.db, key, file ? { file } : {}))
+        out({ signed: c.chain, seq: c.seq });
+      return 0;
+    }
     if (command === 'verify') {
       const { chains, unchained } = await store.chains();
       const only = opt('chain');
@@ -50,9 +73,20 @@ async function main(): Promise<number> {
         if (!r.ok) broken += 1;
         out({ ...r, firstAt: c.firstAt.toISOString(), lastAt: c.lastAt.toISOString() });
       }
+      const pub = process.env['AUDIT_CHECKPOINT_PUBLIC_KEY'];
+      const file = process.env['AUDIT_CHECKPOINT_FILE'];
+      const checks = pub ? await verifyCheckpoints(database.db, pub, file ? { file } : {}) : [];
+      for (const ch of checks) out({ checkpoints: ch });
+      const badCheckpoints = checks.filter((x) => !x.ok).length;
+      broken += badCheckpoints;
       out({
         summary: 'audit:verify',
         chains: selected.length,
+        checkpoints: pub
+          ? badCheckpoints === 0
+            ? 'ok'
+            : 'FAILED'
+          : 'not configured (AUDIT_CHECKPOINT_PUBLIC_KEY)',
         broken,
         unchainedRowsBeforeMigration0011: unchained,
       });

@@ -1,3 +1,5 @@
+import type { Database } from '@near-autopilot/db';
+import { verifyCheckpoints } from '../evidence/checkpoint';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { toJsonSafe } from '@near-autopilot/core';
@@ -25,7 +27,11 @@ function thesis(): ThesisData | null {
 
 const env = (p: { dataSource: string; network: string }) => `${p.dataSource}:${p.network}`;
 
-export function registerEvidence(app: FastifyInstance, evidence: EvidenceStore): void {
+export function registerEvidence(
+  app: FastifyInstance,
+  evidence: EvidenceStore,
+  checkpoints?: { publicKey: string; file?: string | undefined; db: Database },
+): void {
   app.get('/v1/analytics/policy/verdicts', async (req) => {
     const q = z
       .object({
@@ -87,7 +93,19 @@ export function registerEvidence(app: FastifyInstance, evidence: EvidenceStore):
       chains.map(async (c) => ({ ...c, verification: await evidence.verify(c.chain) })),
     );
     const selected = q.chain ?? chains[0]?.chain ?? null;
+    const signed = checkpoints
+      ? await verifyCheckpoints(
+          checkpoints.db,
+          checkpoints.publicKey,
+          checkpoints.file ? { file: checkpoints.file } : {},
+        )
+      : null;
     return {
+      checkpoints: signed && {
+        configured: true,
+        publicKey: checkpoints?.publicKey,
+        chains: signed,
+      },
       chains: verified,
       unchainedRowsBeforeMigration0011: unchained,
       selected,
@@ -141,6 +159,13 @@ export function registerEvidence(app: FastifyInstance, evidence: EvidenceStore):
         priceCheck: d.priceCheck,
         nearUsdEnd: d.nearUsdEnd,
       },
+      cohorts: d.cohorts,
+      survivorship: d.manifest.universe.startPools
+        ? {
+            included: d.cohorts.find((c) => c.key === 'shrunk')?.pools.length ?? 0,
+            text: `To avoid looking only at the survivors, the sample also includes the pools that were among the largest at the start but not at the end (${d.cohorts.find((c) => c.key === 'shrunk')?.pools.length ?? 0}).`,
+          }
+        : null,
       pools: d.pools.map((m) => ({
         ...m,
         lpVsHodlApr30: d.pools30.get(m.pool)?.lpVsHodlApr ?? null,

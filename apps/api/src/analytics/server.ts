@@ -1,3 +1,4 @@
+import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -7,6 +8,7 @@ import type { EvidenceStore } from '../evidence/store';
 import { registerEvidence } from './evidence';
 import { registerSeries } from './series';
 import { registerActivity } from './activity';
+import { registerPortfolioView } from './portfolio-view';
 import { ControlError, type ControlService } from '../control/service';
 import { rankOpportunities, type SimulationInput } from './opportunities';
 import { MAINNET_ASSETS } from '../market-data/assets';
@@ -28,8 +30,11 @@ export interface AnalyticsDeps {
   /** The collector's internal HTTP endpoint, for "run an analysis now". */
   readonly collectorUrl?: string;
   readonly fetchImpl?: typeof fetch;
+  /** Pinned public key (and file) to verify the signed audit checkpoints against. */
+  readonly checkpoints?: { readonly publicKey: string; readonly file?: string | undefined };
 }
 
+const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
 export function buildAnalyticsServer(
@@ -47,9 +52,15 @@ export function buildAnalyticsServer(
       await reply.code(401).send({ error: 'unauthorized' });
   });
   app.get('/health', async () => ({ ok: true }));
-  if (deps.evidence) registerEvidence(app, deps.evidence);
+  if (deps.evidence)
+    registerEvidence(
+      app,
+      deps.evidence,
+      deps.checkpoints && deps.store.db ? { ...deps.checkpoints, db: deps.store.db } : undefined,
+    );
   registerSeries(app, deps.store, now);
   registerActivity(app, deps.store, deps.store.db, deps.intervalSeconds, now);
+  registerPortfolioView(app, deps.store);
   if (deps.control) registerControl(app, deps.control, deps);
 
   /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */
@@ -348,6 +359,9 @@ export function buildAnalyticsServer(
       symbols: new Map(tokens.map((t) => [t.token, t.symbol])),
       now: now(),
       intervalSeconds: deps.intervalSeconds,
+      // the orchestrator's own cost assumptions (the same the hurdle uses)
+      gasUsdPerTx: ORCH_SWAP.estimatedGasUsd,
+      horizonDays: ORCH_SWAP.horizonDays,
     });
   };
 

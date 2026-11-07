@@ -69,3 +69,30 @@ supplied by `--config <file>`, and only if its version is exactly the stored one
 `not_replayable`, never guessed.
 
 A change to the rules code without a new `RULES_VERSION` shows up as a `verdict` mismatch.
+
+## Signed checkpoints: an anchor outside the database
+
+The hash chain shows that no entry changed relative to its neighbours. It cannot show that someone with write access
+to the whole database did not rewrite the chain and recompute every hash, or delete its newest entries. Checkpoints
+close that gap (`apps/api/src/evidence/checkpoint.ts`, migration 0015):
+
+- After every collector cycle, the head of every chain (`chain`, `seq`, `hash`, time) is signed with an **ed25519 key
+  kept in `.env`** (`AUDIT_CHECKPOINT_KEY`), never in the database. `scripts/quickstart.sh` creates the key pair and
+  never prints it.
+- Each checkpoint is written to the append-only table `audit_checkpoints` **and** to
+  `evidence/checkpoints/checkpoints.jsonl`, a file outside the database volume.
+- Verification uses only the **public key** (`AUDIT_CHECKPOINT_PUBLIC_KEY`, pinned in the environment, not read from the
+  database): the signature must be valid, the entry at `seq` must still have that hash, and the chain must still reach
+  `seq`. The file is authoritative: a checkpoint deleted from the table is still checked from the file.
+
+```bash
+docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify   # chains + checkpoints
+docker compose exec shadow-collector node --import tsx src/evidence/cli.ts checkpoint   # sign the heads now
+```
+
+Tested on a real database (`apps/api/test/checkpoint.integration.test.ts`): a different key does not verify, a
+rewritten entry is caught even when the chain around it is consistent, a cut tail is caught, and a checkpoint deleted
+from the table is still found in the file.
+
+**What it does not catch:** an attacker who also holds the private key, or a rewrite of entries written after the last
+checkpoint (at most one collector interval). Anchoring the head on NEAR itself is the next step (ROADMAP, Phase 3).

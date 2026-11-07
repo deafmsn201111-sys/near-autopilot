@@ -1,3 +1,4 @@
+import { checkpointAll } from '../evidence/checkpoint';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ControlService } from '../control/service';
 import { collectorRouteProbe } from '../gateway/probe';
@@ -29,6 +30,12 @@ const collectorEnv = z.object({
   COLLECTOR_HEALTH_PORT: z.coerce.number().int().min(1).max(65_535).default(4100),
   COLLECTOR_MIN_TVL_USD: z.coerce.number().min(0).default(DEFAULT_FILTER.minTvlUsd),
   COLLECTOR_HORIZON_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  /** ed25519 private key (hex) for signed audit checkpoints; never stored in the database. Absent: no checkpoints. */
+  AUDIT_CHECKPOINT_KEY: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  AUDIT_CHECKPOINT_FILE: z.string().optional(),
 });
 
 async function main(): Promise<void> {
@@ -96,6 +103,20 @@ async function main(): Promise<void> {
   let last: CycleSummary | null = null;
   let nextRunAt = new Date();
   const control = new ControlService(database.db);
+  // Signed checkpoint of every audit chain head after each cycle (see evidence/checkpoint.ts). A failure is logged and
+  // never stops collection: the chain itself is intact either way, only its external anchor is late.
+  const checkpoint = async () => {
+    if (!c.AUDIT_CHECKPOINT_KEY) return;
+    try {
+      const made = await checkpointAll(database.db, c.AUDIT_CHECKPOINT_KEY, {
+        ...(c.AUDIT_CHECKPOINT_FILE ? { file: c.AUDIT_CHECKPOINT_FILE } : {}),
+      });
+      if (made.length)
+        logger.info('audit checkpoints signed', { chains: made.map((m) => `${m.chain}#${m.seq}`) });
+    } catch (e) {
+      logger.error('audit checkpoint failed', { error: String(e) });
+    }
+  };
   let paused = false;
   const status = () => ({
     running: collector.isRunning,
@@ -124,8 +145,9 @@ async function main(): Promise<void> {
       }
       void collector
         .runCycle('on_demand')
-        .then((r) => {
+        .then(async (r) => {
           last = r;
+          await checkpoint();
         })
         .catch((e: unknown) => logger.error('on-demand cycle crashed', { error: String(e) }));
       res.writeHead(202).end(JSON.stringify({ started: true, trigger: 'on_demand' }));
@@ -151,6 +173,7 @@ async function main(): Promise<void> {
         .catch(() => false);
       if (paused) logger.info('scheduled collection skipped: paused by an operator');
       else last = await collector.runCycle('scheduled');
+      await checkpoint();
     } catch (e) {
       logger.error('collector tick crashed', { error: String(e) });
     }

@@ -251,8 +251,13 @@ services:
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
       COLLECTOR_REGISTRY_EVERY: ${COLLECTOR_REGISTRY_EVERY:-4}
       COLLECTOR_HEALTH_PORT: 4100
+      # signed audit checkpoints (evidence/checkpoint.ts): the private key stays in .env, never in the database
+      AUDIT_CHECKPOINT_KEY: ${AUDIT_CHECKPOINT_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
     volumes:
       - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
+      # outside the database volume: the independent copy of the checkpoints
+      - ./evidence/checkpoints:/checkpoints
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4100/health']
       interval: 30s
@@ -279,8 +284,12 @@ services:
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
       # internal network only: the dashboard's "Run market analysis" (token-protected, read-only collection)
       COLLECTOR_URL: http://shadow-collector:4100
+      AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
+    volumes:
+      - ./evidence/checkpoints:/checkpoints:ro
 
   analytics:
     profiles: [shadow]

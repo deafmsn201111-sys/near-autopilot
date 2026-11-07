@@ -24,3 +24,6 @@ id_ed25519*
 *.dump
 *.log
 .DS_Store
+
+# signed audit checkpoints written at runtime (an independent copy outside the database)
+evidence/checkpoints/

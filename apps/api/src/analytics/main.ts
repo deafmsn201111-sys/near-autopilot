@@ -17,6 +17,11 @@ const env = z
     API_PORT: z.coerce.number().int().default(4000),
     SHADOW_CYCLE_INTERVAL_SECONDS: z.coerce.number().int().min(60).default(900),
     COLLECTOR_URL: z.string().url().optional(),
+    AUDIT_CHECKPOINT_PUBLIC_KEY: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    AUDIT_CHECKPOINT_FILE: z.string().optional(),
   })
   .parse(process.env);
 
@@ -28,6 +33,14 @@ const app = buildAnalyticsServer(
     evidence: new EvidenceStore(database.db),
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
     control: new ControlService(database.db),
+    ...(env.AUDIT_CHECKPOINT_PUBLIC_KEY
+      ? {
+          checkpoints: {
+            publicKey: env.AUDIT_CHECKPOINT_PUBLIC_KEY,
+            file: env.AUDIT_CHECKPOINT_FILE,
+          },
+        }
+      : {}),
     ...(env.COLLECTOR_URL ? { collectorUrl: env.COLLECTOR_URL } : {}),
   },
   { logger: true },
