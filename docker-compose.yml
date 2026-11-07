@@ -310,6 +310,8 @@ services:
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       # "let the agent do it" on the demo portfolios: the shadow autopilot (simulation, dry-run only)
       AUTOPILOT_API_URL: http://api-shadow:4000
+      # 1 = public demo: operator controls refused, visitor actions rate-limited (apps/analytics/lib/public-demo.ts)
+      PUBLIC_DEMO: ${PUBLIC_DEMO:-}
     ports:
       - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
 

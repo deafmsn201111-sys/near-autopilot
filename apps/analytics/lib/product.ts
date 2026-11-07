@@ -1,3 +1,4 @@
+import { RATE_LIMITED, withinLimit } from './public-demo';
 import 'server-only';
 import { tryApi } from './api';
 
@@ -216,6 +217,7 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
 export const accountView = async (id: string) => {
+  if (!(await withinLimit('account'))) return { error: RATE_LIMITED, data: null };
   const r = await tryApi<
     Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & { accountId: string }
   >(`/v1/analytics/account/${encodeURIComponent(id)}`);

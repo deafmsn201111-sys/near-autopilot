@@ -1,6 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { getEnv } from '../lib/env';
+import { RATE_LIMITED, withinLimit } from '../lib/public-demo';
 
 /**
  * "Let the agent do it" from a demo portfolio: the request is sent to the shadow autopilot API, which runs it through
@@ -23,6 +24,8 @@ const ACTIONS: Record<string, { kind: 'supply' | 'repay'; token: string }> = {
 const BY = 'dashboard user (demo)';
 
 async function post(path: string, body: unknown): Promise<RequestOutcome> {
+  if (!(await withinLimit('action')))
+    return { id: null, status: 'failed', sentence: RATE_LIMITED, reasons: [], expiresAt: null };
   const base = process.env['AUTOPILOT_API_URL'];
   if (!base)
     return {
@@ -97,6 +100,7 @@ export async function confirmAgentAction(portfolio: string, id: string): Promise
 
 /** Start a demo portfolio again from its base amounts (its simulated ledger is reset; audited). */
 export async function resetDemo(portfolio: string): Promise<{ ok: boolean; message: string }> {
+  if (!(await withinLimit('action'))) return { ok: false, message: RATE_LIMITED };
   const base = process.env['AUTOPILOT_API_URL'];
   if (!base) return { ok: false, message: 'The autopilot API is not configured.' };
   try {

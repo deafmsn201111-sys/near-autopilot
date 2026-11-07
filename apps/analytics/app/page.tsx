@@ -1,3 +1,4 @@
+import { PUBLIC_DEMO } from '../lib/public-demo';
 import { cookies } from 'next/headers';
 import { AgentAction } from '../components/AgentAction';
 
@@ -333,7 +334,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               impermanent loss.
             </p>
           </div>
-          {!isAccount && (
+          {!isAccount && !PUBLIC_DEMO && (
             <ConfirmAction
               label="Refresh with live data"
               title="Run a fresh analysis?"

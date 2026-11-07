@@ -1,3 +1,4 @@
+import { PUBLIC_DEMO, PUBLIC_REFUSAL } from '../../lib/public-demo';
 import Link from 'next/link';
 import { ConfirmAction } from '../../components/ConfirmAction';
 import { EmptyState, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
@@ -81,44 +82,51 @@ export default async function AutopilotPage() {
             sub={live ? 'collector online' : 'collector status unavailable'}
           />
         </div>
-        <div className="actions" style={{ marginTop: 14 }}>
-          <ConfirmAction
-            label="Run market analysis now"
-            tone="primary"
-            title="Run a market analysis now?"
-            description="The collector reads mainnet (view calls only), re-ranks opportunities and re-analyses the demo portfolios. It takes about a minute. Nothing is signed or sent."
-            confirmLabel="Run analysis"
-            action={async () => {
-              'use server';
-              return runAnalysis();
-            }}
-          />
-          {c.paused ? (
+        {PUBLIC_DEMO && (
+          <p className="muted-note" style={{ marginTop: 14 }}>
+            {PUBLIC_REFUSAL}
+          </p>
+        )}
+        {!PUBLIC_DEMO && (
+          <div className="actions" style={{ marginTop: 14 }}>
             <ConfirmAction
-              label="Resume scheduled analysis"
-              title="Resume the scheduled analysis?"
-              description="Scheduled runs start again at the normal interval."
-              confirmLabel="Resume"
-              needsReason
-              action={async (reason) => {
+              label="Run market analysis now"
+              tone="primary"
+              title="Run a market analysis now?"
+              description="The collector reads mainnet (view calls only), re-ranks opportunities and re-analyses the demo portfolios. It takes about a minute. Nothing is signed or sent."
+              confirmLabel="Run analysis"
+              action={async () => {
                 'use server';
-                return setCollectorPaused(false, reason);
+                return runAnalysis();
               }}
             />
-          ) : (
-            <ConfirmAction
-              label="Pause scheduled analysis"
-              title="Pause the scheduled analysis?"
-              description="Scheduled runs are skipped until you resume; data will become out of date. You can still run an analysis manually. Nothing else changes."
-              confirmLabel="Pause"
-              needsReason
-              action={async (reason) => {
-                'use server';
-                return setCollectorPaused(true, reason);
-              }}
-            />
-          )}
-        </div>
+            {c.paused ? (
+              <ConfirmAction
+                label="Resume scheduled analysis"
+                title="Resume the scheduled analysis?"
+                description="Scheduled runs start again at the normal interval."
+                confirmLabel="Resume"
+                needsReason
+                action={async (reason) => {
+                  'use server';
+                  return setCollectorPaused(false, reason);
+                }}
+              />
+            ) : (
+              <ConfirmAction
+                label="Pause scheduled analysis"
+                title="Pause the scheduled analysis?"
+                description="Scheduled runs are skipped until you resume; data will become out of date. You can still run an analysis manually. Nothing else changes."
+                confirmLabel="Pause"
+                needsReason
+                action={async (reason) => {
+                  'use server';
+                  return setCollectorPaused(true, reason);
+                }}
+              />
+            )}
+          </div>
+        )}
       </Section>
 
       <Section
@@ -151,7 +159,7 @@ export default async function AutopilotPage() {
                     </div>
                     <div className="actions">
                       <Status code={m.mode} />
-                      {m.mode === 'normal' ? (
+                      {PUBLIC_DEMO ? null : m.mode === 'normal' ? (
                         <ConfirmAction
                           label="Switch to read-only"
                           tone="danger"

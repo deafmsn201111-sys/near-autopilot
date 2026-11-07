@@ -1,6 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { apiPost } from '../../lib/api';
+import { PUBLIC_DEMO, PUBLIC_REFUSAL } from '../../lib/public-demo';
 
 /**
  * The dashboard's only state-changing calls: the three audited operator controls of the analytics API. None of them
@@ -16,6 +17,7 @@ const errorOf = (r: { status: number; body: Record<string, unknown> }) =>
   typeof r.body['error'] === 'string' ? r.body['error'] : `HTTP ${r.status}`;
 
 export async function runAnalysis(): Promise<ActionResult> {
+  if (PUBLIC_DEMO) return { ok: false, message: PUBLIC_REFUSAL };
   const r = await apiPost('/v1/control/collector/run');
   revalidatePath('/autopilot');
   if (r.status === 202)
@@ -30,6 +32,7 @@ export async function runAnalysis(): Promise<ActionResult> {
 }
 
 export async function setCollectorPaused(paused: boolean, reason: string): Promise<ActionResult> {
+  if (PUBLIC_DEMO) return { ok: false, message: PUBLIC_REFUSAL };
   const r = await apiPost(`/v1/control/collector/${paused ? 'pause' : 'resume'}`, {
     by: BY,
     reason,
@@ -52,6 +55,7 @@ export async function setMode(
   mode: 'read_only' | 'normal',
   reason: string,
 ): Promise<ActionResult> {
+  if (PUBLIC_DEMO) return { ok: false, message: PUBLIC_REFUSAL };
   const r = await apiPost('/v1/control/mode', { scope, mode, by: BY, reason });
   revalidatePath('/autopilot');
   if (r.status !== 200) return { ok: false, message: errorOf(r) };
