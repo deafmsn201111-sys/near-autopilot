@@ -1,44 +1,40 @@
 'use client';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
+
+const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
 
 /**
  * Connect a NEAR wallet through HOT Connector to see your own portfolio. Sign-in only: no access key, no signature.
- * Right after a sign-in started here the page opens that account; an already connected wallet never redirects.
+ * Right after a successful sign-in the page opens that account with a full page load, the same way on the first and
+ * on every later connection; an already connected wallet never redirects by itself.
  */
 export function WalletButton() {
-  const router = useRouter();
   const [account, setAccount] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const signingIn = useRef(false);
+  const [state, setState] = useState<'idle' | 'connecting' | 'opening'>('idle');
 
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    void watchAccount((id) => {
-      setAccount(id);
-      if (id && signingIn.current) {
-        signingIn.current = false;
-        router.push(`/?p=account&account=${encodeURIComponent(id)}`);
-      }
-    }).then((s) => {
-      stop = s;
-    });
-    return () => stop?.();
-  }, [router]);
+  useEffect(() => watchAccount(setAccount), []);
 
+  if (state === 'opening')
+    return <span className="wallet-chip muted-note">Opening your portfolio…</span>;
   if (account)
     return (
       <span className="wallet-chip">
         <Link
           className="wallet-id"
-          href={`/?p=account&account=${encodeURIComponent(account)}`}
+          href={portfolioUrl(account)}
           title={`${account}: open my portfolio`}
         >
           {account.length > 20 ? `${account.slice(0, 8)}…${account.slice(-6)}` : account}
         </Link>
-        <button type="button" className="btn secondary small" onClick={() => void disconnect()}>
+        <button
+          type="button"
+          className="btn secondary small"
+          onClick={() => {
+            void disconnect().finally(() => setAccount(null));
+          }}
+        >
           Disconnect
         </button>
       </span>
@@ -47,18 +43,20 @@ export function WalletButton() {
     <button
       type="button"
       className="btn primary small"
-      disabled={busy}
+      disabled={state === 'connecting'}
       onClick={() => {
-        signingIn.current = true;
-        setBusy(true);
-        void connect()
-          .catch(() => {
-            signingIn.current = false; // closed or failed: stay where we are
+        setState('connecting');
+        connect()
+          .then((id) => {
+            if (!id) return setState('idle');
+            setAccount(id);
+            setState('opening');
+            window.location.assign(portfolioUrl(id));
           })
-          .finally(() => setBusy(false));
+          .catch(() => setState('idle')); // the list was closed or the wallet refused: stay here
       }}
     >
-      {busy ? 'Connecting…' : 'Connect wallet'}
+      {state === 'connecting' ? 'Connecting…' : 'Connect wallet'}
     </button>
   );
 }

@@ -17,7 +17,9 @@ export const MAINNET_SIGNING = 'locked' as const;
 
 let connector: NearConnector | null = null;
 const listeners = new Set<(accountId: string | null) => void>();
-const emit = (id: string | null) => listeners.forEach((l) => l(id));
+const emit = (id: string | null) => {
+  for (const l of listeners) l(id);
+};
 
 function get(): NearConnector {
   if (!connector) {
@@ -32,7 +34,8 @@ function get(): NearConnector {
   return connector;
 }
 
-async function current(): Promise<string | null> {
+/** The account of the connected wallet, read from the wallet itself; null when none is connected. */
+export async function currentAccount(): Promise<string | null> {
   try {
     const { accounts } = await get().getConnectedWallet();
     return accounts[0]?.accountId ?? null;
@@ -41,20 +44,29 @@ async function current(): Promise<string | null> {
   }
 }
 
-/** The connected account id, or null; `onChange` is called now and on every change. Returns an unsubscribe. */
-export async function watchAccount(
-  onChange: (accountId: string | null) => void,
-): Promise<() => void> {
+/** Calls `onChange` now and on every sign-in / sign-out. Returns an unsubscribe function. */
+export function watchAccount(onChange: (accountId: string | null) => void): () => void {
   listeners.add(onChange);
-  onChange(await current());
-  return () => listeners.delete(onChange);
+  void currentAccount().then(onChange);
+  return () => {
+    listeners.delete(onChange);
+  };
 }
 
-export async function connect(): Promise<void> {
-  await get().connect();
+/**
+ * Opens the wallet list and signs in. Resolves with the signed-in account id, read from the wallet the user picked
+ * (not from an event, so it is the same on the first and on every later connection); null if closed or failed.
+ */
+export async function connect(): Promise<string | null> {
+  const wallet = await get().connect();
+  const accounts = await wallet.getAccounts();
+  return accounts[0]?.accountId ?? null;
 }
 
 export async function disconnect(): Promise<void> {
-  await get().disconnect();
-  emit(null);
+  try {
+    await get().disconnect();
+  } finally {
+    emit(null);
+  }
 }
