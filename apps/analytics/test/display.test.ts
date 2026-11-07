@@ -66,8 +66,13 @@ describe('display helpers', () => {
   it('status codes map to an icon kind and a readable label', () => {
     expect(statusOf('LP_SIMULATION_ELIGIBLE')).toEqual({
       kind: 'good',
-      label: 'LP simulation eligible',
+      label: 'Ready for simulation',
     });
+    // plain language for the codes a user meets most; an unknown code is still made readable
+    expect(statusOf('BLOCK')).toEqual({ kind: 'critical', label: 'Blocked by safety rules' });
+    expect(statusOf('INSUFFICIENT_QUORUM').label).toBe('Not enough price confirmations');
+    expect(statusOf('BELOW_HURDLE').label).toBe('Yield does not cover costs');
+    expect(statusOf('SOME_NEW_CODE')).toEqual({ kind: 'neutral', label: 'Some new code' });
     expect(statusOf('DATA_INVALID').kind).toBe('critical');
     expect(statusOf('LOW_CONFIDENCE').kind).toBe('warning');
     expect(statusOf('UNPRICED').kind).toBe('serious');

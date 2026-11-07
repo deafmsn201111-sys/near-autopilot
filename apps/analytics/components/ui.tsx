@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { statusOf } from '../lib/format';
+import { ErrorState } from './states';
 
 export function PageHeader(p: {
   title: ReactNode;
@@ -101,11 +102,64 @@ export function Meter({ value, high = 0.9 }: { value: number | null; high?: numb
   );
 }
 
+/** A failed API read: which data, the reason, and a retry. */
 export function ApiError({ what, error }: { what: string; error: string | null }) {
+  return <ErrorState what={what} error={error} />;
+}
+
+/** Nothing to show, and why: an empty list is explained, never a blank area or a 0. */
+export function EmptyState(p: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="error">
-      <b>{what} unavailable.</b> <span className="dim">{error}</span>
+    <div className="state empty-state">
+      <div className="state-icon" aria-hidden="true">
+        ○
+      </div>
+      <div>
+        <b>{p.title}</b>
+        {p.children && <p>{p.children}</p>}
+        {p.action && <div style={{ marginTop: 10 }}>{p.action}</div>}
+      </div>
     </div>
+  );
+}
+
+/** A labelled list of facts (definition list), two columns on wide screens. */
+export function Facts({ items }: { items: readonly (readonly [string, ReactNode])[] }) {
+  return (
+    <dl className="facts">
+      {items.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const LEVEL_KIND = { low: 'good', medium: 'warning', high: 'critical' } as const;
+
+/** Risk or confidence as a word with an icon, the score in the tooltip. */
+export function Level({
+  level,
+  score,
+  what,
+  invert = false,
+}: {
+  level: 'low' | 'medium' | 'high';
+  score: number;
+  what: 'risk' | 'confidence';
+  invert?: boolean;
+}) {
+  const kind = invert
+    ? LEVEL_KIND[level === 'low' ? 'high' : level === 'high' ? 'low' : 'medium']
+    : LEVEL_KIND[level];
+  return (
+    <span className={`badge ${kind}`} data-tip={`${what} score ${score} / 100`} tabIndex={0}>
+      <i aria-hidden="true">{ICON[kind]}</i>
+      {level[0]?.toUpperCase()}
+      {level.slice(1)} {what}
+    </span>
   );
 }
 

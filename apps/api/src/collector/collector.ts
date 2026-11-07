@@ -239,6 +239,8 @@ export class ShadowCollector {
           this.d.env.DEFILLAMA_URL,
           [...wanted].sort(),
           now,
+          undefined,
+          this.d.now,
         );
         let mismatched = 0;
         for (const [t, p] of lt.prices) {

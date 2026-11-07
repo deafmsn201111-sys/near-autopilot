@@ -345,6 +345,30 @@ describe('long-tail prices (DefiLlama near:<contract>)', () => {
     for (const t of ['c.near', 'd.near', 'e.near', 'f.near']) expect(r.prices.has(t)).toBe(false);
     expect(r.observations.find((o) => o.contract === 'c.near')?.status).toBe('stale');
   });
+  it('age is measured when the answer arrived, not at the cycle start (a long cycle fetches later)', async () => {
+    const cycleStart = new Date(nowS * 1000);
+    const arrived = new Date((nowS + 25) * 1000); // a registry-scan cycle: 25 s after the start
+    const r = await longTailPrices(
+      http({ coins: { 'near:a.near': { price: 2, timestamp: nowS + 20, confidence: 0.99 } } }),
+      'https://llama.test',
+      ['a.near'],
+      cycleStart,
+      undefined,
+      () => arrived,
+    );
+    // published 5 s before it arrived: fresh, not "from the future"
+    expect(r.observations[0]).toMatchObject({ status: 'valid', ageMs: 5_000, fetchedAt: arrived });
+    // and a genuinely future timestamp (beyond 5 s skew at arrival) is still refused
+    const later = await longTailPrices(
+      http({ coins: { 'near:a.near': { price: 2, timestamp: nowS + 40, confidence: 0.99 } } }),
+      'https://llama.test',
+      ['a.near'],
+      cycleStart,
+      undefined,
+      () => arrived,
+    );
+    expect(later.observations[0]?.status).toBe('future');
+  });
   it('a failed batch loses only its own tokens and is counted', async () => {
     const r = await longTailPrices(
       http({ error: 'x' }, 500),

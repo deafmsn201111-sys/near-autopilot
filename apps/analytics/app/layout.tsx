@@ -3,12 +3,13 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
 import { FreshnessNote } from '../components/FreshnessNote';
-import { Nav } from '../components/Nav';
+import { Nav, SubNav } from '../components/Nav';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'NEAR Autopilot · analytics',
-  description: 'Mainnet read-only analytics: Rhea, Burrow, prices, LP simulation, demo portfolios',
+  description:
+    'NEAR Autopilot: DeFi opportunities on Rhea and Burrow, checked by an independent policy engine. Mainnet read-only.',
   robots: { index: false, follow: false },
 };
 
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <aside className="sidebar">
             <Link href="/" className="brand">
               <b>NEAR Autopilot</b>
-              <span>analytics</span>
+              <span>DeFi autopilot for NEAR</span>
             </Link>
             <div className="env" role="status">
               <b>
@@ -31,16 +32,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 </span>
                 Shadow mode
               </b>
-              <span>Mainnet read-only. No signer, no transactions.</span>
+              <span>Reads NEAR mainnet only. No wallet, no signing, no transactions.</span>
             </div>
             <FreshnessNote />
             <Nav />
             <div className="sidebar-foot">
-              Stored data only: opening a page never collects anything. The page re-reads it every
-              20 s.
+              Pages show stored data and re-read it every 20 s. Opening a page never collects or
+              sends anything.
             </div>
           </aside>
-          <main>{children}</main>
+          <main>
+            <SubNav />
+            {children}
+          </main>
         </div>
         <AutoRefresh seconds={20} />
       </body>

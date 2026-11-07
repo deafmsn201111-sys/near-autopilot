@@ -49,6 +49,12 @@ export async function longTailPrices(
   tokens: readonly string[],
   now: Date,
   rules: LongTailRules = DEFAULT_LONG_TAIL,
+  /**
+   * When each answer ARRIVED. Ages are measured from it, not from the cycle start `now`: in a long cycle (a registry
+   * scan) the batches are fetched tens of seconds after the start, and a fresh quote must not look "from the future".
+   * Defaults to `now` (tests with a fixed clock).
+   */
+  receivedAt: () => Date = () => now,
 ): Promise<LongTailResult> {
   const prices = new Map<string, TokenPrice>();
   const reportedDecimals = new Map<string, number>();
@@ -66,12 +72,13 @@ export async function longTailPrices(
       failures += 1;
       continue;
     }
+    const at = receivedAt();
     for (const token of batch) {
       const c = coins[`near:${token}`];
       if (!c) continue;
       const usd = decimalFromJsonNumber(c.price);
       const publishedAt = new Date(c.timestamp * 1000);
-      const ageMs = now.getTime() - publishedAt.getTime();
+      const ageMs = at.getTime() - publishedAt.getTime();
       const conf = c.confidence ?? 0;
       let status: PriceObservation['status'] = 'valid';
       let reason: string | null = null;
@@ -90,7 +97,7 @@ export async function longTailPrices(
         quoteCurrency: 'USD',
         confidence: String(conf),
         publishedAt,
-        fetchedAt: now,
+        fetchedAt: at,
         ageMs,
         status,
         reason,

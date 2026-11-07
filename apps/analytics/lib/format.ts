@@ -89,28 +89,72 @@ export function poolName(key: string): string {
 export type StatusKind = 'good' | 'warning' | 'serious' | 'critical' | 'neutral';
 
 /** Status codes from the API to a kind (icon + status colour) and a readable label. */
+/**
+ * Plain-language names for the codes the backend uses. The code itself stays in the badge tooltip, so the plain
+ * label never hides which rule or state it is.
+ */
+const PLAIN: Record<string, { label: string; kind?: StatusKind }> = {
+  ALLOW: { label: 'Allowed', kind: 'good' },
+  WARN: { label: 'Allowed with warnings', kind: 'warning' },
+  BLOCK: { label: 'Blocked by safety rules', kind: 'critical' },
+  STALE: { label: 'Data out of date', kind: 'warning' },
+  INSUFFICIENT_QUORUM: { label: 'Not enough price confirmations', kind: 'warning' },
+  BELOW_HURDLE: { label: 'Yield does not cover costs', kind: 'serious' },
+  UNSUPPORTED: { label: 'Model not supported yet', kind: 'serious' },
+  LOW_CONFIDENCE: { label: 'Price sources disagree', kind: 'warning' },
+  SINGLE_SOURCE: { label: 'Only one price source', kind: 'warning' },
+  CORROBORATED: { label: 'Confirmed by 2+ sources', kind: 'good' },
+  UNPRICED: { label: 'No price', kind: 'serious' },
+  UNAVAILABLE: { label: 'Unavailable', kind: 'critical' },
+  NOT_ENTITLED: { label: 'Needs a paid plan', kind: 'serious' },
+  OUTLIER: { label: 'Outlier price', kind: 'warning' },
+  LP_SIMULATION_ELIGIBLE: { label: 'Ready for simulation', kind: 'good' },
+  ANALYTICS_ELIGIBLE: { label: 'Analysed', kind: 'good' },
+  LIQUID: { label: 'Liquid', kind: 'good' },
+  LOW_LIQUIDITY: { label: 'Too little liquidity', kind: 'serious' },
+  DISCOVERED: { label: 'Discovered' },
+  DATA_INVALID: { label: 'Invalid data', kind: 'critical' },
+  candidate: { label: 'Candidate', kind: 'good' },
+  watch: { label: 'Watch only', kind: 'warning' },
+  insufficient_data: { label: 'Not enough data', kind: 'neutral' },
+  normal: { label: 'Normal', kind: 'good' },
+  read_only: { label: 'Read-only', kind: 'warning' },
+  risk_reduction_only: { label: 'Risk reduction only', kind: 'warning' },
+  no_action: { label: 'No action needed', kind: 'good' },
+  dry_run: { label: 'Dry run (nothing sent)', kind: 'good' },
+  paused: { label: 'Paused', kind: 'warning' },
+  BROKEN: { label: 'Broken', kind: 'critical' },
+};
+
 export function statusOf(code: string | null | undefined): { kind: StatusKind; label: string } {
   if (!code) return { kind: 'neutral', label: 'unknown' };
-  const label = code
+  const plain = PLAIN[code];
+  if (plain) return { kind: plain.kind ?? kindOf(code), label: plain.label };
+  return { kind: kindOf(code), label: humanCode(code) };
+}
+
+function humanCode(code: string): string {
+  return code
     .replace(/_/g, ' ')
     .toLowerCase()
     .replace(/^\w/, (c) => c.toUpperCase())
     .replace(/\b(Lp|Dcl|Apr|Usd)\b/g, (w) => w.toUpperCase());
+}
+
+function kindOf(code: string): StatusKind {
   if (
     /^(ok|success|valid|healthy|routed|completed|lp_simulation_eligible|analytics_eligible|supported|high|corroborated|allow|liquid|idle|pass|allowed|stopped)$/i.test(
       code,
     )
   )
-    return { kind: 'good', label };
-  if (/(unavailable|failed|invalid|block|critical|refused)/i.test(code))
-    return { kind: 'critical', label };
+    return 'good';
+  if (/(unavailable|failed|invalid|block|critical|refused)/i.test(code)) return 'critical';
   if (
     /(partial|degraded|low_confidence|single_source|warn|stale|medium|disputed|running)/i.test(code)
   )
-    return { kind: 'warning', label };
-  if (/(unpriced|low_liquidity|unsupported|insufficient|low)/i.test(code))
-    return { kind: 'serious', label };
-  return { kind: 'neutral', label };
+    return 'warning';
+  if (/(unpriced|low_liquidity|unsupported|insufficient|low)/i.test(code)) return 'serious';
+  return 'neutral';
 }
 
 /** Compact USD for tiles: $1.2M, $412K, $950. */
