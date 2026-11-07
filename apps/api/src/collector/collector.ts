@@ -221,10 +221,22 @@ export class ShadowCollector {
       });
 
       // 3. Rhea: full registry scan (v1 + DCL) every N cycles, else re-read only the tracked pools.
-      const pools = await timed(registryScan ? 'rhea.registry' : 'rhea.tracked', async () => {
+      let scanned = registryScan;
+      let pools = await timed(registryScan ? 'rhea.registry' : 'rhea.tracked', async () => {
         const p = registryScan ? await this.scan(viewer) : await this.reread(viewer);
         return { value: p, records: p.length };
       });
+      // A failed full scan (e.g. HTTP 429 on a public RPC) must not cost the cycle its pools: fall back to the tracked
+      // pools, as on any non-scan cycle. The cycle then does not count as a scan (no pool is marked missing, and the
+      // next cycle tries the scan again).
+      if (!pools && registryScan) {
+        scanned = false;
+        await this.d.store.markNotScanned(id);
+        pools = await timed('rhea.tracked', async () => {
+          const p = await this.reread(viewer);
+          return { value: p, records: p.length };
+        });
+      }
 
       // 4. Long-tail prices (DefiLlama near:<contract>) for every token that needs a value, decimals checked on-chain.
       const prices = new Map<string, TokenPrice>(market ? curatedPrices(market) : []);
@@ -273,7 +285,7 @@ export class ShadowCollector {
               prices,
               block,
               snapshotId ?? '',
-              registryScan,
+              scanned,
               now,
               viewer,
             );

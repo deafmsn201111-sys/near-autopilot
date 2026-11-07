@@ -93,6 +93,14 @@ export class CollectorStore {
   }
 
   /** Completed cycles since the last completed registry scan, and when that scan started. */
+  /** The cycle's registry scan failed: it does not count as a scan. */
+  async markNotScanned(cycleId: string): Promise<void> {
+    await this.db
+      .update(collectorCycles)
+      .set({ registryScan: false })
+      .where(eq(collectorCycles.id, cycleId));
+  }
+
   async registryScanState(): Promise<{ cycles: number; lastAt: Date } | null> {
     const [last] = await this.db
       .select({ at: collectorCycles.startedAt })
