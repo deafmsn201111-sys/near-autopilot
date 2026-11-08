@@ -6,21 +6,21 @@ _Living board. No invented completion percentages (brief §3.3). Updated per wor
 
 ## Phase status
 
-| Phase                      | State                                        |
-| -------------------------- | -------------------------------------------- |
-| P0 Discovery               | ✅ Complete — audit docs produced & verified |
-| P1 Architecture foundation | ⬜ Not started (next)                        |
-| P2 Data Intelligence       | ⬜                                           |
-| P3 Intelligence core       | ⬜                                           |
-| P4 AI & decision           | 🟡 In progress — agent roster/versioning     |
-| P5 Security & Guard        | ⬜ (hard-gated, external review required)    |
-| P6 Autonomous execution    | ⬜ (blocked on P5)                           |
-| P7 Learning                | ⬜                                           |
-| P8 Finalization            | ⬜                                           |
+| Phase                      | State                                          |
+| -------------------------- | ---------------------------------------------- |
+| P0 Discovery               | ✅ Complete — audit docs produced & verified   |
+| P1 Architecture foundation | ⬜ Not started (next)                          |
+| P2 Data Intelligence       | ⬜                                             |
+| P3 Intelligence core       | ⬜                                             |
+| P4 AI & decision           | 🟡 In progress — roster + orchestrator primary |
+| P5 Security & Guard        | ⬜ (hard-gated, external review required)      |
+| P6 Autonomous execution    | ⬜ (blocked on P5)                             |
+| P7 Learning                | ⬜                                             |
+| P8 Finalization            | ⬜                                             |
 
 ## In progress
 
-- P4 agent core: `AGENT_DESCRIPTORS` roster (id, title, responsibility, version, permissions) in `orchestrator` — done + tested. Next: specialized agents + decision records + UI explainability (after promoting the orchestrator to primary).
+- P4 agent core. Next: first new specialized agent (Portfolio Intelligence) + decision records + UI explainability.
 
 ## Blocked
 
@@ -30,12 +30,14 @@ _Living board. No invented completion percentages (brief §3.3). Updated per wor
 
 - P0 audit docs: `PROJECT_AUDIT`, `CURRENT_ARCHITECTURE`, `TARGET_ARCHITECTURE`, `DEPENDENCY_MAP`, `TECHNICAL_RISKS`, `SECURITY_THREAT_MODEL`, `IMPLEMENTATION_ROADMAP` + tracking docs.
 - Live demo redeployed to current `fix/audit` (theme toggle + mobile nav).
+- `T3.1` orchestrator-as-primary **de-risked**: the demo already runs the orchestrator engine (compose); added an end-to-end safety test through the real `wire()` composition root (both engines complete a cycle, orchestrated path exercised, dry-run invariant holds). Global default stays `legacy` because only legacy can run live (orchestrator is dry-run-only); documented. See `DECISIONS.md` D9.
+- `AGENT_DESCRIPTORS` roster (id, title, responsibility, version, permissions) in `orchestrator` — done + tested.
 
 ## Next prioritized tasks
 
-1. `T3.1` promote orchestrator to primary with a parity test vs legacy (so the agent roster reflects what actually runs).
-2. `T3.2` first new specialized agent (Portfolio Intelligence) end-to-end.
-3. `T3.3` decision records (id, inputs, expiry, rejection conditions) + `T3.5` UI explainability.
+1. `T3.2` first new specialized agent (Portfolio Intelligence) end-to-end.
+2. `T3.3` decision records (id, inputs, expiry, rejection conditions).
+3. `T3.5` UI explainability — surface the agent roster + per-decision "who/why" (now safe to show, since the demo runs the orchestrator).
 
 ## Verify status
 

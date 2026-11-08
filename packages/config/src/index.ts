@@ -52,8 +52,11 @@ const apiEnvRaw = z.object({
   CYCLE_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(0),
   AUTOPILOT_CONFIG_FILE: z.string().min(1).default('./config/autopilot.json'),
   /**
-   * `legacy`: packages/agents (health guardian + optional rebalancer) through services/cycle.
-   * `orchestrator`: packages/orchestrator (multi-agent decision engine). Its stores are in-memory, so it is dry-run only.
+   * `legacy` (default): packages/agents (health guardian + optional rebalancer) through services/cycle. It is the only
+   * engine that can ever run live, so it stays the default to keep live-capable configs valid.
+   * `orchestrator`: packages/orchestrator (multi-agent decision engine) — the primary engine for the shadow/demo
+   * deployment (set in deploy/public/docker-compose.yml). Its stores are in-memory, so it is dry-run only. Proven safe
+   * end-to-end through `wire` (see api test/orchestrated-cycle.test.ts).
    */
   AUTOPILOT_ENGINE: z.enum(['legacy', 'orchestrator']).default('legacy'),
   /**

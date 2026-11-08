@@ -49,3 +49,9 @@ _Architecture Decision Record (lightweight). Each entry: context → decision �
 **Context:** 6 days to the hackathon deadline (2026-11-14). The full P1→P8 marathon (incl. Guard contract + autonomous execution) cannot be safely completed, and Guard cannot ship to mainnet without independent review anyway.
 **Decision (owner, 2026-11-08):** Focus on P3→P4 — specialize the orchestrator agents (Market/Portfolio/Yield/Risk/Strategy), the decision engine, and explainability; minimal UX. Guard/autonomy stay documented roadmap, not built in mainnet.
 **Consequences:** Effort goes where it strengthens the judged product; autonomy honestly shown as locked.
+
+## D9 — Global default engine stays `legacy`; the orchestrator is the demo's engine
+
+**Context:** The multi-agent orchestrator keeps its audit/idempotency state in memory, so config refuses `EXECUTION_MODE=live` with `AUTOPILOT_ENGINE=orchestrator`. Making `orchestrator` the global default therefore breaks every live-capable config (it would have to add `AUTOPILOT_ENGINE=legacy`).
+**Decision:** Keep the global default `legacy` (the only engine that can run live). The public demo already selects `orchestrator` in `deploy/public/docker-compose.yml`, so the judged showcase runs the multi-agent engine. Added `apps/api/test/orchestrated-cycle.test.ts` proving the orchestrated path runs end-to-end through `wire()` and upholds the dry-run invariant.
+**Consequences:** Live configs stay valid; the demo runs the multi-agent system; no magical engine auto-switching. Surfacing the agent roster in the UI is now safe (the demo runs the engine the roster describes).

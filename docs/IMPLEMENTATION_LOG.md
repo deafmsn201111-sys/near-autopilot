@@ -43,3 +43,20 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Remaining / honest note:** the roster is not yet shown in the UI — that follows `T3.1` (promoting the orchestrator to the primary engine), so the dashboard never describes agents that aren't the ones actually running.
 
 **Next:** `T3.1` orchestrator-as-primary with legacy parity test.
+
+## 2026-11-08 — T3.1 orchestrator-as-primary (de-risked)
+
+**Inspected:** both cycle engines (`services/cycle.ts` legacy, `services/orchestrated-cycle.ts`), the `wire()` composition root and its test harness, config cross-field rules, and the demo compose (already sets `AUTOPILOT_ENGINE=orchestrator`).
+
+**Implemented:**
+
+- `apps/api/test/orchestrated-cycle.test.ts` (3 tests): runs a full cycle through the real `wire()` on both engines over the deterministic simulated portfolio (no network) and asserts safety equivalence — both complete, the orchestrated path is exercised (engine tag), and neither produces a tx hash (dry-run invariant).
+- Documented the engine/live coupling in `packages/config/src/index.ts` (default stays `legacy`; orchestrator is the demo engine).
+
+**Finding:** flipping the global default to `orchestrator` breaks live-capable configs (orchestrator is dry-run-only), so the default stays `legacy`; the demo already runs the orchestrator. Recorded as D9.
+
+**Changed files:** `apps/api/test/orchestrated-cycle.test.ts` (new), `packages/config/src/index.ts` (comment), `docs/*` (status/log/decisions).
+
+**Tests run:** `pnpm --filter api test -- orchestrated-cycle` (3 passed); `pnpm verify` → 15/15 green.
+
+**Remaining / next:** `T3.2` first new specialized agent (Portfolio Intelligence); `T3.3` decision records; `T3.5` surface the roster + per-decision explainability in the UI.
