@@ -1998,3 +1998,37 @@ table.mini tr.total td {
 .mode-switch a.locked[aria-current='true'] {
   opacity: 1;
 }
+
+/* ------------------------------------------------------------------ risk center */
+.risk-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+.risk-metrics > div {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+.risk-metrics b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.lvl-good {
+  color: var(--good-text, var(--good));
+}
+.lvl-warning {
+  color: var(--warning);
+}
+.lvl-critical {
+  color: var(--critical);
+}
+.tag.good {
+  color: var(--good);
+}
+.tag.warning {
+  color: var(--warning);
+}
+.tag.critical {
+  color: var(--critical);
+}

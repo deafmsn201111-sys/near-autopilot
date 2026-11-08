@@ -82,6 +82,7 @@ export const MAIN = [
 export const REVIEWER_TABS = [
   { href: '/reviewers', label: 'Start here' },
   { href: '/agents', label: 'Agents' },
+  { href: '/risk', label: 'Risk Center' },
   { href: '/policy', label: 'Safety policy' },
   { href: '/audit', label: 'Audit trail' },
   { href: '/routes', label: 'Execution routes' },
