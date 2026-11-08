@@ -50,6 +50,52 @@ export default async function AutopilotPage() {
       </div>
 
       <Section
+        title="Autonomy modes"
+        note="How much the autopilot may do. It only ever climbs this ladder with your explicit consent, and never past where the safety building blocks actually exist."
+      >
+        <div className="agent-grid">
+          <article className="agent-card">
+            <div className="agent-card-head">
+              <h3>Observe</h3>
+              <span className="tag good">Active now</span>
+            </div>
+            <p className="muted-note">
+              The agents watch mainnet, analyse your portfolio and <b>propose</b> what is worth
+              doing, with every cost and risk. They never act. This is what runs today.
+            </p>
+          </article>
+          <article className="agent-card">
+            <div className="agent-card-head">
+              <h3>Approve &amp; sign</h3>
+              <span className="tag warning">Gated</span>
+            </div>
+            <p className="muted-note">
+              The agent prepares a policy-approved transaction; <b>you</b> review it and sign it in
+              your <b>own wallet</b>. The agent holds no key. Built, but kept off this demo until
+              the final security review.
+            </p>
+          </article>
+          <article className="agent-card">
+            <div className="agent-card-head">
+              <h3>Autonomous</h3>
+              <span className="tag critical">🔒 Roadmap</span>
+            </div>
+            <p className="muted-note">
+              The agent submits within strict limits enforced <b>on-chain</b> by a dedicated Guard
+              contract (per-transaction and daily caps, Emergency Stop, replay protection). That
+              contract is designed but <b>not deployed</b>; autonomous execution stays off until it
+              exists and is independently reviewed.
+            </p>
+          </article>
+        </div>
+        <p className="fine">
+          Emergency stop today: put the autopilot into <b>read-only</b> mode below, or disconnect
+          your wallet — nothing can be prepared or sent. On-chain Emergency Stop arrives with the
+          Guard contract.
+        </p>
+      </Section>
+
+      <Section
         title="Market analysis"
         note="Each run reads prices, Rhea pools and Burrow markets from mainnet, re-ranks the opportunities and re-analyses the demo portfolios."
       >
