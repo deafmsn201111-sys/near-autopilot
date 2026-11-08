@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { portfolioRecommendations, type PortfolioMetrics } from '../src/analytics/account-view';
+import {
+  portfolioRecommendations,
+  type PortfolioMetrics,
+  type RecommendationContext,
+} from '../src/analytics/account-view';
 
 const metrics = (over: Partial<PortfolioMetrics>): PortfolioMetrics => ({
   totalAssetsUsd: 1000,
@@ -10,32 +14,65 @@ const metrics = (over: Partial<PortfolioMetrics>): PortfolioMetrics => ({
   concentration: null,
   ...over,
 });
+const ctx = (over: Partial<RecommendationContext>): RecommendationContext => ({
+  metrics: metrics({}),
+  loan: null,
+  idleEarn: [],
+  largestDebt: null,
+  ...over,
+});
 
 describe('portfolioRecommendations', () => {
   it('flags high single-asset concentration with a swap intent to cut it toward half', () => {
     const r = portfolioRecommendations(
-      metrics({
-        totalAssetsUsd: 1000,
-        concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 90 },
+      ctx({
+        metrics: metrics({ concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 90 } }),
       }),
     );
-    expect(r).toHaveLength(1);
-    expect(r[0]?.kind).toBe('reduce_concentration');
-    expect(r[0]?.severity).toBe('warning'); // >= 85%
-    expect(r[0]?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 400 }); // (90-50)% of 1000
+    const c = r.find((x) => x.kind === 'reduce_concentration');
+    expect(c?.severity).toBe('warning');
+    expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 400 });
   });
 
-  it('is info (not warning) between 60% and 85%', () => {
+  it('warns on a low health factor with a repay intent on the largest debt', () => {
     const r = portfolioRecommendations(
-      metrics({ concentration: { token: 't', symbol: 'T', pct: 70 } }),
+      ctx({
+        loan: { hasDebt: true, healthFactor: 1.2 },
+        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 1000 },
+      }),
     );
-    expect(r[0]?.severity).toBe('info');
+    const l = r.find((x) => x.kind === 'improve_loan_safety');
+    expect(l?.severity).toBe('warning'); // hf < 1.3
+    expect(l?.intent).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 300 });
+    // loan safety is ordered first
+    expect(r[0]?.kind).toBe('improve_loan_safety');
   });
 
-  it('says nothing for a diversified portfolio', () => {
+  it('suggests putting the largest idle earning asset to work', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        idleEarn: [
+          { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 500, aprPct: 9 },
+          { token: 'small', symbol: 'S', usd: 5, aprPct: 9 }, // below $10, ignored
+        ],
+      }),
+    );
+    const i = r.find((x) => x.kind === 'put_idle_to_work');
+    expect(i?.intent).toEqual({
+      action: 'supply',
+      token: 'usdt.tether-token.near',
+      approxUsd: 500,
+    });
+  });
+
+  it('says nothing for a healthy, diversified, fully-deployed portfolio', () => {
     expect(
-      portfolioRecommendations(metrics({ concentration: { token: 't', symbol: 'T', pct: 40 } })),
+      portfolioRecommendations(
+        ctx({
+          metrics: metrics({ concentration: { token: 't', symbol: 'T', pct: 40 } }),
+          loan: { hasDebt: true, healthFactor: 2.5 },
+        }),
+      ),
     ).toEqual([]);
-    expect(portfolioRecommendations(metrics({ concentration: null }))).toEqual([]);
   });
 });

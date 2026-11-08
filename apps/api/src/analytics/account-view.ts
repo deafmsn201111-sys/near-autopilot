@@ -265,40 +265,80 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
   };
 }
 
+export type RecommendationIntent =
+  | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
+  | { readonly action: 'repay'; readonly token: string; readonly approxUsd: number }
+  | { readonly action: 'supply'; readonly token: string; readonly approxUsd: number };
+
 export interface PortfolioRecommendation {
   readonly id: string;
-  readonly kind: 'reduce_concentration';
+  readonly kind: 'reduce_concentration' | 'improve_loan_safety' | 'put_idle_to_work';
   readonly severity: 'info' | 'warning';
   readonly title: string;
   readonly why: string;
   /** The concrete, parameterised intent Phase 4 turns into a transaction the user signs. Amounts are USD estimates. */
-  readonly intent: {
-    readonly action: 'swap';
-    readonly fromToken: string;
-    readonly approxUsd: number;
-  };
+  readonly intent: RecommendationIntent;
 }
 
+export interface RecommendationContext {
+  readonly metrics: PortfolioMetrics;
+  readonly loan: { readonly hasDebt: boolean; readonly healthFactor: number | null } | null;
+  /** Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage. */
+  readonly idleEarn: readonly { token: string; symbol: string; usd: number; aprPct: number }[];
+  readonly largestDebt: { token: string; symbol: string; usd: number } | null;
+}
+
+const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
+
 /**
- * Portfolio-health recommendations derived from the exposure metrics (brief: the agents analyse the real portfolio and
- * say what/why). Each carries a concrete intent for the one-click transaction engine. Deterministic, explainable, and
- * never an instruction — the user decides and signs.
+ * Portfolio-health recommendations derived from the real portfolio (brief: the agents analyse it and say what/why).
+ * Each carries a concrete intent for the one-click transaction engine. Deterministic, explainable, ordered by urgency,
+ * and never an instruction — the user decides and signs.
  */
-export function portfolioRecommendations(metrics: PortfolioMetrics): PortfolioRecommendation[] {
+export function portfolioRecommendations(ctx: RecommendationContext): PortfolioRecommendation[] {
   const recs: PortfolioRecommendation[] = [];
-  const c = metrics.concentration;
-  // A single asset above 60% of the portfolio is a concentration worth flagging; above 85% it is a warning.
-  if (c && c.pct >= 60 && metrics.totalAssetsUsd > 0) {
-    const approxUsd = Math.round((metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+
+  // 1. Loan safety first: a low health factor is the most time-sensitive thing.
+  const hf = ctx.loan?.healthFactor ?? null;
+  if (ctx.loan?.hasDebt && hf !== null && hf < 1.5 && ctx.largestDebt) {
+    const approxUsd = Math.round(ctx.largestDebt.usd * 0.3);
+    recs.push({
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      severity: hf < 1.3 ? 'warning' : 'info',
+      title: `Your loan's health factor is ${hf.toFixed(2)}`,
+      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
+      intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
+    });
+  }
+
+  // 2. Reduce single-asset concentration.
+  const c = ctx.metrics.concentration;
+  if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
+    const approxUsd = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
     recs.push({
       id: 'reduce-concentration',
       kind: 'reduce_concentration',
       severity: c.pct >= 85 ? 'warning' : 'info',
       title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
-      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about $${approxUsd.toLocaleString('en-US')} of it into other assets brings the single-asset risk down toward half the portfolio.`,
+      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
       intent: { action: 'swap', fromToken: c.token, approxUsd },
     });
   }
+
+  // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
+  const idle = ctx.idleEarn.filter((a) => a.aprPct >= 1 && a.usd >= 10)[0];
+  if (idle) {
+    recs.push({
+      id: 'put-idle-to-work',
+      kind: 'put_idle_to_work',
+      severity: 'info',
+      title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
+      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
+      intent: { action: 'supply', token: idle.token, approxUsd: Math.round(idle.usd) },
+    });
+  }
+
   return recs;
 }
 
@@ -640,7 +680,28 @@ export function registerAccountView(
           });
       });
     const metrics = portfolioMetrics(legs);
-    const recommendations = portfolioRecommendations(metrics);
+    const idleEarn = v.holdings
+      .filter((h) => h.where === 'wallet' && h.usd !== null && h.usd >= 10)
+      .map((h) => ({
+        token: h.token,
+        symbol: h.symbol,
+        usd: h.usd as number,
+        aprPct: (rate(h.token, 'netSupplyApr') ?? 0) * 100,
+      }))
+      .filter((a) => a.aprPct > 0)
+      .sort((a, b) => b.usd - a.usd);
+    const debts = v.holdings
+      .filter((h) => h.where === 'borrowed' && h.usd !== null)
+      .sort((a, b) => (b.usd as number) - (a.usd as number));
+    const largestDebt = debts[0]
+      ? { token: debts[0].token, symbol: debts[0].symbol, usd: debts[0].usd as number }
+      : null;
+    const recommendations = portfolioRecommendations({
+      metrics,
+      loan: { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor },
+      idleEarn,
+      largestDebt,
+    });
 
     const body = {
       earnings: {
