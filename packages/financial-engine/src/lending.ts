@@ -56,8 +56,13 @@ export function lendingTotals(
 }
 
 /**
- * Exact health factor in basis points (10_000 = 1.0), rounded DOWN; null when there is no debt. Use this for
- * decisions: it never reports a position healthier than it is.
+ * Health factor in basis points (10_000 = 1.0), rounded DOWN; null when there is no debt. Never reports a position
+ * healthier than it is.
+ *
+ * Authority: the orchestrator decides on `assessLendingPosition().healthFactorWad` (WAD, in risk.ts) — the single
+ * authoritative health factor. This bps form is the legacy engine's equivalent; in the production path both are fed
+ * the same risk parameter (orchestrator/risk-state.ts sets `liquidationThresholdBps = collateralFactorBps`), so they
+ * are the same quantity at two scales. `test/hf-consistency.test.ts` pins that they never diverge.
  */
 export function healthFactorBps(
   totals: Pick<LendingTotals, 'adjustedCollateralUsd' | 'adjustedBorrowedUsd'>,
