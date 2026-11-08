@@ -53,6 +53,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
       }),
       burrowId: accountId('contract.main.burrow.near'),
       rheaId: accountId('v2.ref-finance.near'),
+      dclId: accountId('dclv2.ref-labs.near'),
       pools: pools.map((p) => ({
         poolId: p.poolId,
         tokenA: accountId(p.tokenA),

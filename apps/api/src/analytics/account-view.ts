@@ -8,6 +8,12 @@ import {
 } from '@near-autopilot/near-adapter';
 import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import { RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
+import {
+  RheaDclClient,
+  dclPositionAmounts,
+  type DclPool,
+  type DclPosition,
+} from '@near-autopilot/rhea-dcl-adapter';
 import type { FastifyInstance } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { valueAccount, type AccountReads, type TokenFacts } from './account';
@@ -27,6 +33,68 @@ export interface MainnetReadDeps {
   readonly rheaId: AccountId;
   /** The allowlisted Rhea pools (config.rhea.pools): the only swaps an action may assume. */
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
+  /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
+  readonly dclId?: AccountId | null;
+}
+
+interface DclPositionView {
+  readonly lptId: string;
+  readonly poolId: string;
+  readonly tokenX: string;
+  readonly tokenY: string;
+  readonly symbolX: string;
+  readonly symbolY: string;
+  readonly amountX: number;
+  readonly amountY: number;
+  readonly usd: number | null;
+  readonly range: { readonly left: number; readonly right: number };
+}
+
+/**
+ * The account's Rhea DCL (concentrated-liquidity) LP positions, valued at the latest prices. Read-only: `list_liquidities`
+ * for the positions and `get_pool` for each pool's current point, then the exact token amounts (dclPositionAmounts).
+ * USD is a calculated estimate from on-chain liquidity + current point + market prices.
+ */
+async function readDclPositions(
+  dcl: RheaDclClient,
+  accountId: AccountId,
+  tokenMeta: ReadonlyMap<string, { symbol: string; decimals: number }>,
+  prices: ReadonlyMap<string, number>,
+): Promise<DclPositionView[]> {
+  const positions: DclPosition[] = await dcl.listPositions(accountId).catch(() => []);
+  if (positions.length === 0) return [];
+  const pools = new Map<string, DclPool>();
+  await Promise.all(
+    [...new Set(positions.map((p) => p.pool_id))].map(async (pid) => {
+      const p = await dcl.getPool(pid).catch(() => null);
+      if (p) pools.set(pid, p);
+    }),
+  );
+  const out: DclPositionView[] = [];
+  for (const pos of positions) {
+    const pool = pools.get(pos.pool_id);
+    if (!pool || pos.amount <= 0n) continue;
+    const { x, y } = dclPositionAmounts(pos, pool.current_point);
+    const fx = tokenMeta.get(pool.token_x);
+    const fy = tokenMeta.get(pool.token_y);
+    const amountX = Number(x) / 10 ** (fx?.decimals ?? 24);
+    const amountY = Number(y) / 10 ** (fy?.decimals ?? 24);
+    const px = prices.get(pool.token_x) ?? null;
+    const py = prices.get(pool.token_y) ?? null;
+    out.push({
+      lptId: pos.lpt_id,
+      poolId: pos.pool_id,
+      tokenX: pool.token_x,
+      tokenY: pool.token_y,
+      symbolX: fx?.symbol ?? pool.token_x.slice(0, 10),
+      symbolY: fy?.symbol ?? pool.token_y.slice(0, 10),
+      amountX,
+      amountY,
+      usd: px !== null && py !== null ? amountX * px + amountY * py : null,
+      range: { left: pos.left_point, right: pos.right_point },
+    });
+  }
+  return out;
 }
 
 const ORCH = orchestratorConfigSchema.parse({});
@@ -50,6 +118,7 @@ export function registerAccountView(
     contractId: deps.rheaId,
     pools: new StaticPoolRegistry(deps.pools),
   });
+  const dcl = deps.dclId ? new RheaDclClient(viewer, { contractId: deps.dclId }) : null;
   const cache = new Map<string, { at: number; body: unknown }>();
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
@@ -316,6 +385,8 @@ export function registerAccountView(
       else monthly += (h.where === 'borrowed' ? -1 : 1) * h.usd * r * H;
     }
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
+    const dclPositions = dcl ? await readDclPositions(dcl, id, symbol, prices) : [];
+
     const body = {
       earnings: {
         monthlyNetUsd: hasPosition ? monthly : 0,
@@ -333,6 +404,7 @@ export function registerAccountView(
       holdings: v.holdings,
       unpriced: v.unpriced,
       totals: v.totals,
+      dclPositions,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {
