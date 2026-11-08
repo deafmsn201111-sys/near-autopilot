@@ -34,6 +34,7 @@ import {
   LiquidationGuardianAgent,
   LpOptimizerAgent,
   MarketIntelligenceAgent,
+  PortfolioIntelligenceAgent,
   Orchestrator,
   orchestratorConfigSchema,
   type ControlStore,
@@ -332,6 +333,7 @@ export async function wire(
             config: orchestratorConfigSchema.parse(config.orchestrator ?? {}),
             agents: [
               new MarketIntelligenceAgent(),
+              new PortfolioIntelligenceAgent(),
               new LpOptimizerAgent(),
               new LiquidationGuardianAgent(),
               new CapitalAllocatorAgent(),

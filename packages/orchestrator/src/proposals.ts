@@ -16,6 +16,7 @@ import { z } from 'zod';
 
 export const AGENT_IDS = [
   'market-intelligence',
+  'portfolio-intelligence',
   'lp-optimizer',
   'liquidation-guardian',
   'capital-allocator',
@@ -25,6 +26,7 @@ export type AgentId = (typeof AGENT_IDS)[number];
 export const PROPOSAL_KINDS = [
   'no_action',
   'market.signal',
+  'portfolio.signal',
   'lp.reposition',
   'lending.repay',
   'lending.supply_collateral',
@@ -36,6 +38,7 @@ export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 /** Which proposal kinds each agent is allowed to emit. Anything else is a capability violation. */
 export const AGENT_CAPABILITIES: Readonly<Record<AgentId, readonly ProposalKind[]>> = {
   'market-intelligence': ['no_action', 'market.signal'],
+  'portfolio-intelligence': ['no_action', 'portfolio.signal'],
   'lp-optimizer': ['no_action', 'lp.reposition'],
   'liquidation-guardian': ['no_action', 'lending.repay', 'lending.supply_collateral'],
   'capital-allocator': ['no_action', 'allocation.swap', 'lending.supply'],
@@ -46,7 +49,11 @@ export const AGENT_CAPABILITIES: Readonly<Record<AgentId, readonly ProposalKind[
  * An agent whose whole capability set is advisory can never move funds, so the worst a manipulated one can do is defer a
  * discretionary trade — see `AgentDescriptor.advisoryOnly`.
  */
-export const ADVISORY_KINDS: readonly ProposalKind[] = ['no_action', 'market.signal'];
+export const ADVISORY_KINDS: readonly ProposalKind[] = [
+  'no_action',
+  'market.signal',
+  'portfolio.signal',
+];
 
 /**
  * Human-facing identity of each agent (brief §10: "Each agent must have defined responsibilities ... version
@@ -73,6 +80,15 @@ export const AGENT_DESCRIPTORS: Readonly<Record<AgentId, AgentDescriptor>> = {
       'Watches oracle-vs-reference price divergence and realised volatility and raises caution signals that make the rest of the system defer discretionary trades. Never proposes a trade.',
     version: '1.0.0',
     proposalKinds: AGENT_CAPABILITIES['market-intelligence'],
+    advisoryOnly: true,
+  },
+  'portfolio-intelligence': {
+    id: 'portfolio-intelligence',
+    title: 'Portfolio Intelligence',
+    responsibility:
+      'Understands portfolio composition and exposure. When a single asset dominates the portfolio it raises a concentration signal, which makes the system defer adding more of that asset. Never proposes a trade.',
+    version: '1.0.0',
+    proposalKinds: AGENT_CAPABILITIES['portfolio-intelligence'],
     advisoryOnly: true,
   },
   'lp-optimizer': {
@@ -155,6 +171,10 @@ export const SIGNAL_TYPES = [
 ] as const;
 export type SignalType = (typeof SIGNAL_TYPES)[number];
 
+/** Portfolio-structure signals (not about one market, but about how the portfolio is composed). */
+export const PORTFOLIO_SIGNAL_TYPES = ['concentration'] as const;
+export type PortfolioSignalType = (typeof PORTFOLIO_SIGNAL_TYPES)[number];
+
 const noAction = z
   .object({ kind: z.literal('no_action'), reasonCode: z.enum(NO_ACTION_REASONS), ...base })
   .strict();
@@ -165,6 +185,17 @@ const marketSignal = z
     signal: z.enum(SIGNAL_TYPES),
     severity: z.number().int().min(1).max(5),
     validUntil: isoDate,
+    ...base,
+  })
+  .strict();
+const portfolioSignal = z
+  .object({
+    kind: z.literal('portfolio.signal'),
+    token,
+    signal: z.enum(PORTFOLIO_SIGNAL_TYPES),
+    severity: z.number().int().min(1).max(5),
+    /** This token's share of total portfolio assets, in basis points (0..10000). */
+    exposureBps: z.number().int().min(0).max(10_000),
     ...base,
   })
   .strict();
@@ -201,6 +232,7 @@ const swap = z
 const proposalSchema = z.discriminatedUnion('kind', [
   noAction,
   marketSignal,
+  portfolioSignal,
   lpReposition,
   repay,
   supplyCollateral,

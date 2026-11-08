@@ -165,18 +165,29 @@ export function decide(input: EvaluationInput): Decision {
   // ---- signals: they can only add caution ----
   const cautions: Caution[] = [];
   for (const p of proposals) {
-    if (p.proposal.kind !== 'market.signal') continue;
-    if (input.quarantined.has(p.agent)) continue;
-    if (p.proposal.validUntil.getTime() <= now.getTime()) {
-      rejected.push(reject(p, 'MARKET_DATA_STALE', 'signal has expired'));
-      continue;
+    // A market signal expires; a portfolio-structure signal (concentration) is recomputed every cycle and does not.
+    // Either way a signal can only ADD caution — it never authorises an action.
+    if (p.proposal.kind === 'market.signal') {
+      if (input.quarantined.has(p.agent)) continue;
+      if (p.proposal.validUntil.getTime() <= now.getTime()) {
+        rejected.push(reject(p, 'MARKET_DATA_STALE', 'signal has expired'));
+        continue;
+      }
+      cautions.push({
+        token: p.proposal.token,
+        signal: p.proposal.signal,
+        severity: p.proposal.severity,
+        agent: p.agent,
+      });
+    } else if (p.proposal.kind === 'portfolio.signal') {
+      if (input.quarantined.has(p.agent)) continue;
+      cautions.push({
+        token: p.proposal.token,
+        signal: p.proposal.signal,
+        severity: p.proposal.severity,
+        agent: p.agent,
+      });
     }
-    cautions.push({
-      token: p.proposal.token,
-      signal: p.proposal.signal,
-      severity: p.proposal.severity,
-      agent: p.agent,
-    });
   }
   const severityOn = (...tokens: TokenId[]): number =>
     cautions
@@ -210,7 +221,7 @@ export function decide(input: EvaluationInput): Decision {
 
   for (const p of proposals) {
     const prop = p.proposal;
-    if (prop.kind === 'market.signal') continue;
+    if (prop.kind === 'market.signal' || prop.kind === 'portfolio.signal') continue;
     if (input.quarantined.has(p.agent)) {
       rejected.push(reject(p, 'AGENT_QUARANTINED', `${p.agent} is quarantined`));
       continue;
@@ -713,7 +724,8 @@ export function decide(input: EvaluationInput): Decision {
     return a.proposalId < b.proposalId ? -1 : a.proposalId > b.proposalId ? 1 : 0;
   });
   const executableRejections = rejected.filter(
-    (r) => r.kind !== 'market.signal' && r.kind !== 'lp.reposition',
+    (r) =>
+      r.kind !== 'market.signal' && r.kind !== 'portfolio.signal' && r.kind !== 'lp.reposition',
   );
 
   if (ranked.length === 0) {

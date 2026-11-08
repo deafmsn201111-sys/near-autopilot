@@ -120,12 +120,13 @@ describe('orchestrator run report', () => {
         ),
       })
       .parse(repo.snapshots.get(result.run.id));
-    // No market-data source is integrated: three agents honestly report they cannot act; only the guardian
-    // (which works from the position alone) proposes.
+    // No market-data source is integrated: the three market-dependent agents honestly report they cannot act.
+    // The guardian and portfolio-intelligence work from the snapshot alone, so they still produce output.
     expect(
       agents.map((a) => [a.agent, a.event, a.proposals.map((p) => p.reasonCode ?? p.kind)]),
     ).toEqual([
       ['market-intelligence', 'output', ['insufficient_data']],
+      ['portfolio-intelligence', 'output', ['portfolio.signal']],
       ['lp-optimizer', 'output', ['insufficient_data']],
       ['liquidation-guardian', 'output', GUARDIAN_KINDS],
       ['capital-allocator', 'output', ['insufficient_data']],

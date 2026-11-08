@@ -42,9 +42,18 @@ const lp = {
   rationale: 'x',
 };
 const supply = { kind: 'lending.supply_collateral', token: WNEAR, amount: '5', rationale: 'x' };
+const concentration = {
+  kind: 'portfolio.signal',
+  token: WNEAR,
+  signal: 'concentration',
+  severity: 4,
+  exposureBps: 9100,
+  rationale: 'x',
+};
 
 const valid: Record<AgentId, unknown[]> = {
   'market-intelligence': [signal],
+  'portfolio-intelligence': [concentration],
   'lp-optimizer': [lp],
   'liquidation-guardian': [repay, supply],
   'capital-allocator': [swap],
@@ -75,7 +84,7 @@ describe('parseAgentOutput', () => {
   });
 
   it('enforces the capability table: every agent is refused every kind outside its list', () => {
-    const all = [noAction, signal, lp, repay, supply, swap];
+    const all = [noAction, signal, concentration, lp, repay, supply, swap];
     for (const agent of AGENT_IDS) {
       const r = parseAgentOutput(agent, env(agent, all));
       const allowed = new Set<string>(AGENT_CAPABILITIES[agent]);

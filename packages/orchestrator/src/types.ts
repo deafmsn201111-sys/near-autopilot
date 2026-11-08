@@ -1,7 +1,7 @@
 import type { AccountId, PortfolioSnapshot, TokenId, UnitPrice } from '@near-autopilot/core';
 import type { LiquiditySegment } from '@near-autopilot/financial-engine';
 import type { OrchestratorConfig } from './config';
-import type { AgentId, ParsedProposal, SignalType } from './proposals';
+import type { AgentId, ParsedProposal, PortfolioSignalType, SignalType } from './proposals';
 
 /** Operating mode. Ordered by restriction: normal < risk_reduction_only < read_only. */
 export type Mode = 'normal' | 'risk_reduction_only' | 'read_only';
@@ -227,7 +227,7 @@ export interface Advisory {
 
 export interface Caution {
   readonly token: TokenId;
-  readonly signal: SignalType;
+  readonly signal: SignalType | PortfolioSignalType;
   readonly severity: number;
   readonly agent: AgentId;
 }

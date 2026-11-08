@@ -517,3 +517,42 @@ describe('decide: purity and determinism', () => {
     expect(new Set([base, ...variants].map((d) => d.inputsHash)).size).toBe(variants.length + 1);
   });
 });
+
+describe('decide: portfolio concentration signal (T3.2)', () => {
+  const calm = () => makeWorld({ lending: null, yields: { near: 2, usdt: 40 } });
+  const concentration = (severity: number, token = WNEAR) =>
+    prop('portfolio-intelligence', {
+      kind: 'portfolio.signal',
+      token,
+      signal: 'concentration',
+      severity,
+      exposureBps: 9100,
+      rationale: 'r',
+    });
+
+  it('is ingested as a caution on the over-exposed token', () => {
+    const d = decide(buildInput([concentration(4), noAction()], calm()));
+    expect(d.cautions).toContainEqual(
+      expect.objectContaining({
+        token: WNEAR,
+        signal: 'concentration',
+        severity: 4,
+        agent: 'portfolio-intelligence',
+      }),
+    );
+  });
+
+  it('a severity>=4 concentration signal defers a discretionary swap on that token', () => {
+    const s = swap(near(10)); // WNEAR -> USDT, which on its own would be a tier-2 candidate in a calm world
+    const d = decide(buildInput([s, concentration(4)], calm(), { quotes: fairQuote(s) }));
+    expect(d.rejected.map((r) => r.code)).toContain('SIGNAL_CAUTION');
+    expect(d.ranked).toHaveLength(0);
+  });
+
+  it('a mild concentration signal (severity<4) does not block the swap', () => {
+    const s = swap(near(10));
+    const d = decide(buildInput([s, concentration(2)], calm(), { quotes: fairQuote(s) }));
+    expect(d.outcome).toBe('act');
+    expect(d.ranked).toHaveLength(1);
+  });
+});

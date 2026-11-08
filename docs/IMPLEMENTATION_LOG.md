@@ -60,3 +60,18 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Tests run:** `pnpm --filter api test -- orchestrated-cycle` (3 passed); `pnpm verify` → 15/15 green.
 
 **Remaining / next:** `T3.2` first new specialized agent (Portfolio Intelligence); `T3.3` decision records; `T3.5` surface the roster + per-decision explainability in the UI.
+
+## 2026-11-08 — T3.2 Portfolio Intelligence agent
+
+**Implemented (first new specialized agent, brief §7/§10):**
+
+- New advisory proposal kind `portfolio.signal` (signal `concentration`, `exposureBps`) in `proposals.ts`, with a new `portfolio-intelligence` `AgentId`, capability (`no_action` + `portfolio.signal`), descriptor, and `ADVISORY_KINDS` membership.
+- `PortfolioIntelligenceAgent`: computes each token's share of gross assets (wallet + Burrow supplied + collateral; debt excluded) and raises a `concentration` signal (severity 2–5) when one asset dominates. Reads plain snapshot data; never proposes a trade.
+- Decision engine ingests `portfolio.signal` as a caution on the over-exposed token (same mechanism as `market.signal`), so a severity≥4 concentration defers a discretionary action on that token. `Caution.signal` widened to include portfolio signal types.
+- Wired `PortfolioIntelligenceAgent` into the orchestrator (`wiring.ts`).
+
+**Changed files:** `packages/orchestrator/src/proposals.ts`, `src/types.ts`, `src/decision-engine.ts`, `src/agents/portfolio-intelligence.ts` (new), `src/index.ts`, `apps/api/src/wiring.ts`; tests `packages/orchestrator/test/unit/portfolio-intelligence.test.ts` (new, 5), `decision-engine.test.ts` (+3), `proposals.test.ts` (sample); `apps/api/test/simulation.test.ts` (roster now 5 agents); regenerated `docs/evidence/demo-attack.log.jsonl` (the discriminator error now lists the new kind).
+
+**Tests run:** `pnpm --filter orchestrator test` → 241 passed; `pnpm verify` → 15/15 green. demo:attack → 8/8 attacks stopped (defences intact).
+
+**Remaining / next:** `T3.3` decision records; `T3.5` surface roster + per-decision explainability in the dashboard.

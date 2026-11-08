@@ -11,6 +11,7 @@ export * from './escalation';
 export * from './mode';
 export * from './orchestrator';
 export * from './agents/market-intelligence';
+export * from './agents/portfolio-intelligence';
 export * from './agents/liquidation-guardian';
 export * from './agents/capital-allocator';
 export * from './agents/lp-optimizer';
