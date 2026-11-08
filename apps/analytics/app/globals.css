@@ -1384,12 +1384,18 @@ body {
   scrollbar-width: none;
 }
 .topnav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 14px;
   color: var(--ink-2);
   text-decoration: none;
   white-space: nowrap;
+}
+.nav-ico {
+  flex: none;
 }
 .topnav a:hover {
   color: var(--ink);
@@ -1785,6 +1791,25 @@ table.mini tr.total td {
   .topnav {
     order: 3;
     flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    overflow: visible;
+  }
+  .topnav a {
+    flex-direction: column;
+    gap: 3px;
+    padding: 7px 2px;
+    min-height: 46px;
+    justify-content: center;
+    text-align: center;
+  }
+  .topnav .reviewers-link {
+    margin-left: 0;
+  }
+  .nav-label {
+    font-size: 11px;
+    line-height: 1.1;
   }
   .mode-pill {
     margin-left: auto;
