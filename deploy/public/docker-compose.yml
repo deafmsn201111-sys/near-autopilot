@@ -1,0 +1,155 @@
+# PUBLIC DEMO on a server: the read-only mainnet analytics dashboard, served over HTTPS by Caddy.
+# See deploy/public/README.md. Only Caddy publishes ports (80, 443); every other service is on the internal network.
+#
+# What this stack can do: read NEAR mainnet with view calls, analyse two SIMULATED demo portfolios, and let a visitor
+# run "Let the agent do it" on them as a DRY RUN. What it cannot do: sign or send anything. There is no signer, the
+# executor is dry-run, and NEAR_NETWORK / DATA_SOURCE / EXECUTION_MODE / PUBLIC_DEMO are fixed here, not read from .env.
+name: near-autopilot-public
+
+x-common-env: &common-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+  DATABASE_URL: postgres://autopilot:${POSTGRES_PASSWORD}@postgres:5432/autopilot
+  NEAR_NETWORK: mainnet
+  DATA_SOURCE: simulation
+  EXECUTION_MODE: dry-run
+  # Served by the in-process mock in simulation; never contacted.
+  NEAR_RPC_URL: https://rpc.mainnet.near.org
+  AUTOPILOT_ACCOUNT_ID: shadow-demo.near
+  AUTOPILOT_ENGINE: orchestrator
+  AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+  MARKET_DATA: mainnet-live
+  YIELD_DATA: mainnet-onchain
+  RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
+  # Read-only mainnet RPC (view calls only).
+  MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+  MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+  PYTH_API_KEY: ${PYTH_API_KEY:-}
+  PYTH_HERMES_URL: https://hermes.pyth.network
+  DEFILLAMA_URL: https://coins.llama.fi
+  COINBASE_URL: https://api.exchange.coinbase.com
+  KRAKEN_URL: https://api.kraken.com
+  BINANCE_URL: https://data-api.binance.vision
+  ONE_CLICK_URL: https://1click.chaindefuser.com
+  # shadow-demo.near does not exist on mainnet and 1Click refuses it; a dry quote sends nothing to this account.
+  ONE_CLICK_QUOTE_ACCOUNT: near
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: autopilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: autopilot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U autopilot -d autopilot']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # The shadow autopilot: applies the migrations, runs "Let the agent do it" on the demo portfolios (dry run).
+  api-shadow:
+    image: ${API_IMAGE:-near-autopilot-api:public}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      SIMULATION_PORTFOLIO: demo-500
+      CYCLE_INTERVAL_SECONDS: 0
+    volumes:
+      - ./config/autopilot.shadow.json:/etc/autopilot/autopilot.json:ro
+
+  # Reads mainnet on a schedule (view calls only) and stores it. No LLM calls.
+  shadow-collector:
+    image: ${API_IMAGE:-near-autopilot-api:public}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      api-shadow:
+        condition: service_healthy
+    command: ['node', '--import', 'tsx', 'src/collector/main.ts']
+    environment:
+      <<: *common-env
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      COLLECTOR_REGISTRY_EVERY: 4
+      COLLECTOR_HEALTH_PORT: 4100
+      AUDIT_CHECKPOINT_KEY: ${AUDIT_CHECKPOINT_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
+    volumes:
+      - ./config/autopilot.shadow.json:/etc/autopilot/autopilot.json:ro
+      - ./checkpoints:/checkpoints
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4100/health']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # Serves the stored data to the dashboard, read-only.
+  analytics-api:
+    image: ${API_IMAGE:-near-autopilot-api:public}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      api-shadow:
+        condition: service_healthy
+    command: ['node', '--import', 'tsx', 'src/analytics/main.ts']
+    environment:
+      NODE_ENV: production
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://autopilot:${POSTGRES_PASSWORD}@postgres:5432/autopilot
+      API_PORT: 4000
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      COLLECTOR_URL: http://shadow-collector:4100
+      AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
+      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+    volumes:
+      - ./checkpoints:/checkpoints:ro
+      - ./config/autopilot.shadow.json:/etc/autopilot/autopilot.json:ro
+
+  # The dashboard, in public demo mode (fixed: not read from .env).
+  analytics:
+    image: ${ANALYTICS_IMAGE:-near-autopilot-analytics:public}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      analytics-api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://analytics-api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      AUTOPILOT_API_URL: http://api-shadow:4000
+      PUBLIC_DEMO: '1'
+
+  # The only service reachable from the internet. Gets a Let's Encrypt certificate for SITE_ADDRESS.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. 203.0.113.7.sslip.io}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

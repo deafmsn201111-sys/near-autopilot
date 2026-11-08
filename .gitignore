@@ -27,3 +27,9 @@ id_ed25519*
 
 # signed audit checkpoints written at runtime (an independent copy outside the database)
 evidence/checkpoints/
+
+# public demo bundle (deploy/public/build-bundle.sh) and its server-side state
+deploy/public/dist/
+deploy/public/.env
+deploy/public/checkpoints/
+deploy/public/config/

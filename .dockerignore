@@ -7,3 +7,7 @@
 .env
 .env.*
 config/autopilot.json
+deploy/public/dist
+deploy/public/.env
+evidence/checkpoints
+config/*.local.json
