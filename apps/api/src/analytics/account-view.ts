@@ -265,6 +265,43 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
   };
 }
 
+export interface PortfolioRecommendation {
+  readonly id: string;
+  readonly kind: 'reduce_concentration';
+  readonly severity: 'info' | 'warning';
+  readonly title: string;
+  readonly why: string;
+  /** The concrete, parameterised intent Phase 4 turns into a transaction the user signs. Amounts are USD estimates. */
+  readonly intent: {
+    readonly action: 'swap';
+    readonly fromToken: string;
+    readonly approxUsd: number;
+  };
+}
+
+/**
+ * Portfolio-health recommendations derived from the exposure metrics (brief: the agents analyse the real portfolio and
+ * say what/why). Each carries a concrete intent for the one-click transaction engine. Deterministic, explainable, and
+ * never an instruction — the user decides and signs.
+ */
+export function portfolioRecommendations(metrics: PortfolioMetrics): PortfolioRecommendation[] {
+  const recs: PortfolioRecommendation[] = [];
+  const c = metrics.concentration;
+  // A single asset above 60% of the portfolio is a concentration worth flagging; above 85% it is a warning.
+  if (c && c.pct >= 60 && metrics.totalAssetsUsd > 0) {
+    const approxUsd = Math.round((metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+    recs.push({
+      id: 'reduce-concentration',
+      kind: 'reduce_concentration',
+      severity: c.pct >= 85 ? 'warning' : 'info',
+      title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
+      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about $${approxUsd.toLocaleString('en-US')} of it into other assets brings the single-asset risk down toward half the portfolio.`,
+      intent: { action: 'swap', fromToken: c.token, approxUsd },
+    });
+  }
+  return recs;
+}
+
 export function registerAccountView(
   app: FastifyInstance,
   store: CollectorStore,
@@ -603,6 +640,7 @@ export function registerAccountView(
           });
       });
     const metrics = portfolioMetrics(legs);
+    const recommendations = portfolioRecommendations(metrics);
 
     const body = {
       earnings: {
@@ -625,6 +663,7 @@ export function registerAccountView(
       v1Positions,
       staking,
       metrics,
+      recommendations,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {
