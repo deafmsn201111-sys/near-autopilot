@@ -90,3 +90,13 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Honest note:** this is the static roster (who the agents are). Per-decision attribution (who proposed what in a given run) is `T3.5b`. Visual confirmation needs a local view or a demo redeploy — the live demo still runs the pre-T3.5 bundle until redeployed.
 
 **Next:** `T3.5b` per-decision explainability in Activity; `T3.3` decision records.
+
+## 2026-11-08 — T3.5 follow-up + T3.5b scoping
+
+**Implemented:** added an honest "How a decision is made" flow to the `/agents` page (agents propose → safety policy checks → you approve → your wallet signs; nothing signed/sent on the demo). Pure UI; analytics build ok.
+
+**T3.5b (per-decision attribution) — scoping/decision:** the full per-agent conclusions (including advisory `no_action`/signals) live in the orchestrator run snapshot (`runs.snapshot.agents` jsonb); actionable proposals also live in the `proposals` table (`agentId`/`kind`/`summary`/`reason`/`status`). A clean "latest activity per agent" needs a SELECT-only endpoint over those, plus db-backed test data. Deferred to its own focused slice rather than rushed.
+
+**Decision:** did NOT add a Yield Intelligence agent now — it would duplicate the capital allocator's net-benefit logic, which the brief (§10) warns against ("do not use multiple agents merely for architectural appearance").
+
+**Next:** `T3.5b` db-backed `/v1/analytics/agents/latest` (latest run's per-agent conclusions) → show on `/agents`; `T3.3` decision records.

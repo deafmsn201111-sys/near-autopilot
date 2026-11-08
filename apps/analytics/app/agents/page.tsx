@@ -71,6 +71,29 @@ export default async function AgentsPage() {
         </div>
       </section>
 
+      <section className="block">
+        <h2>How a decision is made</h2>
+        <ol className="flow">
+          <li>
+            <b>Agents propose.</b> Each agent turns plain portfolio and market data into a proposal
+            — or says there is nothing to do. Agents never act; they only advise.
+          </li>
+          <li>
+            <b>The safety policy checks every proposal.</b> Twelve independent rules (allowlists,
+            amount and daily limits, slippage, oracle freshness, intent match…). Anything that fails
+            is blocked.
+          </li>
+          <li>
+            <b>You review and approve.</b> An approved proposal is shown to you in plain language,
+            with its costs and risks, before anything happens.
+          </li>
+          <li>
+            <b>Your wallet signs.</b> Only your own wallet can sign. The agent has no key and cannot
+            send a transaction. On this demo nothing is ever signed or sent.
+          </li>
+        </ol>
+      </section>
+
       <p className="fine">
         Agents receive plain data only — no keys, no signer, no ability to send a transaction or to
         change their own permissions. An agent that emits anything outside its allowed proposals is

@@ -1970,3 +1970,13 @@ table.mini tr.total td {
   gap: 8px;
   margin-top: 2px;
 }
+
+.flow {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+.flow li {
+  line-height: 1.5;
+}
