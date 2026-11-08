@@ -3,6 +3,7 @@ export * from './ids';
 export * from './domain';
 export * from './intents';
 export * from './plan';
+export * from './provenance';
 export * from './ports';
 export * from './errors';
 export * from './usd';

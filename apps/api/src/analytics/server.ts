@@ -1,4 +1,5 @@
 import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
+import type { ProvenanceTier } from '@near-autopilot/core';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -225,6 +226,8 @@ export function buildAnalyticsServer(
           maxDeviationBps: ref?.maxDeviationBps ?? null,
           sources,
           status,
+          // Every price here is an external-market reading (oracle + exchanges), cross-checked — not an on-chain fact.
+          provenance: 'external_market' satisfies ProvenanceTier,
         };
       });
     return {
