@@ -33,29 +33,33 @@
   --radius: 10px;
   --sidebar: 232px;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --surface-2: #222221;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --ring: rgba(255, 255, 255, 0.1);
-    --accent: #3987e5;
-    --accent-wash: rgba(57, 135, 229, 0.14);
-    --c1: #3987e5;
-    --c2: #d95926;
-    --c3: #199e70;
-    --good-text: #0ca30c;
-    --meter-track: #184f95;
-    --meter-fill: #6da7ec;
-    --tip-bg: #f0efec;
-    --tip-ink: #0b0b0b;
-  }
+/* Dark "fintech" theme — opt-in via the toggle (data-theme on <html>), or the OS preference when nothing is stored
+   yet (both set by the no-flash script in layout.tsx). The light newsprint theme stays the default. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #101923;
+  --surface: #1c2a36;
+  --surface-2: #243441;
+  --ink: #f4f7fa;
+  --ink-2: #a9bac8;
+  --muted: #7d91a1;
+  --grid: #243441;
+  --axis: #344653;
+  --ring: rgba(244, 247, 250, 0.12);
+  --accent: #00c08b;
+  --accent-wash: rgba(0, 192, 139, 0.14);
+  --c1: #00c08b;
+  --c2: #e8a43a;
+  --c3: #4bb3fd;
+  --good: #00c08b;
+  --good-text: #00c08b;
+  --warning: #e8a43a;
+  --serious: #e8a43a;
+  --critical: #e05c63;
+  --meter-track: #243441;
+  --meter-fill: #00c08b;
+  --tip-bg: #f4f7fa;
+  --tip-ink: #101923;
 }
 
 * {
@@ -1873,4 +1877,33 @@ table.mini tr.total td {
   gap: 10px 16px;
   align-items: center;
   justify-content: space-between;
+}
+
+/* ---- Theme toggle (light newsprint / dark fintech) ---- */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+.theme-toggle:hover {
+  color: var(--ink);
+  border-color: var(--axis);
+}
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

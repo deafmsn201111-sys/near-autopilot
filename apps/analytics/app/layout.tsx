@@ -4,8 +4,12 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
 import { SubNav, TopNav } from '../components/Nav';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { WalletButton } from '../components/WalletButton';
 import './globals.css';
+
+/** Applies the saved theme (or the OS preference) before first paint, so there is no flash of the wrong theme. */
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 
 export const metadata: Metadata = {
   title: 'NEAR Autopilot',
@@ -19,6 +23,9 @@ export const dynamic = 'force-dynamic';
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>
         <header className="topbar">
           <div className="topbar-inner">
@@ -29,6 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               NEAR Autopilot
             </Link>
             <TopNav />
+            <ThemeToggle />
             <WalletButton />
             <span
               className="mode-pill"
