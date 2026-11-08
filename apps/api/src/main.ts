@@ -17,8 +17,6 @@ import { DrizzleMarketPriceStore } from './market-data/store';
 import { yieldDataView } from './yield/presenter';
 import { AuditedYieldSink } from './yield/audit';
 import { DrizzleYieldStore } from './yield/store';
-import { DrizzleTestnetTxLedger } from './testnet-tx/ledger';
-import { testnetTxView } from './testnet-tx/presenter';
 import { systemClock, uuidGenerator, wire, type WireOptions } from './wiring';
 import { UserRequestService } from './services/requests';
 import { chainOf } from './evidence/chain';
@@ -151,7 +149,6 @@ async function main(): Promise<void> {
         marketData: env.MARKET_DATA,
       }),
       provenance,
-      testnetTransactions: testnetTxView(new DrizzleTestnetTxLedger(database.db)),
       ...(requests ? { requests } : {}),
       ...(requests
         ? {

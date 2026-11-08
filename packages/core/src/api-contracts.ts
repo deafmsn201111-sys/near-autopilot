@@ -123,38 +123,6 @@ export type PolicyDto = z.infer<typeof policyDtoSchema>;
 
 export const runsResponseSchema = z.object({ runs: z.array(runDtoSchema) });
 
-/** A manually confirmed testnet transaction (apps/api testnet-tx). Amounts are NEAR decimal strings. */
-export const testnetTxDtoSchema = z.object({
-  id: z.string(),
-  status: z.enum([
-    'prepared',
-    'approved',
-    'submitted',
-    'confirmed',
-    'rejected',
-    'failed',
-    'expired',
-    'unknown',
-  ]),
-  operation: z.string(),
-  signerId: z.string(),
-  receiverId: z.string(),
-  methodName: z.string(),
-  depositNear: z.string(),
-  maxCostNear: z.string(),
-  actualCostNear: z.string().nullable(),
-  txHash: z.string().nullable(),
-  error: z.string().nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-export type TestnetTxDto = z.infer<typeof testnetTxDtoSchema>;
-export const testnetTxResponseSchema = z.object({
-  budgetNear: z.string(),
-  spentNear: z.string(),
-  transactions: z.array(testnetTxDtoSchema),
-});
-export type TestnetTxResponse = z.infer<typeof testnetTxResponseSchema>;
 /** Price providers: two oracles/aggregators and three exchanges (NEAR/USD quorum). */
 export const marketSourceSchema = z.enum(['pyth', 'defillama', 'coinbase', 'kraken', 'binance']);
 /** One source's value for one asset (always MAINNET market data). */

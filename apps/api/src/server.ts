@@ -6,7 +6,6 @@ import type {
   PortfolioSnapshot,
   Provenance,
   MarketDataDto,
-  TestnetTxResponse,
   YieldDataDto,
 } from '@near-autopilot/core';
 import type { AutopilotRepository } from './repository';
@@ -27,7 +26,6 @@ export interface ServerDeps {
   /** This deployment's data source and network, stamped on everything it produces. */
   readonly provenance: Provenance;
   /** Read-only view of the manually confirmed testnet transaction ledger (absent in tests that do not need it). */
-  readonly testnetTransactions?: { list(limit: number): Promise<TestnetTxResponse> };
   /** Mainnet reference market data (testnet profile); absent means not used by this deployment. */
   readonly marketData?: { current(): Promise<MarketDataDto> };
   readonly yieldData?: { current(): Promise<YieldDataDto> };
@@ -159,17 +157,6 @@ export function buildServer(
     const chain = chainOf(deps.provenance);
     if (!deps.evidence) return { chain, ok: false, entries: 0, error: 'no evidence store' };
     return deps.evidence.verify(chain);
-  });
-
-  app.get('/v1/testnet-transactions', async (request) => {
-    const { limit } = limitQuery.parse(request.query);
-    return (
-      (await deps.testnetTransactions?.list(limit)) ?? {
-        budgetNear: '0',
-        spentNear: '0',
-        transactions: [],
-      }
-    );
   });
 
   app.get('/v1/yield', async () => (deps.yieldData ? deps.yieldData.current() : disabledYieldView));

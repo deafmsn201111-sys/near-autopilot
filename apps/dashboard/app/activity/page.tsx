@@ -1,13 +1,6 @@
 import { revalidatePath } from 'next/cache';
 import { StatusLabel } from '../../components/StatusLabel';
-import {
-  ApiError,
-  getPolicy,
-  getProposals,
-  getRuns,
-  getTestnetTransactions,
-  triggerRun,
-} from '../../lib/api';
+import { ApiError, getProposals, getRuns, triggerRun } from '../../lib/api';
 import { evidenceLabel, formatTimestamp, formatUsd } from '../../lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -24,13 +17,7 @@ async function runCheck(): Promise<void> {
 }
 
 export default async function ActivityPage() {
-  const [{ proposals }, { runs }, policy] = await Promise.all([
-    getProposals(50),
-    getRuns(10),
-    getPolicy(),
-  ]);
-  const onTestnet = policy.dataSource === 'chain' && policy.network === 'testnet';
-  const ledger = onTestnet ? await getTestnetTransactions(20) : null;
+  const [{ proposals }, { runs }] = await Promise.all([getProposals(50), getRuns(10)]);
 
   return (
     <>
@@ -63,45 +50,6 @@ export default async function ActivityPage() {
           </ol>
         )}
       </section>
-
-      {ledger && (
-        <section className="block" aria-labelledby="testnet-tx">
-          <h2 id="testnet-tx">Testnet transactions (manually confirmed)</h2>
-          <p className="muted">
-            Budget used {ledger.spentNear} of {ledger.budgetNear} NEAR. These are prepared and sent
-            only with the testnet-tx command and an explicit confirmation; the autopilot itself
-            never signs.
-          </p>
-          {ledger.transactions.length === 0 ? (
-            <p className="muted">None prepared yet.</p>
-          ) : (
-            <ol className="feed">
-              {ledger.transactions.map((t) => (
-                <li key={t.id}>
-                  <div className="feed-head">
-                    <span className="status">{t.status}</span>
-                    <span className="feed-value">
-                      {t.actualCostNear ?? `up to ${t.maxCostNear}`} NEAR
-                    </span>
-                    <time dateTime={t.createdAt}>{formatTimestamp(t.createdAt)}</time>
-                  </div>
-                  <p className="feed-summary">
-                    {t.operation}: {t.receiverId}.{t.methodName} (deposit {t.depositNear} NEAR)
-                  </p>
-                  {t.txHash && (
-                    <p className="evidence">
-                      {t.status === 'confirmed'
-                        ? `Confirmed on testnet: ${t.txHash}`
-                        : `Sent, outcome ${t.status}: ${t.txHash}`}
-                    </p>
-                  )}
-                  {t.error && <p className="muted">{t.error}</p>}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      )}
 
       <h2>Proposals</h2>
       {proposals.length === 0 ? (

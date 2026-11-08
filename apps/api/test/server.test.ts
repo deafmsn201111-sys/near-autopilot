@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import {
   portfolioDtoSchema,
   runsResponseSchema,
-  testnetTxResponseSchema,
   yieldDataDtoSchema,
   proposalsResponseSchema,
   triggerRunResponseSchema,
@@ -243,22 +242,6 @@ describe('HTTP API', () => {
     expect(a.entries[0]).toMatchObject({ at: '1970-01-01T00:00:03.000Z', payload: { chain } });
     const v = (await server.inject({ url: '/v1/audit/verify', headers: auth })).json<unknown>();
     expect(v).toEqual({ chain, ok: true, entries: 3, head: { seq: 3, hash: '3'.repeat(64) } });
-  });
-
-  it('serves the testnet transaction ledger read-only, behind auth', async () => {
-    const server = make();
-    expect((await server.inject({ url: '/v1/testnet-transactions' })).statusCode).toBe(401);
-    const body = testnetTxResponseSchema.parse(
-      (await server.inject({ url: '/v1/testnet-transactions', headers: auth })).json(),
-    );
-    expect(body).toEqual({ budgetNear: '0', spentNear: '0', transactions: [] });
-    // There is no route that prepares or sends a transaction.
-    for (const method of ['POST', 'PUT'] as const) {
-      expect(
-        (await server.inject({ method, url: '/v1/testnet-transactions', headers: auth }))
-          .statusCode,
-      ).toBe(404);
-    }
   });
 
   it('serves yield data read-only, behind auth, disabled unless configured', async () => {

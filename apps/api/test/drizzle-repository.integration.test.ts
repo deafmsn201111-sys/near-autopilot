@@ -33,16 +33,13 @@ import {
   type DatabaseHandle,
   type Table,
 } from '@near-autopilot/db';
-import { accountId } from '@near-autopilot/core';
 import { DrizzleRepository } from '../src/infra/drizzle-repository';
 import { REFERENCE_ASSETS } from '../src/market-data/assets';
 import { parseDecimal } from '../src/market-data/decimal';
 import { REFERENCE_LABEL } from '../src/market-data/model';
 import { DrizzleMarketPriceStore } from '../src/market-data/store';
-import { DrizzleTestnetTxLedger } from '../src/testnet-tx/ledger';
 import type { YieldEstimate } from '../src/yield/model';
 import { DrizzleYieldStore } from '../src/yield/store';
-import type { TestnetTxRecord } from '../src/testnet-tx/model';
 import type { ProposalRecord } from '../src/repository';
 
 /**
@@ -344,79 +341,6 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
         sql`insert into audit_events (at, type, payload, chain, seq, prev_hash, hash)
             values (now(), 'x', '{}', 'chain:testnet', 1, ${'0'.repeat(64)}, ${'f'.repeat(64)})`,
       ),
-    ).rejects.toThrow();
-  });
-
-  it('testnet transaction ledger: u128 amounts round-trip, status changes are compare-and-set', async () => {
-    const ledger = new DrizzleTestnetTxLedger(handle.db);
-    const at = new Date('2026-11-04T12:00:00Z');
-    const record: TestnetTxRecord = {
-      id: 'tx-1',
-      previewHash: 'p'.repeat(64),
-      network: 'testnet',
-      signerId: accountId('sergetest.testnet'),
-      operation: 'wrap.storage_deposit',
-      receiverId: accountId('wrap.testnet'),
-      methodName: 'storage_deposit',
-      preview: {
-        network: 'testnet',
-        chainId: 'testnet',
-        blockHeight: 1,
-        operation: 'wrap.storage_deposit',
-        signerId: 'sergetest.testnet',
-        receiverId: 'wrap.testnet',
-        methodName: 'storage_deposit',
-        args: { account_id: 'sergetest.testnet', registration_only: true },
-        depositYocto: '1250000000000000000000',
-        gas: '30000000000000',
-        gasPriceYocto: '100000000',
-        maxFeeYocto: '4200000000000000000000',
-        maxCostYocto: '5450000000000000000000',
-        availableBeforeYocto: '14998380000000000000000000',
-        budget: { spentYocto: '0', remainingAfterYocto: '994550000000000000000000' },
-        expectedResult: 'registered',
-        risks: [],
-      },
-      status: 'prepared',
-      depositYocto: 1_250_000_000_000_000_000_000n,
-      maxCostYocto: 5_450_000_000_000_000_000_000n,
-      actualCostYocto: null,
-      txHash: null,
-      error: null,
-      createdAt: at,
-      expiresAt: new Date(at.getTime() + 600_000),
-      updatedAt: at,
-    };
-    await ledger.insert(record);
-    await expect(ledger.insert({ ...record, id: 'tx-dup' })).rejects.toThrow();
-    expect(await ledger.byPreviewHash(record.previewHash)).toEqual(record);
-
-    expect(await ledger.transition('tx-1', 'prepared', { status: 'approved', updatedAt: at })).toBe(
-      true,
-    );
-    // A second claim of the same preview loses.
-    expect(await ledger.transition('tx-1', 'prepared', { status: 'approved', updatedAt: at })).toBe(
-      false,
-    );
-    expect(
-      await ledger.transition('tx-1', 'approved', {
-        status: 'submitted',
-        txHash: 'HASH1',
-        updatedAt: at,
-      }),
-    ).toBe(true);
-    const big = 340_282_366_920_938_463_463_374_607_431_768_211_455n; // u128::MAX
-    await ledger.transition('tx-1', 'submitted', {
-      status: 'confirmed',
-      actualCostYocto: big,
-      updatedAt: at,
-    });
-    expect(await ledger.byTxHash('HASH1')).toMatchObject({
-      status: 'confirmed',
-      actualCostYocto: big,
-    });
-    await expect(
-      handle.db.execute(sql`update testnet_transactions set network = 'mainnet' where id = 'tx-1'`),
     ).rejects.toThrow();
   });
 
