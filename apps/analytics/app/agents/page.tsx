@@ -1,5 +1,6 @@
 import { ErrorState } from '../../components/states';
 import { tryApi } from '../../lib/api';
+import { ago } from '../../lib/product';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,17 @@ interface AgentDescriptor {
   version: string;
   proposalKinds: string[];
   advisoryOnly: boolean;
+}
+
+interface AgentActivity {
+  agent: string;
+  event: string;
+  suspicious: boolean;
+  conclusions: { kind: string; text: string }[];
+}
+interface LatestActivity {
+  run: { id: string; at: string } | null;
+  agents: AgentActivity[];
 }
 
 /** Plain-language label for each proposal kind an agent may emit. */
@@ -30,8 +42,13 @@ const KIND_LABEL: Record<string, string> = {
  * No agent can act on its own — every proposal is checked by the policy engine, and nothing is signed or sent.
  */
 export default async function AgentsPage() {
-  const { data, error } = await tryApi<{ agents: AgentDescriptor[] }>('/v1/analytics/agents');
+  const [{ data, error }, latestRes] = await Promise.all([
+    tryApi<{ agents: AgentDescriptor[] }>('/v1/analytics/agents'),
+    tryApi<LatestActivity>('/v1/analytics/agents/latest'),
+  ]);
   if (!data) return <ErrorState what="The agent roster" error={error} />;
+  const latest = latestRes.data ?? null;
+  const activityOf = new Map((latest?.agents ?? []).map((a) => [a.agent, a]));
 
   return (
     <>
@@ -41,6 +58,7 @@ export default async function AgentsPage() {
           Independent agents analyse your portfolio and the market and <b>propose</b> what is worth
           doing. Each proposal is checked by the safety policy; nothing is signed or sent. You keep
           control.
+          {latest?.run ? ` · Last cycle ${ago(latest.run.at)}.` : ''}
         </span>
       </div>
 
@@ -62,6 +80,20 @@ export default async function AgentsPage() {
                     </span>
                   ))}
               </div>
+              {(() => {
+                const act = activityOf.get(a.id);
+                if (!act || act.conclusions.length === 0) return null;
+                return (
+                  <div className="agent-latest">
+                    <span className="eyebrow">Latest cycle</span>
+                    {act.conclusions.map((c, i) => (
+                      <p className="muted-note" key={i}>
+                        {c.text}
+                      </p>
+                    ))}
+                  </div>
+                );
+              })()}
               <div className="agent-meta">
                 <span className="mono">{a.id}</span>
                 <span className="muted-note">v{a.version}</span>

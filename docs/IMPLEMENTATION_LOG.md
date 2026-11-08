@@ -100,3 +100,21 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Decision:** did NOT add a Yield Intelligence agent now — it would duplicate the capital allocator's net-benefit logic, which the brief (§10) warns against ("do not use multiple agents merely for architectural appearance").
 
 **Next:** `T3.5b` db-backed `/v1/analytics/agents/latest` (latest run's per-agent conclusions) → show on `/agents`; `T3.3` decision records.
+
+## 2026-11-08 — T3.5b Per-decision agent activity (live, verified on real data)
+
+**Implemented:**
+
+- Pure mapper `apps/api/src/analytics/agent-activity-latest.ts` (`mapAgentActivity`) that turns a stored orchestrator run snapshot (`runs.snapshot.agents`) into a plain per-agent view: each agent's conclusions, using the agent's OWN recorded rationale (never fabricated).
+- Endpoint `/v1/analytics/agents/latest` (SELECT-only: latest completed orchestrator run) in `analytics/server.ts`.
+- `/agents` page now shows, per agent, its "Latest cycle" conclusion(s) and a "Last cycle <ago>" note — fetched alongside the roster.
+
+**Changed files:** `apps/api/src/analytics/agent-activity-latest.ts` (new), `apps/api/src/analytics/server.ts`, `apps/analytics/app/agents/page.tsx`, `apps/analytics/app/globals.css`; test `apps/api/test/agent-activity-latest.test.ts` (new, 3).
+
+**Verification:** mapper unit test 3/3; `pnpm verify` 15/15; analytics build ok. Ran a LOCAL current-code analytics API against the live dev Postgres and confirmed the endpoint returns the latest run's real per-agent rationale, and the `/agents` page renders the "Latest cycle" blocks (e.g. "position risk is healthy").
+
+**Local run for the owner to poke:** dashboard (current code) at http://127.0.0.1:3007, agents page at /agents. Backed by a local analytics API (tsx) on :4013 over the existing dev Postgres.
+
+**Note:** the running dev collector is still the pre-transformation 4-agent bundle, so the latest stored run shows 4 agents; portfolio-intelligence appears once the collector runs current code (or on a fresh cycle).
+
+**Next:** `T3.3` decision records (id, inputs, expiry, rejection conditions); consider a Strategy agent.

@@ -3,6 +3,8 @@ import {
   AGENT_IDS,
   orchestratorConfigSchema,
 } from '@near-autopilot/orchestrator';
+import { and, desc, eq, runs, sql } from '@near-autopilot/db';
+import { mapAgentActivity } from './agent-activity-latest';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -334,6 +336,22 @@ export function buildAnalyticsServer(
   app.get('/v1/analytics/agents', async () => ({
     agents: AGENT_IDS.map((id) => AGENT_DESCRIPTORS[id]),
   }));
+
+  /**
+   * What each agent concluded in the most recent orchestrator cycle, and why — read from that run's stored snapshot
+   * (`runs.snapshot.agents`). Plain SELECT; the rationale shown is the agent's own recorded text.
+   */
+  app.get('/v1/analytics/agents/latest', async () => {
+    const db = deps.store.db;
+    if (!db) return { run: null, agents: [] };
+    const rows = await db
+      .select({ id: runs.id, finishedAt: runs.finishedAt, snapshot: runs.snapshot })
+      .from(runs)
+      .where(and(eq(runs.status, 'completed'), sql`${runs.snapshot} ->> 'engine' = 'orchestrator'`))
+      .orderBy(desc(runs.finishedAt))
+      .limit(1);
+    return mapAgentActivity(rows[0]);
+  });
 
   app.get('/v1/analytics/burrow/markets', async () => ({
     markets: (await deps.store.markets()).map((m) => ({
