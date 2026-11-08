@@ -9,7 +9,14 @@ import type { Analysis } from '../../lib/types';
 export const dynamic = 'force-dynamic';
 
 const micro = (v: string | undefined) => (v === undefined ? null : Number(v) / 1e6);
-const AGENTS = ['market-intelligence', 'lp-optimizer', 'liquidation-guardian', 'capital-allocator'];
+// Order matches the orchestrator's agent list (see apps/api/src/wiring.ts).
+const AGENTS = [
+  'market-intelligence',
+  'portfolio-intelligence',
+  'lp-optimizer',
+  'liquidation-guardian',
+  'capital-allocator',
+];
 
 function agents(outcome: string | null): Map<string, string> {
   return new Map(splitOutcome(outcome).parts.map((p) => [p.agent, p.text] as const));
