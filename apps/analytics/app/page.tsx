@@ -259,6 +259,15 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
+      {isAccount && (
+        <div className="callout intro" role="note" style={{ marginBottom: 16 }}>
+          <b>Your real NEAR account, read-only.</b> The agent reads your balances and Burrow
+          position with view calls and shows what is worth doing, with the full plan and every cost.
+          It holds no key and <b>cannot sign or send</b> — only your own wallet can, and that is
+          locked until the final security tests. Nothing here moves your funds.
+        </div>
+      )}
+
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>
           <b>The first analysis is still running.</b> On a fresh install the autopilot first reads
