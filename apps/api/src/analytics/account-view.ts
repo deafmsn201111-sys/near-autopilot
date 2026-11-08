@@ -50,13 +50,31 @@ interface DclPositionView {
   readonly usdY: number | null;
   readonly usd: number | null;
   readonly range: { readonly left: number; readonly right: number };
+  /** True when the pool's current point is inside [left, right): only then does the position earn fees. */
+  readonly inRange: boolean;
 }
 
 /** Known liquid-staking tokens (NEP-141). Their market price already reflects the staking premium, so they are valued
  *  like any token. Native validator-delegated staking needs validator discovery (an indexer) and is out of scope here. */
-const LIQUID_STAKING: readonly { token: TokenId; symbol: string; protocol: string }[] = [
-  { token: 'meta-pool.near' as TokenId, symbol: 'stNEAR', protocol: 'Meta Pool' },
-  { token: 'linear-protocol.near' as TokenId, symbol: 'LiNEAR', protocol: 'LiNEAR' },
+const LIQUID_STAKING: readonly {
+  token: TokenId;
+  symbol: string;
+  protocol: string;
+  /** Plain-language delayed-unstake waiting time; liquid-staking tokens can also be swapped instantly on a DEX. */
+  unstakeNote: string;
+}[] = [
+  {
+    token: 'meta-pool.near' as TokenId,
+    symbol: 'stNEAR',
+    protocol: 'Meta Pool',
+    unstakeNote: 'Delayed unstake takes about 4–6 days; or swap stNEAR instantly on a DEX.',
+  },
+  {
+    token: 'linear-protocol.near' as TokenId,
+    symbol: 'LiNEAR',
+    protocol: 'LiNEAR',
+    unstakeNote: 'Delayed unstake takes about 2–4 days; or swap LiNEAR instantly on a DEX.',
+  },
 ];
 
 interface StakingView {
@@ -65,6 +83,7 @@ interface StakingView {
   readonly protocol: string;
   readonly amount: number;
   readonly usd: number | null;
+  readonly unstakeNote: string;
 }
 
 /** The account's liquid-staking holdings (stNEAR, LiNEAR): on-chain FT balances, valued at the latest market price. */
@@ -87,6 +106,7 @@ async function readStaking(
         protocol: s.protocol,
         amount,
         usd: p !== null ? amount * p : null,
+        unstakeNote: s.unstakeNote,
       });
     }),
   );
@@ -197,6 +217,7 @@ async function readDclPositions(
       usdY,
       usd: usdX !== null && usdY !== null ? usdX + usdY : null,
       range: { left: pos.left_point, right: pos.right_point },
+      inRange: pool.current_point >= pos.left_point && pool.current_point < pos.right_point,
     });
   }
   return out;
@@ -268,11 +289,15 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
 export type RecommendationIntent =
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
   | { readonly action: 'repay'; readonly token: string; readonly approxUsd: number }
-  | { readonly action: 'supply'; readonly token: string; readonly approxUsd: number };
+  | { readonly action: 'supply'; readonly token: string; readonly approxUsd: number }
+  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
 
 export interface PortfolioRecommendation {
   readonly id: string;
-  readonly kind: 'reduce_concentration' | 'improve_loan_safety' | 'put_idle_to_work';
+  readonly kind:
+    'reduce_concentration' | 'improve_loan_safety' | 'put_idle_to_work' | 'reposition_dcl_position';
+  /** Which agent produced it (the orchestrator's roles), so the dashboard can show who/why. */
+  readonly agent: string;
   readonly severity: 'info' | 'warning';
   readonly title: string;
   readonly why: string;
@@ -286,6 +311,13 @@ export interface RecommendationContext {
   /** Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage. */
   readonly idleEarn: readonly { token: string; symbol: string; usd: number; aprPct: number }[];
   readonly largestDebt: { token: string; symbol: string; usd: number } | null;
+  /** DCL LP positions currently out of range (earning no fees), largest USD first. */
+  readonly dclOutOfRange: readonly {
+    lptId: string;
+    poolId: string;
+    pair: string;
+    usd: number | null;
+  }[];
 }
 
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
@@ -305,6 +337,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
     recs.push({
       id: 'improve-loan-safety',
       kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
       severity: hf < 1.3 ? 'warning' : 'info',
       title: `Your loan's health factor is ${hf.toFixed(2)}`,
       why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
@@ -319,6 +352,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
     recs.push({
       id: 'reduce-concentration',
       kind: 'reduce_concentration',
+      agent: 'Portfolio Intelligence',
       severity: c.pct >= 85 ? 'warning' : 'info',
       title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
       why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
@@ -332,10 +366,25 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
     recs.push({
       id: 'put-idle-to-work',
       kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
       intent: { action: 'supply', token: idle.token, approxUsd: Math.round(idle.usd) },
+    });
+  }
+
+  // 4. DCL positions that have drifted out of range earn no fees until repositioned.
+  const oor = ctx.dclOutOfRange.filter((d) => (d.usd ?? 0) > 1)[0];
+  if (oor) {
+    recs.push({
+      id: `reposition-dcl-${oor.lptId}`,
+      kind: 'reposition_dcl_position',
+      agent: 'Liquidity Optimizer',
+      severity: 'info',
+      title: `Your ${oor.pair} liquidity is out of range`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. Repositioning it around the current price puts it back to work.`,
+      intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
 
@@ -696,11 +745,21 @@ export function registerAccountView(
     const largestDebt = debts[0]
       ? { token: debts[0].token, symbol: debts[0].symbol, usd: debts[0].usd as number }
       : null;
+    const dclOutOfRange = dclPositions
+      .filter((d) => !d.inRange)
+      .map((d) => ({
+        lptId: d.lptId,
+        poolId: d.poolId,
+        pair: `${d.symbolX}/${d.symbolY}`,
+        usd: d.usd,
+      }))
+      .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
     const recommendations = portfolioRecommendations({
       metrics,
       loan: { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor },
       idleEarn,
       largestDebt,
+      dclOutOfRange,
     });
 
     const body = {

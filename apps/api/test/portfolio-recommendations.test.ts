@@ -19,6 +19,7 @@ const ctx = (over: Partial<RecommendationContext>): RecommendationContext => ({
   loan: null,
   idleEarn: [],
   largestDebt: null,
+  dclOutOfRange: [],
   ...over,
 });
 
@@ -30,6 +31,7 @@ describe('portfolioRecommendations', () => {
       }),
     );
     const c = r.find((x) => x.kind === 'reduce_concentration');
+    expect(c?.agent).toBe('Portfolio Intelligence');
     expect(c?.severity).toBe('warning');
     expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 400 });
   });
@@ -42,6 +44,7 @@ describe('portfolioRecommendations', () => {
       }),
     );
     const l = r.find((x) => x.kind === 'improve_loan_safety');
+    expect(l?.agent).toBe('Liquidation Guardian');
     expect(l?.severity).toBe('warning'); // hf < 1.3
     expect(l?.intent).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 300 });
     // loan safety is ordered first
@@ -63,6 +66,15 @@ describe('portfolioRecommendations', () => {
       token: 'usdt.tether-token.near',
       approxUsd: 500,
     });
+  });
+
+  it('flags an out-of-range DCL position with a reposition intent', () => {
+    const r = portfolioRecommendations(
+      ctx({ dclOutOfRange: [{ lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120 }] }),
+    );
+    const d = r.find((x) => x.kind === 'reposition_dcl_position');
+    expect(d?.agent).toBe('Liquidity Optimizer');
+    expect(d?.intent).toEqual({ action: 'reposition_dcl', lptId: 'lpt#1', poolId: 'p|q|60' });
   });
 
   it('says nothing for a healthy, diversified, fully-deployed portfolio', () => {
