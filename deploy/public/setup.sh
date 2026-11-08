@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 # Runs ON THE SERVER, inside the unpacked bundle: loads the images, creates .env with new random secrets and a new
 # audit checkpoint key, then starts the stack. Prints no secret. Safe to run again: an existing .env is kept.
-#   ./setup.sh <server public IP>
+#   ./setup.sh <server public IP>   Caddy serves https://<IP>.sslip.io (needs inbound ports 80 and 443)
+#   ./setup.sh                      no Caddy: the dashboard stays on 127.0.0.1:3000 for Tailscale Funnel (README)
 set -euo pipefail
 cd "$(dirname "$0")"
 
 ip="${1:-}"
-if [[ ! -f .env && -z "$ip" ]]; then
-  echo "usage: ./setup.sh <server public IP>" >&2
-  exit 1
-fi
 
 for f in images/*.tar.gz; do
   echo "• loading $f"
@@ -21,12 +18,18 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
   rand() { openssl rand -hex 24; }
   sed -i.bak \
-    -e "s|^SITE_ADDRESS=.*|SITE_ADDRESS=${ip}.sslip.io|" \
     -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(rand)|" \
     -e "s|^API_TOKEN=.*|API_TOKEN=$(rand)|" .env
   rm -f .env.bak
+  if [[ -n "$ip" ]]; then
+    sed -i.bak -e "s|^SITE_ADDRESS=.*|SITE_ADDRESS=${ip}.sslip.io|" -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=caddy|" .env
+    rm -f .env.bak
+    echo "• Caddy on: https://${ip}.sslip.io"
+  else
+    echo "• no Caddy: the dashboard will be on 127.0.0.1:3000 (expose it with Tailscale Funnel, README)"
+  fi
   docker run --rm --entrypoint node near-autopilot-api:public --import tsx src/evidence/cli.ts checkpoint-keygen >>.env
-  echo "• .env created (secrets generated, not shown). Site: https://${ip}.sslip.io"
+  echo "• .env created (secrets generated, not shown)."
   echo "  Put the FastNEAR key into MAINNET_READ_RPC_API_KEY in .env (nano .env), then run ./setup.sh again."
   exit 0
 fi

@@ -1,5 +1,6 @@
-# PUBLIC DEMO on a server: the read-only mainnet analytics dashboard, served over HTTPS by Caddy.
-# See deploy/public/README.md. Only Caddy publishes ports (80, 443); every other service is on the internal network.
+# PUBLIC DEMO on a server: the read-only mainnet analytics dashboard, served over HTTPS by Caddy or Tailscale Funnel.
+# See deploy/public/README.md. Nothing listens on a public interface except Caddy (80, 443) when its profile is on;
+# the dashboard is on 127.0.0.1:3000, every other service is on the internal network only.
 #
 # What this stack can do: read NEAR mainnet with view calls, analyse two SIMULATED demo portfolios, and let a visitor
 # run "Let the agent do it" on them as a DRY RUN. What it cannot do: sign or send anything. There is no signer, the
@@ -131,16 +132,21 @@ services:
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       AUTOPILOT_API_URL: http://api-shadow:4000
       PUBLIC_DEMO: '1'
+    # Loopback only. Exposed by Caddy (profile `caddy`) or by Tailscale Funnel on the host (README).
+    ports:
+      - '127.0.0.1:3000:3000'
 
-  # The only service reachable from the internet. Gets a Let's Encrypt certificate for SITE_ADDRESS.
+  # With profile `caddy` (COMPOSE_PROFILES=caddy in .env): the only service reachable from the internet, ports 80/443,
+  # with a Let's Encrypt certificate for SITE_ADDRESS. Needs inbound 80 and 443; behind a NAT use Tailscale Funnel.
   caddy:
+    profiles: [caddy]
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       analytics:
         condition: service_healthy
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env, e.g. 203.0.113.7.sslip.io}
+      SITE_ADDRESS: ${SITE_ADDRESS:-}
     ports:
       - '80:80'
       - '443:443'

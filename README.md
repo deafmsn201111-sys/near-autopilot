@@ -39,6 +39,10 @@ everywhere in this repository:
 
 Mainnet is read-only: signing on mainnet is locked in code, and NEAR Intents 1Click is used for dry quotes only.
 
+**Live demo (public, read-only):** https://near-autopilot-demo.tailafdf42.ts.net. It runs in public demo mode: live
+mainnet data, the two simulated demo portfolios, "Let the agent do it" as a dry run; operator controls are off
+([deploy/public](deploy/public/README.md)).
+
 Every "try it" step below starts from the [Quick start](#quick-start): `./scripts/quickstart.sh`, then the dashboard on
 `http://127.0.0.1:3001`. On a fresh clone it took 6 min 13 s (2026-11-08).
 
