@@ -135,3 +135,15 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Note:** we deliberately did NOT add a fabricated model "confidence" (brief §21); `dataQuality` is the honest uncertainty signal. Surfacing `expiresAt` in the UI follows a current-code cycle (the running dev collector is still the old bundle).
 
 **Next:** consider a Strategy agent (compare candidate strategies) or begin consolidating the duplicate risk logic (T2.1).
+
+## 2026-11-08 — UX + T2.1 + Risk Center (owner: "1 then 2 then 3")
+
+**1. UX usability (home orientation):** added a short intro on a demo portfolio (simulated portfolio on live prices; the agent only proposes; use "Your account" / connect wallet for your own, read-only) and dimmed the two locked mainnet modes so they no longer read as active tabs. `apps/analytics/app/page.tsx`, `components/ModeSwitch.tsx`, `globals.css`. Verified live.
+
+**2. T2.1 health-factor consolidation:** investigated the "3 duplicate HF" concern. Finding: in the production orchestrator path `risk.ts` healthFactorWad (authoritative) and `lending.ts` healthFactorBps (legacy) use the same risk parameter — one quantity at two scales; the float form is display-only. Added `financial-engine/test/hf-consistency.test.ts` pinning that they never diverge; documented the authoritative one; updated KNOWN_ISSUES. Did NOT force a risky single-function merge pre-deadline (burrow-adapter's separate USD18 HF noted as lower-priority).
+
+**3. Risk Center (brief §15):** new `/risk` page over `/v1/analytics/risk` — per-portfolio risk level, health factor, buffer-to-liquidation, LTV, borrowed/collateral, stress scenarios, plus an honest "controls that keep you in charge" section (policy-checked; nothing signed/sent; on-chain Guard = roadmap). Added to reviewers tabs. Verified live.
+
+**Also this turn:** ran a current-code collector cycle (`--once`) so the live demo data shows all 5 agents incl. portfolio-intelligence ("89.2% …") and a decision with expiry; paused the old dev collector to keep that view. Fixed a dev-server layout break caused by multiple stale `next dev` servers sharing one `.next`.
+
+**Tests:** `pnpm verify` 15/15 green after each slice. Commits: a4c597a (UX), 58b4de2 (T2.1), 4f7a8e8 (Risk Center).
