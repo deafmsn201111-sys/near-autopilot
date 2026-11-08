@@ -18,8 +18,18 @@ export interface AgentActivity {
   readonly conclusions: readonly AgentConclusion[];
 }
 
+export interface DecisionSummary {
+  readonly id: string;
+  /** 'act' or 'no_action' — what the orchestrator decided this cycle. */
+  readonly outcome: string;
+  /** When the decision stops being actionable because its data goes stale (brief §11). Empty if not recorded. */
+  readonly expiresAt: string;
+  readonly reasons: readonly string[];
+}
+
 export interface LatestAgentActivity {
   readonly run: { readonly id: string; readonly at: string } | null;
+  readonly decision: DecisionSummary | null;
   readonly agents: readonly AgentActivity[];
 }
 
@@ -33,7 +43,7 @@ const str = (v: unknown): string =>
   typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
 
 export function mapAgentActivity(row: Row | undefined): LatestAgentActivity {
-  if (!row) return { run: null, agents: [] };
+  if (!row) return { run: null, decision: null, agents: [] };
   const snap = rec(row.snapshot);
   const raw = Array.isArray(snap['agents']) ? (snap['agents'] as unknown[]) : [];
   const agents: AgentActivity[] = raw.map((a) => {
@@ -52,6 +62,15 @@ export function mapAgentActivity(row: Row | undefined): LatestAgentActivity {
       }),
     };
   });
+  const decisionId = str(snap['decisionId']);
+  const outcome = str(snap['cycleStatus']);
+  const expiresAt = str(snap['expiresAt']);
+  const reasons = Array.isArray(snap['reasons'])
+    ? (snap['reasons'] as unknown[]).filter((r): r is string => typeof r === 'string')
+    : [];
+  const decision: DecisionSummary | null =
+    decisionId || outcome ? { id: decisionId, outcome, expiresAt, reasons } : null;
+
   const at = row.finishedAt ? new Date(row.finishedAt).toISOString() : '';
-  return { run: { id: row.id, at }, agents };
+  return { run: { id: row.id, at }, decision, agents };
 }

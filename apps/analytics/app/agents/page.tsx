@@ -19,10 +19,30 @@ interface AgentActivity {
   suspicious: boolean;
   conclusions: { kind: string; text: string }[];
 }
+interface DecisionSummary {
+  id: string;
+  outcome: string;
+  expiresAt: string;
+  reasons: string[];
+}
 interface LatestActivity {
   run: { id: string; at: string } | null;
+  decision: DecisionSummary | null;
   agents: AgentActivity[];
 }
+
+const OUTCOME_LABEL: Record<string, string> = {
+  no_action: 'No action needed',
+  act: 'Action proposed',
+};
+
+/** HH:MM UTC for a timestamp, or '' if absent/invalid. */
+const hhmm = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+};
 
 /** Plain-language label for each proposal kind an agent may emit. */
 const KIND_LABEL: Record<string, string> = {
@@ -58,9 +78,20 @@ export default async function AgentsPage() {
           Independent agents analyse your portfolio and the market and <b>propose</b> what is worth
           doing. Each proposal is checked by the safety policy; nothing is signed or sent. You keep
           control.
-          {latest?.run ? ` · Last cycle ${ago(latest.run.at)}.` : ''}
         </span>
       </div>
+
+      {latest?.run && (
+        <div className="callout" role="note" style={{ marginBottom: 16 }}>
+          <b>Last cycle {ago(latest.run.at)}.</b>{' '}
+          {latest.decision
+            ? `${OUTCOME_LABEL[latest.decision.outcome] ?? latest.decision.outcome}.`
+            : ''}
+          {latest.decision?.expiresAt && hhmm(latest.decision.expiresAt)
+            ? ` This read of the data is valid until ${hhmm(latest.decision.expiresAt)} UTC — after that the agents re-check before anything could be acted on.`
+            : ''}
+        </div>
+      )}
 
       <section className="block">
         <div className="agent-grid">

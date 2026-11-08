@@ -35,7 +35,28 @@ const snapshot = {
 
 describe('mapAgentActivity', () => {
   it('returns an empty result for a missing row', () => {
-    expect(mapAgentActivity(undefined)).toEqual({ run: null, agents: [] });
+    expect(mapAgentActivity(undefined)).toEqual({ run: null, decision: null, agents: [] });
+  });
+
+  it('extracts the decision summary (outcome, expiry, reasons) when present', () => {
+    const out = mapAgentActivity({
+      id: 'run-2',
+      finishedAt: new Date('2026-11-08T12:00:00Z'),
+      snapshot: {
+        engine: 'orchestrator',
+        cycleStatus: 'no_action',
+        decisionId: 'abc123',
+        expiresAt: '2026-11-08T12:01:00.000Z',
+        reasons: ['NO_EXECUTABLE_ACTION'],
+        agents: [],
+      },
+    });
+    expect(out.decision).toEqual({
+      id: 'abc123',
+      outcome: 'no_action',
+      expiresAt: '2026-11-08T12:01:00.000Z',
+      reasons: ['NO_EXECUTABLE_ACTION'],
+    });
   });
 
   it('maps each agent to its conclusions, preferring the agent’s own rationale', () => {
