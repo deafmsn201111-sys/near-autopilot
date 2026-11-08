@@ -250,6 +250,15 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </span>
       </div>
 
+      {!isAccount && !PUBLIC_DEMO && (
+        <div className="callout intro" role="note" style={{ marginBottom: 16 }}>
+          <b>New here?</b> You&apos;re looking at a <b>simulated</b> portfolio priced with live NEAR
+          mainnet data. Below, the agent finds what is worth doing and explains every option — it
+          only <b>proposes</b>; nothing is ever signed or sent. To see your <b>own</b> portfolio
+          (read-only), use <b>Your account</b> above or connect your wallet.
+        </div>
+      )}
+
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>
           <b>The first analysis is still running.</b> On a fresh install the autopilot first reads

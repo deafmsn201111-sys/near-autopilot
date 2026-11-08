@@ -1987,3 +1987,14 @@ table.mini tr.total td {
   display: grid;
   gap: 2px;
 }
+
+.callout.intro {
+  background: var(--surface-2);
+  line-height: 1.5;
+}
+.mode-switch a.locked {
+  opacity: 0.6;
+}
+.mode-switch a.locked[aria-current='true'] {
+  opacity: 1;
+}

@@ -29,6 +29,7 @@ export function ModeSwitch({ current }: { current: Mode }) {
         <a
           key={m.id}
           href="#"
+          className={m.id !== 'demo' ? 'locked' : undefined}
           data-tip={m.note}
           aria-current={m.id === current ? 'true' : undefined}
           onClick={(e) => {
