@@ -46,6 +46,8 @@ interface DclPositionView {
   readonly symbolY: string;
   readonly amountX: number;
   readonly amountY: number;
+  readonly usdX: number | null;
+  readonly usdY: number | null;
   readonly usd: number | null;
   readonly range: { readonly left: number; readonly right: number };
 }
@@ -96,6 +98,7 @@ interface V1PositionView {
   readonly tokens: readonly string[];
   readonly symbols: readonly string[];
   readonly amounts: readonly number[];
+  readonly usdPerToken: readonly (number | null)[];
   readonly usd: number | null;
   readonly sharePct: number;
 }
@@ -120,6 +123,7 @@ async function readV1Positions(
       if (!pool || pool.sharesTotalSupply <= 0n) return;
       const symbols: string[] = [];
       const amounts: number[] = [];
+      const usdPerToken: (number | null)[] = [];
       let usd: number | null = 0;
       pool.tokens.forEach((t, i) => {
         const raw = ((pool.reserves[i] ?? 0n) * shares) / pool.sharesTotalSupply;
@@ -128,7 +132,9 @@ async function readV1Positions(
         amounts.push(human);
         symbols.push(f?.symbol ?? t.slice(0, 10));
         const p = prices.get(t);
-        if (usd !== null && p !== undefined) usd += human * p;
+        const legUsd = p !== undefined ? human * p : null;
+        usdPerToken.push(legUsd);
+        if (usd !== null && legUsd !== null) usd += legUsd;
         else usd = null;
       });
       out.push({
@@ -136,6 +142,7 @@ async function readV1Positions(
         tokens: [...pool.tokens],
         symbols,
         amounts,
+        usdPerToken,
         usd,
         sharePct: Number((shares * 10_000n) / pool.sharesTotalSupply) / 100,
       });
@@ -175,6 +182,8 @@ async function readDclPositions(
     const amountY = Number(y) / 10 ** (fy?.decimals ?? 24);
     const px = prices.get(pool.token_x) ?? null;
     const py = prices.get(pool.token_y) ?? null;
+    const usdX = px !== null ? amountX * px : null;
+    const usdY = py !== null ? amountY * py : null;
     out.push({
       lptId: pos.lpt_id,
       poolId: pos.pool_id,
@@ -184,7 +193,9 @@ async function readDclPositions(
       symbolY: fy?.symbol ?? pool.token_y.slice(0, 10),
       amountX,
       amountY,
-      usd: px !== null && py !== null ? amountX * px + amountY * py : null,
+      usdX,
+      usdY,
+      usd: usdX !== null && usdY !== null ? usdX + usdY : null,
       range: { left: pos.left_point, right: pos.right_point },
     });
   }
@@ -198,6 +209,61 @@ const H = HORIZON / 365;
 const WNEAR = 'wrap.near' as TokenId;
 /** Native NEAR left untouched for gas and storage when proposing to use the rest. */
 const NEAR_RESERVE = 1;
+
+interface PortfolioLeg {
+  readonly token: string;
+  readonly symbol: string;
+  readonly protocol: string;
+  readonly usd: number;
+  readonly kind: 'asset' | 'debt';
+}
+
+export interface PortfolioMetrics {
+  readonly totalAssetsUsd: number;
+  readonly totalDebtUsd: number;
+  readonly netUsd: number;
+  readonly byToken: readonly { token: string; symbol: string; usd: number; pct: number }[];
+  readonly byProtocol: readonly { protocol: string; usd: number; pct: number }[];
+  readonly concentration: { token: string; symbol: string; pct: number } | null;
+}
+
+/**
+ * Exposure of the whole portfolio: USD by token and by protocol (venue), and the single-asset concentration. A pure
+ * aggregation over priced legs from every source (wallet, Burrow, Rhea v1 + DCL, staking). Debt is tracked separately
+ * and never dilutes asset concentration.
+ */
+export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetrics {
+  const assets = legs.filter((l) => l.kind === 'asset' && l.usd > 0);
+  const totalAssetsUsd = assets.reduce((s, l) => s + l.usd, 0);
+  const totalDebtUsd = legs.filter((l) => l.kind === 'debt').reduce((s, l) => s + l.usd, 0);
+  const pct = (usd: number) => (totalAssetsUsd > 0 ? (usd / totalAssetsUsd) * 100 : 0);
+
+  const byTokenMap = new Map<string, { token: string; symbol: string; usd: number }>();
+  for (const l of assets) {
+    const e = byTokenMap.get(l.token) ?? { token: l.token, symbol: l.symbol, usd: 0 };
+    e.usd += l.usd;
+    byTokenMap.set(l.token, e);
+  }
+  const byToken = [...byTokenMap.values()]
+    .map((e) => ({ ...e, pct: pct(e.usd) }))
+    .sort((a, b) => b.usd - a.usd);
+
+  const byProtoMap = new Map<string, number>();
+  for (const l of assets) byProtoMap.set(l.protocol, (byProtoMap.get(l.protocol) ?? 0) + l.usd);
+  const byProtocol = [...byProtoMap]
+    .map(([protocol, usd]) => ({ protocol, usd, pct: pct(usd) }))
+    .sort((a, b) => b.usd - a.usd);
+
+  const top = byToken[0] ?? null;
+  return {
+    totalAssetsUsd,
+    totalDebtUsd,
+    netUsd: totalAssetsUsd - totalDebtUsd,
+    byToken,
+    byProtocol,
+    concentration: top ? { token: top.token, symbol: top.symbol, pct: top.pct } : null,
+  };
+}
 
 export function registerAccountView(
   app: FastifyInstance,
@@ -486,6 +552,58 @@ export function registerAccountView(
       readStaking(tokens, id, symbol, prices),
     ]);
 
+    const legs: PortfolioLeg[] = [];
+    for (const h of v.holdings) {
+      if (h.usd === null || h.usd <= 0) continue;
+      legs.push({
+        token: h.token,
+        symbol: h.symbol,
+        protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
+        usd: h.usd,
+        kind: h.where === 'borrowed' ? 'debt' : 'asset',
+      });
+    }
+    for (const s of staking)
+      if (s.usd !== null)
+        legs.push({
+          token: s.token,
+          symbol: s.symbol,
+          protocol: 'Staking',
+          usd: s.usd,
+          kind: 'asset',
+        });
+    for (const d of dclPositions) {
+      if (d.usdX !== null)
+        legs.push({
+          token: d.tokenX,
+          symbol: d.symbolX,
+          protocol: 'Rhea DCL',
+          usd: d.usdX,
+          kind: 'asset',
+        });
+      if (d.usdY !== null)
+        legs.push({
+          token: d.tokenY,
+          symbol: d.symbolY,
+          protocol: 'Rhea DCL',
+          usd: d.usdY,
+          kind: 'asset',
+        });
+    }
+    for (const p of v1Positions)
+      p.tokens.forEach((t, i) => {
+        const u = p.usdPerToken[i];
+        if (u !== null && u !== undefined)
+          legs.push({
+            token: t,
+            symbol: p.symbols[i] ?? t,
+            protocol: 'Rhea v1',
+            usd: u,
+            kind: 'asset',
+          });
+      });
+    const metrics = portfolioMetrics(legs);
+
     const body = {
       earnings: {
         monthlyNetUsd: hasPosition ? monthly : 0,
@@ -506,6 +624,7 @@ export function registerAccountView(
       dclPositions,
       v1Positions,
       staking,
+      metrics,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {
