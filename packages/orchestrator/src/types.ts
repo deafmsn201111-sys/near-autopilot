@@ -249,6 +249,12 @@ export interface Decision {
   readonly decisionId: string;
   readonly inputsHash: string;
   readonly at: Date;
+  /**
+   * When this decision stops being actionable, because its data would be too stale to act on (brief §11 "expiry").
+   * It is the earliest point at which the snapshot or the oracle prices cross the freshness limit; after it, the data
+   * guard blocks action anyway. An honest validity window, not a promise.
+   */
+  readonly expiresAt: Date;
   readonly accountId: AccountId;
   readonly outcome: 'act' | 'no_action';
   readonly reasons: readonly NoActionReason[];

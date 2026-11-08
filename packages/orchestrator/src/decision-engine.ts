@@ -131,10 +131,18 @@ export function decide(input: EvaluationInput): Decision {
         ranked: ranked.map((c) => c.proposalId),
       }),
     );
+    const f = input.config.freshness;
+    const expiresAt = new Date(
+      Math.min(
+        input.snapshot.takenAt.getTime() + f.maxSnapshotAgeSeconds * 1000,
+        input.snapshot.pricesAsOf.getTime() + f.maxPriceAgeSeconds * 1000,
+      ),
+    );
     return {
       decisionId,
       inputsHash,
       at: now,
+      expiresAt,
       accountId: input.accountId,
       outcome: partial.outcome,
       reasons: partial.reasons,

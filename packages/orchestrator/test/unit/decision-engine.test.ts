@@ -556,3 +556,22 @@ describe('decide: portfolio concentration signal (T3.2)', () => {
     expect(d.ranked).toHaveLength(1);
   });
 });
+
+describe('decide: decision expiry (T3.3, brief §11)', () => {
+  it('sets expiresAt to 60s after fresh data (the freshness limit)', () => {
+    const w = makeWorld();
+    const snap = w.buildSnapshot();
+    const d = decide(buildInput([noAction()], w, { snapshot: snap }));
+    const expected = Math.min(snap.takenAt.getTime() + 60_000, snap.pricesAsOf.getTime() + 60_000);
+    expect(d.expiresAt.getTime()).toBe(expected);
+  });
+
+  it('is bound by whichever data (snapshot or prices) goes stale first', () => {
+    const w = makeWorld();
+    const base = w.buildSnapshot();
+    // prices are 30s old (limit 60s): they expire at NOW+30s, before the snapshot's NOW+60s.
+    const snap = { ...base, takenAt: NOW, pricesAsOf: new Date(NOW.getTime() - 30_000) };
+    const d = decide(buildInput([noAction()], w, { snapshot: snap, now: NOW }));
+    expect(d.expiresAt.getTime()).toBe(NOW.getTime() + 30_000);
+  });
+});

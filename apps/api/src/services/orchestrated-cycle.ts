@@ -77,6 +77,8 @@ export class OrchestratedCycle {
           risk: report.decision?.risk ?? null,
           reasons: report.decision?.reasons ?? [],
           advisories: report.decision?.advisories ?? [],
+          decisionId: report.decision?.decisionId ?? null,
+          expiresAt: report.decision?.expiresAt ?? null,
           escalations: report.escalations,
           agents,
         }),

@@ -20,7 +20,7 @@ _Living board. No invented completion percentages (brief §3.3). Updated per wor
 
 ## In progress
 
-- P4 agent core. Next: `T3.3` decision records; `T3.5b` per-decision "who proposed / why" in Activity.
+- P4 agent core. Done so far this session: roster, orchestrator-primary proof, Portfolio agent, UI roster + live per-agent activity, decision expiry. Next: a Strategy agent, or `T2.1` risk consolidation.
 
 ## Blocked
 

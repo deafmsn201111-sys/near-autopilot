@@ -118,3 +118,20 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Note:** the running dev collector is still the pre-transformation 4-agent bundle, so the latest stored run shows 4 agents; portfolio-intelligence appears once the collector runs current code (or on a fresh cycle).
 
 **Next:** `T3.3` decision records (id, inputs, expiry, rejection conditions); consider a Strategy agent.
+
+## 2026-11-08 — T3.3 Decision expiry (traceability, brief §11)
+
+**Context:** the orchestrator `Decision` was already a rich, traceable record (decisionId, inputsHash, timestamp, risk, ranked candidates with economics, rejected with codes, cautions, dataQuality). The one genuine §11 gap was an explicit **expiry**.
+
+**Implemented:**
+
+- `Decision.expiresAt` (`packages/orchestrator/src/types.ts` + `decision-engine.ts`): the earliest point the decision's data would go stale — `min(snapshot.takenAt + maxSnapshotAgeSeconds, pricesAsOf + maxPriceAgeSeconds)`. After it, the data guard blocks action anyway. Honest validity window; no fabricated confidence.
+- Persisted `decisionId` + `expiresAt` into the orchestrator run snapshot (`orchestrated-cycle.ts`), so the decision's identity and validity are traceable in the record.
+
+**Changed files:** `packages/orchestrator/src/types.ts`, `src/decision-engine.ts`, `apps/api/src/services/orchestrated-cycle.ts`; tests `decision-engine.test.ts` (+2).
+
+**Tests:** orchestrator 243 pass (+2); api 270 pass; `pnpm verify` 15/15 green.
+
+**Note:** we deliberately did NOT add a fabricated model "confidence" (brief §21); `dataQuality` is the honest uncertainty signal. Surfacing `expiresAt` in the UI follows a current-code cycle (the running dev collector is still the old bundle).
+
+**Next:** consider a Strategy agent (compare candidate strategies) or begin consolidating the duplicate risk logic (T2.1).
