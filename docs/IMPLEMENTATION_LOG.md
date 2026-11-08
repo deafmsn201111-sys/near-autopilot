@@ -75,3 +75,18 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Tests run:** `pnpm --filter orchestrator test` → 241 passed; `pnpm verify` → 15/15 green. demo:attack → 8/8 attacks stopped (defences intact).
 
 **Remaining / next:** `T3.3` decision records; `T3.5` surface roster + per-decision explainability in the dashboard.
+
+## 2026-11-08 — T3.5 Agent roster in the UI (first visible transparency)
+
+**Implemented:**
+
+- `/v1/analytics/agents` endpoint (`apps/api/src/analytics/server.ts`) exposes the static agent roster from `AGENT_DESCRIPTORS` (bearer-authed like every `/v1/*`).
+- New dashboard page `apps/analytics/app/agents/page.tsx` ("The agents"): one card per agent — title, responsibility, version, the proposal kinds it may emit (plain labels), and an advisory/can-act tag. Explains that agents only propose, the policy checks everything, and nothing is signed or sent. Added to the reviewers tabs (`Nav.tsx`) and styled (`globals.css` `.agent-grid`/`.agent-card`).
+
+**Changed files:** `apps/api/src/analytics/server.ts`, `apps/analytics/app/agents/page.tsx` (new), `apps/analytics/components/Nav.tsx`, `apps/analytics/app/globals.css`; test `apps/api/test/agents-endpoint.test.ts` (new, 2).
+
+**Tests run:** endpoint test 2/2; `pnpm verify` → 15/15 green; `pnpm --filter analytics build` → ok (`/agents` route built).
+
+**Honest note:** this is the static roster (who the agents are). Per-decision attribution (who proposed what in a given run) is `T3.5b`. Visual confirmation needs a local view or a demo redeploy — the live demo still runs the pre-T3.5 bundle until redeployed.
+
+**Next:** `T3.5b` per-decision explainability in Activity; `T3.3` decision records.

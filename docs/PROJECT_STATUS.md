@@ -20,7 +20,7 @@ _Living board. No invented completion percentages (brief §3.3). Updated per wor
 
 ## In progress
 
-- P4 agent core. Next: `T3.3` decision records + `T3.5` UI explainability (surface the roster + per-decision who/why).
+- P4 agent core. Next: `T3.3` decision records; `T3.5b` per-decision "who proposed / why" in Activity.
 
 ## Blocked
 
@@ -33,11 +33,12 @@ _Living board. No invented completion percentages (brief §3.3). Updated per wor
 - `T3.1` orchestrator-as-primary **de-risked**: the demo already runs the orchestrator engine (compose); added an end-to-end safety test through the real `wire()` composition root (both engines complete a cycle, orchestrated path exercised, dry-run invariant holds). Global default stays `legacy` because only legacy can run live (orchestrator is dry-run-only); documented. See `DECISIONS.md` D9.
 - `AGENT_DESCRIPTORS` roster (id, title, responsibility, version, permissions) in `orchestrator` — done + tested.
 - `T3.2` **Portfolio Intelligence agent** end-to-end: new `portfolio.signal` (concentration) proposal kind + the `PortfolioIntelligenceAgent`, wired into the orchestrator. A dominant-asset signal becomes a decision-engine caution that defers adding more of that asset. 5 agent tests + 3 decision-engine tests; strict-parser and demo-attack defences cover the new kind.
+- `T3.5` **Agent roster in the UI** (first user-visible transparency): `/v1/analytics/agents` endpoint exposes the roster; new `/agents` dashboard page (reviewers area) shows each agent's title, responsibility, version, what it may propose, and whether it is advisory. 2 endpoint tests; dashboard builds.
 
 ## Next prioritized tasks
 
-1. `T3.3` decision records (id, inputs, expiry, rejection conditions).
-2. `T3.5` UI explainability — surface the agent roster + per-decision "who/why" (now safe to show, since the demo runs the orchestrator).
+1. `T3.5b` per-decision "who proposed / why" in Activity (read the orchestrated run's agent outcomes).
+2. `T3.3` decision records (id, inputs, expiry, rejection conditions).
 3. `T3.2b` consider Yield/Strategy agents (next specialized agents).
 
 ## Verify status

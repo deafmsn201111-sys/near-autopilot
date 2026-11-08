@@ -1,4 +1,8 @@
-import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
+import {
+  AGENT_DESCRIPTORS,
+  AGENT_IDS,
+  orchestratorConfigSchema,
+} from '@near-autopilot/orchestrator';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -320,6 +324,15 @@ export function buildAnalyticsServer(
     tokens: (await deps.store.tokenMetadata())
       .map((t) => ({ token: t.token, symbol: t.symbol, decimals: t.decimals }))
       .sort((a, b) => (a.token < b.token ? -1 : 1)),
+  }));
+
+  /**
+   * The multi-agent roster: who the orchestrator's agents are, what each is responsible for, the version of its
+   * decision logic, and the proposal kinds it is permitted to emit. Static identity, not per-run activity — it lets the
+   * dashboard explain the system honestly (the demo runs the orchestrator engine).
+   */
+  app.get('/v1/analytics/agents', async () => ({
+    agents: AGENT_IDS.map((id) => AGENT_DESCRIPTORS[id]),
   }));
 
   app.get('/v1/analytics/burrow/markets', async () => ({
