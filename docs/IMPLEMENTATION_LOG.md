@@ -147,3 +147,13 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Also this turn:** ran a current-code collector cycle (`--once`) so the live demo data shows all 5 agents incl. portfolio-intelligence ("89.2% …") and a decision with expiry; paused the old dev collector to keep that view. Fixed a dev-server layout break caused by multiple stale `next dev` servers sharing one `.next`.
 
 **Tests:** `pnpm verify` 15/15 green after each slice. Commits: a4c597a (UX), 58b4de2 (T2.1), 4f7a8e8 (Risk Center).
+
+## 2026-11-08 — Opportunities grouping + Data provenance + UX (owner: "all 3 without stopping")
+
+**1. Opportunities (brief §8):** grouped the list into Recommended / Watchlist / Not-enough-data by status, each with a count; watch items show their blocker; ranking method + excluded reasons stay in the explainer. `opportunities/page.tsx`.
+
+**2. Data provenance (brief §5):** new `core` vocabulary `PROVENANCE_TIERS` + `PROVENANCE_TIER_INFO` (on-chain fact / external market / protocol-reported / calculated estimate / model prediction) with trust levels (3 core tests). New `ProvenanceNote` legend shown on Opportunities, Risk and Agents — makes explicit that scores/APYs/risk are estimates, prices external, on-chain is fact, nothing is a prediction, and no model is used.
+
+**3. UX deepening:** honest capability banners on the home page — a demo intro (already) and now a real-account banner ("read-only; the agent holds no key and cannot sign or send; only your wallet can, gated"). Also fixed the reviewers portfolios table to list all 5 agents, and added the autonomy-mode ladder (Observe/Approve/Autonomous) to the Autopilot page.
+
+**Tests:** `pnpm verify` 15/15 green after each slice. Commits: 15409d9 (opportunities), 72c6825 (provenance), a5e1fa0 (account banner), plus 1335b43 (autonomy ladder), 2faf899 (portfolios agent list).
