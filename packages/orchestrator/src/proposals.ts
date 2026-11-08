@@ -41,6 +41,74 @@ export const AGENT_CAPABILITIES: Readonly<Record<AgentId, readonly ProposalKind[
   'capital-allocator': ['no_action', 'allocation.swap', 'lending.supply'],
 };
 
+/**
+ * Proposal kinds that only advise (they never change portfolio state): a `no_action` reason or a caution `market.signal`.
+ * An agent whose whole capability set is advisory can never move funds, so the worst a manipulated one can do is defer a
+ * discretionary trade — see `AgentDescriptor.advisoryOnly`.
+ */
+export const ADVISORY_KINDS: readonly ProposalKind[] = ['no_action', 'market.signal'];
+
+/**
+ * Human-facing identity of each agent (brief §10: "Each agent must have defined responsibilities ... version
+ * information"). This is the single source of truth the API and dashboard read to explain, honestly, who proposed
+ * what and why. `proposalKinds` mirrors `AGENT_CAPABILITIES` (asserted in tests), so permissions and the description
+ * of permissions can never drift apart. `version` is the semantic version of the agent's decision logic: bump it when
+ * the behaviour that produces proposals changes, so a decision record can be tied to the exact logic that made it.
+ */
+export interface AgentDescriptor {
+  readonly id: AgentId;
+  readonly title: string;
+  readonly responsibility: string;
+  readonly version: string;
+  readonly proposalKinds: readonly ProposalKind[];
+  /** True when the agent can only advise (no_action / market.signal) and can never propose an action that moves funds. */
+  readonly advisoryOnly: boolean;
+}
+
+export const AGENT_DESCRIPTORS: Readonly<Record<AgentId, AgentDescriptor>> = {
+  'market-intelligence': {
+    id: 'market-intelligence',
+    title: 'Market Intelligence',
+    responsibility:
+      'Watches oracle-vs-reference price divergence and realised volatility and raises caution signals that make the rest of the system defer discretionary trades. Never proposes a trade.',
+    version: '1.0.0',
+    proposalKinds: AGENT_CAPABILITIES['market-intelligence'],
+    advisoryOnly: true,
+  },
+  'lp-optimizer': {
+    id: 'lp-optimizer',
+    title: 'Liquidity Optimizer',
+    responsibility:
+      'Advises on concentrated-liquidity (DCL) position ranges, proposing a reposition when the current range no longer fits the market. Advisory on liquidity; it never swaps or borrows.',
+    version: '1.0.0',
+    proposalKinds: AGENT_CAPABILITIES['lp-optimizer'],
+    advisoryOnly: false,
+  },
+  'liquidation-guardian': {
+    id: 'liquidation-guardian',
+    title: 'Liquidation Guardian',
+    responsibility:
+      'Protects the health factor of a Burrow loan: when liquidation risk rises it proposes repaying debt or adding collateral. It never borrows and never opens new exposure.',
+    version: '1.0.0',
+    proposalKinds: AGENT_CAPABILITIES['liquidation-guardian'],
+    advisoryOnly: false,
+  },
+  'capital-allocator': {
+    id: 'capital-allocator',
+    title: 'Capital Allocator',
+    responsibility:
+      'Puts idle wallet capital to work within the target allocation: it may propose an allowlisted swap or a plain Burrow supply. It never borrows and never uses collateral.',
+    version: '1.0.0',
+    proposalKinds: AGENT_CAPABILITIES['capital-allocator'],
+    advisoryOnly: false,
+  },
+};
+
+/** The agent's identity, or throws if the id is unknown (it never is: `AgentId` is a closed enum). */
+export function describeAgent(id: AgentId): AgentDescriptor {
+  return AGENT_DESCRIPTORS[id];
+}
+
 export const MAX_RATIONALE_LENGTH = 500;
 export const MAX_PROPOSALS_PER_OUTPUT = 8;
 

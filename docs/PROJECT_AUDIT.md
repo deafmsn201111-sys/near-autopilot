@@ -11,46 +11,46 @@ _Phase 0 deliverable. Verified against the repository on 2026-11-08 (branch `fix
 
 ## 2. Stack (verified, not assumed)
 
-| Area | What is actually there |
-| --- | --- |
-| Language | TypeScript, strict. Node `.nvmrc`-pinned (v22), pnpm 9 workspace monorepo (Turborepo). |
-| Backend | `apps/api` — Node HTTP server (`server.ts`), ~19.6k LOC. Collector, analytics API, gateway, services. |
-| Frontend | `apps/analytics` — **Next.js 15 App Router**, server components, ~4.9k LOC. (`apps/dashboard` is a smaller/older surface, ~0.7k LOC.) |
-| Database | PostgreSQL 16 + **Drizzle ORM**. 24 tables, 17 migrations (`0000`–`0016`). |
-| Blockchain | NEAR. Read path via JSON-RPC **view calls** (`near-adapter`). No signer shipped (see §5). |
-| DeFi protocols | **Burrow** (lending, `burrow-adapter`), **Rhea** (DEX/AMM + DCL concentrated liquidity, `rhea-adapter`, `rhea-dcl-adapter`). |
-| Prices | Burrow on-chain oracle + **Pyth** (Hermes); external CEX refs (Binance, Coinbase, Kraken) and DefiLlama for yields. |
-| AI | **Heuristic agents only — no LLM is called** (see §4). An `LlmAgent` class + `LlmClient` port exist but are unimplemented and unwired. |
-| Auth | Bearer `API_TOKEN` on operator endpoints (constant-time compare). No user accounts/sessions yet. |
-| Wallet | Browser-side HOT Connector (`@hot-labs/near-connect`) sign-in; no access key is added. Signing lives only on a local branch (see §5). |
-| Deploy | Docker Compose bundle (`deploy/public`); live demo exposed via **Tailscale Funnel** behind NAT. |
-| CI | GitHub Actions `ci.yml`: `verify` job (format/lint/typecheck/test/build) + `db` job against real Postgres 16. |
+| Area           | What is actually there                                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Language       | TypeScript, strict. Node `.nvmrc`-pinned (v22), pnpm 9 workspace monorepo (Turborepo).                                                 |
+| Backend        | `apps/api` — Node HTTP server (`server.ts`), ~19.6k LOC. Collector, analytics API, gateway, services.                                  |
+| Frontend       | `apps/analytics` — **Next.js 15 App Router**, server components, ~4.9k LOC. (`apps/dashboard` is a smaller/older surface, ~0.7k LOC.)  |
+| Database       | PostgreSQL 16 + **Drizzle ORM**. 24 tables, 17 migrations (`0000`–`0016`).                                                             |
+| Blockchain     | NEAR. Read path via JSON-RPC **view calls** (`near-adapter`). No signer shipped (see §5).                                              |
+| DeFi protocols | **Burrow** (lending, `burrow-adapter`), **Rhea** (DEX/AMM + DCL concentrated liquidity, `rhea-adapter`, `rhea-dcl-adapter`).           |
+| Prices         | Burrow on-chain oracle + **Pyth** (Hermes); external CEX refs (Binance, Coinbase, Kraken) and DefiLlama for yields.                    |
+| AI             | **Heuristic agents only — no LLM is called** (see §4). An `LlmAgent` class + `LlmClient` port exist but are unimplemented and unwired. |
+| Auth           | Bearer `API_TOKEN` on operator endpoints (constant-time compare). No user accounts/sessions yet.                                       |
+| Wallet         | Browser-side HOT Connector (`@hot-labs/near-connect`) sign-in; no access key is added. Signing lives only on a local branch (see §5).  |
+| Deploy         | Docker Compose bundle (`deploy/public`); live demo exposed via **Tailscale Funnel** behind NAT.                                        |
+| CI             | GitHub Actions `ci.yml`: `verify` job (format/lint/typecheck/test/build) + `db` job against real Postgres 16.                          |
 
 ## 3. Implementation status inventory
 
 Legend: ✅ working & wired · 🟡 implemented but dormant/behind a flag · 🟥 stub/placeholder · ⬜ missing.
 
-| Capability | Status | Evidence |
-| --- | --- | --- |
-| NEAR view-call snapshots (balances, Burrow positions) | ✅ | `near-adapter`, `burrow-adapter`; live demo renders real data |
-| Rhea swap quotes / pools | ✅ | `rhea-adapter`, `/v1/analytics/rhea/pools` |
-| Price intelligence (oracle + Pyth + CEX refs) | ✅ | `market-data/sources.ts`, `/v1/analytics/prices` live |
-| Yield observations (DefiLlama + Rhea) | ✅ | `yield/service.ts`, `yield_observations` table |
-| Policy engine (allowlists, limits, 12 rules) | ✅ | `policy-engine`; adversarial tests `demo-attack.ts` |
-| Dry-run executor (plan + policy-check, never sends) | ✅ | `tx-execution`; `loadSigner()` returns `null` |
-| Audit trail (write-through Postgres + checkpoints) | ✅ | `evidence/`, `audit_checkpoints`, `/v1/audit/verify` |
-| Simulation / demo portfolios ($500 / $5,000) | ✅ | `simulation/`, `demo_ledger`; banner-labelled |
-| Legacy cycle engine (HealthGuardian + Rebalancer) | ✅ | default `AUTOPILOT_ENGINE=legacy` |
-| **Multi-agent orchestrator** (4 agents, decision engine, escalation, idempotency) | 🟡 | `packages/orchestrator` (4.3k LOC) wired behind `AUTOPILOT_ENGINE=orchestrator`, **off by default** |
-| Analytics dashboard (Portfolio, Opportunities, Activity, Research) | ✅ | `apps/analytics`; live |
-| Opportunity scoring / comparison | 🟡 | `analytics/opportunities.ts` (net-cost comparison); no formal documented `Opportunity Score` yet |
-| Risk intelligence (HF, stress, risk profiles) | 🟡 | `financial-engine/risk.ts`, `burrow-adapter/risk.ts`, orchestrator `risk-state.ts` — present but duplicated and not surfaced as a Risk Center |
-| LLM-backed agent | 🟥 | `LlmAgent` class present, **no `LlmClient` impl, not wired** |
-| Mainnet wallet-confirm hand-off (owner signs) | 🟡 | **local branch `feat/mainnet-wallet-confirm` only**, never pushed |
-| **Guard smart contract (on-chain limits / Emergency Stop)** | ⬜ | **no contract exists** — no `contracts/`, no `Cargo.toml` |
-| Autonomous execution engine (real sends within limits) | ⬜ | blocked by design: no signer, no Guard |
-| Learning / backtesting engine | 🟡 | partial: `thesis/`, DCL backtest, shadow mode; no model-eval/optimization loop |
-| User accounts / per-user policy / sessions | ⬜ | single-operator model today |
+| Capability                                                                        | Status | Evidence                                                                                                                                      |
+| --------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| NEAR view-call snapshots (balances, Burrow positions)                             | ✅     | `near-adapter`, `burrow-adapter`; live demo renders real data                                                                                 |
+| Rhea swap quotes / pools                                                          | ✅     | `rhea-adapter`, `/v1/analytics/rhea/pools`                                                                                                    |
+| Price intelligence (oracle + Pyth + CEX refs)                                     | ✅     | `market-data/sources.ts`, `/v1/analytics/prices` live                                                                                         |
+| Yield observations (DefiLlama + Rhea)                                             | ✅     | `yield/service.ts`, `yield_observations` table                                                                                                |
+| Policy engine (allowlists, limits, 12 rules)                                      | ✅     | `policy-engine`; adversarial tests `demo-attack.ts`                                                                                           |
+| Dry-run executor (plan + policy-check, never sends)                               | ✅     | `tx-execution`; `loadSigner()` returns `null`                                                                                                 |
+| Audit trail (write-through Postgres + checkpoints)                                | ✅     | `evidence/`, `audit_checkpoints`, `/v1/audit/verify`                                                                                          |
+| Simulation / demo portfolios ($500 / $5,000)                                      | ✅     | `simulation/`, `demo_ledger`; banner-labelled                                                                                                 |
+| Legacy cycle engine (HealthGuardian + Rebalancer)                                 | ✅     | default `AUTOPILOT_ENGINE=legacy`                                                                                                             |
+| **Multi-agent orchestrator** (4 agents, decision engine, escalation, idempotency) | 🟡     | `packages/orchestrator` (4.3k LOC) wired behind `AUTOPILOT_ENGINE=orchestrator`, **off by default**                                           |
+| Analytics dashboard (Portfolio, Opportunities, Activity, Research)                | ✅     | `apps/analytics`; live                                                                                                                        |
+| Opportunity scoring / comparison                                                  | 🟡     | `analytics/opportunities.ts` (net-cost comparison); no formal documented `Opportunity Score` yet                                              |
+| Risk intelligence (HF, stress, risk profiles)                                     | 🟡     | `financial-engine/risk.ts`, `burrow-adapter/risk.ts`, orchestrator `risk-state.ts` — present but duplicated and not surfaced as a Risk Center |
+| LLM-backed agent                                                                  | 🟥     | `LlmAgent` class present, **no `LlmClient` impl, not wired**                                                                                  |
+| Mainnet wallet-confirm hand-off (owner signs)                                     | 🟡     | **local branch `feat/mainnet-wallet-confirm` only**, never pushed                                                                             |
+| **Guard smart contract (on-chain limits / Emergency Stop)**                       | ⬜     | **no contract exists** — no `contracts/`, no `Cargo.toml`                                                                                     |
+| Autonomous execution engine (real sends within limits)                            | ⬜     | blocked by design: no signer, no Guard                                                                                                        |
+| Learning / backtesting engine                                                     | 🟡     | partial: `thesis/`, DCL backtest, shadow mode; no model-eval/optimization loop                                                                |
+| User accounts / per-user policy / sessions                                        | ⬜     | single-operator model today                                                                                                                   |
 
 ## 4. The "AI" reality (critical, honest finding)
 
