@@ -4,6 +4,7 @@ import { EmptyState, PageHeader } from '../../components/ui';
 import { ErrorState } from '../../components/states';
 import { int } from '../../lib/format';
 import { opportunities } from '../../lib/product';
+import { ProvenanceNote } from '../../components/ProvenanceNote';
 
 export const dynamic = 'force-dynamic';
 
@@ -210,6 +211,7 @@ export default async function OpportunitiesPage({
           </div>
         </details>
       )}
+      <ProvenanceNote />
     </>
   );
 }

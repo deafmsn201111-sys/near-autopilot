@@ -1,5 +1,6 @@
 import { ErrorState } from '../../components/states';
 import { tryApi } from '../../lib/api';
+import { ProvenanceNote } from '../../components/ProvenanceNote';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,6 +144,7 @@ export default async function RiskPage() {
           </li>
         </ol>
       </section>
+      <ProvenanceNote />
     </>
   );
 }

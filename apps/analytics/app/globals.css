@@ -2044,3 +2044,29 @@ table.mini tr.total td {
   font-weight: 600;
   vertical-align: middle;
 }
+
+.prov-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.prov-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.chip.prov-fact {
+  color: var(--good);
+}
+.chip.prov-external {
+  color: var(--accent);
+}
+.chip.prov-estimate {
+  color: var(--warning);
+}
+.chip.prov-prediction {
+  color: var(--critical);
+}

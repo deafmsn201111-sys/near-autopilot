@@ -1,6 +1,7 @@
 import { ErrorState } from '../../components/states';
 import { tryApi } from '../../lib/api';
 import { ago } from '../../lib/product';
+import { ProvenanceNote } from '../../components/ProvenanceNote';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,6 +163,7 @@ export default async function AgentsPage() {
         change their own permissions. An agent that emits anything outside its allowed proposals is
         rejected and flagged.
       </p>
+      <ProvenanceNote />
     </>
   );
 }
