@@ -36,7 +36,7 @@ services:
       API_PORT: 4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      NEAR_NETWORK: ${NEAR_NETWORK:-testnet}
+      NEAR_NETWORK: ${NEAR_NETWORK:-mainnet}
       NEAR_RPC_URL: ${NEAR_RPC_URL:?set NEAR_RPC_URL in .env}
       AUTOPILOT_ACCOUNT_ID: ${AUTOPILOT_ACCOUNT_ID:?set AUTOPILOT_ACCOUNT_ID in .env}
       EXECUTION_MODE: ${EXECUTION_MODE:-dry-run}
@@ -45,7 +45,7 @@ services:
       AUTOPILOT_ENGINE: ${AUTOPILOT_ENGINE:-legacy}
       DATA_SOURCE: ${DATA_SOURCE:-chain}
       SIMULATION_PORTFOLIO: ${SIMULATION_PORTFOLIO:-demo-500}
-      # Required on testnet (no built-in defaults); empty means "use the mainnet default" on mainnet.
+      # Mainnet has built-in defaults; set these only to override the contract ids.
       RHEA_CONTRACT_ID: ${RHEA_CONTRACT_ID:-}
       BURROW_CONTRACT_ID: ${BURROW_CONTRACT_ID:-}
       BURROW_ORACLE_ID: ${BURROW_ORACLE_ID:-}
@@ -68,75 +68,6 @@ services:
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
     ports:
       - '127.0.0.1:${DASHBOARD_PORT:-3000}:3000'
-
-  # ---- Read-only NEAR testnet profile: `docker compose --profile testnet up -d` ----
-  # A second API + dashboard over REAL testnet data (RPC view calls only), next to the simulation stack and sharing
-  # its Postgres; each API lists only rows of its own provenance. Network, data source and execution mode are fixed
-  # here on purpose: .env cannot turn this profile into a live or simulated one.
-  api-testnet:
-    profiles: [testnet]
-    # the image the `api` service builds (built once, not once per service)
-    image: near-autopilot-api:local
-    pull_policy: never
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      # Starts after the main API has applied migrations, so the two never migrate concurrently.
-      api:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      API_HOST: 0.0.0.0
-      API_PORT: 4000
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      NEAR_NETWORK: testnet
-      DATA_SOURCE: chain
-      EXECUTION_MODE: dry-run
-      NEAR_RPC_URL: ${TESTNET_RPC_URL:-https://rpc.testnet.near.org}
-      # Optional hosted-RPC key (FastNEAR: TESTNET_RPC_URL=https://rpc.testnet.fastnear.com), sent as a Bearer header.
-      NEAR_RPC_API_KEY: ${TESTNET_RPC_API_KEY:-}
-      AUTOPILOT_ACCOUNT_ID: ${TESTNET_ACCOUNT_ID:?set TESTNET_ACCOUNT_ID in .env (an existing *.testnet account)}
-      AUTOPILOT_ENGINE: ${TESTNET_ENGINE:-orchestrator}
-      # 0 = only on demand: every cycle costs public-RPC requests (rate limited), never NEAR.
-      CYCLE_INTERVAL_SECONDS: ${TESTNET_CYCLE_INTERVAL_SECONDS:-0}
-      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
-      RHEA_CONTRACT_ID: ${TESTNET_RHEA_CONTRACT_ID:-ref-finance-101.testnet}
-      BURROW_CONTRACT_ID: ${TESTNET_BURROW_CONTRACT_ID:-contract.1638481328.burrow.testnet}
-      BURROW_ORACLE_ID: ${TESTNET_BURROW_ORACLE_ID:-priceoracle.testnet}
-      # MAINNET MARKET DATA -> TESTNET EXECUTION: mainnet prices applied to testnet tokens as labelled reference prices.
-      MARKET_DATA: ${TESTNET_MARKET_DATA:-mainnet-reference}
-      # TESTNET yield data: Burrow rates, Rhea v1 pool fees, Rhea DCL pool state (read-only views at one pinned block).
-      YIELD_DATA: ${TESTNET_YIELD_DATA:-testnet-onchain}
-      RHEA_DCL_CONTRACT_ID: ${TESTNET_RHEA_DCL_CONTRACT_ID:-dclv2.ref-dev.testnet}
-      # Optional; Pyth Hermes requires a key. Without it Pyth is reported unavailable and DefiLlama is the fallback.
-      PYTH_API_KEY: ${PYTH_API_KEY:-}
-      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
-      DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
-      COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
-      KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
-      BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
-    volumes:
-      - ./config/autopilot.testnet.local.json:/etc/autopilot/autopilot.json:ro
-    ports:
-      - '127.0.0.1:${TESTNET_API_HOST_PORT:-4001}:4000'
-
-  dashboard-testnet:
-    profiles: [testnet]
-    # the image the `dashboard` service builds (built once, not once per service)
-    image: near-autopilot-dashboard:local
-    pull_policy: never
-    restart: unless-stopped
-    depends_on:
-      api-testnet:
-        condition: service_healthy
-    environment:
-      API_BASE_URL: http://api-testnet:4000
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-    ports:
-      - '127.0.0.1:${TESTNET_DASHBOARD_PORT:-3002}:3000'
 
   # ---- Read-only MAINNET shadow analysis: `docker compose --profile shadow up -d` ----
   # A SIMULATED demo portfolio (mock RPC) analysed with REAL mainnet prices, Burrow rates and rewards, Rhea pools and
@@ -174,7 +105,7 @@ services:
       MARKET_DATA: mainnet-live
       YIELD_DATA: mainnet-onchain
       RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
-      # Read-only mainnet RPC (view calls only). The FastNEAR key is shared with the testnet profile by default.
+      # Read-only mainnet RPC (view calls only).
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
       PYTH_API_KEY: ${PYTH_API_KEY:-}
