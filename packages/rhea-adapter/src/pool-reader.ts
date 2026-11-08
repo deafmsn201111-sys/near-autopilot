@@ -95,6 +95,15 @@ export class RheaPoolReader {
     };
   }
 
+  /** `get_pool_shares { pool_id, account_id }`: the account's LP share balance in this v1 pool (0 if none). */
+  async getPoolShares(poolId: number, accountId: AccountId): Promise<bigint> {
+    return this.read(
+      'get_pool_shares',
+      { pool_id: poolId, account_id: accountId },
+      u128StringSchema,
+    );
+  }
+
   /** `get_pool_volumes { pool_id }`: cumulative volumes, one entry per pool token, in pool token order. */
   async getVolumes(poolId: number): Promise<RheaPoolVolume[]> {
     const v = await this.read('get_pool_volumes', { pool_id: poolId }, volumesSchema);

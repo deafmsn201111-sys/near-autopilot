@@ -7,7 +7,7 @@ import {
   type NearRpcClient,
 } from '@near-autopilot/near-adapter';
 import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
-import { RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
+import { RheaPoolReader, RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
 import {
   RheaDclClient,
   dclPositionAmounts,
@@ -48,6 +48,59 @@ interface DclPositionView {
   readonly amountY: number;
   readonly usd: number | null;
   readonly range: { readonly left: number; readonly right: number };
+}
+
+interface V1PositionView {
+  readonly poolId: number;
+  readonly tokens: readonly string[];
+  readonly symbols: readonly string[];
+  readonly amounts: readonly number[];
+  readonly usd: number | null;
+  readonly sharePct: number;
+}
+
+/**
+ * The account's Rhea v1 (classic AMM) LP positions across the allowlisted pools. For each pool the account has shares
+ * in, the owned token amounts are reserves × shares / total-supply (on-chain facts); USD is a calculated estimate.
+ */
+async function readV1Positions(
+  reader: RheaPoolReader,
+  pools: readonly { poolId: number }[],
+  accountId: AccountId,
+  tokenMeta: ReadonlyMap<string, { symbol: string; decimals: number }>,
+  prices: ReadonlyMap<string, number>,
+): Promise<V1PositionView[]> {
+  const out: V1PositionView[] = [];
+  await Promise.all(
+    pools.map(async (pl) => {
+      const shares = await reader.getPoolShares(pl.poolId, accountId).catch(() => 0n);
+      if (shares <= 0n) return;
+      const pool = await reader.getPool(pl.poolId).catch(() => null);
+      if (!pool || pool.sharesTotalSupply <= 0n) return;
+      const symbols: string[] = [];
+      const amounts: number[] = [];
+      let usd: number | null = 0;
+      pool.tokens.forEach((t, i) => {
+        const raw = ((pool.reserves[i] ?? 0n) * shares) / pool.sharesTotalSupply;
+        const f = tokenMeta.get(t);
+        const human = Number(raw) / 10 ** (f?.decimals ?? 24);
+        amounts.push(human);
+        symbols.push(f?.symbol ?? t.slice(0, 10));
+        const p = prices.get(t);
+        if (usd !== null && p !== undefined) usd += human * p;
+        else usd = null;
+      });
+      out.push({
+        poolId: pl.poolId,
+        tokens: [...pool.tokens],
+        symbols,
+        amounts,
+        usd,
+        sharePct: Number((shares * 10_000n) / pool.sharesTotalSupply) / 100,
+      });
+    }),
+  );
+  return out.sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
 }
 
 /**
@@ -119,6 +172,7 @@ export function registerAccountView(
     pools: new StaticPoolRegistry(deps.pools),
   });
   const dcl = deps.dclId ? new RheaDclClient(viewer, { contractId: deps.dclId }) : null;
+  const poolReader = new RheaPoolReader(viewer, deps.rheaId);
   const cache = new Map<string, { at: number; body: unknown }>();
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
@@ -385,7 +439,10 @@ export function registerAccountView(
       else monthly += (h.where === 'borrowed' ? -1 : 1) * h.usd * r * H;
     }
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
-    const dclPositions = dcl ? await readDclPositions(dcl, id, symbol, prices) : [];
+    const [dclPositions, v1Positions] = await Promise.all([
+      dcl ? readDclPositions(dcl, id, symbol, prices) : Promise.resolve([]),
+      readV1Positions(poolReader, deps.pools, id, symbol, prices),
+    ]);
 
     const body = {
       earnings: {
@@ -405,6 +462,7 @@ export function registerAccountView(
       unpriced: v.unpriced,
       totals: v.totals,
       dclPositions,
+      v1Positions,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {
