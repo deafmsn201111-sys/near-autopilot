@@ -2032,3 +2032,15 @@ table.mini tr.total td {
 .tag.critical {
   color: var(--critical);
 }
+
+.count-badge {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  vertical-align: middle;
+}

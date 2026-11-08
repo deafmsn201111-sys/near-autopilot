@@ -10,6 +10,25 @@ export const dynamic = 'force-dynamic';
 type Search = Record<string, string | string[] | undefined>;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
 
+/** The three honest buckets (brief §8): what passes, what is held back and why, and what has no reliable data yet. */
+const GROUPS = [
+  {
+    status: 'candidate',
+    title: 'Recommended',
+    note: 'Pass every filter — a shortlist to study, never an instruction. Nothing is executed.',
+  },
+  {
+    status: 'watch',
+    title: 'Watchlist',
+    note: 'Promising, but one thing holds each back (shown on its row). Worth watching.',
+  },
+  {
+    status: 'insufficient_data',
+    title: 'Not enough data yet',
+    note: 'No reliable yield measured, so no score is claimed.',
+  },
+] as const;
+
 const SORTS = [
   ['score', 'Most attractive'],
   ['risk', 'Lowest risk'],
@@ -147,12 +166,26 @@ export default async function OpportunitiesPage({
           {data.total} opportunities exist in total; the current filters exclude all of them.
         </EmptyState>
       ) : (
-        <div className="opp-list">
-          <OpportunityHead />
-          {data.opportunities.map((o) => (
-            <OpportunityRow key={o.id} o={o} />
-          ))}
-        </div>
+        GROUPS.map((g) => {
+          const items = data.opportunities.filter((o) => o.status === g.status);
+          if (items.length === 0) return null;
+          return (
+            <section className="block" key={g.status}>
+              <div className="block-head">
+                <h2>
+                  {g.title} <span className="count-badge">{items.length}</span>
+                </h2>
+                <p className="muted-note">{g.note}</p>
+              </div>
+              <div className="opp-list">
+                <OpportunityHead />
+                {items.map((o) => (
+                  <OpportunityRow key={o.id} o={o} />
+                ))}
+              </div>
+            </section>
+          );
+        })
       )}
 
       {data && (
