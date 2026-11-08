@@ -50,6 +50,47 @@ interface DclPositionView {
   readonly range: { readonly left: number; readonly right: number };
 }
 
+/** Known liquid-staking tokens (NEP-141). Their market price already reflects the staking premium, so they are valued
+ *  like any token. Native validator-delegated staking needs validator discovery (an indexer) and is out of scope here. */
+const LIQUID_STAKING: readonly { token: TokenId; symbol: string; protocol: string }[] = [
+  { token: 'meta-pool.near' as TokenId, symbol: 'stNEAR', protocol: 'Meta Pool' },
+  { token: 'linear-protocol.near' as TokenId, symbol: 'LiNEAR', protocol: 'LiNEAR' },
+];
+
+interface StakingView {
+  readonly token: string;
+  readonly symbol: string;
+  readonly protocol: string;
+  readonly amount: number;
+  readonly usd: number | null;
+}
+
+/** The account's liquid-staking holdings (stNEAR, LiNEAR): on-chain FT balances, valued at the latest market price. */
+async function readStaking(
+  tokens: NearTokenReader,
+  accountId: AccountId,
+  tokenMeta: ReadonlyMap<string, { symbol: string; decimals: number }>,
+  prices: ReadonlyMap<string, number>,
+): Promise<StakingView[]> {
+  const out: StakingView[] = [];
+  await Promise.all(
+    LIQUID_STAKING.map(async (s) => {
+      const raw = await tokens.getBalance(s.token, accountId).catch(() => 0n);
+      if (raw <= 0n) return;
+      const amount = Number(raw) / 10 ** (tokenMeta.get(s.token)?.decimals ?? 24);
+      const p = prices.get(s.token) ?? null;
+      out.push({
+        token: s.token,
+        symbol: s.symbol,
+        protocol: s.protocol,
+        amount,
+        usd: p !== null ? amount * p : null,
+      });
+    }),
+  );
+  return out.sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+}
+
 interface V1PositionView {
   readonly poolId: number;
   readonly tokens: readonly string[];
@@ -439,9 +480,10 @@ export function registerAccountView(
       else monthly += (h.where === 'borrowed' ? -1 : 1) * h.usd * r * H;
     }
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
-    const [dclPositions, v1Positions] = await Promise.all([
+    const [dclPositions, v1Positions, staking] = await Promise.all([
       dcl ? readDclPositions(dcl, id, symbol, prices) : Promise.resolve([]),
       readV1Positions(poolReader, deps.pools, id, symbol, prices),
+      readStaking(tokens, id, symbol, prices),
     ]);
 
     const body = {
@@ -463,6 +505,7 @@ export function registerAccountView(
       totals: v.totals,
       dclPositions,
       v1Positions,
+      staking,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {
