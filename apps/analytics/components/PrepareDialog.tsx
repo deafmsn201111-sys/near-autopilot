@@ -136,7 +136,6 @@ export function PrepareDialog({
                   <b>{trimDecimals(totalDepositNear(cascade.transactions))}</b>
                 </div>
               </div>
-              <p className="pa-note">{cascade.note}</p>
             </aside>
           </div>
 
@@ -183,8 +182,9 @@ export function PrepareDialog({
                   {state === 'signing' ? 'Waiting for your wallet…' : 'Sign in your wallet'}
                 </button>
                 <span className="muted-note">
-                  Your wallet shows every action again for approval. The server holds no key and
-                  sends nothing.
+                  {cascade.transactions.length}{' '}
+                  {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
+                  you. Autopilot never holds your keys or moves funds on its own.
                 </span>
               </>
             ) : (
@@ -193,8 +193,9 @@ export function PrepareDialog({
                   🔒 Sign in your wallet
                 </button>
                 <span className="muted-note">
-                  The cascade above is ready. One-click signing runs in local mode with signing
-                  enabled — the server never holds a key and sends nothing.
+                  {cascade.transactions.length}{' '}
+                  {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
+                  you. Autopilot never holds your keys or moves funds on its own.
                 </span>
               </>
             )}

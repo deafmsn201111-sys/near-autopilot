@@ -223,10 +223,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           withAccount
           account={accountParam}
         />
-        <span className="muted-note">
+        <span className="sync-note">
+          <span className="dot" aria-hidden="true" />
           {isAccount
-            ? `${accountParam} on NEAR mainnet · read just now, nothing is signed or sent`
-            : `Demo portfolio: simulated balances valued at live NEAR prices · updated ${ago(data.asOf)}`}
+            ? 'Synced from mainnet · just now'
+            : `Demo portfolio · updated ${ago(data.asOf)}`}
         </span>
       </div>
 
@@ -320,13 +321,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {isAccount && recs && recs.recommendations.length > 0 && (
         <section className="block">
           <div className="block-head">
-            <div>
-              <h2>What the agents suggest</h2>
-              <p className="muted-note">
-                Each is a concrete, one-click action. The site assembles the exact transaction
-                cascade; you review it and sign in your own wallet. The server holds no key.
-              </p>
-            </div>
+            <h2>What the agents suggest</h2>
+            <span className="muted-note">
+              {recs.recommendations.length}{' '}
+              {recs.recommendations.length === 1 ? 'action' : 'actions'} worth your attention
+            </span>
           </div>
           <Recommendations
             account={accountParam}
@@ -405,13 +404,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {!isAccount && (
         <section className="block">
           <div className="block-head">
-            <div>
-              <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
-              <p className="muted-note">
-                Best result first, after every cost: fees, swaps, gas, borrowing interest and
-                impermanent loss.
-              </p>
-            </div>
+            <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
             {!PUBLIC_DEMO && (
               <ConfirmAction
                 label="Refresh with live data"

@@ -2977,3 +2977,36 @@ main.page {
     display: none;
   }
 }
+
+/* ---- demo analysis cards + decision log: match the account view's panel surfaces ---- */
+.action,
+.decision {
+  background: var(--panel-grad);
+  border: 1px solid var(--grid);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 22px 26px;
+}
+.action:hover {
+  box-shadow: var(--shadow-md);
+  transform: none;
+}
+.action.best {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--grid));
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 44px -18px var(--accent);
+}
+.action.best .tag {
+  color: var(--accent-strong);
+}
+.plan {
+  border-top-color: var(--grid);
+}
+.plan summary {
+  color: var(--accent-strong);
+}
+.decision .muted-note {
+  color: var(--muted);
+}
