@@ -76,11 +76,11 @@ export const MAIN = [
     icon: ICONS.opportunities,
   },
   { href: '/activity', label: 'Activity', match: ['/activity'], icon: ICONS.activity },
-  { href: '/research', label: 'Research', match: ['/research'], icon: ICONS.research },
 ] as const;
 
 export const REVIEWER_TABS = [
   { href: '/reviewers', label: 'Start here' },
+  { href: '/research', label: 'Research' },
   { href: '/policy', label: 'Safety policy' },
   { href: '/audit', label: 'Audit trail' },
   { href: '/routes', label: 'Execution routes' },
