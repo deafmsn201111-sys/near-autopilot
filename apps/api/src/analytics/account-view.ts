@@ -1287,14 +1287,19 @@ export function registerAccountView(
       if (price === undefined || !(price > 0))
         return reply.code(409).send({ error: `no confirmed price for ${intent.token}` });
       const walletHuman = Number(walletRaw) / 10 ** decimals;
-      if (walletHuman <= 0) return reply.code(409).send({ error: `your wallet holds no ${sym}` });
+      // A swap FROM wNEAR can wrap native NEAR first (handled in the swap branch), so an empty wNEAR balance is not a
+      // blocker here; other actions (supply/repay) do need the token in the wallet.
+      const isWrapSwap = intent.action === 'swap' && intent.token === WRAP_NEAR_ID;
+      if (walletHuman <= 0 && !isWrapSwap)
+        return reply.code(409).send({ error: `your wallet holds no ${sym}` });
       const { rawAmount, humanAmount } = resolveIntentAmount(
         intent.approxUsd,
         price,
         decimals,
         walletHuman,
       );
-      if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
+      if (rawAmount <= 0n && !isWrapSwap)
+        return reply.code(409).send({ error: 'the resolved amount is zero' });
       const human = humanAmount.toFixed(Math.min(6, decimals));
 
       const steps: CascadeStep[] = [];

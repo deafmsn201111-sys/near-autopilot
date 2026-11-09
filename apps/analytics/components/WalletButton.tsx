@@ -15,7 +15,18 @@ export function WalletButton() {
   const [account, setAccount] = useState<string | null>(null);
   const [state, setState] = useState<'idle' | 'connecting' | 'opening'>('idle');
 
-  useEffect(() => watchAccount(setAccount), []);
+  // Remember the connected account in a cookie so server pages (and the "Your account" tab) can find it without the
+  // id sitting in the URL — otherwise navigating away and back loses it and the portfolio reads empty.
+  useEffect(
+    () =>
+      watchAccount((id) => {
+        setAccount(id);
+        document.cookie = id
+          ? `np_account=${encodeURIComponent(id)}; path=/; max-age=31536000; samesite=lax`
+          : 'np_account=; path=/; max-age=0; samesite=lax';
+      }),
+    [],
+  );
 
   if (state === 'opening') return <span className="wallet-chip muted-note">One moment…</span>;
   if (account)

@@ -1,4 +1,5 @@
 import { PUBLIC_DEMO } from '../lib/public-demo';
+import { cookies } from 'next/headers';
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
@@ -150,7 +151,11 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   const isAccount = sp.p === 'account';
-  const accountParam = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
+  // The account id can come from the URL (?account=) or, when navigating back to "Your account" without it, from the
+  // cookie the wallet set on connect — otherwise the view would read empty until the wallet is reconnected.
+  const urlAccount = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
+  const cookieAccount = (await cookies()).get('np_account')?.value?.trim().toLowerCase() ?? '';
+  const accountParam = urlAccount || (isAccount ? cookieAccount : '');
   const id = portfolioOf(sp.p);
   if (isAccount && !accountParam)
     return (
@@ -166,7 +171,12 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     return (
       <>
         <div className="hero-head">
-          <PortfolioSwitch current={isAccount ? 'account' : id} path="/" withAccount />
+          <PortfolioSwitch
+            current={isAccount ? 'account' : id}
+            path="/"
+            withAccount
+            account={accountParam}
+          />
         </div>
         {isAccount && <AccountForm value={accountParam} />}
         <ErrorState
@@ -207,7 +217,12 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <div className="hero-head">
-        <PortfolioSwitch current={isAccount ? 'account' : id} path="/" withAccount />
+        <PortfolioSwitch
+          current={isAccount ? 'account' : id}
+          path="/"
+          withAccount
+          account={accountParam}
+        />
         <span className="muted-note">
           {isAccount
             ? `${accountParam} on NEAR mainnet · read just now, nothing is signed or sent`
