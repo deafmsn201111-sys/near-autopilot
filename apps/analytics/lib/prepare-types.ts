@@ -28,6 +28,20 @@ export interface PreparedAmount {
   readonly symbol: string;
 }
 
+/** Honest swap economics for the preview — what you get, the price impact and the slippage cap. */
+export interface SwapCost {
+  readonly slippageBps: number;
+  readonly estReceived: PreparedAmount;
+  readonly minReceived: PreparedAmount;
+  readonly priceImpactPct: number | null;
+}
+
+export interface PreparedCost {
+  /** Upper bound on the network fee in NEAR (prepaid gas × min price; most is refunded). */
+  readonly networkFeeMaxNear: number;
+  readonly swap: SwapCost | null;
+}
+
 export interface PreparedCascade {
   readonly account: string;
   readonly intent: Record<string, unknown>;
@@ -37,6 +51,8 @@ export interface PreparedCascade {
   readonly transactions: readonly PreparedTransaction[];
   /** Plain-language line per step — what the user is about to sign. */
   readonly preview: readonly string[];
+  /** Honest cost breakdown (network fee, and for a swap: price impact / slippage / received). */
+  readonly cost?: PreparedCost;
   readonly signed: false;
   readonly note: string;
 }

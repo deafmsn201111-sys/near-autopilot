@@ -1308,6 +1308,14 @@ export function registerAccountView(
       const human = humanAmount.toFixed(Math.min(6, decimals));
 
       const steps: CascadeStep[] = [];
+      // Swap economics shown to the user (honest, real): slippage cap, what they get, and the price impact + fee
+      // implied by the pool's reserves. Null for non-swap intents.
+      let swapCost: {
+        readonly slippageBps: number;
+        readonly estReceived: { raw: string; human: number; symbol: string };
+        readonly minReceived: { raw: string; human: number; symbol: string };
+        readonly priceImpactPct: number | null;
+      } | null = null;
 
       if (intent.action === 'swap') {
         const tokenOut = intent.tokenOut;
@@ -1346,6 +1354,36 @@ export function registerAccountView(
         const decOut = metaOf(tokenOut)?.decimals ?? 24;
         const symOut = metaOf(tokenOut)?.symbol ?? tokenOut.slice(0, 10);
         const humanMinOut = (Number(minOut) / 10 ** decOut).toFixed(Math.min(6, decOut));
+        // Price impact (incl. the pool fee) from the pool's reserves vs the executed rate; honest, no fabrication.
+        let priceImpactPct: number | null = null;
+        const poolInfo = await poolReader.getPool(quote.poolId).catch(() => null);
+        if (poolInfo) {
+          const iIn = poolInfo.tokens.indexOf(intent.token);
+          const iOut = poolInfo.tokens.indexOf(tokenOut);
+          const rIn = iIn >= 0 ? Number(poolInfo.reserves[iIn]) / 10 ** decimals : 0;
+          const rOut = iOut >= 0 ? Number(poolInfo.reserves[iOut]) / 10 ** decOut : 0;
+          const execIn = Number(swapRawAmount) / 10 ** decimals;
+          const execOut = Number(quote.amountOut) / 10 ** decOut;
+          if (rIn > 0 && rOut > 0 && execIn > 0) {
+            const spot = rOut / rIn; // output per input at the pool mid-price
+            const exec = execOut / execIn; // what this size actually gets
+            priceImpactPct = Math.max(0, (1 - exec / spot) * 100);
+          }
+        }
+        swapCost = {
+          slippageBps: intent.maxSlippageBps,
+          estReceived: {
+            raw: quote.amountOut.toString(),
+            human: Number(quote.amountOut) / 10 ** decOut,
+            symbol: symOut,
+          },
+          minReceived: {
+            raw: minOut.toString(),
+            human: Number(minOut) / 10 ** decOut,
+            symbol: symOut,
+          },
+          priceImpactPct,
+        };
         // Register on the OUTPUT token first, or the swap output would be stranded on the exchange.
         if (!(await tokens.isStorageRegistered(tokenOut, account))) {
           const bounds = (await viewer.view(tokenOut, 'storage_balance_bounds', {})) as {
@@ -1450,6 +1488,13 @@ export function registerAccountView(
         return reply
           .code(422)
           .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
+      // Upper-bound network fee: total prepaid gas × the minimum gas price (most of it is refunded in practice).
+      const totalGas = cascade.transactions.reduce(
+        (s, t) => s + t.actions.reduce((g, a) => g + a.gas, 0n),
+        0n,
+      );
+      const networkFeeMaxNear =
+        Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6;
       return {
         account,
         intent,
@@ -1465,6 +1510,7 @@ export function registerAccountView(
           })),
         })),
         preview: cascade.preview,
+        cost: { networkFeeMaxNear, swap: swapCost },
         signed: false,
         note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
       };
