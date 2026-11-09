@@ -212,3 +212,66 @@ describe('validateCascade — DCL reposition (exit) cascade', () => {
     expect(validateCascade(cascade, dclCtx)).toEqual({ ok: true });
   });
 });
+
+describe('validateCascade — near_deposit (wrap) exemption', () => {
+  const WRAP = accountId('wrap.near');
+  const EXCH = accountId('v2.ref-finance.near');
+  const wrapCtx = { signerId: ALICE, allowedReceivers: new Set<string>([WRAP, EXCH]) };
+
+  const wrapTx = (deposit: bigint): PlannedTransaction => ({
+    intentId: 'wrap',
+    signerId: ALICE,
+    receiverId: WRAP,
+    actions: [
+      {
+        type: 'FunctionCall',
+        methodName: 'near_deposit',
+        args: {},
+        gas: 10_000_000_000_000n,
+        deposit,
+      },
+    ],
+  });
+
+  it('allows a large near_deposit (wrapping own NEAR 1:1) past the deposit caps', () => {
+    // 327 NEAR wrapped — far above the 0.15/0.3 NEAR storage caps, but it is the user's own value.
+    const r = validateCascade([wrapTx(327_000_000_000_000_000_000_000_000n)], wrapCtx);
+    expect(r).toEqual({ ok: true });
+  });
+
+  it('still rejects near_deposit to a non-allowlisted receiver', () => {
+    const tx = {
+      ...wrapTx(1_000_000_000_000_000_000_000_000n),
+      receiverId: accountId('evil.near'),
+    };
+    const r = validateCascade([tx], wrapCtx);
+    expect(r.ok).toBe(false);
+  });
+
+  it('rejects a near_deposit of zero', () => {
+    const r = validateCascade([wrapTx(0n)], wrapCtx);
+    expect(r.ok).toBe(false);
+  });
+
+  it('does not let a wrapping deposit mask an over-cap storage deposit elsewhere', () => {
+    const storageOverCap: PlannedTransaction = {
+      intentId: 'reg',
+      signerId: ALICE,
+      receiverId: EXCH,
+      actions: [
+        {
+          type: 'FunctionCall',
+          methodName: 'storage_deposit',
+          args: { account_id: ALICE },
+          gas: 30_000_000_000_000n,
+          deposit: 500_000_000_000_000_000_000_000n, // 0.5 NEAR > 0.15 cap
+        },
+      ],
+    };
+    const r = validateCascade(
+      [wrapTx(10_000_000_000_000_000_000_000_000n), storageOverCap],
+      wrapCtx,
+    );
+    expect(r.ok).toBe(false);
+  });
+});

@@ -9,7 +9,7 @@ import {
   buildWithdraw,
 } from '@near-autopilot/burrow-adapter';
 import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
-import { buildUnwrapNear } from '../wallet/wrap';
+import { buildUnwrapNear, buildWrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
 import { z } from 'zod';
@@ -245,6 +245,9 @@ async function readDclPositions(
   }
   return out;
 }
+
+/** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
+const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 
 const ORCH = orchestratorConfigSchema.parse({});
 const GAS = ORCH.swap.estimatedGasUsd;
@@ -1299,7 +1302,36 @@ export function registerAccountView(
       if (intent.action === 'swap') {
         const tokenOut = intent.tokenOut;
         if (!tokenOut) return reply.code(400).send({ error: 'a swap needs tokenOut' });
-        const quote = await quoter.quote({ tokenIn: intent.token, tokenOut, amountIn: rawAmount });
+
+        // Swapping wNEAR but most of the holding is NATIVE NEAR: wrap the shortfall first (near_deposit, 1:1), so the
+        // recommendation's size can actually be met. A buffer of native NEAR is left for gas and storage.
+        let swapRawAmount = rawAmount;
+        let swapHuman = humanAmount;
+        if (intent.token === WRAP_NEAR_ID) {
+          const nativeYocto = await native.getNativeBalance(account).catch(() => 0n);
+          const NATIVE_BUFFER = 1_000_000_000_000_000_000_000_000n; // keep 1 NEAR native for gas + storage
+          const wrappable = nativeYocto > NATIVE_BUFFER ? nativeYocto - NATIVE_BUFFER : 0n;
+          const availHuman = walletHuman + Number(wrappable) / 1e24;
+          const resized = resolveIntentAmount(intent.approxUsd, price, decimals, availHuman);
+          swapRawAmount = resized.rawAmount;
+          swapHuman = resized.humanAmount;
+          if (swapRawAmount > walletRaw) {
+            const shortfall = swapRawAmount - walletRaw; // native NEAR to wrap (yocto == raw at 24 decimals)
+            steps.push({
+              intentId: 'wrap',
+              tx: buildWrapNear({ wrapContractId: WRAP_NEAR_ID, rawAmount: shortfall }),
+              preview: `Wrap ${(Number(shortfall) / 1e24).toFixed(6)} NEAR into wNEAR for the swap.`,
+            });
+          }
+        }
+        if (swapRawAmount <= 0n)
+          return reply.code(409).send({ error: 'the resolved swap amount is zero' });
+
+        const quote = await quoter.quote({
+          tokenIn: intent.token,
+          tokenOut,
+          amountIn: swapRawAmount,
+        });
         if (!quote)
           return reply
             .code(409)
@@ -1349,7 +1381,7 @@ export function registerAccountView(
                         pool_id: quote.poolId,
                         token_in: intent.token,
                         token_out: tokenOut,
-                        amount_in: rawAmount.toString(),
+                        amount_in: swapRawAmount.toString(),
                         min_amount_out: minOut.toString(),
                       },
                     ],
@@ -1360,7 +1392,7 @@ export function registerAccountView(
               },
             ],
           },
-          preview: `Swap ${human} ${sym} for at least ${humanMinOut} ${symOut} on Rhea (max ${(intent.maxSlippageBps / 100).toFixed(2)}% slippage).`,
+          preview: `Swap ${swapHuman.toFixed(Math.min(6, decimals))} ${sym} for at least ${humanMinOut} ${symOut} on Rhea (max ${(intent.maxSlippageBps / 100).toFixed(2)}% slippage).`,
         });
       } else {
         // supply / repay — Burrow, from proofs the verifier mints.

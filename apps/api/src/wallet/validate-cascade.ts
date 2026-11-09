@@ -31,7 +31,8 @@ export const ALLOWED_METHODS = new Set([
   'remove_liquidity',
   'withdraw_asset',
   'burn_v_liquidity',
-  // unwrap wNEAR -> native NEAR.
+  // wrap native NEAR -> wNEAR (before a swap), and unwrap wNEAR -> native NEAR.
+  'near_deposit',
   'near_withdraw',
   // priced Burrow borrow / withdraw, routed through the oracle.
   'oracle_call',
@@ -61,8 +62,14 @@ function checkAction(
   if (!ALLOWED_METHODS.has(a.methodName)) reasons.push(`${where}: method is not allowlisted`);
   if (a.gas <= 0n || a.gas > MAX_ACTION_GAS) reasons.push(`${where}: gas ${a.gas} out of range`);
   if (a.deposit < 0n) reasons.push(`${where}: negative deposit`);
-  if (a.deposit > 1n && a.deposit > MAX_ACTION_DEPOSIT)
+  // near_deposit WRAPS the signer's own NEAR into wNEAR 1:1 — the attached deposit IS the value being wrapped (not a
+  // fee or a loss; it is recoverable by unwrapping), so it is deliberately exempt from the storage-sized deposit caps.
+  // The receiver allowlist still confines it to the wrap contract, and the wallet shows the amount for approval.
+  const isWrap = a.methodName === 'near_deposit';
+  if (!isWrap && a.deposit > 1n && a.deposit > MAX_ACTION_DEPOSIT)
     reasons.push(`${where}: deposit ${a.deposit} exceeds the per-action cap`);
+  if (isWrap && a.deposit <= 0n)
+    reasons.push(`${where}: near_deposit must attach a positive amount`);
   // ft_transfer_call carries the real value transfer; check its shape and that it is addressed to an allowed receiver.
   if (a.methodName === 'ft_transfer_call') {
     if (a.deposit !== 1n)
@@ -74,7 +81,8 @@ function checkAction(
       reasons.push(`${where}: transfers to an unexpected receiver ${String(to)}`);
     if (typeof a.args['msg'] !== 'string') reasons.push(`${where}: msg must be a string`);
   }
-  return a.deposit;
+  // A wrapping deposit is the user's own NEAR moving into their wNEAR balance; don't count it toward the cascade cap.
+  return isWrap ? 0n : a.deposit;
 }
 
 /** Validate every transaction and action in a cascade. Returns ok, or every reason it failed. */
