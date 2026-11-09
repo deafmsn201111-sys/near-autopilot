@@ -42,3 +42,55 @@ export function resolveIntentAmount(
   if (maxHuman !== undefined && humanAmount > maxHuman) humanAmount = maxHuman;
   return { rawAmount: toRawUnits(humanAmount, decimals), humanAmount };
 }
+
+/** One side of a balanced liquidity deposit. */
+export interface LpSide {
+  readonly rawAmount: bigint;
+  readonly humanAmount: number;
+}
+
+/**
+ * Size a balanced ("50/50") deposit into a two-token v1 pool. The two contributions are kept in the pool's
+ * CURRENT reserve ratio, so the contract consumes both fully and nothing is stranded — this is what "equal
+ * halves" means for a balanced pool, where each side is ~half the value. The total value targets `budgetUsd`,
+ * then each side is capped at the wallet holding; if a cap binds, BOTH sides scale down together so the ratio
+ * (and thus "no leftover") is preserved. Amounts are floored, never rounded up.
+ *
+ * `reserve*` are raw pool reserves (as `get_pool` reports), `price*` USD per whole token, `wallet*Human` the
+ * signer's holdings in whole tokens.
+ */
+export function resolveBalancedLpAmounts(args: {
+  readonly budgetUsd: number;
+  readonly reserve0Human: number;
+  readonly reserve1Human: number;
+  readonly price0Usd: number;
+  readonly price1Usd: number;
+  readonly decimals0: number;
+  readonly decimals1: number;
+  readonly wallet0Human: number;
+  readonly wallet1Human: number;
+}): { readonly side0: LpSide; readonly side1: LpSide } {
+  const { budgetUsd, reserve0Human, reserve1Human, price0Usd, price1Usd } = args;
+  if (!(budgetUsd > 0)) throw new RangeError('budget must be positive');
+  if (!(reserve0Human > 0) || !(reserve1Human > 0))
+    throw new RangeError('both pool reserves must be positive');
+  if (!(price0Usd > 0) || !(price1Usd > 0)) throw new RangeError('both prices must be positive');
+
+  // Keep amount0/amount1 = reserve0/reserve1 (human units). Let amount1 = x, amount0 = x * ratio.
+  const ratio = reserve0Human / reserve1Human;
+  // budget = amount0 * price0 + amount1 * price1 = x * (ratio * price0 + price1).
+  let x1 = budgetUsd / (ratio * price0Usd + price1Usd);
+  let x0 = x1 * ratio;
+  // Cap by wallet holdings, scaling BOTH sides by the tightest binding ratio to preserve the pool ratio.
+  let scale = 1;
+  if (x0 > args.wallet0Human) scale = Math.min(scale, args.wallet0Human / x0);
+  if (x1 > args.wallet1Human) scale = Math.min(scale, args.wallet1Human / x1);
+  if (scale < 1) {
+    x0 *= scale;
+    x1 *= scale;
+  }
+  return {
+    side0: { rawAmount: toRawUnits(x0, args.decimals0), humanAmount: x0 },
+    side1: { rawAmount: toRawUnits(x1, args.decimals1), humanAmount: x1 },
+  };
+}

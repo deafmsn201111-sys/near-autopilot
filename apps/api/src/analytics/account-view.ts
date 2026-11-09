@@ -6,7 +6,7 @@ import {
   buildRepay,
   buildSupply,
 } from '@near-autopilot/burrow-adapter';
-import { resolveIntentAmount } from '../wallet/amounts';
+import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { z } from 'zod';
 import {
@@ -16,7 +16,14 @@ import {
   type NearRpcClient,
 } from '@near-autopilot/near-adapter';
 import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
-import { RheaPoolReader, RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
+import {
+  RheaPoolReader,
+  RheaSwapQuoter,
+  StaticPoolRegistry,
+  buildExchangeDeposit,
+  buildExchangeStorageDeposit,
+  buildV1AddLiquidity,
+} from '@near-autopilot/rhea-adapter';
 import {
   RheaDclClient,
   dclPositionAmounts,
@@ -846,10 +853,12 @@ export function registerAccountView(
       .object({
         account: accountIdSchema,
         intent: z.object({
-          action: z.enum(['supply', 'repay', 'swap']),
+          action: z.enum(['supply', 'repay', 'swap', 'add_liquidity']),
           token: accountIdSchema,
-          /** Required for a swap: the token to receive. */
+          /** Required for a swap / add_liquidity: the second token (received, or the other LP side). */
           tokenOut: accountIdSchema.optional(),
+          /** Required for add_liquidity: the v1 SIMPLE_POOL id to deposit into. */
+          poolId: z.number().int().nonnegative().optional(),
           approxUsd: z.number().positive().max(1_000_000),
           /** Swap slippage tolerance in basis points (default 50 = 0.5%). */
           maxSlippageBps: z.number().int().min(1).max(1_000).default(50),
@@ -858,6 +867,137 @@ export function registerAccountView(
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
     const { account, intent } = parsed.data;
+
+    // add_liquidity — balanced ("50/50") deposit into a Rhea v1 SIMPLE_POOL. Handled on its own: it sizes two
+    // tokens at the pool's reserve ratio, so nothing is stranded, and assembles register? -> deposit x2 -> add.
+    if (intent.action === 'add_liquidity') {
+      const token0 = intent.token;
+      const token1 = intent.tokenOut;
+      if (!token1 || intent.poolId === undefined)
+        return reply
+          .code(400)
+          .send({ error: 'add_liquidity needs tokenOut (the second token) and poolId' });
+      try {
+        const [prices, meta, pool, w0, w1, exchangeStorage] = await Promise.all([
+          latestPrices(),
+          store.tokenMetadata(),
+          poolReader.getPool(intent.poolId),
+          tokens.getBalance(token0, account).catch(() => 0n),
+          tokens.getBalance(token1, account).catch(() => 0n),
+          viewer.view(deps.rheaId, 'storage_balance_of', { account_id: account }).catch(() => null),
+        ]);
+        if (pool.kind !== 'SIMPLE_POOL')
+          return reply.code(409).send({ error: `pool ${intent.poolId} is not a v1 SIMPLE_POOL` });
+        // The pool reports its tokens in a fixed order; map the request's two tokens onto that order.
+        const idx0 = pool.tokens.indexOf(token0);
+        const idx1 = pool.tokens.indexOf(token1);
+        if (idx0 < 0 || idx1 < 0 || idx0 === idx1)
+          return reply
+            .code(409)
+            .send({ error: `pool ${intent.poolId} does not pair ${token0} with ${token1}` });
+        const metaOf = (t: string) => meta.find((x) => x.token === t);
+        const dec0 = metaOf(token0)?.decimals ?? 24;
+        const dec1 = metaOf(token1)?.decimals ?? 24;
+        const sym0 = metaOf(token0)?.symbol ?? token0.slice(0, 10);
+        const sym1 = metaOf(token1)?.symbol ?? token1.slice(0, 10);
+        const p0 = prices.get(token0);
+        const p1 = prices.get(token1);
+        if (p0 === undefined || !(p0 > 0))
+          return reply.code(409).send({ error: `no confirmed price for ${token0}` });
+        if (p1 === undefined || !(p1 > 0))
+          return reply.code(409).send({ error: `no confirmed price for ${token1}` });
+        const w0Human = Number(w0) / 10 ** dec0;
+        const w1Human = Number(w1) / 10 ** dec1;
+        if (w0Human <= 0 || w1Human <= 0)
+          return reply
+            .code(409)
+            .send({ error: `your wallet must hold both ${sym0} and ${sym1} to add liquidity` });
+        const { side0, side1 } = resolveBalancedLpAmounts({
+          budgetUsd: intent.approxUsd,
+          reserve0Human: Number(pool.reserves[idx0]) / 10 ** dec0,
+          reserve1Human: Number(pool.reserves[idx1]) / 10 ** dec1,
+          price0Usd: p0,
+          price1Usd: p1,
+          decimals0: dec0,
+          decimals1: dec1,
+          wallet0Human: w0Human,
+          wallet1Human: w1Human,
+        });
+        if (side0.rawAmount <= 0n || side1.rawAmount <= 0n)
+          return reply.code(409).send({ error: 'the resolved deposit amounts are zero' });
+        const h0 = side0.humanAmount.toFixed(Math.min(6, dec0));
+        const h1 = side1.humanAmount.toFixed(Math.min(6, dec1));
+
+        const steps: CascadeStep[] = [];
+        if (exchangeStorage === null) {
+          const b = (await viewer.view(deps.rheaId, 'storage_balance_bounds', {})) as {
+            min?: string;
+          };
+          const minDeposit = BigInt(b.min ?? '1020000000000000000000');
+          steps.push({
+            intentId: 'register-exchange',
+            tx: buildExchangeStorageDeposit({
+              contractId: deps.rheaId,
+              accountId: account,
+              deposit: minDeposit,
+            }),
+            preview: `Register on Rhea exchange — one-time, ${formatNear(minDeposit)} NEAR, refundable.`,
+          });
+        }
+        steps.push({
+          intentId: 'deposit-0',
+          tx: buildExchangeDeposit({
+            tokenId: token0,
+            contractId: deps.rheaId,
+            rawAmount: side0.rawAmount,
+          }),
+          preview: `Move ${h0} ${sym0} into your Rhea exchange balance.`,
+        });
+        steps.push({
+          intentId: 'deposit-1',
+          tx: buildExchangeDeposit({
+            tokenId: token1,
+            contractId: deps.rheaId,
+            rawAmount: side1.rawAmount,
+          }),
+          preview: `Move ${h1} ${sym1} into your Rhea exchange balance.`,
+        });
+        // Order amounts into the pool's own token order for the call.
+        const amounts: [bigint, bigint] =
+          idx0 < idx1 ? [side0.rawAmount, side1.rawAmount] : [side1.rawAmount, side0.rawAmount];
+        steps.push({
+          intentId: 'add-liquidity',
+          tx: buildV1AddLiquidity({ contractId: deps.rheaId, poolId: intent.poolId, amounts }),
+          preview: `Add ${h0} ${sym0} + ${h1} ${sym1} to pool #${intent.poolId} (balanced; any dust stays in your exchange balance, withdrawable).`,
+        });
+
+        const cascade = assembleCascade(account, steps);
+        return {
+          account,
+          intent,
+          amounts: [
+            { raw: side0.rawAmount.toString(), human: side0.humanAmount, symbol: sym0 },
+            { raw: side1.rawAmount.toString(), human: side1.humanAmount, symbol: sym1 },
+          ],
+          transactions: cascade.transactions.map((t) => ({
+            intentId: t.intentId,
+            receiverId: t.receiverId,
+            actions: t.actions.map((a) => ({
+              methodName: a.methodName,
+              args: a.args,
+              gas: a.gas.toString(),
+              deposit: a.deposit.toString(),
+            })),
+          })),
+          preview: cascade.preview,
+          signed: false,
+          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+        };
+      } catch (e) {
+        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
     try {
       const [prices, meta, walletRaw] = await Promise.all([
         latestPrices(),

@@ -6,7 +6,15 @@ import {
   type TokenReader,
 } from '@near-autopilot/core';
 import { ScriptedContractViewer } from '@near-autopilot/core/testing';
-import { RheaPlanner, RheaSwapQuoter, StaticPoolRegistry } from '../src';
+import {
+  buildExchangeDeposit,
+  buildExchangeStorageDeposit,
+  buildV1AddLiquidity,
+  RHEA_V1_LP_STORAGE_DEPOSIT,
+  RheaPlanner,
+  RheaSwapQuoter,
+  StaticPoolRegistry,
+} from '../src';
 
 const REF = accountId('v2.ref-finance.near');
 const WNEAR = accountId('wrap.near');
@@ -106,5 +114,88 @@ describe('RheaPlanner', () => {
     await expect(
       new RheaPlanner(tokens(false), { contractId: REF }).plan(intent, ALICE),
     ).rejects.toThrow(PreconditionError);
+  });
+});
+
+describe('v1 liquidity builders', () => {
+  const EXCHANGE = accountId('v2.ref-finance.near');
+
+  it('buildExchangeStorageDeposit registers the signer with the exact on-chain min', () => {
+    const step = buildExchangeStorageDeposit({
+      contractId: EXCHANGE,
+      accountId: ALICE,
+      deposit: 1_020_000_000_000_000_000_000n,
+    });
+    expect(step.receiverId).toBe(EXCHANGE);
+    expect(step.actions).toHaveLength(1);
+    const a = step.actions[0];
+    expect(a?.methodName).toBe('storage_deposit');
+    expect(a?.args).toEqual({ account_id: ALICE, registration_only: true });
+    expect(a?.deposit).toBe(1_020_000_000_000_000_000_000n);
+  });
+
+  it('buildExchangeStorageDeposit rejects a non-positive deposit', () => {
+    expect(() =>
+      buildExchangeStorageDeposit({ contractId: EXCHANGE, accountId: ALICE, deposit: 0n }),
+    ).toThrow(RangeError);
+  });
+
+  it('buildExchangeDeposit credits the exchange deposit balance with empty msg', () => {
+    const step = buildExchangeDeposit({ tokenId: WNEAR, contractId: EXCHANGE, rawAmount: 1_000n });
+    expect(step.receiverId).toBe(WNEAR);
+    const a = step.actions[0];
+    expect(a?.methodName).toBe('ft_transfer_call');
+    expect(a?.args).toEqual({ receiver_id: EXCHANGE, amount: '1000', msg: '' });
+    expect(a?.deposit).toBe(1n);
+  });
+
+  it('buildExchangeDeposit rejects a non-positive amount', () => {
+    expect(() =>
+      buildExchangeDeposit({ tokenId: WNEAR, contractId: EXCHANGE, rawAmount: 0n }),
+    ).toThrow(RangeError);
+  });
+
+  it('buildV1AddLiquidity serialises amounts in pool order with a refundable storage buffer', () => {
+    const step = buildV1AddLiquidity({
+      contractId: EXCHANGE,
+      poolId: 3879,
+      amounts: [100n, 200n],
+    });
+    expect(step.receiverId).toBe(EXCHANGE);
+    const a = step.actions[0];
+    expect(a?.methodName).toBe('add_liquidity');
+    expect(a?.args).toEqual({ pool_id: 3879, amounts: ['100', '200'] });
+    expect(a?.deposit).toBe(RHEA_V1_LP_STORAGE_DEPOSIT);
+  });
+
+  it('buildV1AddLiquidity includes min_amounts when provided', () => {
+    const step = buildV1AddLiquidity({
+      contractId: EXCHANGE,
+      poolId: 3879,
+      amounts: [100n, 200n],
+      minAmounts: [95n, 190n],
+    });
+    expect(step.actions[0]?.args).toEqual({
+      pool_id: 3879,
+      amounts: ['100', '200'],
+      min_amounts: ['95', '190'],
+    });
+  });
+
+  it('buildV1AddLiquidity rejects min_amounts above amounts', () => {
+    expect(() =>
+      buildV1AddLiquidity({
+        contractId: EXCHANGE,
+        poolId: 3879,
+        amounts: [100n, 200n],
+        minAmounts: [101n, 190n],
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('buildV1AddLiquidity rejects a non-positive amount', () => {
+    expect(() =>
+      buildV1AddLiquidity({ contractId: EXCHANGE, poolId: 3879, amounts: [0n, 200n] }),
+    ).toThrow(RangeError);
   });
 });
