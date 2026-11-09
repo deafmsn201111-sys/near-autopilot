@@ -1,4 +1,9 @@
-import { accountIdSchema, type AccountId, type TokenId } from '@near-autopilot/core';
+import {
+  accountIdSchema,
+  type AccountId,
+  type FunctionCallAction,
+  type TokenId,
+} from '@near-autopilot/core';
 import {
   BurrowClient,
   BurrowVerifier,
@@ -9,7 +14,7 @@ import {
   buildWithdraw,
 } from '@near-autopilot/burrow-adapter';
 import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
-import { buildUnwrapNear, buildWrapNear } from '../wallet/wrap';
+import { buildUnwrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
 import { z } from 'zod';
@@ -1312,6 +1317,9 @@ export function registerAccountView(
         // recommendation's size can actually be met. A buffer of native NEAR is left for gas and storage.
         let swapRawAmount = rawAmount;
         let swapHuman = humanAmount;
+        // If native NEAR must be wrapped, do it as the FIRST action of the SAME transaction as the swap (both are
+        // calls on wrap.near): near_deposit mints wNEAR, then ft_transfer_call spends it — one signature, not two.
+        let wrapShortfall = 0n;
         if (intent.token === WRAP_NEAR_ID) {
           const nativeYocto = await native.getNativeBalance(account).catch(() => 0n);
           const NATIVE_BUFFER = 1_000_000_000_000_000_000_000_000n; // keep 1 NEAR native for gas + storage
@@ -1320,14 +1328,7 @@ export function registerAccountView(
           const resized = resolveIntentAmount(intent.approxUsd, price, decimals, availHuman);
           swapRawAmount = resized.rawAmount;
           swapHuman = resized.humanAmount;
-          if (swapRawAmount > walletRaw) {
-            const shortfall = swapRawAmount - walletRaw; // native NEAR to wrap (yocto == raw at 24 decimals)
-            steps.push({
-              intentId: 'wrap',
-              tx: buildWrapNear({ wrapContractId: WRAP_NEAR_ID, rawAmount: shortfall }),
-              preview: `Wrap ${(Number(shortfall) / 1e24).toFixed(6)} NEAR into wNEAR for the swap.`,
-            });
-          }
+          if (swapRawAmount > walletRaw) wrapShortfall = swapRawAmount - walletRaw; // yocto == raw at 24 decimals
         }
         if (swapRawAmount <= 0n)
           return reply.code(409).send({ error: 'the resolved swap amount is zero' });
@@ -1368,36 +1369,44 @@ export function registerAccountView(
             preview: `Register to receive ${symOut} — one-time, ${formatNear(minDeposit)} NEAR, refundable.`,
           });
         }
+        const swapActions: FunctionCallAction[] = [];
+        if (wrapShortfall > 0n) {
+          swapActions.push({
+            type: 'FunctionCall',
+            methodName: 'near_deposit',
+            args: {},
+            gas: 10_000_000_000_000n,
+            deposit: wrapShortfall,
+          });
+        }
+        swapActions.push({
+          type: 'FunctionCall',
+          methodName: 'ft_transfer_call',
+          args: {
+            receiver_id: deps.rheaId,
+            amount: swapRawAmount.toString(),
+            msg: JSON.stringify({
+              force: 0,
+              actions: [
+                {
+                  pool_id: quote.poolId,
+                  token_in: intent.token,
+                  token_out: tokenOut,
+                  amount_in: swapRawAmount.toString(),
+                  min_amount_out: minOut.toString(),
+                },
+              ],
+            }),
+          },
+          gas: 180_000_000_000_000n,
+          deposit: 1n,
+        });
+        const wrapNote =
+          wrapShortfall > 0n ? `Wrap ${(Number(wrapShortfall) / 1e24).toFixed(6)} NEAR, then ` : '';
         steps.push({
           intentId: 'swap',
-          tx: {
-            receiverId: intent.token,
-            actions: [
-              {
-                type: 'FunctionCall',
-                methodName: 'ft_transfer_call',
-                args: {
-                  receiver_id: deps.rheaId,
-                  amount: swapRawAmount.toString(),
-                  msg: JSON.stringify({
-                    force: 0,
-                    actions: [
-                      {
-                        pool_id: quote.poolId,
-                        token_in: intent.token,
-                        token_out: tokenOut,
-                        amount_in: swapRawAmount.toString(),
-                        min_amount_out: minOut.toString(),
-                      },
-                    ],
-                  }),
-                },
-                gas: 180_000_000_000_000n,
-                deposit: 1n,
-              },
-            ],
-          },
-          preview: `Swap ${swapHuman.toFixed(Math.min(6, decimals))} ${sym} for at least ${humanMinOut} ${symOut} on Rhea (max ${(intent.maxSlippageBps / 100).toFixed(2)}% slippage).`,
+          tx: { receiverId: intent.token, actions: swapActions },
+          preview: `${wrapNote}swap ${swapHuman.toFixed(Math.min(6, decimals))} ${sym} for at least ${humanMinOut} ${symOut} on Rhea (max ${(intent.maxSlippageBps / 100).toFixed(2)}% slippage).`,
         });
       } else {
         // supply / repay — Burrow, from proofs the verifier mints.
