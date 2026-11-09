@@ -7,6 +7,7 @@ import {
   buildSupply,
 } from '@near-autopilot/burrow-adapter';
 import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
+import { buildUnwrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
 import { z } from 'zod';
@@ -881,6 +882,8 @@ export function registerAccountView(
             lptId: z.string().min(1),
             maxSlippageBps: slip,
           }),
+          // unwrap: wNEAR -> native NEAR.
+          z.object({ action: z.literal('unwrap'), approxUsd: usd }),
         ]),
       })
       .safeParse(req.body);
@@ -1098,6 +1101,65 @@ export function registerAccountView(
             { raw: freed.x.toString(), human: Number(freed.x) / 10 ** decX, symbol: symX },
             { raw: freed.y.toString(), human: Number(freed.y) / 10 ** decY, symbol: symY },
           ],
+          transactions: cascade.transactions.map((t) => ({
+            intentId: t.intentId,
+            receiverId: t.receiverId,
+            actions: t.actions.map((a) => ({
+              methodName: a.methodName,
+              args: a.args,
+              gas: a.gas.toString(),
+              deposit: a.deposit.toString(),
+            })),
+          })),
+          preview: cascade.preview,
+          signed: false,
+          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+        };
+      } catch (e) {
+        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    // unwrap — wNEAR back to native NEAR (a utility, e.g. after a swap left wNEAR in the wallet).
+    if (intent.action === 'unwrap') {
+      const WRAP = accountIdSchema.parse('wrap.near');
+      try {
+        const [prices, walletRaw] = await Promise.all([
+          latestPrices(),
+          tokens.getBalance(WRAP, account).catch(() => 0n),
+        ]);
+        const price = prices.get(WRAP);
+        if (price === undefined || !(price > 0))
+          return reply.code(409).send({ error: 'no confirmed price for wNEAR' });
+        const walletHuman = Number(walletRaw) / 1e24;
+        if (walletHuman <= 0) return reply.code(409).send({ error: 'your wallet holds no wNEAR' });
+        const { rawAmount, humanAmount } = resolveIntentAmount(
+          intent.approxUsd,
+          price,
+          24,
+          walletHuman,
+        );
+        if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
+        const steps: CascadeStep[] = [
+          {
+            intentId: 'unwrap',
+            tx: buildUnwrapNear({ wrapContractId: WRAP, rawAmount }),
+            preview: `Unwrap ${humanAmount.toFixed(6)} wNEAR to native NEAR.`,
+          },
+        ];
+        const cascade = assembleCascade(account, steps);
+        const check = validateCascade(cascade.transactions, {
+          signerId: account,
+          allowedReceivers: new Set<string>([WRAP]),
+        });
+        if (!check.ok)
+          return reply
+            .code(422)
+            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
+        return {
+          account,
+          intent,
+          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
           transactions: cascade.transactions.map((t) => ({
             intentId: t.intentId,
             receiverId: t.receiverId,

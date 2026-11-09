@@ -31,6 +31,8 @@ export const ALLOWED_METHODS = new Set([
   'remove_liquidity',
   'withdraw_asset',
   'burn_v_liquidity',
+  // unwrap wNEAR -> native NEAR.
+  'near_withdraw',
 ]);
 
 export interface CascadeValidationContext {
