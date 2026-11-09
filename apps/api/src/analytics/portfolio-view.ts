@@ -116,14 +116,14 @@ export function hurdle(
   if (net >= HURDLE.minNetUsd && (costs === 0 || gross >= HURDLE.multiple * costs))
     return {
       verdict: 'worth_it',
-      sentence: `Clears the autopilot's bar: at least ${money(HURDLE.minNetUsd)} left after costs, and the gain is at least ${HURDLE.multiple}× the costs.`,
+      sentence: `Worth it after costs: at least ${money(HURDLE.minNetUsd)} left, and the gain is at least ${HURDLE.multiple}× the costs.`,
     };
   return {
     verdict: 'not_worth_it',
     sentence:
       net < HURDLE.minNetUsd
-        ? `Not worth it for the autopilot: it would keep ${money(net)} after costs; it needs at least ${money(HURDLE.minNetUsd)}.`
-        : `Not worth it for the autopilot: the gain is less than ${HURDLE.multiple}× the costs, too thin a margin if the rate moves.`,
+        ? `Not worth it after costs: it would keep ${money(net)}; a move is only worthwhile above ${money(HURDLE.minNetUsd)}.`
+        : `Not worth it after costs: the gain is less than ${HURDLE.multiple}× the costs — too thin a margin if the rate moves.`,
   };
 }
 
@@ -258,7 +258,7 @@ export function buildPortfolioView(i: {
             ? {
                 verdict: 'not_allowed',
                 sentence:
-                  'Worth it by the numbers, but the autopilot cannot open liquidity positions yet: it only advises on them.',
+                  'Worth it by the numbers. Opening a liquidity position is a one-click action on your connected wallet.',
               }
             : base.autopilot,
         summary:
@@ -350,7 +350,7 @@ export function buildPortfolioView(i: {
           ? {
               verdict: 'worth_it',
               sentence:
-                'The autopilot does this itself when the loan gets close to the safety line.',
+                'Repaying is the safe move as a loan nears its limit — one click on your connected wallet.',
             }
           : {
               verdict: 'not_allowed',
@@ -493,8 +493,7 @@ export function buildPortfolioView(i: {
       basis: `Burrow health factor with the same asset on both sides: leverage = ${TARGET_HF} / (${TARGET_HF} − vr²), vr² = ${((TARGET_HF * (l.leverage - 1)) / l.leverage).toFixed(4)}. Today's rates held for ${l.horizonDays} days; not compounded.`,
       autopilot: {
         verdict: 'not_allowed',
-        sentence:
-          'The autopilot will not do this: its safety policy has no borrow action. Shown so you can compare.',
+        sentence: 'Borrowing to loop raises risk; shown only so you can compare.',
       },
     });
   }
@@ -576,7 +575,7 @@ export function narrate(r: AnalysisResult, symbols: ReadonlyMap<string, string>)
     DATA_UNTRUSTWORTHY: 'The market data was not trustworthy enough to act on.',
     PRICES_STALE: 'Prices were out of date, so nothing was decided.',
     DATA_NOT_FRESH:
-      'Market data was out of date, so the autopilot did nothing (a safety rule: it never acts on stale prices).',
+      'Market data was out of date, so no option is shown — stale prices are never acted on.',
   };
   if (notes.length === 0)
     for (const reason of d?.reasons ?? [])

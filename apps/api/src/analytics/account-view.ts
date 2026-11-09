@@ -689,7 +689,7 @@ export function registerAccountView(
               "Exact leverage from Burrow's health factor for the same token on both sides; today's rates.",
             autopilot: {
               verdict: 'not_allowed',
-              sentence: 'The autopilot will not do this: it never borrows. Shown for comparison.',
+              sentence: 'Borrowing to loop raises risk; shown only for comparison.',
             },
           });
     actions.sort((a, b) => (b.netUsd ?? -Infinity) - (a.netUsd ?? -Infinity));
