@@ -1,7 +1,13 @@
 'use client';
 import { useState } from 'react';
 import { prepareIntent } from '../lib/prepare-client';
-import { gasToTgas, shortAccount, totalDepositNear, yoctoToNear } from '../lib/prepare-format';
+import {
+  gasToTgas,
+  shortAccount,
+  totalDepositNear,
+  trimDecimals,
+  yoctoToNear,
+} from '../lib/prepare-format';
 import type { PrepareRequest, PreparedCascade } from '../lib/prepare-types';
 import { signCascade, type SignResult } from '../lib/wallet-sign';
 
@@ -82,7 +88,7 @@ export function PrepareDialog({
             <summary>
               Exactly what you would sign — {cascade.transactions.length}{' '}
               {cascade.transactions.length === 1 ? 'transaction' : 'transactions'},{' '}
-              {totalDepositNear(cascade.transactions)} NEAR attached
+              {trimDecimals(totalDepositNear(cascade.transactions))} NEAR attached
             </summary>
             <div className="prepare-txs">
               {cascade.transactions.map((tx, ti) => (
@@ -98,7 +104,7 @@ export function PrepareDialog({
                             <code>{a.methodName}</code>
                           </td>
                           <td className="num">
-                            {yoctoToNear(a.deposit)} NEAR · {gasToTgas(a.gas)}
+                            {trimDecimals(yoctoToNear(a.deposit))} NEAR · {gasToTgas(a.gas)}
                           </td>
                         </tr>
                       ))}

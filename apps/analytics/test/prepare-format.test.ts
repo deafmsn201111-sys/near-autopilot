@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { gasToTgas, shortAccount, totalDepositNear, yoctoToNear } from '../lib/prepare-format';
+import {
+  gasToTgas,
+  shortAccount,
+  totalDepositNear,
+  trimDecimals,
+  yoctoToNear,
+} from '../lib/prepare-format';
 
 describe('yoctoToNear', () => {
   it('formats common deposits without scientific notation', () => {
@@ -39,5 +45,14 @@ describe('totalDepositNear', () => {
       { actions: [{ deposit: '1' }, { deposit: '10000000000000000000000' }] }, // ~0.01
     ];
     expect(totalDepositNear(txs)).toBe('0.110000000000000000000001');
+  });
+});
+
+describe('trimDecimals', () => {
+  it('truncates to the given decimals and drops trailing zeros', () => {
+    expect(trimDecimals('320.053900635641208402894298', 6)).toBe('320.0539');
+    expect(trimDecimals('0.1', 6)).toBe('0.1');
+    expect(trimDecimals('1', 6)).toBe('1');
+    expect(trimDecimals('0.000000000000000000000001', 6)).toBe('0');
   });
 });

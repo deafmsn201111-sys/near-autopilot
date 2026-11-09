@@ -10,6 +10,13 @@ export function yoctoToNear(yocto: string): string {
   return frac ? `${whole}.${frac}` : whole;
 }
 
+/** Trim a decimal string to at most `dp` fractional digits (truncate, drop trailing zeros). For display only. */
+export function trimDecimals(value: string, dp = 6): string {
+  const [whole, frac = ''] = value.split('.');
+  const cut = frac.slice(0, dp).replace(/0+$/, '');
+  return cut ? `${whole}.${cut}` : (whole ?? '0');
+}
+
 /** gas units (10^12 = 1 Tgas) decimal string -> "N Tgas" with up to one decimal. */
 export function gasToTgas(gas: string): string {
   if (!/^\d+$/.test(gas)) return '0 Tgas';
