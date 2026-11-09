@@ -15,19 +15,24 @@ A powerful **real-time DeFi analyzer** with an **AI agent layer** that reads the
 
 ## Transaction capability map (ground truth, from the code)
 
-| Operation                                                    | Protocol          | Status                                                                 |
-| ------------------------------------------------------------ | ----------------- | ---------------------------------------------------------------------- |
-| Swap (exact-in / exact-out)                                  | Rhea v1 + DCL     | ✅ built (`rhea-adapter`, `buildSwapExactIn/Out`)                      |
-| Supply / add-collateral / repay                              | Burrow            | ✅ built (`buildSupply`, `buildSupplyAsCollateral`, `buildRepay`)      |
-| Concentrated liquidity (add / append / remove, limit orders) | Rhea DCL          | ✅ built (`rhea-dcl-adapter/messages.ts`)                              |
-| Storage registration                                         | ft / Burrow / DCL | ✅ built (`storage_deposit`, `buildDclStorageDeposit`)                 |
-| Wrap NEAR                                                    | wrap.near         | ✅ built (`near_deposit`)                                              |
-| **Borrow**                                                   | Burrow            | ⬜ **gap** — intentionally absent; needs the priced `oracle_call` flow |
-| **Withdraw**                                                 | Burrow            | ⬜ **gap** — intentionally absent; needs `oracle_call`                 |
-| **v1 pool add / remove liquidity**                           | Rhea v1           | ⬜ **gap** — only swap+register today                                  |
-| **Unwrap NEAR** (`near_withdraw`)                            | wrap.near         | ⬜ small gap                                                           |
+| Operation                                                    | Protocol          | Status                                                            |
+| ------------------------------------------------------------ | ----------------- | ----------------------------------------------------------------- |
+| Swap (exact-in / exact-out)                                  | Rhea v1 + DCL     | ✅ built (`rhea-adapter`, `buildSwapExactIn/Out`)                 |
+| Supply / add-collateral / repay                              | Burrow            | ✅ built (`buildSupply`, `buildSupplyAsCollateral`, `buildRepay`) |
+| Concentrated liquidity (add / append / remove, limit orders) | Rhea DCL          | ✅ built (`rhea-dcl-adapter/messages.ts`)                         |
+| Storage registration                                         | ft / Burrow / DCL | ✅ built (`storage_deposit`, `buildDclStorageDeposit`)            |
+| Wrap NEAR                                                    | wrap.near         | ✅ built (`near_deposit`)                                         |
+| **Borrow**                                                   | Burrow            | ✅ built (`buildBorrow`, priced `oracle_call`) — live-verified    |
+| **Withdraw**                                                 | Burrow            | ✅ built (`buildWithdraw`, priced `oracle_call`) — live-verified  |
+| **v1 pool add liquidity** (50/50)                            | Rhea v1           | ✅ built (`buildV1AddLiquidity` + `resolveBalancedLpAmounts`)     |
+| **Unwrap NEAR** (`near_withdraw`)                            | wrap.near         | ✅ built (`buildUnwrapNear`)                                      |
+| **DCL reposition** (exit out-of-range → wallet)              | Rhea DCL          | ✅ built (`buildRemoveLiquidity` + `buildWithdrawAssets`)         |
 
 So most assembly already exists; the engine's job is to (a) unify builders behind one "intent → safe transaction cascade" interface, (b) fill the gaps above, (c) drive one-click signing.
+
+### Phase 4 status — backend transaction engine COMPLETE
+
+`POST /v1/wallet/prepare` turns an intent into a precise, unsigned, signable cascade for **8 actions**: `supply`, `repay`, `swap`, `add_liquidity` (v1 50/50), `reposition_dcl` (safe exit), `unwrap`, `borrow`, `withdraw`. Every cascade passes an independent `validateCascade` safety gate (signer, receiver allowlist, method allowlist, gas ≤ 300 Tgas, per-action deposit ≤ 0.15 / cascade ≤ 0.3 NEAR, well-formed transfers) and the server holds no key (`signed: false`). Each intent was verified live against mainnet. Remaining Phase 4 piece: **client one-click signing** (wallet signs the cascade via HOT Connector + pre-sign preview + on-chain result verification), which lands with the Phase 5 UI.
 
 ## Staged plan
 
@@ -39,12 +44,12 @@ So most assembly already exists; the engine's job is to (a) unify builders behin
 
 **Phase 3 — Agent layer & decisions.** Agents analyse market + portfolio → ranked, explained proposals (what/why/where, expected effect, costs, risks). Each proposal = a concrete, parameterised **intent**.
 
-**Phase 4 — Transaction engine (one-click, user-signed) — core, max safety.**
+**Phase 4 — Transaction engine (one-click, user-signed) — core, max safety.** _(backend done; see "Phase 4 status" above)_
 
-- Unify all builders behind one `Intent → PlannedTransaction[]` assembler.
-- Fill gaps: Burrow **borrow** + **withdraw** (oracle_call priced flow), Rhea **v1 add/remove liquidity** (50/50 split, min-amounts, slippage), **unwrap**.
-- Client: one click → wallet signs the cascade (HOT Connector); a **clear pre-sign preview** of exactly what will be signed; policy-check every tx; on-chain verification after. No server key, no autonomy.
-- Every builder covered by tests + an independent safety review.
+- ✅ All builders behind the `prepare` endpoint's `Intent → PlannedTransaction[]` assembler.
+- ✅ Gaps filled: Burrow **borrow** + **withdraw** (oracle_call priced flow), Rhea **v1 add liquidity** (50/50, floored, ratio-matched), **unwrap**, **reposition_dcl** (safe exit).
+- ✅ Independent `validateCascade` safety gate on every assembled cascade; every builder covered by tests; each intent live-verified on mainnet. No server key, no autonomy.
+- ⬜ Client: one click → wallet signs the cascade (HOT Connector); a **clear pre-sign preview** of exactly what will be signed; on-chain verification after. _(lands with Phase 5 UI.)_
 
 **Phase 5 — UX / design (full rework).** Premium, friendly, uncluttered DeFi UI. IA: **Home** (2 demos $5k/$500 + connected-wallet portfolio), **Opportunities/Recommendations**, **Portfolio**, **Activity**. One-click actions from recommendation cards. Design system, mobile, a11y.
 
