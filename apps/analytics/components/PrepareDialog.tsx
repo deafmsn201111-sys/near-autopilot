@@ -1,4 +1,5 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { prepareIntent } from '../lib/prepare-client';
 import {
@@ -37,7 +38,8 @@ export function PrepareDialog({
   label: string;
   signingEnabled?: boolean;
 }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'signing'>('idle');
+  const router = useRouter();
+  const [state, setState] = useState<'idle' | 'loading' | 'signing' | 'updating'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
   const [error, setError] = useState<{ message: string; reasons?: readonly string[] } | null>(null);
   const [signed, setSigned] = useState<SignResult | null>(null);
@@ -59,7 +61,17 @@ export function PrepareDialog({
     setSigned(null);
     const r = await signCascade(cascade.transactions, request.account, signingEnabled);
     setSigned(r);
-    setState('idle');
+    if (r.ok) {
+      // The transactions are on-chain; give them a moment to reach finality, then refresh the portfolio so the
+      // balances, allocation and this recommendation reflect the new state (the card updates or disappears).
+      setState('updating');
+      await new Promise((res) => setTimeout(res, 4000));
+      setCascade(null); // collapse the (now spent) preview; the user can prepare a fresh one if still suggested
+      router.refresh();
+      setState('idle');
+    } else {
+      setState('idle');
+    }
   }
 
   return (
@@ -177,9 +189,13 @@ export function PrepareDialog({
                   type="button"
                   className="btn primary small"
                   onClick={() => void sign()}
-                  disabled={state === 'signing'}
+                  disabled={state === 'signing' || state === 'updating'}
                 >
-                  {state === 'signing' ? 'Waiting for your wallet…' : 'Sign in your wallet'}
+                  {state === 'signing'
+                    ? 'Waiting for your wallet…'
+                    : state === 'updating'
+                      ? 'Updating portfolio…'
+                      : 'Sign in your wallet'}
                 </button>
                 <span className="muted-note">
                   {cascade.transactions.length}{' '}
@@ -200,32 +216,32 @@ export function PrepareDialog({
               </>
             )}
           </div>
+        </div>
+      )}
 
-          {signed && (
-            <div
-              className={`callout${signed.ok ? '' : ' warn'}`}
-              role="status"
-              style={{ marginTop: 10 }}
-            >
-              {signed.ok ? (
-                <b>Signed and sent.</b>
-              ) : (
-                <>
-                  <b>Stopped:</b> {signed.reason}
-                </>
-              )}
-              {signed.hashes.length > 0 && (
-                <ul className="muted-note" style={{ margin: '6px 0 0' }}>
-                  {signed.hashes.map((h) => (
-                    <li key={h}>
-                      <a href={`https://nearblocks.io/txns/${h}`} target="_blank" rel="noreferrer">
-                        {h.slice(0, 10)}… — verify on NearBlocks
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+      {signed && (
+        <div
+          className={`callout${signed.ok ? '' : ' warn'}`}
+          role="status"
+          style={{ marginTop: 10 }}
+        >
+          {signed.ok ? (
+            <b>{state === 'updating' ? 'Signed. Updating portfolio…' : 'Signed and sent.'}</b>
+          ) : (
+            <>
+              <b>Stopped:</b> {signed.reason}
+            </>
+          )}
+          {signed.hashes.length > 0 && (
+            <ul className="muted-note" style={{ margin: '6px 0 0' }}>
+              {signed.hashes.map((h) => (
+                <li key={h}>
+                  <a href={`https://nearblocks.io/txns/${h}`} target="_blank" rel="noreferrer">
+                    {h.slice(0, 10)}… — verify on NearBlocks
+                  </a>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}

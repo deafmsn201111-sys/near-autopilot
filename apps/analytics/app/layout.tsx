@@ -67,7 +67,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SubNav />
           {children}
         </main>
-        <AutoRefresh seconds={30} />
+        <AutoRefresh seconds={15} />
       </body>
     </html>
   );
