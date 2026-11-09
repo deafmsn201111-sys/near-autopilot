@@ -28,6 +28,9 @@ import {
 import {
   RheaDclClient,
   dclPositionAmounts,
+  buildRemoveLiquidity,
+  buildWithdrawAssets,
+  parsePoolId,
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
@@ -850,20 +853,35 @@ export function registerAccountView(
    * and returns the ordered transactions + a pre-sign preview. The server never signs and sends nothing.
    */
   app.post('/v1/wallet/prepare', async (req, reply) => {
+    const usd = z.number().positive().max(1_000_000);
+    const slip = z.number().int().min(1).max(1_000).default(50);
     const parsed = z
       .object({
         account: accountIdSchema,
-        intent: z.object({
-          action: z.enum(['supply', 'repay', 'swap', 'add_liquidity']),
-          token: accountIdSchema,
-          /** Required for a swap / add_liquidity: the second token (received, or the other LP side). */
-          tokenOut: accountIdSchema.optional(),
-          /** Required for add_liquidity: the v1 SIMPLE_POOL id to deposit into. */
-          poolId: z.number().int().nonnegative().optional(),
-          approxUsd: z.number().positive().max(1_000_000),
-          /** Swap slippage tolerance in basis points (default 50 = 0.5%). */
-          maxSlippageBps: z.number().int().min(1).max(1_000).default(50),
-        }),
+        intent: z.discriminatedUnion('action', [
+          z.object({ action: z.literal('supply'), token: accountIdSchema, approxUsd: usd }),
+          z.object({ action: z.literal('repay'), token: accountIdSchema, approxUsd: usd }),
+          z.object({
+            action: z.literal('swap'),
+            token: accountIdSchema,
+            tokenOut: accountIdSchema,
+            approxUsd: usd,
+            maxSlippageBps: slip,
+          }),
+          z.object({
+            action: z.literal('add_liquidity'),
+            token: accountIdSchema,
+            tokenOut: accountIdSchema,
+            poolId: z.number().int().nonnegative(),
+            approxUsd: usd,
+          }),
+          // reposition_dcl: exit an out-of-range DCL position back to the wallet (remove + withdraw).
+          z.object({
+            action: z.literal('reposition_dcl'),
+            lptId: z.string().min(1),
+            maxSlippageBps: slip,
+          }),
+        ]),
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
@@ -874,10 +892,6 @@ export function registerAccountView(
     if (intent.action === 'add_liquidity') {
       const token0 = intent.token;
       const token1 = intent.tokenOut;
-      if (!token1 || intent.poolId === undefined)
-        return reply
-          .code(400)
-          .send({ error: 'add_liquidity needs tokenOut (the second token) and poolId' });
       try {
         const [prices, meta, pool, w0, w1, exchangeStorage] = await Promise.all([
           latestPrices(),
@@ -987,6 +1001,102 @@ export function registerAccountView(
           amounts: [
             { raw: side0.rawAmount.toString(), human: side0.humanAmount, symbol: sym0 },
             { raw: side1.rawAmount.toString(), human: side1.humanAmount, symbol: sym1 },
+          ],
+          transactions: cascade.transactions.map((t) => ({
+            intentId: t.intentId,
+            receiverId: t.receiverId,
+            actions: t.actions.map((a) => ({
+              methodName: a.methodName,
+              args: a.args,
+              gas: a.gas.toString(),
+              deposit: a.deposit.toString(),
+            })),
+          })),
+          preview: cascade.preview,
+          signed: false,
+          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+        };
+      } catch (e) {
+        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    // reposition_dcl — a concentrated-liquidity position has drifted out of range and earns nothing. The precise,
+    // fully-safe action is to EXIT it back to the wallet (remove_liquidity -> withdraw both tokens); re-entering at a
+    // new range is then a fresh balanced decision. (A true in-range re-center of a single-asset position needs a swap
+    // to rebalance, which is deliberately not assembled here without a rebalancing quote.)
+    if (intent.action === 'reposition_dcl') {
+      if (!dcl) return reply.code(409).send({ error: 'DCL is not configured' });
+      const dclId = deps.dclId;
+      if (!dclId) return reply.code(409).send({ error: 'DCL is not configured' });
+      try {
+        const positions = await dcl.listPositions(account);
+        const pos = positions.find((p) => p.lpt_id === intent.lptId);
+        if (!pos)
+          return reply
+            .code(409)
+            .send({ error: `${account} does not own DCL position ${intent.lptId}` });
+        if (pos.v_liquidity !== undefined && pos.v_liquidity > 0n)
+          return reply.code(409).send({
+            error: `position ${intent.lptId} is staked in a farm; unstake it there before repositioning`,
+          });
+        if (pos.amount <= 0n)
+          return reply.code(409).send({ error: `position ${intent.lptId} is already empty` });
+        const pool = await dcl.getPool(pos.pool_id);
+        if (!pool) return reply.code(409).send({ error: `pool ${pos.pool_id} not found` });
+        const { tokenX, tokenY } = parsePoolId(pos.pool_id);
+        const tokX = accountIdSchema.parse(tokenX);
+        const tokY = accountIdSchema.parse(tokenY);
+        // Expected freed amounts at the current price; used only as slippage-protected minimums for the removal.
+        const freed = dclPositionAmounts(pos, pool.current_point);
+        const keep = BigInt(10_000 - intent.maxSlippageBps);
+        const minX = (freed.x * keep) / 10_000n;
+        const minY = (freed.y * keep) / 10_000n;
+
+        const meta = await store.tokenMetadata();
+        const metaOf = (t: string) => meta.find((x) => x.token === t);
+        const symX = metaOf(tokX)?.symbol ?? tokX.slice(0, 10);
+        const symY = metaOf(tokY)?.symbol ?? tokY.slice(0, 10);
+        const decX = metaOf(tokX)?.decimals ?? 24;
+        const decY = metaOf(tokY)?.decimals ?? 24;
+        const hX = (Number(freed.x) / 10 ** decX).toFixed(Math.min(6, decX));
+        const hY = (Number(freed.y) / 10 ** decY).toFixed(Math.min(6, decY));
+
+        const steps: CascadeStep[] = [
+          {
+            intentId: 'remove-liquidity',
+            tx: buildRemoveLiquidity({
+              dcl: dclId,
+              lptId: intent.lptId,
+              liquidity: pos.amount,
+              minAmountX: minX,
+              minAmountY: minY,
+            }),
+            preview: `Remove your out-of-range ${symX}/${symY} liquidity (≈ ${hX} ${symX} + ${hY} ${symY}, min ${(intent.maxSlippageBps / 100).toFixed(2)}% slippage).`,
+          },
+          {
+            intentId: 'withdraw',
+            tx: buildWithdrawAssets({ dcl: dclId, tokenIds: [tokX, tokY] }),
+            preview: `Withdraw the freed ${symX} and ${symY} to your wallet (re-enter at a new range afterwards).`,
+          },
+        ];
+
+        const cascade = assembleCascade(account, steps);
+        const check = validateCascade(cascade.transactions, {
+          signerId: account,
+          allowedReceivers: new Set<string>([dclId]),
+        });
+        if (!check.ok)
+          return reply
+            .code(422)
+            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
+        return {
+          account,
+          intent,
+          position: { lptId: pos.lpt_id, poolId: pos.pool_id },
+          freed: [
+            { raw: freed.x.toString(), human: Number(freed.x) / 10 ** decX, symbol: symX },
+            { raw: freed.y.toString(), human: Number(freed.y) / 10 ** decY, symbol: symY },
           ],
           transactions: cascade.transactions.map((t) => ({
             intentId: t.intentId,
@@ -1131,7 +1241,7 @@ export function registerAccountView(
 
       const cascade = assembleCascade(account, steps);
       const allowed = new Set<string>([deps.burrowId, deps.rheaId, intent.token]);
-      if (intent.tokenOut) allowed.add(intent.tokenOut);
+      if (intent.action === 'swap') allowed.add(intent.tokenOut);
       const check = validateCascade(cascade.transactions, {
         signerId: account,
         allowedReceivers: allowed,

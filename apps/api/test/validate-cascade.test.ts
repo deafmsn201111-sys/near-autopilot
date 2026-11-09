@@ -161,3 +161,54 @@ describe('validateCascade', () => {
     if (!r.ok) expect(r.reasons.join()).toMatch(/cascade cap/);
   });
 });
+
+describe('validateCascade — DCL reposition (exit) cascade', () => {
+  const DCL = accountId('dclv2.ref-labs.near');
+  const dclCtx = { signerId: ALICE, allowedReceivers: new Set<string>([DCL]) };
+
+  it('accepts remove_liquidity + withdraw_asset on the DCL contract', () => {
+    const cascade: PlannedTransaction[] = [
+      {
+        intentId: 'remove-liquidity',
+        signerId: ALICE,
+        receiverId: DCL,
+        actions: [
+          {
+            type: 'FunctionCall',
+            methodName: 'remove_liquidity',
+            args: {
+              lpt_id: 'x|y|10000#1',
+              amount: '13491808535002',
+              min_amount_x: '0',
+              min_amount_y: '1',
+            },
+            gas: 150_000_000_000_000n,
+            deposit: 0n,
+          },
+        ],
+      },
+      {
+        intentId: 'withdraw',
+        signerId: ALICE,
+        receiverId: DCL,
+        actions: [
+          {
+            type: 'FunctionCall',
+            methodName: 'withdraw_asset',
+            args: { token_id: 'x' },
+            gas: 100_000_000_000_000n,
+            deposit: 0n,
+          },
+          {
+            type: 'FunctionCall',
+            methodName: 'withdraw_asset',
+            args: { token_id: 'y' },
+            gas: 100_000_000_000_000n,
+            deposit: 0n,
+          },
+        ],
+      },
+    ];
+    expect(validateCascade(cascade, dclCtx)).toEqual({ ok: true });
+  });
+});

@@ -27,6 +27,10 @@ export const ALLOWED_METHODS = new Set([
   'ft_transfer_call',
   'add_liquidity',
   'execute',
+  // DCL (concentrated liquidity) reposition: exit an out-of-range position back to the wallet.
+  'remove_liquidity',
+  'withdraw_asset',
+  'burn_v_liquidity',
 ]);
 
 export interface CascadeValidationContext {
