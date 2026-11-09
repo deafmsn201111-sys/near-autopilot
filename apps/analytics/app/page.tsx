@@ -22,7 +22,16 @@ import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
-import { accountView, ago, money, portfolioView, type PortfolioAction } from '../lib/product';
+import {
+  accountRecommendations,
+  accountView,
+  ago,
+  money,
+  portfolioView,
+  type PortfolioAction,
+} from '../lib/product';
+import { Recommendations } from '../components/Recommendations';
+import { walletSigningEnabled } from '../lib/wallet-signing';
 import { AccountForm } from '../components/AccountForm';
 import { runAnalysis } from './autopilot/actions';
 import { resetDemo } from './request-actions';
@@ -238,6 +247,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     .map((w) => ({ w, rows: data.holdings.filter((h) => h.where === w && !isDust(h)) }))
     .filter((g) => g.rows.length > 0);
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
+  // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
+  const recs = isAccount ? (await accountRecommendations(accountParam)).data : null;
+  const signingEnabled = isAccount ? walletSigningEnabled() : false;
   return (
     <>
       <div className="hero-head">
@@ -302,6 +314,25 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           <span className="muted-note">{data.health.sentence}</span>
         </div>
       </section>
+
+      {isAccount && recs && recs.recommendations.length > 0 && (
+        <section className="block">
+          <div className="block-head">
+            <div>
+              <h2>What the agents suggest</h2>
+              <p className="muted-note">
+                Each is a concrete, one-click action. The site assembles the exact transaction
+                cascade; you review it and sign in your own wallet. The server holds no key.
+              </p>
+            </div>
+          </div>
+          <Recommendations
+            account={accountParam}
+            recommendations={recs.recommendations}
+            signingEnabled={signingEnabled}
+          />
+        </section>
+      )}
 
       <section className="block">
         <h2>What you hold</h2>

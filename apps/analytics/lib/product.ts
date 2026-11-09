@@ -1,9 +1,21 @@
 import { RATE_LIMITED, withinLimit } from './public-demo';
 import 'server-only';
 import { tryApi } from './api';
+import type { RecommendationIntent } from './recommendation-intent';
 
 /** Shapes of the product endpoints (opportunities, control, activity, system). */
 export type Level = 'low' | 'medium' | 'high';
+
+/** One recommendation card from the account endpoint: the agents' what/why plus a concrete, one-click intent. */
+export interface AccountRecommendation {
+  id: string;
+  kind: string;
+  agent: string;
+  severity: 'info' | 'warning';
+  title: string;
+  why: string;
+  intent: RecommendationIntent;
+}
 export interface Opportunity {
   id: string;
   protocol: 'rhea' | 'burrow';
@@ -234,3 +246,13 @@ export const accountView = async (id: string) => {
       : null,
   };
 };
+
+/**
+ * The connected wallet's portfolio recommendations from the real account endpoint, with each card's concrete intent.
+ * Shares the endpoint with `accountView`; here we keep the recommendation list (what the agents suggest, with a
+ * one-click intent) rather than the portfolio shape.
+ */
+export const accountRecommendations = (id: string) =>
+  tryApi<{ accountId: string; recommendations: AccountRecommendation[] }>(
+    `/v1/analytics/account/${encodeURIComponent(id)}`,
+  );

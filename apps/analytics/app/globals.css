@@ -1975,3 +1975,39 @@ table.mini tr.total td {
   padding-top: 10px;
   border-top: 1px dashed var(--line);
 }
+
+/* ------------------------------------------------------------------ recommendation cards (Phase 5) */
+.recs {
+  display: grid;
+  gap: 14px;
+}
+.rec {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: var(--card, var(--surface));
+}
+.rec.sev-warning {
+  border-left-color: var(--warning);
+}
+.rec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.rec-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.rec-agent {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.rec-why {
+  margin: 6px 0 12px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
