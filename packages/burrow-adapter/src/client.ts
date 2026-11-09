@@ -8,6 +8,7 @@ import {
   burrowConfigSchema,
   priceDataSchema,
   storageBalanceSchema,
+  storageBalanceBoundsSchema,
 } from './schemas';
 
 /** One asset as Burrow lists it. Amounts are inner units (raw * 10^extraDecimals). */
@@ -225,6 +226,17 @@ export class BurrowClient {
       storageBalanceSchema,
     );
     return result ? { total: result.total, available: result.available } : null;
+  }
+
+  /** NEP-145 `storage_balance_bounds()`: `min` is the exact yoctoNEAR deposit needed to register (never guessed). */
+  async getStorageBalanceBounds(): Promise<{ min: bigint; max: bigint | null }> {
+    const r = await this.read(
+      this.contractId,
+      'storage_balance_bounds',
+      {},
+      storageBalanceBoundsSchema,
+    );
+    return { min: r.min, max: r.max ?? null };
   }
 }
 

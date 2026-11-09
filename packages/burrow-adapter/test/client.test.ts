@@ -201,3 +201,15 @@ describe('BurrowOracleClient', () => {
     ).rejects.toThrow(UnexpectedResponseError);
   });
 });
+
+describe('BurrowClient.getStorageBalanceBounds', () => {
+  it('parses storage_balance_bounds().min (and a null max)', async () => {
+    const viewer = new ScriptedContractViewer().on(BURROW, 'storage_balance_bounds', {
+      min: '250000000000000000000000',
+      max: null,
+    });
+    const b = await new BurrowClient(viewer, BURROW).getStorageBalanceBounds();
+    expect(b.min).toBe(250_000_000_000_000_000_000_000n);
+    expect(b.max).toBeNull();
+  });
+});

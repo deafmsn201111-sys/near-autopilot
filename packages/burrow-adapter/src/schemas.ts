@@ -128,3 +128,8 @@ export const storageBalanceSchema = z
   .object({ total: u128StringSchema, available: u128StringSchema })
   .passthrough()
   .nullable();
+
+/** NEP-145 `storage_balance_bounds()`: `min` is the exact deposit to register; `max` may be null (no cap). */
+export const storageBalanceBoundsSchema = z
+  .object({ min: u128StringSchema, max: u128StringSchema.nullable().optional() })
+  .passthrough();
