@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BURROW_GAS,
+  buildBurrowStorageDeposit,
   buildIncreaseCollateralFromSupplied,
   buildRepay,
   buildSupply,
@@ -190,5 +191,29 @@ describe('proofs cannot be forged', () => {
     const { deployment, tokens } = await setup();
     expect(Object.isFrozen(deployment)).toBe(true);
     expect(Object.isFrozen(tokens.usdtRepay)).toBe(true);
+  });
+});
+
+describe('buildBurrowStorageDeposit', () => {
+  it('registers the signer on the Burrow contract with registration_only and the given min deposit', async () => {
+    const { deployment } = await setup();
+    const tx = buildBurrowStorageDeposit({
+      deployment,
+      accountId: WNEAR, // any account id stands in here
+      deposit: 250_000_000_000_000_000_000_000n, // 0.25 NEAR (caller passes storage_balance_bounds().min)
+    });
+    expect(tx.receiverId).toBe(deployment.contractId);
+    expect(tx.actions).toHaveLength(1);
+    const a = tx.actions[0];
+    expect(a?.methodName).toBe('storage_deposit');
+    expect(a?.args).toEqual({ account_id: WNEAR, registration_only: true });
+    expect(a?.deposit).toBe(250_000_000_000_000_000_000_000n);
+  });
+
+  it('refuses a non-positive deposit (registration stakes real storage)', async () => {
+    const { deployment } = await setup();
+    expect(() =>
+      buildBurrowStorageDeposit({ deployment, accountId: WNEAR, deposit: 0n }),
+    ).toThrow();
   });
 });

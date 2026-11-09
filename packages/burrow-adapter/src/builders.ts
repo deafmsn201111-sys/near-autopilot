@@ -122,6 +122,33 @@ export function buildSupply(args: Common & { readonly rawAmount: bigint }): Buil
 }
 
 /**
+ * NEP-145 registration on the Burrow contract, prepended to a cascade when `storage_balance_of` reports the signer is
+ * not registered (the token transfer builders panic otherwise). `deposit` is yoctoNEAR and MUST be the contract's
+ * `storage_balance_bounds().min`, resolved on-chain by the caller — never guessed. One yocto is not enough; registration
+ * stakes real storage, which is refundable when the account unregisters.
+ */
+export function buildBurrowStorageDeposit(args: {
+  readonly deployment: VerifiedBurrowDeployment;
+  readonly accountId: AccountId;
+  readonly deposit: bigint;
+}): BuiltBurrowTransaction {
+  if (args.deposit <= 0n) throw new RangeError('registration deposit must be positive');
+  return {
+    network: args.deployment.network,
+    receiverId: args.deployment.contractId,
+    actions: [
+      {
+        type: 'FunctionCall',
+        methodName: 'storage_deposit',
+        args: { account_id: args.accountId, registration_only: true },
+        gas: 10_000_000_000_000n,
+        deposit: args.deposit,
+      },
+    ],
+  };
+}
+
+/**
  * Promote already-supplied (non-collateral) balance to collateral: `execute` on Burrow itself with 1 yocto
  * (S: actions.rs `execute`, `#[payable]`, `assert_one_yocto`; A: adjustCollateral.ts). `innerAmount` is in
  * Burrow INNER units exactly as `get_account` reports them; omit it to move the entire supplied balance.
