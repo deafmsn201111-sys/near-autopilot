@@ -1,5 +1,13 @@
 import { accountIdSchema, type AccountId, type TokenId } from '@near-autopilot/core';
-import { BurrowClient } from '@near-autopilot/burrow-adapter';
+import {
+  BurrowClient,
+  BurrowVerifier,
+  buildBurrowStorageDeposit,
+  buildSupply,
+} from '@near-autopilot/burrow-adapter';
+import { resolveIntentAmount } from '../wallet/amounts';
+import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
+import { z } from 'zod';
 import {
   NearAccountReader,
   NearContractViewer,
@@ -406,6 +414,16 @@ export function registerAccountView(
   });
   const dcl = deps.dclId ? new RheaDclClient(viewer, { contractId: deps.dclId }) : null;
   const poolReader = new RheaPoolReader(viewer, deps.rheaId);
+  const clock = { now: () => new Date() };
+  // Burrow transactions are only built from proofs this verifier mints (chain id, deployed code, oracle, listing).
+  const burrowVerifier = new BurrowVerifier(
+    { rpc: deps.rpc, client: burrow, clock },
+    {
+      network: 'mainnet',
+      contractId: deps.burrowId,
+      expectedOracleId: accountIdSchema.parse('priceoracle.near'),
+    },
+  );
   const cache = new Map<string, { at: number; body: unknown }>();
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
@@ -815,5 +833,86 @@ export function registerAccountView(
     };
     cache.set(id, { at: Date.now(), body });
     return body;
+  });
+
+  /**
+   * Prepare a recommendation intent as an UNSIGNED transaction cascade the user signs in their own wallet. Read-only
+   * on the server: verifies the Burrow deployment/token, resolves the exact amount, prepends registration if needed,
+   * and returns the ordered transactions + a pre-sign preview. The server never signs and sends nothing.
+   */
+  app.post('/v1/wallet/prepare', async (req, reply) => {
+    const parsed = z
+      .object({
+        account: accountIdSchema,
+        intent: z.object({
+          action: z.literal('supply'),
+          token: accountIdSchema,
+          approxUsd: z.number().positive().max(1_000_000),
+        }),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
+    const { account, intent } = parsed.data;
+    try {
+      const deployment = await burrowVerifier.verifyDeployment();
+      const verifiedToken = await burrowVerifier.verifyToken(deployment, intent.token, 'supply');
+      const [prices, meta, walletRaw] = await Promise.all([
+        latestPrices(),
+        store.tokenMetadata(),
+        tokens.getBalance(intent.token, account).catch(() => 0n),
+      ]);
+      const m = meta.find((x) => x.token === intent.token);
+      const decimals = m?.decimals ?? 24;
+      const sym = m?.symbol ?? intent.token.slice(0, 10);
+      const price = prices.get(intent.token);
+      if (price === undefined || !(price > 0))
+        return reply.code(409).send({ error: `no confirmed price for ${intent.token}` });
+      const walletHuman = Number(walletRaw) / 10 ** decimals;
+      if (walletHuman <= 0) return reply.code(409).send({ error: `your wallet holds no ${sym}` });
+      const { rawAmount, humanAmount } = resolveIntentAmount(
+        intent.approxUsd,
+        price,
+        decimals,
+        walletHuman,
+      );
+      if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
+
+      const steps: CascadeStep[] = [];
+      if ((await burrow.getStorageBalance(account)) === null) {
+        const bounds = await burrow.getStorageBalanceBounds();
+        steps.push({
+          intentId: 'register',
+          tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: bounds.min }),
+          preview: `Register your account on Burrow — one-time, ${formatNear(bounds.min)} NEAR, refundable.`,
+        });
+      }
+      steps.push({
+        intentId: 'supply',
+        tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+        preview: `Supply ${humanAmount.toFixed(Math.min(6, decimals))} ${sym} to Burrow (earns the current supply rate).`,
+      });
+
+      const cascade = assembleCascade(account, steps);
+      return {
+        account,
+        intent,
+        amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+        transactions: cascade.transactions.map((t) => ({
+          intentId: t.intentId,
+          receiverId: t.receiverId,
+          actions: t.actions.map((a) => ({
+            methodName: a.methodName,
+            args: a.args,
+            gas: a.gas.toString(),
+            deposit: a.deposit.toString(),
+          })),
+        })),
+        preview: cascade.preview,
+        signed: false,
+        note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+      };
+    } catch (e) {
+      return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+    }
   });
 }
