@@ -2081,3 +2081,165 @@ table.mini tr.total td {
   border-radius: 999px;
   padding: 9px 18px;
 }
+
+/* ================================================================== PREMIUM REDESIGN (Phase 5, v2) ========= */
+/* A cohesive, modern fintech pass: NEAR-flavoured mint accent, crisp surfaces, a tinted hero, a real segmented
+   control, confident CTAs. Appended as overrides so the change is deliberate and reversible. */
+:root {
+  --page: #f6f7f6;
+  --surface: #ffffff;
+  --surface-2: #f1f3f2;
+  --ink: #0a0f0d;
+  --ink-2: #4b5a54;
+  --muted: #8a978f;
+  --grid: #e7eae8;
+  --accent: #00b386; /* NEAR mint */
+  --accent-strong: #047857; /* readable accent text */
+  --accent-wash: rgba(0, 179, 134, 0.1);
+  --good-text: #047857;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(10, 15, 13, 0.04), 0 2px 6px rgba(10, 15, 13, 0.05);
+  --shadow-md: 0 4px 14px rgba(10, 15, 13, 0.07), 0 14px 40px rgba(10, 15, 13, 0.1);
+  --hero-grad: radial-gradient(
+    130% 160% at 0% 0%,
+    rgba(0, 179, 134, 0.08) 0%,
+    rgba(0, 179, 134, 0) 55%
+  );
+}
+:root[data-theme='dark'] {
+  --page: #0b1210;
+  --surface: #121a17;
+  --surface-2: #18231f;
+  --ink: #eef5f1;
+  --ink-2: #9fb4ab;
+  --muted: #6f857b;
+  --grid: #1e2b26;
+  --accent: #00e3a3;
+  --accent-strong: #00e3a3;
+  --accent-wash: rgba(0, 227, 163, 0.14);
+  --good-text: #00e3a3;
+  --hero-grad: radial-gradient(
+    130% 160% at 0% 0%,
+    rgba(0, 227, 163, 0.1) 0%,
+    rgba(0, 227, 163, 0) 55%
+  );
+}
+
+html,
+body {
+  font-size: 14.5px;
+}
+
+/* Topbar: quieter brand, pill nav with a mint active state. */
+.topbar {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(12px) saturate(1.1);
+}
+.topbar-inner {
+  max-width: 1160px;
+  height: 64px;
+}
+.logo-mark {
+  color: var(--accent-strong);
+}
+.topnav a[aria-current='page'] {
+  color: var(--accent-strong);
+  background: var(--accent-wash);
+  font-weight: 600;
+}
+
+/* Segmented control (portfolio switch): one track, sliding-feel active chip. */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+}
+.segmented a {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-decoration: none;
+  border: 0;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+.segmented a:hover {
+  color: var(--ink);
+}
+.segmented a[aria-current='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+/* Hero: tinted gradient, accent hairline, airy. */
+.hero {
+  position: relative;
+  padding: 32px;
+  border-radius: 20px;
+  background: var(--hero-grad), var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), transparent 70%);
+}
+.hero-value {
+  font-size: 52px;
+  letter-spacing: -0.035em;
+}
+.hero-stat {
+  border-left: 1px solid var(--grid);
+}
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Cards: crisp white, soft radius, confident hover. */
+.holding,
+.action,
+.rec {
+  border-radius: 16px;
+  border-color: var(--grid);
+}
+.rec {
+  border-left-width: 3px;
+}
+
+/* Buttons: primary gets the mint, pill shape, subtle lift. */
+.btn {
+  border-radius: 999px;
+  font-weight: 600;
+}
+.btn.primary {
+  background: var(--ink);
+  color: #fff;
+}
+.btn.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  opacity: 1;
+}
+.prepare .btn.primary,
+.rec .btn.primary {
+  background: linear-gradient(
+    180deg,
+    var(--accent-strong),
+    color-mix(in srgb, var(--accent-strong) 85%, #000)
+  );
+  color: #fff;
+}
