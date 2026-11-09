@@ -11,6 +11,16 @@ import {
 import type { PrepareRequest, PreparedCascade } from '../lib/prepare-types';
 import { signCascade, type SignResult } from '../lib/wallet-sign';
 
+/** The sized amounts a cascade reports, for the compact "After this move" panel. Display only — the real
+ *  per-action deposits and gas stay in the "Exactly what you would sign" table; nothing here is fabricated. */
+function prepareAmounts(c: PreparedCascade): { label: string; human: number; symbol: string }[] {
+  const sized = c.amounts ?? (c.amount ? [c.amount] : []);
+  const out: { label: string; human: number; symbol: string }[] = [];
+  for (const a of sized) out.push({ label: '≈', human: a.human, symbol: a.symbol });
+  for (const f of c.freed ?? []) out.push({ label: 'frees', human: f.human, symbol: f.symbol });
+  return out;
+}
+
 /**
  * One-click: given a recommendation's intent and the connected account, ask the server to ASSEMBLE the exact
  * transaction cascade and show the user precisely what they would sign — plain-language steps plus the receiver,
@@ -78,11 +88,57 @@ export function PrepareDialog({
 
       {cascade && (
         <div className="prepare-result" style={{ marginTop: 10 }}>
-          <ol className="prepare-steps">
-            {cascade.preview.map((line, i) => (
-              <li key={`${i}-${line.slice(0, 16)}`}>{line}</li>
-            ))}
-          </ol>
+          <div className="prepare-head">
+            <span className="prepare-kicker">
+              Transaction cascade · {cascade.transactions.length}{' '}
+              {cascade.transactions.length === 1 ? 'step' : 'steps'}
+            </span>
+          </div>
+          <div className="prepare-body">
+            <ol className="prepare-steps">
+              {cascade.preview.map((line, i) => (
+                <li key={`${i}-${line.slice(0, 16)}`}>
+                  <span className="step-idx">{i + 1}</span>
+                  <span className="step-text">{line}</span>
+                </li>
+              ))}
+            </ol>
+            <aside className="prepare-after">
+              <div className="pa-title">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M4 18 10 12l4 4 6-7"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                After this move
+              </div>
+              {prepareAmounts(cascade).length > 0 && (
+                <div className="pa-amts">
+                  {prepareAmounts(cascade).map((a) => (
+                    <span className="pa-tok" key={`${a.label}-${a.symbol}`}>
+                      <span className="pa-tok-ci">{a.symbol.slice(0, 1)}</span>
+                      {a.label} {trimDecimals(String(a.human), 4)} {a.symbol}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="pa-facts">
+                <div>
+                  <span>Steps to sign</span>
+                  <b>{cascade.transactions.length}</b>
+                </div>
+                <div>
+                  <span>NEAR attached</span>
+                  <b>{trimDecimals(totalDepositNear(cascade.transactions))}</b>
+                </div>
+              </div>
+              <p className="pa-note">{cascade.note}</p>
+            </aside>
+          </div>
 
           <details className="plan">
             <summary>

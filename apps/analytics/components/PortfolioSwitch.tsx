@@ -32,6 +32,7 @@ export function PortfolioSwitch({
       {withAccount && (
         <Link href={`${path}?p=account`} aria-current={current === 'account' ? 'true' : undefined}>
           Your account
+          {current === 'account' && <span className="seg-live">LIVE</span>}
         </Link>
       )}
     </nav>

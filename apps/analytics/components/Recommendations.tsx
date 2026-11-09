@@ -28,9 +28,12 @@ export function Recommendations({
         const request = recommendationToPrepare(r.intent, account);
         return (
           <article className={`rec sev-${r.severity}`} key={r.id}>
+            <span className="rec-agent">
+              <span className="rec-agent-dot" aria-hidden="true" />
+              {r.agent}
+            </span>
             <div className="rec-head">
               <h3>{r.title}</h3>
-              <span className="rec-agent">{r.agent}</span>
             </div>
             <p className="rec-why">{r.why}</p>
             {request ? (

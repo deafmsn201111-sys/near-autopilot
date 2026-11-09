@@ -8,8 +8,9 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { WalletButton } from '../components/WalletButton';
 import './globals.css';
 
-/** Applies the saved theme (or the OS preference) before first paint, so there is no flash of the wrong theme. */
-const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+/** Applies the saved theme before first paint, so there is no flash of the wrong theme. Dark is the default
+ *  identity (the "Signal Terminal" direction); only an explicit saved choice overrides it. */
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
 
 export const metadata: Metadata = {
   title: 'NEAR Autopilot',
@@ -22,16 +23,30 @@ export const dynamic = 'force-dynamic';
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
       </head>
       <body>
         <header className="topbar">
           <div className="topbar-inner">
             <Link href="/" className="logo">
               <span className="logo-mark" aria-hidden="true">
-                ◆
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M6 18V6l12 12V6"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </span>
               NEAR Autopilot
             </Link>

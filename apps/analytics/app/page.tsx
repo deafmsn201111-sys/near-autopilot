@@ -12,6 +12,31 @@ const amountText = (n: number) =>
   n > 0 && n < 0.01
     ? n.toLocaleString('en-US', { maximumSignificantDigits: 2 })
     : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+/** Token coin chip: a deterministic gradient + readable foreground per known symbol, neutral otherwise. */
+const TOKEN_COLORS: Record<string, readonly [string, string]> = {
+  NEAR: ['linear-gradient(135deg,#00ec97,#00935f)', '#03140c'],
+  WNEAR: ['linear-gradient(135deg,#00b876,#064e3b)', '#eafff6'],
+  STNEAR: ['linear-gradient(135deg,#2bffb0,#00b57a)', '#03140c'],
+  USDC: ['linear-gradient(135deg,#3b82f6,#1d5fd1)', '#ffffff'],
+  'USDC.E': ['linear-gradient(135deg,#5b7fb8,#2d4a73)', '#ffffff'],
+  USDT: ['linear-gradient(135deg,#26a17b,#13795b)', '#ffffff'],
+} as const;
+const tokenVisual = (s: string): readonly [string, string] =>
+  TOKEN_COLORS[s.toUpperCase()] ?? ['linear-gradient(135deg,#6f857b,#334039)', '#ffffff'];
+
+/** A short "what kind of token" subtitle for the holdings table. */
+const TOKEN_KIND: Record<string, string> = {
+  NEAR: 'Native token',
+  WNEAR: 'Wrapped NEAR',
+  STNEAR: 'Liquid staking',
+  USDC: 'Stablecoin',
+  'USDC.E': 'Bridged stablecoin',
+  USDT: 'Stablecoin',
+};
+
+/** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
+const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
 import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
@@ -156,10 +181,26 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </>
     );
   const t = data.totals;
-  const groups = (['wallet', 'collateral', 'deposited', 'borrowed'] as const)
-    .map((w) => ({ w, rows: data.holdings.filter((h) => h.where === w && !isDust(h)) }))
-    .filter((g) => g.rows.length > 0);
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
+
+  // Holdings for the premium table (non-dust, highest value first) and the hero allocation bar (assets only,
+  // aggregated by symbol). All derived from the real balances — nothing invented.
+  const rows = data.holdings.filter((h) => !isDust(h)).sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+  const assetRows = rows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0);
+  const assetsTotal = assetRows.reduce((s, h) => s + (h.usd ?? 0), 0) || 1;
+  const bySymbol = new Map<string, number>();
+  for (const h of assetRows) bySymbol.set(h.symbol, (bySymbol.get(h.symbol) ?? 0) + (h.usd ?? 0));
+  const alloc = [...bySymbol.entries()]
+    .map(([symbol, usd]) => ({ symbol, pct: usd / assetsTotal }))
+    .sort((a, b) => b.pct - a.pct);
+  const allocTop = alloc.slice(0, 4);
+  const allocOther = alloc.slice(4).reduce((s, a) => s + a.pct, 0);
+  const allocSegs = [
+    ...allocTop.map((a, i) => ({ label: a.symbol, pct: a.pct, color: ALLOC_COLORS[i] as string })),
+    ...(allocOther > 0.0005
+      ? [{ label: 'Other', pct: allocOther, color: ALLOC_COLORS[4] as string }]
+      : []),
+  ];
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
   const recs = isAccount ? (await accountRecommendations(accountParam)).data : null;
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
@@ -204,26 +245,60 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </div>
       )}
       <section className="hero">
-        <div>
-          <span className="eyebrow">Net worth</span>
-          <div className="hero-value">{money(t.netWorthUsd, false)}</div>
+        <div className="hero-main">
+          <span className="eyebrow">
+            Net worth · {isAccount ? 'Your account' : 'Demo portfolio'}
+          </span>
+          <div className="hero-top">
+            <div className="hero-value num">{money(t.netWorthUsd, false)}</div>
+            <span className={`hero-live ${isAccount ? 'is-live' : ''}`}>
+              <span className="dot" aria-hidden="true" />
+              {isAccount ? 'Live' : 'Simulated'}
+            </span>
+          </div>
           <span className="muted-note">
             {money(t.assetsUsd, false)} in assets − {money(t.debtUsd, false)} borrowed
           </span>
+          {allocSegs.length > 0 && (
+            <>
+              <div className="alloc-bar" aria-hidden="true">
+                {allocSegs.map((s) => (
+                  <i key={s.label} style={{ width: `${s.pct * 100}%`, background: s.color }} />
+                ))}
+              </div>
+              <div className="alloc-legend">
+                {allocSegs.map((s) => (
+                  <span key={s.label}>
+                    <span className="sw" style={{ background: s.color }} />
+                    <b>{s.label}</b> {(s.pct * 100).toFixed(1)}%
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
-        <div className="hero-stat">
-          <span className="eyebrow">Monthly result now</span>
-          <div className={`hero-num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}>
-            {data.earnings.monthlyNetUsd === null
-              ? '—'
-              : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
+        <div className="hero-side">
+          <div className="hero-stat">
+            <span className="eyebrow">Monthly result now</span>
+            <div
+              className={`hero-num num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}
+            >
+              {data.earnings.monthlyNetUsd === null
+                ? '—'
+                : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
+            </div>
+            <span className="muted-note">{data.earnings.sentence}</span>
           </div>
-          <span className="muted-note">{data.earnings.sentence}</span>
-        </div>
-        <div className="hero-stat">
-          <span className="eyebrow">Loan safety</span>
-          <div className={`hero-num health-${data.health.level}`}>{data.health.label}</div>
-          <span className="muted-note">{data.health.sentence}</span>
+          <div className="hero-stat">
+            <span className="eyebrow">Loan safety</span>
+            <div className="hero-safe">
+              <span className={`safe-chip health-${data.health.level}`}>
+                <span className="dot" aria-hidden="true" />
+                {data.health.label}
+              </span>
+            </div>
+            <span className="muted-note">{data.health.sentence}</span>
+          </div>
         </div>
       </section>
 
@@ -247,24 +322,66 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       )}
 
       <section className="block">
-        <h2>What you hold</h2>
-        <div className="holdings">
-          {groups.map((g) => (
-            <div className={`holding ${g.w}`} key={g.w}>
-              <span className="eyebrow">{WHERE[g.w]}</span>
-              <b>
-                {money(
-                  g.rows.reduce((s, r) => s + (r.usd ?? 0), 0),
-                  false,
-                )}
-              </b>
-              {g.rows.map((r) => (
-                <span key={r.symbol} className="muted-note">
-                  {amountText(r.amount)} {r.symbol}
-                </span>
-              ))}
-            </div>
-          ))}
+        <div className="block-head">
+          <h2>What you hold</h2>
+          <span className="muted-note">
+            {rows.length} {rows.length === 1 ? 'asset' : 'assets'} ·{' '}
+            {isAccount ? 'read just now' : `updated ${ago(data.asOf)}`}
+          </span>
+        </div>
+        <div className="holdings-table">
+          <div className="ht-head">
+            <span>Asset</span>
+            <span>Balance</span>
+            <span>Allocation</span>
+            <span className="r">Value</span>
+          </div>
+          {rows.map((r) => {
+            const [bg, fg] = tokenVisual(r.symbol);
+            const isDebt = r.where === 'borrowed';
+            const kind =
+              r.where === 'wallet'
+                ? (TOKEN_KIND[r.symbol.toUpperCase()] ?? 'Token')
+                : WHERE[r.where];
+            const pct = isDebt ? 0 : (r.usd ?? 0) / assetsTotal;
+            return (
+              <div className="ht-row" key={`${r.where}-${r.symbol}`}>
+                <div className="ht-asset">
+                  <span className="coin" style={{ background: bg, color: fg }}>
+                    {r.symbol.slice(0, 1)}
+                  </span>
+                  <div>
+                    <div className="nm">{r.symbol}</div>
+                    <div className="sub">{kind}</div>
+                  </div>
+                </div>
+                <div className="ht-qty num">{amountText(r.amount)}</div>
+                <div className="ht-alloc">
+                  {isDebt ? (
+                    <span className="muted-note">Borrowed</span>
+                  ) : (
+                    <>
+                      <span className="track">
+                        <span className="fill" style={{ width: `${Math.min(100, pct * 100)}%` }} />
+                      </span>
+                      <span className="pc num">{(pct * 100).toFixed(1)}%</span>
+                    </>
+                  )}
+                </div>
+                <div className={`ht-val num r ${isDebt ? 'neg' : ''}`}>
+                  {isDebt ? '−' : ''}
+                  {money(r.usd, false)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="ht-foot">
+          <span className="muted-note">
+            {isAccount
+              ? 'Balances read directly from the NEAR mainnet · non-custodial'
+              : 'Simulated balances valued at live NEAR prices'}
+          </span>
         </div>
       </section>
 
