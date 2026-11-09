@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_SWAP_TARGET,
+  SWAP_STABLE,
+  WRAP_NEAR,
   actionLabel,
   recommendationToPrepare,
   type RecommendationIntent,
@@ -26,21 +27,21 @@ describe('recommendationToPrepare', () => {
     });
   });
 
-  it('maps a concentration swap to a stablecoin target', () => {
-    const swap: RecommendationIntent = { action: 'swap', fromToken: 'wrap.near', approxUsd: 100 };
+  it('normalises native "near" to wrapped NEAR and targets the pool stablecoin', () => {
+    const swap: RecommendationIntent = { action: 'swap', fromToken: 'near', approxUsd: 1160 };
     expect(recommendationToPrepare(swap, ACC)).toEqual({
       account: ACC,
-      intent: { action: 'swap', token: 'wrap.near', tokenOut: DEFAULT_SWAP_TARGET, approxUsd: 100 },
+      intent: { action: 'swap', token: WRAP_NEAR, tokenOut: SWAP_STABLE, approxUsd: 1160 },
     });
   });
 
-  it('returns null when the swap source is already the target (nothing to do)', () => {
-    const swap: RecommendationIntent = {
+  it('swaps the stablecoin back to wNEAR (the pool is two-sided)', () => {
+    const swap: RecommendationIntent = { action: 'swap', fromToken: SWAP_STABLE, approxUsd: 100 };
+    expect(recommendationToPrepare(swap, ACC)?.intent).toMatchObject({
       action: 'swap',
-      fromToken: DEFAULT_SWAP_TARGET,
-      approxUsd: 100,
-    };
-    expect(recommendationToPrepare(swap, ACC)).toBeNull();
+      token: SWAP_STABLE,
+      tokenOut: WRAP_NEAR,
+    });
   });
 
   it('maps reposition_dcl to the lpt id', () => {

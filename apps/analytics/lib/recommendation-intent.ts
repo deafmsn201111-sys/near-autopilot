@@ -20,8 +20,19 @@ export interface Recommendation {
   readonly intent: RecommendationIntent;
 }
 
-/** A sensible default token to move concentrated holdings into when a recommendation does not name one. */
-export const DEFAULT_SWAP_TARGET = 'usdt.tether-token.near';
+/** Canonical wrapped NEAR, and the stablecoin the allowlisted Rhea pool routes NEAR to (USDC). */
+export const WRAP_NEAR = 'wrap.near';
+export const SWAP_STABLE = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+
+/** Normalise a recommendation's `fromToken`: native "near" is swapped in its wrapped form. */
+function normalizeFrom(token: string): string {
+  return token === 'near' || token === 'NEAR' ? WRAP_NEAR : token;
+}
+
+/** The other side of the allowlisted wNEAR<->USDC pool, given the (normalised) source token. */
+function swapTargetFor(from: string): string {
+  return from === SWAP_STABLE ? WRAP_NEAR : SWAP_STABLE;
+}
 
 /**
  * Map a recommendation's intent to a concrete `prepare` request for `account`. Returns null when the intent cannot be
@@ -39,15 +50,16 @@ export function recommendationToPrepare(
     case 'supply':
       mapped = { action: intent.action, token: intent.token, approxUsd: intent.approxUsd };
       break;
-    case 'swap':
-      if (intent.fromToken === DEFAULT_SWAP_TARGET) return null; // nothing to do: already the target
+    case 'swap': {
+      const from = normalizeFrom(intent.fromToken);
       mapped = {
         action: 'swap',
-        token: intent.fromToken,
-        tokenOut: DEFAULT_SWAP_TARGET,
+        token: from,
+        tokenOut: swapTargetFor(from),
         approxUsd: intent.approxUsd,
       };
       break;
+    }
     case 'reposition_dcl':
       mapped = { action: 'reposition_dcl', lptId: intent.lptId };
       break;
