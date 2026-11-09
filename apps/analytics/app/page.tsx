@@ -51,6 +51,7 @@ import {
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
+import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { AccountForm } from '../components/AccountForm';
 import { runAnalysis } from './autopilot/actions';
@@ -216,6 +217,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
   return (
     <>
+      {isAccount && accountParam && <AccountWatcher account={accountParam} />}
       <div className="hero-head">
         <PortfolioSwitch
           current={isAccount ? 'account' : id}
