@@ -38,15 +38,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <TopNav />
             <ThemeToggle />
             <WalletButton />
-            <span
-              className="mode-pill"
-              data-tip={
-                'Shadow mode: real mainnet prices, simulated portfolios.\nNo wallet is connected and nothing is ever sent.'
-              }
-              tabIndex={0}
-            >
-              Shadow mode
-            </span>
           </div>
         </header>
         <main className="page">

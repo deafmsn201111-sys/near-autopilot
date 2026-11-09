@@ -1,9 +1,4 @@
 import { PUBLIC_DEMO } from '../lib/public-demo';
-import { cookies } from 'next/headers';
-import { AgentAction } from '../components/AgentAction';
-
-/** The policy's per-action limit (config maxActionUsd): a larger amount is blocked, so one step never asks for more. */
-const MAX_ACTION_USD = 100;
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
@@ -17,7 +12,6 @@ const amountText = (n: number) =>
   n > 0 && n < 0.01
     ? n.toLocaleString('en-US', { maximumSignificantDigits: 2 })
     : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-import { ModeSwitch, type Mode } from '../components/ModeSwitch';
 import Link from 'next/link';
 import { ConfirmAction } from '../components/ConfirmAction';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
@@ -54,83 +48,7 @@ const VERDICT = {
   no_data: { cls: 'neutral', icon: '?' },
 } as const;
 
-const AGENT_CAN = new Set(['repay', 'lend-usdt', 'lend-near']);
-
-/** What the user can do with this action, given the operating mode and whose portfolio it is. */
-function ActionControls({
-  a,
-  mode,
-  portfolio,
-}: {
-  a: PortfolioAction;
-  mode: Mode;
-  portfolio: string | null;
-}) {
-  if (portfolio === null) {
-    // a real mainnet account
-    if (mode === 'demo')
-      return (
-        <span className="locked-note">
-          Switch to a mainnet mode above to act on your own account.
-        </span>
-      );
-    if (mode === 'auto')
-      return (
-        <span className="locked-note">
-          🔒 Mainnet autopilot needs the guard contract that holds your limits on-chain (next
-          stage).
-        </span>
-      );
-    return (
-      <>
-        <button type="button" className="btn primary small" disabled>
-          🔒 Sign with your wallet
-        </button>
-        <span className="locked-note">
-          Mainnet signing is locked until the final security tests. Nothing can be sent from this
-          site yet.
-        </span>
-      </>
-    );
-  }
-  if (mode !== 'demo')
-    return (
-      <span className="locked-note">
-        Demo portfolios run in Demo mode. Switch to Demo to let the agent act.
-      </span>
-    );
-  if (!AGENT_CAN.has(a.id))
-    return (
-      <span className="locked-note">
-        {a.kind === 'loop'
-          ? 'The agent never borrows: loops are shown for comparison only.'
-          : a.kind === 'liquidity'
-            ? 'The agent cannot open liquidity positions yet: it only advises on them.'
-            : 'The agent cannot do this one as a single step yet (swap, then deposit).'}
-      </span>
-    );
-  return (
-    <AgentAction
-      portfolio={portfolio}
-      actionId={a.id}
-      title={a.title}
-      defaultUsd={Math.min(a.capitalUsd, 50)}
-      maxUsd={Math.min(a.capitalUsd, MAX_ACTION_USD)}
-    />
-  );
-}
-
-function ActionCard({
-  a,
-  best,
-  mode,
-  portfolio,
-}: {
-  a: PortfolioAction;
-  best: boolean;
-  mode: Mode;
-  portfolio: string | null;
-}) {
+function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
   const v = VERDICT[a.autopilot.verdict];
   const net = a.netUsd;
   return (
@@ -155,9 +73,6 @@ function ActionCard({
         <i aria-hidden="true">{v.icon}</i>
         {a.autopilot.sentence}
       </p>
-      <div className="action-buttons">
-        <ActionControls a={a} mode={mode} portfolio={portfolio} />
-      </div>
       <details className="plan">
         <summary>See the plan, the costs and the risks</summary>
         <div className="plan-grid">
@@ -209,8 +124,6 @@ function ActionCard({
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
-  const cookieMode = (await cookies()).get('autopilot-mode')?.value;
-  const mode: Mode = cookieMode === 'confirm' || cookieMode === 'auto' ? cookieMode : 'demo';
   const isAccount = sp.p === 'account';
   const accountParam = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const id = portfolioOf(sp.p);
@@ -254,7 +167,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     <>
       <div className="hero-head">
         <PortfolioSwitch current={isAccount ? 'account' : id} path="/" withAccount />
-        <ModeSwitch current={mode} />
         <span className="muted-note">
           {isAccount
             ? `${accountParam} on NEAR mainnet · read just now, nothing is signed or sent`
@@ -356,48 +268,46 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </div>
       </section>
 
-      <section className="block">
-        <div className="block-head">
-          <div>
-            <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
-            <p className="muted-note">
-              Best result first, after every cost: fees, swaps, gas, borrowing interest and
-              impermanent loss.
-            </p>
-          </div>
-          {!isAccount && !PUBLIC_DEMO && (
-            <ConfirmAction
-              label="Refresh with live data"
-              title="Run a fresh analysis?"
-              description="The autopilot reads the latest prices, pools and lending rates from NEAR mainnet and recomputes every option. It takes about a minute. Nothing is bought, sold or sent."
-              confirmLabel="Run analysis"
-              action={async () => {
-                'use server';
-                return runAnalysis();
-              }}
-            />
-          )}
-        </div>
-        {data.actions.length === 0 ? (
-          <p className="muted-note">
-            {t.idleUsd < SMALL_IDLE_USD
-              ? `${money(t.idleUsd, false)} is too small to put to work: the network fees of any move would cost more than it can earn in a month. Doing nothing is the right call here.`
-              : 'No option could be computed from the latest data.'}
-          </p>
-        ) : (
-          <div className="actions-list">
-            {data.actions.map((a) => (
-              <ActionCard
-                key={a.id}
-                a={a}
-                best={a === best}
-                mode={mode}
-                portfolio={isAccount ? null : id}
+      {/* The connected wallet gets live, one-click recommendations above; this cost-ranked idle-cash analysis is
+          shown for the illustrative demo portfolios. */}
+      {!isAccount && (
+        <section className="block">
+          <div className="block-head">
+            <div>
+              <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
+              <p className="muted-note">
+                Best result first, after every cost: fees, swaps, gas, borrowing interest and
+                impermanent loss.
+              </p>
+            </div>
+            {!PUBLIC_DEMO && (
+              <ConfirmAction
+                label="Refresh with live data"
+                title="Run a fresh analysis?"
+                description="The autopilot reads the latest prices, pools and lending rates from NEAR mainnet and recomputes every option. It takes about a minute. Nothing is bought, sold or sent."
+                confirmLabel="Run analysis"
+                action={async () => {
+                  'use server';
+                  return runAnalysis();
+                }}
               />
-            ))}
+            )}
           </div>
-        )}
-      </section>
+          {data.actions.length === 0 ? (
+            <p className="muted-note">
+              {t.idleUsd < SMALL_IDLE_USD
+                ? `${money(t.idleUsd, false)} is too small to put to work: the network fees of any move would cost more than it can earn in a month. Doing nothing is the right call here.`
+                : 'No option could be computed from the latest data.'}
+            </p>
+          ) : (
+            <div className="actions-list">
+              {data.actions.map((a) => (
+                <ActionCard key={a.id} a={a} best={a === best} />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {!isAccount && data.lastDecision && (
         <section className="block">
