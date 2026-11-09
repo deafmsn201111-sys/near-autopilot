@@ -61,6 +61,9 @@ export const TOKEN_REQUIRED_EXPORTS = ['ft_transfer_call', 'ft_balance_of'] as c
 export const BURROW_GAS = {
   ftTransferCall: 100_000_000_000_000n,
   execute: 50_000_000_000_000n,
+  /** `oracle_call` on the price oracle: it forwards most of the prepaid gas to Burrow's oracle_on_call, which
+   *  runs the priced Borrow/Withdraw and (for a withdraw) an ft_transfer. burrow-cash attaches ~100–150 Tgas. */
+  oracleCall: 150_000_000_000_000n,
 } as const;
 
 /** Burrow views reject a missing/zero ratio; contract asserts `volatility_ratio < 10000` (S: asset_config.rs). */

@@ -33,6 +33,8 @@ export const ALLOWED_METHODS = new Set([
   'burn_v_liquidity',
   // unwrap wNEAR -> native NEAR.
   'near_withdraw',
+  // priced Burrow borrow / withdraw, routed through the oracle.
+  'oracle_call',
 ]);
 
 export interface CascadeValidationContext {

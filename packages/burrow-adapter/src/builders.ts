@@ -9,12 +9,15 @@ import {
 } from './verify';
 
 /**
- * Pure transaction builders for the two risk-REDUCING Burrow actions: repay, and increase collateral.
- * Borrow and withdraw are intentionally absent (they raise risk and also need priced `oracle_call` flows).
+ * Pure transaction builders for Burrow actions. The risk-REDUCING ones (repay, increase collateral, supply) send
+ * `ft_transfer_call` to the token. The liquidity-changing ones (borrow, withdraw) must be PRICED: they go through
+ * the verified oracle's `oracle_call`, which pushes fresh prices into Burrow's `oracle_on_call` so the contract
+ * re-checks that collateral still covers debt before running the action (S: price_receiver.rs, actions.rs).
  *
  * Every builder demands a `VerifiedBurrowDeployment` and `VerifiedBurrowToken`. Those can only be minted by
  * `BurrowVerifier`, which has checked the chain id, the code actually deployed at each receiver, the oracle
- * Burrow trusts, and that the token is listed and accepted. Builders never sign and never touch keys.
+ * Burrow trusts (and its code), and that the token is listed and accepted FOR THIS PURPOSE. Builders never sign
+ * and never touch keys.
  *
  * Interfaces (S = contract source, A = burrow-cash frontend):
  *   ft_transfer_call on the token -> ft_on_transfer on Burrow; empty `msg` = plain deposit;
@@ -119,6 +122,76 @@ export function buildSupplyAsCollateral(
 export function buildSupply(args: Common & { readonly rawAmount: bigint }): BuiltBurrowTransaction {
   guard(args, ['supply', 'collateral'], 'supply');
   return transferCall(args, args.rawAmount, '');
+}
+
+/**
+ * Build an `oracle_call` on the VERIFIED oracle that forwards a priced `Execute { actions }` to Burrow. `assetIds`
+ * are the price feeds Burrow needs to value the account (its collateral + borrowed assets + the action token); the
+ * caller resolves them on-chain. Attaches exactly one yoctoNEAR, as the oracle asserts (S: price-oracle lib.rs).
+ */
+function oracleExecute(
+  deployment: VerifiedBurrowDeployment,
+  actions: readonly Record<string, unknown>[],
+  assetIds: readonly string[],
+): BuiltBurrowTransaction {
+  if (assetIds.length === 0) throw new RangeError('assetIds must not be empty');
+  const msg = JSON.stringify({ Execute: { actions } });
+  return {
+    network: deployment.network,
+    receiverId: deployment.oracleId,
+    actions: [
+      {
+        type: 'FunctionCall',
+        methodName: 'oracle_call',
+        args: { receiver_id: deployment.contractId, asset_ids: [...assetIds], msg },
+        gas: BURROW_GAS.oracleCall,
+        deposit: 1n,
+      },
+    ],
+  };
+}
+
+/**
+ * Borrow `rawAmount` of the token and send it to the wallet. Priced through the oracle: Burrow checks collateral
+ * covers the new debt at fresh prices or the call reverts. A `Borrow` only credits the account's supplied balance
+ * (S: internal_borrow), so it is paired with a `Withdraw` of the same amount to move the tokens to the wallet.
+ * The token must have been verified with purpose `borrow` (asset `can_borrow`). `assetIds` must cover every asset
+ * Burrow values for this account (resolved on-chain by the caller).
+ */
+export function buildBorrow(
+  args: Common & { readonly rawAmount: bigint; readonly assetIds: readonly string[] },
+): BuiltBurrowTransaction {
+  guard(args, ['borrow'], 'borrow');
+  if (args.rawAmount <= 0n) throw new RangeError('amount must be positive');
+  const inner = rawToInner(args.rawAmount, args.token.extraDecimals).toString();
+  return oracleExecute(
+    args.deployment,
+    [
+      { Borrow: { token_id: args.token.tokenId, amount: inner } },
+      { Withdraw: { token_id: args.token.tokenId, max_amount: inner } },
+    ],
+    args.assetIds,
+  );
+}
+
+/**
+ * Withdraw up to `rawAmount` of a previously supplied (or collateral) balance to the wallet. Priced through the
+ * oracle so that, if the account also has debt, Burrow verifies the remaining collateral still covers it or the
+ * call reverts; with no debt it simply returns the funds. `max_amount` caps the withdrawal at what was requested
+ * (never more than the available balance). The token must have been verified with purpose `withdraw`
+ * (asset `can_withdraw`). `assetIds` must cover every asset Burrow values for this account.
+ */
+export function buildWithdraw(
+  args: Common & { readonly rawAmount: bigint; readonly assetIds: readonly string[] },
+): BuiltBurrowTransaction {
+  guard(args, ['withdraw'], 'withdraw');
+  if (args.rawAmount <= 0n) throw new RangeError('amount must be positive');
+  const inner = rawToInner(args.rawAmount, args.token.extraDecimals).toString();
+  return oracleExecute(
+    args.deployment,
+    [{ Withdraw: { token_id: args.token.tokenId, max_amount: inner } }],
+    args.assetIds,
+  );
 }
 
 /**

@@ -105,6 +105,7 @@ export interface AssetFixture {
   readonly canDeposit?: boolean;
   readonly canCollateral?: boolean;
   readonly canBorrow?: boolean;
+  readonly canWithdraw?: boolean;
 }
 
 export function assetView(a: AssetFixture): Record<string, unknown> {
@@ -119,7 +120,7 @@ export function assetView(a: AssetFixture): Record<string, unknown> {
       volatility_ratio: a.vr,
       extra_decimals: a.extra,
       can_deposit: a.canDeposit ?? true,
-      can_withdraw: true,
+      can_withdraw: a.canWithdraw ?? true,
       can_use_as_collateral: a.canCollateral ?? true,
       can_borrow: a.canBorrow ?? true,
     },

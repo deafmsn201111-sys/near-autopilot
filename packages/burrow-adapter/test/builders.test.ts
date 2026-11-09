@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   BURROW_GAS,
+  buildBorrow,
   buildBurrowStorageDeposit,
   buildIncreaseCollateralFromSupplied,
   buildRepay,
   buildSupply,
   buildSupplyAsCollateral,
+  buildWithdraw,
   BurrowVerificationError,
   type VerifiedBurrowDeployment,
   type VerifiedBurrowToken,
@@ -215,5 +217,69 @@ describe('buildBurrowStorageDeposit', () => {
     expect(() =>
       buildBurrowStorageDeposit({ deployment, accountId: WNEAR, deposit: 0n }),
     ).toThrow();
+  });
+});
+
+describe('buildBorrow / buildWithdraw (priced via oracle_call)', () => {
+  it('buildBorrow calls oracle_call on the ORACLE with Borrow + Withdraw in inner units', async () => {
+    const { deployment, w, now } = await setup();
+    const usdtBorrow = await w.verifier.verifyToken(deployment, USDT, 'borrow');
+    const tx = buildBorrow({
+      deployment,
+      token: usdtBorrow,
+      now,
+      rawAmount: 42n,
+      assetIds: [USDT, WNEAR],
+    });
+    expect(tx.receiverId).toBe(ORACLE);
+    const a = tx.actions[0]!;
+    expect(a.methodName).toBe('oracle_call');
+    expect(a.deposit).toBe(1n);
+    expect(a.gas).toBe(BURROW_GAS.oracleCall);
+    expect(a.args['receiver_id']).toBe(BURROW);
+    expect(a.args['asset_ids']).toEqual([USDT, WNEAR]);
+    expect(JSON.parse(String(a.args['msg']))).toEqual({
+      Execute: {
+        actions: [
+          { Borrow: { token_id: USDT, amount: '42000000000000' } },
+          { Withdraw: { token_id: USDT, max_amount: '42000000000000' } },
+        ],
+      },
+    });
+  });
+
+  it('buildWithdraw calls oracle_call with a single capped Withdraw', async () => {
+    const { deployment, w, now } = await setup();
+    const usdtWithdraw = await w.verifier.verifyToken(deployment, USDT, 'withdraw');
+    const tx = buildWithdraw({
+      deployment,
+      token: usdtWithdraw,
+      now,
+      rawAmount: 7n,
+      assetIds: [USDT],
+    });
+    expect(tx.receiverId).toBe(ORACLE);
+    expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
+      Execute: { actions: [{ Withdraw: { token_id: USDT, max_amount: '7000000000000' } }] },
+    });
+  });
+
+  it('rejects empty assetIds and non-positive amounts', async () => {
+    const { deployment, w, now } = await setup();
+    const t = await w.verifier.verifyToken(deployment, USDT, 'borrow');
+    expect(() => buildBorrow({ deployment, token: t, now, rawAmount: 42n, assetIds: [] })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      buildBorrow({ deployment, token: t, now, rawAmount: 0n, assetIds: [USDT] }),
+    ).toThrow(RangeError);
+  });
+
+  it('refuses a token verified for the wrong purpose', async () => {
+    const { deployment, w, now } = await setup();
+    const supplyToken = await w.verifier.verifyToken(deployment, USDT, 'supply');
+    expect(() =>
+      buildBorrow({ deployment, token: supplyToken, now, rawAmount: 1n, assetIds: [USDT] }),
+    ).toThrow(BurrowVerificationError);
   });
 });

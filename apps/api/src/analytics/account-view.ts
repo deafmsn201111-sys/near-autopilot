@@ -2,9 +2,11 @@ import { accountIdSchema, type AccountId, type TokenId } from '@near-autopilot/c
 import {
   BurrowClient,
   BurrowVerifier,
+  buildBorrow,
   buildBurrowStorageDeposit,
   buildRepay,
   buildSupply,
+  buildWithdraw,
 } from '@near-autopilot/burrow-adapter';
 import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
 import { buildUnwrapNear } from '../wallet/wrap';
@@ -884,6 +886,9 @@ export function registerAccountView(
           }),
           // unwrap: wNEAR -> native NEAR.
           z.object({ action: z.literal('unwrap'), approxUsd: usd }),
+          // Burrow borrow / withdraw — priced through the oracle.
+          z.object({ action: z.literal('borrow'), token: accountIdSchema, approxUsd: usd }),
+          z.object({ action: z.literal('withdraw'), token: accountIdSchema, approxUsd: usd }),
         ]),
       })
       .safeParse(req.body);
@@ -1160,6 +1165,93 @@ export function registerAccountView(
           account,
           intent,
           amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
+          transactions: cascade.transactions.map((t) => ({
+            intentId: t.intentId,
+            receiverId: t.receiverId,
+            actions: t.actions.map((a) => ({
+              methodName: a.methodName,
+              args: a.args,
+              gas: a.gas.toString(),
+              deposit: a.deposit.toString(),
+            })),
+          })),
+          preview: cascade.preview,
+          signed: false,
+          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+        };
+      } catch (e) {
+        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    // borrow / withdraw — priced Burrow actions routed through the verified oracle (oracle_call). No wallet balance
+    // is needed (you borrow what you do not hold; you withdraw what Burrow holds). Burrow re-checks, at fresh prices,
+    // that collateral still covers debt, or the call reverts on-chain.
+    if (intent.action === 'borrow' || intent.action === 'withdraw') {
+      try {
+        const [prices, meta, acct, deployment] = await Promise.all([
+          latestPrices(),
+          store.tokenMetadata(),
+          burrow.getAccount(account),
+          burrowVerifier.verifyDeployment(),
+        ]);
+        const metaOf = (t: string) => meta.find((x) => x.token === t);
+        const decimals = metaOf(intent.token)?.decimals ?? 24;
+        const sym = metaOf(intent.token)?.symbol ?? intent.token.slice(0, 10);
+        const price = prices.get(intent.token);
+        if (price === undefined || !(price > 0))
+          return reply.code(409).send({ error: `no confirmed price for ${intent.token}` });
+        if (!acct) return reply.code(409).send({ error: `${account} has no Burrow account` });
+        if (intent.action === 'borrow' && acct.collateral.length === 0)
+          return reply.code(409).send({ error: 'you have no Burrow collateral to borrow against' });
+        // The oracle must price every asset Burrow values for this account, plus the action token.
+        const assetIds = [
+          ...new Set<string>([
+            intent.token,
+            ...acct.collateral.map((b) => b.tokenId),
+            ...acct.borrowed.map((b) => b.tokenId),
+          ]),
+        ];
+        const verifiedToken = await burrowVerifier.verifyToken(
+          deployment,
+          intent.token,
+          intent.action,
+        );
+        const { rawAmount, humanAmount } = resolveIntentAmount(intent.approxUsd, price, decimals);
+        if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
+        const human = humanAmount.toFixed(Math.min(6, decimals));
+
+        const common = { deployment, token: verifiedToken, now: clock.now(), rawAmount, assetIds };
+        const steps: CascadeStep[] =
+          intent.action === 'borrow'
+            ? [
+                {
+                  intentId: 'borrow',
+                  tx: buildBorrow(common),
+                  preview: `Borrow ${human} ${sym} from Burrow against your collateral and send it to your wallet (Burrow caps this at what your collateral safely allows).`,
+                },
+              ]
+            : [
+                {
+                  intentId: 'withdraw',
+                  tx: buildWithdraw(common),
+                  preview: `Withdraw up to ${human} ${sym} from your Burrow balance to your wallet (capped at your available balance).`,
+                },
+              ];
+
+        const cascade = assembleCascade(account, steps);
+        const check = validateCascade(cascade.transactions, {
+          signerId: account,
+          allowedReceivers: new Set<string>([deployment.oracleId]),
+        });
+        if (!check.ok)
+          return reply
+            .code(422)
+            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
+        return {
+          account,
+          intent,
+          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
           transactions: cascade.transactions.map((t) => ({
             intentId: t.intentId,
             receiverId: t.receiverId,

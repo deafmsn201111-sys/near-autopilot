@@ -58,7 +58,7 @@ export type VerifiedBurrowDeployment = Brand<
   'VerifiedBurrowDeployment'
 >;
 
-export type TokenPurpose = 'repay' | 'supply' | 'collateral';
+export type TokenPurpose = 'repay' | 'supply' | 'collateral' | 'borrow' | 'withdraw';
 
 /** Proof that a fungible token is listed by, and accepted by, one specific verified deployment. */
 export type VerifiedBurrowToken = Brand<
@@ -233,8 +233,10 @@ export class BurrowVerifier {
         'TOKEN_NOT_LISTED',
         `${tokenId} is not listed by ${deployment.contractId}`,
       );
-    // ft_on_transfer asserts can_deposit before doing anything (S: fungible_token.rs).
-    if (!asset.canDeposit)
+    // Each purpose needs a different capability enabled on the asset (S: asset_config.rs flags).
+    const depositing = purpose === 'repay' || purpose === 'supply' || purpose === 'collateral';
+    // Deposit purposes go through ft_on_transfer, which asserts can_deposit before anything (S: fungible_token.rs).
+    if (depositing && !asset.canDeposit)
       throw new BurrowVerificationError(
         'TOKEN_NOT_ACCEPTED',
         `deposits of ${tokenId} are disabled`,
@@ -243,6 +245,15 @@ export class BurrowVerifier {
       throw new BurrowVerificationError(
         'TOKEN_NOT_ACCEPTED',
         `${tokenId} cannot be used as collateral`,
+      );
+    }
+    if (purpose === 'borrow' && !asset.canBorrow) {
+      throw new BurrowVerificationError('TOKEN_NOT_ACCEPTED', `${tokenId} cannot be borrowed`);
+    }
+    if (purpose === 'withdraw' && !asset.canWithdraw) {
+      throw new BurrowVerificationError(
+        'TOKEN_NOT_ACCEPTED',
+        `withdrawals of ${tokenId} are disabled`,
       );
     }
 

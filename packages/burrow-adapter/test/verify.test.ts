@@ -260,3 +260,21 @@ describe('BurrowVerifier.verifyToken', () => {
     expect(w.rpc.calls.length).toBe(before);
   });
 });
+
+describe('verifyToken — borrow / withdraw capability flags', () => {
+  it('requires can_borrow only for the borrow purpose', async () => {
+    const w = makeWorld();
+    w.assets[USDT] = { ...w.assets[USDT]!, canBorrow: false };
+    const d = await w.verifier.verifyDeployment();
+    expect(await reasonOf(w.verifier.verifyToken(d, USDT, 'borrow'))).toBe('TOKEN_NOT_ACCEPTED');
+    expect(await w.verifier.verifyToken(d, USDT, 'supply')).toBeDefined();
+  });
+
+  it('requires can_withdraw only for the withdraw purpose', async () => {
+    const w = makeWorld();
+    w.assets[USDT] = { ...w.assets[USDT]!, canWithdraw: false };
+    const d = await w.verifier.verifyDeployment();
+    expect(await reasonOf(w.verifier.verifyToken(d, USDT, 'withdraw'))).toBe('TOKEN_NOT_ACCEPTED');
+    expect(await w.verifier.verifyToken(d, USDT, 'supply')).toBeDefined();
+  });
+});
