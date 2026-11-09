@@ -3,6 +3,7 @@ import {
   BurrowClient,
   BurrowVerifier,
   buildBurrowStorageDeposit,
+  buildRepay,
   buildSupply,
 } from '@near-autopilot/burrow-adapter';
 import { resolveIntentAmount } from '../wallet/amounts';
@@ -845,7 +846,7 @@ export function registerAccountView(
       .object({
         account: accountIdSchema,
         intent: z.object({
-          action: z.literal('supply'),
+          action: z.enum(['supply', 'repay']),
           token: accountIdSchema,
           approxUsd: z.number().positive().max(1_000_000),
         }),
@@ -855,7 +856,11 @@ export function registerAccountView(
     const { account, intent } = parsed.data;
     try {
       const deployment = await burrowVerifier.verifyDeployment();
-      const verifiedToken = await burrowVerifier.verifyToken(deployment, intent.token, 'supply');
+      const verifiedToken = await burrowVerifier.verifyToken(
+        deployment,
+        intent.token,
+        intent.action === 'repay' ? 'repay' : 'supply',
+      );
       const [prices, meta, walletRaw] = await Promise.all([
         latestPrices(),
         store.tokenMetadata(),
@@ -878,19 +883,29 @@ export function registerAccountView(
       if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
 
       const steps: CascadeStep[] = [];
-      if ((await burrow.getStorageBalance(account)) === null) {
-        const bounds = await burrow.getStorageBalanceBounds();
+      const human = humanAmount.toFixed(Math.min(6, decimals));
+      if (intent.action === 'repay') {
+        // A loan implies the account is already registered on Burrow; the Repay message caps at the actual debt.
         steps.push({
-          intentId: 'register',
-          tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: bounds.min }),
-          preview: `Register your account on Burrow — one-time, ${formatNear(bounds.min)} NEAR, refundable.`,
+          intentId: 'repay',
+          tx: buildRepay({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+          preview: `Repay up to ${human} ${sym} toward your Burrow loan (capped at the actual debt).`,
+        });
+      } else {
+        if ((await burrow.getStorageBalance(account)) === null) {
+          const bounds = await burrow.getStorageBalanceBounds();
+          steps.push({
+            intentId: 'register',
+            tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: bounds.min }),
+            preview: `Register your account on Burrow — one-time, ${formatNear(bounds.min)} NEAR, refundable.`,
+          });
+        }
+        steps.push({
+          intentId: 'supply',
+          tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+          preview: `Supply ${human} ${sym} to Burrow (earns the current supply rate).`,
         });
       }
-      steps.push({
-        intentId: 'supply',
-        tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
-        preview: `Supply ${humanAmount.toFixed(Math.min(6, decimals))} ${sym} to Burrow (earns the current supply rate).`,
-      });
 
       const cascade = assembleCascade(account, steps);
       return {
