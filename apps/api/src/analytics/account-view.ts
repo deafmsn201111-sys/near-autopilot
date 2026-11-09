@@ -8,6 +8,7 @@ import {
 } from '@near-autopilot/burrow-adapter';
 import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
+import { validateCascade } from '../wallet/validate-cascade';
 import { z } from 'zod';
 import {
   NearAccountReader,
@@ -972,6 +973,14 @@ export function registerAccountView(
         });
 
         const cascade = assembleCascade(account, steps);
+        const check = validateCascade(cascade.transactions, {
+          signerId: account,
+          allowedReceivers: new Set<string>([deps.rheaId, token0, token1]),
+        });
+        if (!check.ok)
+          return reply
+            .code(422)
+            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
         return {
           account,
           intent,
@@ -1121,6 +1130,16 @@ export function registerAccountView(
       }
 
       const cascade = assembleCascade(account, steps);
+      const allowed = new Set<string>([deps.burrowId, deps.rheaId, intent.token]);
+      if (intent.tokenOut) allowed.add(intent.tokenOut);
+      const check = validateCascade(cascade.transactions, {
+        signerId: account,
+        allowedReceivers: allowed,
+      });
+      if (!check.ok)
+        return reply
+          .code(422)
+          .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
       return {
         account,
         intent,
