@@ -846,29 +846,27 @@ export function registerAccountView(
       .object({
         account: accountIdSchema,
         intent: z.object({
-          action: z.enum(['supply', 'repay']),
+          action: z.enum(['supply', 'repay', 'swap']),
           token: accountIdSchema,
+          /** Required for a swap: the token to receive. */
+          tokenOut: accountIdSchema.optional(),
           approxUsd: z.number().positive().max(1_000_000),
+          /** Swap slippage tolerance in basis points (default 50 = 0.5%). */
+          maxSlippageBps: z.number().int().min(1).max(1_000).default(50),
         }),
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
     const { account, intent } = parsed.data;
     try {
-      const deployment = await burrowVerifier.verifyDeployment();
-      const verifiedToken = await burrowVerifier.verifyToken(
-        deployment,
-        intent.token,
-        intent.action === 'repay' ? 'repay' : 'supply',
-      );
       const [prices, meta, walletRaw] = await Promise.all([
         latestPrices(),
         store.tokenMetadata(),
         tokens.getBalance(intent.token, account).catch(() => 0n),
       ]);
-      const m = meta.find((x) => x.token === intent.token);
-      const decimals = m?.decimals ?? 24;
-      const sym = m?.symbol ?? intent.token.slice(0, 10);
+      const metaOf = (t: string) => meta.find((x) => x.token === t);
+      const decimals = metaOf(intent.token)?.decimals ?? 24;
+      const sym = metaOf(intent.token)?.symbol ?? intent.token.slice(0, 10);
       const price = prices.get(intent.token);
       if (price === undefined || !(price > 0))
         return reply.code(409).send({ error: `no confirmed price for ${intent.token}` });
@@ -881,30 +879,105 @@ export function registerAccountView(
         walletHuman,
       );
       if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
+      const human = humanAmount.toFixed(Math.min(6, decimals));
 
       const steps: CascadeStep[] = [];
-      const human = humanAmount.toFixed(Math.min(6, decimals));
-      if (intent.action === 'repay') {
-        // A loan implies the account is already registered on Burrow; the Repay message caps at the actual debt.
-        steps.push({
-          intentId: 'repay',
-          tx: buildRepay({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
-          preview: `Repay up to ${human} ${sym} toward your Burrow loan (capped at the actual debt).`,
-        });
-      } else {
-        if ((await burrow.getStorageBalance(account)) === null) {
-          const bounds = await burrow.getStorageBalanceBounds();
+
+      if (intent.action === 'swap') {
+        const tokenOut = intent.tokenOut;
+        if (!tokenOut) return reply.code(400).send({ error: 'a swap needs tokenOut' });
+        const quote = await quoter.quote({ tokenIn: intent.token, tokenOut, amountIn: rawAmount });
+        if (!quote)
+          return reply
+            .code(409)
+            .send({ error: `no route for ${sym} -> ${tokenOut} in the allowlisted pools` });
+        const minOut = (quote.amountOut * BigInt(10_000 - intent.maxSlippageBps)) / 10_000n;
+        const decOut = metaOf(tokenOut)?.decimals ?? 24;
+        const symOut = metaOf(tokenOut)?.symbol ?? tokenOut.slice(0, 10);
+        const humanMinOut = (Number(minOut) / 10 ** decOut).toFixed(Math.min(6, decOut));
+        // Register on the OUTPUT token first, or the swap output would be stranded on the exchange.
+        if (!(await tokens.isStorageRegistered(tokenOut, account))) {
+          const bounds = (await viewer.view(tokenOut, 'storage_balance_bounds', {})) as {
+            min?: string;
+          };
+          const minDeposit = BigInt(bounds.min ?? '1250000000000000000000');
           steps.push({
-            intentId: 'register',
-            tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: bounds.min }),
-            preview: `Register your account on Burrow — one-time, ${formatNear(bounds.min)} NEAR, refundable.`,
+            intentId: 'register-out',
+            tx: {
+              receiverId: tokenOut,
+              actions: [
+                {
+                  type: 'FunctionCall',
+                  methodName: 'storage_deposit',
+                  args: { account_id: account },
+                  gas: 10_000_000_000_000n,
+                  deposit: minDeposit,
+                },
+              ],
+            },
+            preview: `Register to receive ${symOut} — one-time, ${formatNear(minDeposit)} NEAR, refundable.`,
           });
         }
         steps.push({
-          intentId: 'supply',
-          tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
-          preview: `Supply ${human} ${sym} to Burrow (earns the current supply rate).`,
+          intentId: 'swap',
+          tx: {
+            receiverId: intent.token,
+            actions: [
+              {
+                type: 'FunctionCall',
+                methodName: 'ft_transfer_call',
+                args: {
+                  receiver_id: deps.rheaId,
+                  amount: rawAmount.toString(),
+                  msg: JSON.stringify({
+                    force: 0,
+                    actions: [
+                      {
+                        pool_id: quote.poolId,
+                        token_in: intent.token,
+                        token_out: tokenOut,
+                        amount_in: rawAmount.toString(),
+                        min_amount_out: minOut.toString(),
+                      },
+                    ],
+                  }),
+                },
+                gas: 180_000_000_000_000n,
+                deposit: 1n,
+              },
+            ],
+          },
+          preview: `Swap ${human} ${sym} for at least ${humanMinOut} ${symOut} on Rhea (max ${(intent.maxSlippageBps / 100).toFixed(2)}% slippage).`,
         });
+      } else {
+        // supply / repay — Burrow, from proofs the verifier mints.
+        const deployment = await burrowVerifier.verifyDeployment();
+        const verifiedToken = await burrowVerifier.verifyToken(
+          deployment,
+          intent.token,
+          intent.action === 'repay' ? 'repay' : 'supply',
+        );
+        if (intent.action === 'repay') {
+          steps.push({
+            intentId: 'repay',
+            tx: buildRepay({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+            preview: `Repay up to ${human} ${sym} toward your Burrow loan (capped at the actual debt).`,
+          });
+        } else {
+          if ((await burrow.getStorageBalance(account)) === null) {
+            const b = await burrow.getStorageBalanceBounds();
+            steps.push({
+              intentId: 'register',
+              tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: b.min }),
+              preview: `Register your account on Burrow — one-time, ${formatNear(b.min)} NEAR, refundable.`,
+            });
+          }
+          steps.push({
+            intentId: 'supply',
+            tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+            preview: `Supply ${human} ${sym} to Burrow (earns the current supply rate).`,
+          });
+        }
       }
 
       const cascade = assembleCascade(account, steps);
