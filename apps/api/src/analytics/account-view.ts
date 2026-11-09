@@ -1378,7 +1378,7 @@ export function registerAccountView(
                 methodName: 'ft_transfer_call',
                 args: {
                   receiver_id: deps.rheaId,
-                  amount: rawAmount.toString(),
+                  amount: swapRawAmount.toString(),
                   msg: JSON.stringify({
                     force: 0,
                     actions: [
