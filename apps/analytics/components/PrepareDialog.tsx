@@ -3,25 +3,46 @@ import { useState } from 'react';
 import { prepareIntent } from '../lib/prepare-client';
 import { gasToTgas, shortAccount, totalDepositNear, yoctoToNear } from '../lib/prepare-format';
 import type { PrepareRequest, PreparedCascade } from '../lib/prepare-types';
+import { signCascade, type SignResult } from '../lib/wallet-sign';
 
 /**
- * One-click preview: given a recommendation's intent and the connected account, ask the server to ASSEMBLE the exact
+ * One-click: given a recommendation's intent and the connected account, ask the server to ASSEMBLE the exact
  * transaction cascade and show the user precisely what they would sign — plain-language steps plus the receiver,
- * method, attached deposit and gas of every action. Nothing is signed here: the server holds no key, and the wallet
- * hand-off is enabled only in local mode (shown as a clear, honest note) until the post-hackathon security review.
+ * method, attached deposit and gas of every action. When signing is enabled (a flag, never on the public demo), the
+ * "Sign" button hands the cascade to the connected wallet, which shows every action again for approval. The server
+ * holds no key and sends nothing; it only assembled the transactions.
  */
-export function PrepareDialog({ request, label }: { request: PrepareRequest; label: string }) {
-  const [state, setState] = useState<'idle' | 'loading'>('idle');
+export function PrepareDialog({
+  request,
+  label,
+  signingEnabled = false,
+}: {
+  request: PrepareRequest;
+  label: string;
+  signingEnabled?: boolean;
+}) {
+  const [state, setState] = useState<'idle' | 'loading' | 'signing'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
   const [error, setError] = useState<{ message: string; reasons?: readonly string[] } | null>(null);
+  const [signed, setSigned] = useState<SignResult | null>(null);
 
   async function run() {
     setState('loading');
     setError(null);
     setCascade(null);
+    setSigned(null);
     const r = await prepareIntent(request);
     if (r.ok) setCascade(r.cascade);
     else setError({ message: r.error, ...(r.reasons ? { reasons: r.reasons } : {}) });
+    setState('idle');
+  }
+
+  async function sign() {
+    if (!cascade) return;
+    setState('signing');
+    setSigned(null);
+    const r = await signCascade(cascade.transactions, request.account, signingEnabled);
+    setSigned(r);
     setState('idle');
   }
 
@@ -89,14 +110,60 @@ export function PrepareDialog({ request, label }: { request: PrepareRequest; lab
           </details>
 
           <div className="prepare-sign">
-            <button type="button" className="btn primary small" disabled title={cascade.note}>
-              🔒 Sign in your wallet
-            </button>
-            <span className="muted-note">
-              The cascade above is ready. One-click signing in your own wallet turns on in local
-              mode after the security review — the server never holds a key and sends nothing.
-            </span>
+            {signingEnabled ? (
+              <>
+                <button
+                  type="button"
+                  className="btn primary small"
+                  onClick={() => void sign()}
+                  disabled={state === 'signing'}
+                >
+                  {state === 'signing' ? 'Waiting for your wallet…' : 'Sign in your wallet'}
+                </button>
+                <span className="muted-note">
+                  Your wallet shows every action again for approval. The server holds no key and
+                  sends nothing.
+                </span>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn primary small" disabled title={cascade.note}>
+                  🔒 Sign in your wallet
+                </button>
+                <span className="muted-note">
+                  The cascade above is ready. One-click signing runs in local mode with signing
+                  enabled — the server never holds a key and sends nothing.
+                </span>
+              </>
+            )}
           </div>
+
+          {signed && (
+            <div
+              className={`callout${signed.ok ? '' : ' warn'}`}
+              role="status"
+              style={{ marginTop: 10 }}
+            >
+              {signed.ok ? (
+                <b>Signed and sent.</b>
+              ) : (
+                <>
+                  <b>Stopped:</b> {signed.reason}
+                </>
+              )}
+              {signed.hashes.length > 0 && (
+                <ul className="muted-note" style={{ margin: '6px 0 0' }}>
+                  {signed.hashes.map((h) => (
+                    <li key={h}>
+                      <a href={`https://nearblocks.io/txns/${h}`} target="_blank" rel="noreferrer">
+                        {h.slice(0, 10)}… — verify on NearBlocks
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -3,17 +3,16 @@ import { NearConnector } from '@hot-labs/near-connect';
 
 /**
  * WALLET CONNECTION through HOT Connector (@hot-labs/near-connect): HOT, Meteor, Intear, MyNearWallet, Nightly,
- * NEAR Mobile, OKX and more, each wallet's code running in its own sandboxed iframe. Sign-in only.
+ * NEAR Mobile, OKX and more, each wallet's code running in its own sandboxed iframe. Connecting adds NO access key
+ * to the account (`signInWithoutAddKey`): no key ever reaches the server or this dashboard.
  *
- * MAINNET SIGNING IS LOCKED BY ARCHITECTURE:
- *  - no limited-key sign-in option: connecting adds NO access key to the account (no state change), and only wallets
- *    that can sign in without adding a key are offered;
- *  - this module exposes only connect / disconnect / the account id. Nothing in the dashboard calls a wallet's
- *    transaction signing methods (sign-and-send, sign-transaction, delegate actions); a test
- *    (test/signing-lock.test.ts) fails if any source file calls one. Unlocking needs a code change, a review and the
- *    final security tests.
+ * ONE-CLICK SIGNING IS OWNER-WALLET-ONLY:
+ *  - the ONLY place that asks a wallet to sign is `lib/wallet-sign.ts`; a test (test/signing-lock.test.ts) fails if
+ *    any OTHER source file calls a wallet's transaction-signing method or asks for a function-call access key;
+ *  - signing is behind a flag and is always off on the public demo; the user signs their own account's cascade in
+ *    their own wallet, which shows every action again for approval. The server holds no key and sends nothing.
  */
-export const MAINNET_SIGNING = 'locked' as const;
+export const MAINNET_SIGNING = 'owner-wallet-only' as const;
 
 let connector: NearConnector | null = null;
 const listeners = new Set<(accountId: string | null) => void>();
@@ -61,6 +60,11 @@ export async function connect(): Promise<string | null> {
   const wallet = await get().connect();
   const accounts = await wallet.getAccounts();
   return accounts[0]?.accountId ?? null;
+}
+
+/** The wallet the user connected (for lib/wallet-sign.ts only); throws when none is connected. */
+export async function connectedWallet() {
+  return (await get().getConnectedWallet()).wallet;
 }
 
 export async function disconnect(): Promise<void> {
