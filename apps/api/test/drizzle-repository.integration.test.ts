@@ -34,9 +34,9 @@ import {
   type Table,
 } from '@near-autopilot/db';
 import { DrizzleRepository } from '../src/infra/drizzle-repository';
-import { REFERENCE_ASSETS } from '../src/market-data/assets';
+import { MAINNET_ASSETS } from '../src/market-data/assets';
 import { parseDecimal } from '../src/market-data/decimal';
-import { REFERENCE_LABEL } from '../src/market-data/model';
+import { MAINNET_PRICE_LABEL } from '../src/market-data/model';
 import { DrizzleMarketPriceStore } from '../src/market-data/store';
 import type { YieldEstimate } from '../src/yield/model';
 import { DrizzleYieldStore } from '../src/yield/store';
@@ -120,7 +120,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
   const proposal = (over: Partial<ProposalRecord> & Pick<ProposalRecord, 'id' | 'runId'>) => {
     const at = new Date('2026-11-04T10:00:00Z');
     return {
-      accountId: 'demo.testnet',
+      accountId: 'demo.near',
       agentId: 'guardian',
       kind: 'lending.repay',
       summary: 'Repay 40 USDt',
@@ -140,9 +140,9 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
   };
 
   it('round-trips runs and proposals with their provenance, bigint values and violations', async () => {
-    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'testnet' });
+    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'mainnet' });
     const startedAt = new Date('2026-11-04T10:00:00Z');
-    await repo.createRun({ id: 'run-sim', accountId: 'demo.testnet', startedAt });
+    await repo.createRun({ id: 'run-sim', accountId: 'demo.near', startedAt });
     await repo.insertProposal(proposal({ id: 'p-sim', runId: 'run-sim' }));
     await repo.finishRun('run-sim', {
       status: 'completed',
@@ -161,7 +161,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(run).toMatchObject({
       status: 'completed',
       dataSource: 'simulation',
-      network: 'testnet',
+      network: 'mainnet',
       proposalCount: 1,
       startedAt,
       outcome: 'no action: DATA_NOT_FRESH',
@@ -170,7 +170,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(p).toMatchObject({
       id: 'p-sim',
       dataSource: 'simulation',
-      network: 'testnet',
+      network: 'mainnet',
       status: 'dry_run',
       executionMode: 'dry-run',
       txHash: null,
@@ -181,14 +181,14 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(p?.valueUsdMicro).toBe(39_700_001n);
   });
 
-  it('isolates deployments sharing a database: simulation and testnet never see each other', async () => {
-    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
-    const sim = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'testnet' });
-    await chain.createRun({ id: 'run-chain', accountId: 'demo.testnet', startedAt: new Date() });
+  it('isolates deployments sharing a database: simulation and chain never see each other', async () => {
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
+    const sim = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'mainnet' });
+    await chain.createRun({ id: 'run-chain', accountId: 'demo.near', startedAt: new Date() });
     await chain.insertProposal(proposal({ id: 'p-chain', runId: 'run-chain' }));
 
     const [p] = await chain.listProposals({ limit: 10, runId: 'run-chain' });
-    expect(p).toMatchObject({ dataSource: 'chain', network: 'testnet' });
+    expect(p).toMatchObject({ dataSource: 'chain', network: 'mainnet' });
     expect(await chain.listProposals({ limit: 10, runId: 'run-sim' })).toEqual([]);
     expect((await chain.listRuns(50)).map((r) => r.id)).toEqual(['run-chain']);
     expect((await chain.listProposals({ limit: 50 })).map((r) => r.id)).toEqual(['p-chain']);
@@ -205,13 +205,11 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const mainnet = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     const [old] = (await mainnet.listRuns(50)).filter((r) => r.id === 'run-old');
     expect(old).toMatchObject({ dataSource: 'chain', network: 'mainnet', proposalCount: 0 });
-    const testnet = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
-    expect((await testnet.listRuns(50)).map((r) => r.id)).not.toContain('run-old');
   });
 
   it('execution stats count only live rows that may have reached the chain', async () => {
-    const repo = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
-    const account = 'stats.testnet';
+    const repo = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
+    const account = 'stats.near';
     const t = (s: string) => new Date(`2026-11-04T${s}Z`);
     await repo.createRun({ id: 'run-stats', accountId: account, startedAt: t('09:00:00') });
     const row = (id: string, over: Partial<ProposalRecord>) =>
@@ -244,7 +242,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     await row('other', {
       status: 'executed',
       executionMode: 'live',
-      accountId: 'other.testnet',
+      accountId: 'other.near',
       updatedAt: t('10:06:00'),
     });
 
@@ -254,7 +252,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
   });
 
   it('appends audit events and answers ping', async () => {
-    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'testnet' });
+    const repo = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     await repo.appendAudit({
       at: new Date(),
       type: 'escalation_warn',
@@ -299,10 +297,12 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const r = await store.verify('simulation:mainnet', 7); // small pages: the verifier pages too
     expect(r).toMatchObject({ ok: true, entries: 23, head: { seq: 23 } });
     // Other deployments have their own chain.
-    await new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' }).appendAudit(
+    const before = (await store.verify('chain:mainnet')).entries;
+    await new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' }).appendAudit(
       event(99),
     );
-    expect(await store.verify('chain:testnet')).toMatchObject({ ok: true, entries: 1 });
+    expect(await store.verify('chain:mainnet')).toMatchObject({ ok: true, entries: before + 1 });
+    expect((await store.verify('simulation:mainnet', 7)).entries).toBe(23);
     expect((await store.chains()).chains.map((c) => c.chain)).toContain('simulation:mainnet');
   });
 
@@ -339,16 +339,16 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     await expect(
       handle.db.execute(
         sql`insert into audit_events (at, type, payload, chain, seq, prev_hash, hash)
-            values (now(), 'x', '{}', 'chain:testnet', 1, ${'0'.repeat(64)}, ${'f'.repeat(64)})`,
+            values (now(), 'x', '{}', 'chain:mainnet', 1, ${'0'.repeat(64)}, ${'f'.repeat(64)})`,
       ),
     ).rejects.toThrow();
   });
 
-  it('market prices: every report persists source, networks, timestamp and status; mainnet->testnet only', async () => {
+  it('market prices: every report persists source, networks, timestamp and status', async () => {
     const store = new DrizzleMarketPriceStore(handle.db);
     expect(await store.latest()).toEqual([]);
     const at = new Date('2026-11-04T12:00:00Z');
-    const a = REFERENCE_ASSETS[0];
+    const a = MAINNET_ASSETS[0];
     if (!a) throw new Error('no asset');
     const observation = {
       source: 'defillama' as const,
@@ -369,12 +369,12 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
         id,
         fetchedAt: id === 'r1' ? at : new Date(at.getTime() + 60_000),
         marketNetwork: 'mainnet',
-        executionNetwork: 'testnet',
+        executionNetwork: 'none',
         sources: [{ source: 'pyth', health: 'unavailable', detail: 'PYTH_API_KEY is not set' }],
         range24hBps: new Map(),
         assets: [
           {
-            testnetToken: a.testnetToken,
+            token: a.token,
             referenceSymbol: a.reference.symbol,
             mainnetContract: a.reference.mainnetContract,
             status: 'single_source',
@@ -384,7 +384,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
             spreadBps: null,
             observations: [observation],
             reason: 'only defillama returned a valid price',
-            label: REFERENCE_LABEL,
+            label: MAINNET_PRICE_LABEL,
           },
         ],
       });
@@ -393,39 +393,35 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(latest).toHaveLength(1);
     expect(latest[0]).toMatchObject({
       reportId: 'r2',
-      testnetToken: 'wrap.testnet',
+      token: 'wrap.near',
       status: 'single_source',
       priceUsd: '3.986570184437296',
       source: 'defillama',
       sourceAssetId: 'coingecko:near',
       marketNetwork: 'mainnet',
-      executionNetwork: 'testnet',
+      executionNetwork: 'none',
       ageMs: 20_000,
     });
     expect(JSON.stringify(latest[0]?.observations)).toContain('"status":"valid"');
     await expect(
       handle.db.execute(sql`update market_prices set execution_network = 'mainnet'`),
     ).rejects.toThrow();
-    // `none`: the shadow analysis, where nothing is executed anywhere.
-    await handle.db.execute(
-      sql`update market_prices set execution_network = 'none' where report_id = 'r1'`,
-    );
     await expect(
-      handle.db.execute(sql`update market_prices set market_network = 'testnet'`),
+      handle.db.execute(sql`update market_prices set market_network = 'localnet'`),
     ).rejects.toThrow();
   });
 
-  it('yield observations: valid and rejected estimates persist with block, reasons and raw data; testnet only', async () => {
+  it('yield observations: valid and rejected estimates persist with block, reasons and raw data', async () => {
     const store = new DrizzleYieldStore(handle.db);
     expect(await store.latest()).toEqual([]);
     const t0 = new Date('2026-11-05T09:00:00Z');
     const estimate = (at: Date, height: number, volumesIn: string[]): YieldEstimate => ({
       source: 'rhea_v1',
-      network: 'testnet',
-      contract: 'ref-finance-101.testnet',
+      network: 'mainnet',
+      contract: 'v2.ref-finance.near',
       methods: ['get_pool', 'get_pool_volumes', 'metadata'],
       marketId: 'pool:34',
-      assetIds: ['wrap.testnet', 'usdt.fakes.testnet'],
+      assetIds: ['wrap.near', 'usdt.tether-token.near'],
       yieldType: 'lp_fee',
       apr: null,
       apy: null,
@@ -450,13 +446,13 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       await store.record({
         id,
         origin: 'scheduled',
-        network: 'testnet',
+        network: 'mainnet',
         observedAt: at,
         block: { height, timestamp: at },
         sources: [
           {
             source: 'rhea_v1',
-            contract: 'ref-finance-101.testnet',
+            contract: 'v2.ref-finance.near',
             health: 'ok',
             detail: null,
             marketsRead: 1,
@@ -474,7 +470,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       marketId: 'pool:34',
       validationStatus: 'rejected',
       liquidityUsd: '12.5',
-      network: 'testnet',
+      network: 'mainnet',
     });
     // The start of an observation period: the latest observation at least 1 h before the given time.
     const prev = await store.previous(
@@ -487,13 +483,9 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     expect(prev?.raw).toEqual({ volumesIn: ['100', '0'] });
     expect(prev?.reasonCodes).toEqual(['UNVERIFIED_POOL']);
     expect(await store.previous('rhea_v1', 'pool:34', t0, 3_600)).toBeNull();
-    // Data may be READ from testnet or mainnet (shadow analysis); any other value is refused.
     await expect(
       handle.db.execute(sql`update yield_observations set network = 'devnet'`),
     ).rejects.toThrow();
-    await handle.db.execute(
-      sql`update yield_observations set network = 'mainnet' where report_id = 'y1'`,
-    );
     // A borrow rate can never be stored as a usable yield.
     await expect(
       handle.db.execute(
@@ -507,7 +499,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       dataSource: 'simulation',
       network: 'mainnet',
     });
-    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     const v = {
       id: 'pv-1',
       evaluatedAt: new Date('2026-11-05T10:00:00Z'),
@@ -541,7 +533,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       dataSource: 'simulation',
       network: 'mainnet',
     });
-    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     const r = {
       id: 'route-1',
       createdAt: new Date('2026-11-05T19:00:00Z'),
@@ -580,7 +572,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       dataSource: 'simulation',
       network: 'mainnet',
     });
-    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'testnet' });
+    const chain = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     expect(await shadow.findPolicyVerdict('pv-1')).toEqual({
       verdict: 'BLOCK',
       planHash: 'd'.repeat(64),

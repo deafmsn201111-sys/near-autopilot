@@ -24,7 +24,7 @@ describe.skipIf(!adminUrl)('signed audit checkpoints (PostgreSQL)', () => {
   const key = generateCheckpointKey();
   const file = join(mkdtempSync(join(tmpdir(), 'ckpt-')), 'checkpoints.jsonl');
   const append = async (n: number) => {
-    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'testnet' });
+    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'mainnet' });
     for (let i = 0; i < n; i += 1)
       await repo.appendAudit({
         at: new Date(),
@@ -62,14 +62,14 @@ describe.skipIf(!adminUrl)('signed audit checkpoints (PostgreSQL)', () => {
 
   it('signs each chain head once, to the table and the file, and verifies with the public key only', async () => {
     const made = await checkpointAll(handle.db, key.privateHex, { file });
-    expect(made.map((c) => [c.chain, c.seq])).toEqual([['simulation:testnet', 5]]);
+    expect(made.map((c) => [c.chain, c.seq])).toEqual([['simulation:mainnet', 5]]);
     expect(await checkpointAll(handle.db, key.privateHex, { file })).toEqual([]); // head did not move
     await append(2);
     expect((await checkpointAll(handle.db, key.privateHex, { file })).map((c) => c.seq)).toEqual([
       7,
     ]);
     const [check] = await verifyCheckpoints(handle.db, key.publicHex, { file });
-    expect(check).toMatchObject({ chain: 'simulation:testnet', checkpoints: 2, ok: true });
+    expect(check).toMatchObject({ chain: 'simulation:mainnet', checkpoints: 2, ok: true });
   });
 
   it('a different key does not verify (a key swapped in the database is useless)', async () => {
@@ -81,7 +81,7 @@ describe.skipIf(!adminUrl)('signed audit checkpoints (PostgreSQL)', () => {
 
   it('a rewritten entry is caught even if the hash chain was recomputed around it', async () => {
     await unguarded(
-      sql`update audit_events set hash = ${'f'.repeat(64)} where chain = 'simulation:testnet' and seq = 5`,
+      sql`update audit_events set hash = ${'f'.repeat(64)} where chain = 'simulation:mainnet' and seq = 5`,
     );
     const [check] = await verifyCheckpoints(handle.db, key.publicHex, { file });
     expect(check?.ok).toBe(false);
@@ -89,7 +89,7 @@ describe.skipIf(!adminUrl)('signed audit checkpoints (PostgreSQL)', () => {
   });
 
   it('a cut tail is caught, and so is a checkpoint deleted from the table (the file still has it)', async () => {
-    await unguarded(sql`delete from audit_events where chain = 'simulation:testnet' and seq >= 6`);
+    await unguarded(sql`delete from audit_events where chain = 'simulation:mainnet' and seq >= 6`);
     await handle.db.execute(
       sql`alter table audit_checkpoints disable trigger audit_checkpoints_append_only`,
     );

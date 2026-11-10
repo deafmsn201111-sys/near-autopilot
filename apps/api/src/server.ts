@@ -14,6 +14,7 @@ import type { EvidenceStore } from './evidence/store';
 import { toPortfolioDto, toProposalDto, toRunDto, toRouteDto, toVerdictDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
 import { disabledYieldView } from './yield/presenter';
+import { DISABLED_FLOW_LABEL } from './market-data/model';
 import type { UserRequestService } from './services/requests';
 import { accountIdSchema } from '@near-autopilot/core';
 
@@ -25,8 +26,7 @@ export interface ServerDeps {
   readonly policy: PolicyDto;
   /** This deployment's data source and network, stamped on everything it produces. */
   readonly provenance: Provenance;
-  /** Read-only view of the manually confirmed testnet transaction ledger (absent in tests that do not need it). */
-  /** Mainnet reference market data (testnet profile); absent means not used by this deployment. */
+  /** Mainnet market data; absent means not used by this deployment. */
   readonly marketData?: { current(): Promise<MarketDataDto> };
   readonly yieldData?: { current(): Promise<YieldDataDto> };
   /** This deployment's audit hash chain in Postgres (absent in tests that do not need it). */
@@ -166,7 +166,7 @@ export function buildServer(
       ? deps.marketData.current()
       : {
           enabled: false,
-          flow: 'MAINNET MARKET DATA → TESTNET EXECUTION',
+          flow: DISABLED_FLOW_LABEL,
           marketNetwork: 'mainnet',
           executionNetwork: deps.provenance.network,
           fetchedAt: null,

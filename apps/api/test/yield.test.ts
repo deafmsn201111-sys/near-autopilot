@@ -19,9 +19,9 @@ const LIMITS: YieldLimits = {
   minLiquidityUsd: 1_000,
   maxAgeSeconds: 300,
 };
-const WRAP = 'wrap.testnet';
-const USDC = 'usdc.fakes.testnet';
-const USDT = 'usdt.fakes.testnet';
+const WRAP = 'wrap.near';
+const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+const USDT = 'usdt.tether-token.near';
 const ALLOWED = new Set([WRAP, USDC, USDT]);
 const PRICES: Record<string, string> = { [WRAP]: '4', [USDC]: '1', [USDT]: '1' };
 const priceUsd = (t: string): Decimal | null => (PRICES[t] ? parseDecimal(PRICES[t]) : null);
@@ -53,7 +53,7 @@ const asset = (over: Omit<Partial<BurrowAsset>, 'tokenId'> & { tokenId: string }
   tokenId: accountId(over.tokenId),
 });
 
-// Shapes taken from the live testnet reading of 2026-11-04 (block 276239768).
+// Shapes taken from a live reading of 2026-11-04 (block 276239768).
 const USDC_LIVE = asset({
   tokenId: USDC,
   extraDecimals: 12,
@@ -74,7 +74,7 @@ const WRAP_LIVE = asset({
 
 const burrow = (assets: BurrowAsset[], over: Partial<Parameters<typeof burrowEstimates>[0]> = {}) =>
   burrowEstimates({
-    contract: 'contract.1638481328.burrow.testnet',
+    contract: 'contract.main.burrow.near',
     assets,
     block: BLOCK,
     now: NOW,
@@ -106,7 +106,7 @@ describe('Burrow lending rates', () => {
     expect(b?.apr && formatDecimal(b.apr)).toBe('0.145994468617227838115968768');
   });
 
-  it('rejects a market pinned at 100 % utilisation with an implausible 250 % APR (the live wrap.testnet case)', () => {
+  it('rejects a market pinned at 100 % utilisation with an implausible 250 % APR (the live wrap.near case)', () => {
     const s = supplyOf(burrow([WRAP_LIVE]), WRAP);
     expect(s?.validationStatus).toBe('rejected');
     expect(codes(s)).toContain('INVALID_YIELD_DATA'); // APR above 100 %
@@ -220,7 +220,7 @@ const pool = (over: Partial<RheaPoolInfo> = {}): RheaPoolInfo => ({
 });
 const v1 = (over: Partial<Parameters<typeof rheaV1Estimate>[0]> = {}) =>
   rheaV1Estimate({
-    contract: 'ref-finance-101.testnet',
+    contract: 'v2.ref-finance.near',
     block: BLOCK,
     now: NOW,
     decimals: DECIMALS,
@@ -393,7 +393,7 @@ describe('Rhea v1 LP fee APR', () => {
 describe('Rhea DCL', () => {
   it('collects pool state but never reports a fee APR at this stage', () => {
     const e = dclEstimate({
-      contract: 'dclv2.ref-dev.testnet',
+      contract: 'dclv2.ref-labs.near',
       block: BLOCK,
       now: NOW,
       decimals: DECIMALS,
@@ -428,7 +428,7 @@ describe('exact yield math', () => {
   });
 });
 
-/* ------------------------------ service over a fake testnet RPC ------------------------------ */
+/* ---------------------------------- service over a fake RPC ---------------------------------- */
 
 const enc = (v: unknown) => ({ result: [...Buffer.from(JSON.stringify(v), 'utf8')] });
 
@@ -446,7 +446,7 @@ function fakeRpc(opts: { failRhea?: boolean; failBlock?: boolean } = {}) {
         const d = DECIMALS.get(p.account_id);
         return enc({ spec: 'ft-1.0.0', name: p.account_id, symbol: 'X', decimals: d ?? 0 });
       }
-      if (p.account_id === 'burrow.testnet' && p.method_name === 'get_assets_paged_detailed') {
+      if (p.account_id === 'burrow.near' && p.method_name === 'get_assets_paged_detailed') {
         const args = JSON.parse(
           Buffer.from((params as { args_base64: string }).args_base64, 'base64').toString(),
         ) as { from_index: number };
@@ -473,7 +473,7 @@ function fakeRpc(opts: { failRhea?: boolean; failBlock?: boolean } = {}) {
           },
         ]);
       }
-      if (p.account_id === 'ref.testnet') {
+      if (p.account_id === 'ref.near') {
         if (opts.failRhea) throw new Error('rhea down');
         if (p.method_name === 'metadata')
           return enc({ version: '1.9.19', state: 'Running', admin_fee_bps: 2000 });
@@ -501,8 +501,8 @@ const service = (rpc: YieldServiceOptions['rpc'], over: Partial<YieldServiceOpti
   let n = 0;
   return new YieldService({
     rpc,
-    burrowContract: accountId('burrow.testnet'),
-    rheaContract: accountId('ref.testnet'),
+    burrowContract: accountId('burrow.near'),
+    rheaContract: accountId('ref.near'),
     dclContract: null,
     rheaV1Pools: [7],
     dclPools: [],

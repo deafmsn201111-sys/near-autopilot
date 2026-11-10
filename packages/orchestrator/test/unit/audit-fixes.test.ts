@@ -128,7 +128,7 @@ describe('proposal schema: real Rhea DCL ids are accepted', () => {
     });
 
   it('accepts pool|pool|fee#n position ids and still refuses whitespace and quotes', () => {
-    const id = 'usdt.fakes.testnet|wrap.testnet|2000#17';
+    const id = 'usdt.tether-token.near|wrap.near|2000#17';
     expect(parseAgentOutput('lp-optimizer', lp(id)).proposals).toHaveLength(1);
     expect(parseAgentOutput('lp-optimizer', lp('a b')).proposals).toHaveLength(0);
     expect(parseAgentOutput('lp-optimizer', lp('a"b')).proposals).toHaveLength(0);

@@ -1,36 +1,50 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDatabase } from '@near-autopilot/db';
 import { policyConfigSchema } from '@near-autopilot/policy-engine';
-import { z } from 'zod';
-import { DrizzleRepository } from '../infra/drizzle-repository';
 import { allDefended, FIXTURE_LABEL, runAttacks } from './attack';
 
 /**
- * pnpm demo:attack [--out <file>] [--persist]
+ * pnpm demo:attack [--out <file>]
  *
  * Runs every attack fixture against the real defences, prints a table, and writes the log to
  * docs/evidence/demo-attack.log.jsonl (deterministic: the committed file is what a clean clone produces).
- * --persist ALSO stores the policy verdicts and one audit event per attack in Postgres (DATABASE_URL), as
- * simulation/testnet rows whose run id starts with `demo-attack:` and whose intents are labelled FIXTURE, so the
- * dashboard and `audit:replay` can show them. Nothing is sent to any chain. Exit 1 if any attack got through.
+ * Nothing is written to a database (fixtures never enter a deployment's audit chain) and nothing is sent to any
+ * chain. Exit 1 if any attack got through.
  */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 export const LOG_FILE = resolve(ROOT, 'docs/evidence/demo-attack.log.jsonl');
-const CONFIG_FILE = resolve(ROOT, 'config/autopilot.testnet.example.json');
+const WNEAR = 'wrap.near';
+const USDT = 'usdt.tether-token.near';
+const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+const RHEA = 'v2.ref-finance.near';
+const BURROW = 'contract.main.burrow.near';
 
+/** The fixed fixture policy the attacks run against, over the mainnet ids above. */
 export function attackPolicy() {
-  const json = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')) as { policy?: unknown };
-  return policyConfigSchema.parse(json.policy);
+  return policyConfigSchema.parse({
+    enabled: true,
+    signerAccountId: 'your-account.near',
+    allowedContracts: [WNEAR, USDT, USDC, RHEA, BURROW],
+    allowedRecipients: [RHEA, BURROW],
+    allowedTokens: [WNEAR, USDT, USDC],
+    allowedMethods: ['ft_transfer_call'],
+    maxActionUsd: 100,
+    dailyLimitUsd: 300,
+    approvalThresholdUsd: 50,
+    maxSlippageBps: 50,
+    maxOracleDeviationBps: 150,
+    maxPriceAgeSeconds: 180,
+    cooldownSeconds: 600,
+    approvalTtlSeconds: 120,
+  });
 }
 
 export const toLog = (entries: readonly unknown[]): string =>
   entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
 
 async function main(): Promise<number> {
-  const persist = process.argv.includes('--persist');
-  const { entries, verdicts } = await runAttacks(attackPolicy());
+  const { entries } = await runAttacks(attackPolicy());
   const outIndex = process.argv.indexOf('--out');
   const out = outIndex >= 0 ? resolve(process.argv[outIndex + 1] ?? LOG_FILE) : LOG_FILE;
   let written: string | null = null;
@@ -58,32 +72,6 @@ async function main(): Promise<number> {
       `broadcast ${entries.reduce((s, e) => s + e.broadcast, 0)}. Log: ${written ?? 'not written'}\n`,
   );
 
-  if (persist) {
-    const { DATABASE_URL } = z.object({ DATABASE_URL: z.string().min(1) }).parse(process.env);
-    const database = createDatabase(DATABASE_URL, { max: 2 });
-    try {
-      const repo = new DrizzleRepository(database.db, {
-        dataSource: 'simulation',
-        network: 'testnet',
-      });
-      const stamp = new Date().toISOString();
-      for (const v of verdicts)
-        await repo.insertPolicyVerdict({ ...v, id: `demo-attack:${stamp}:${v.id}` });
-      for (const e of entries)
-        await repo.appendAudit({
-          at: new Date(),
-          type: `demo_attack.${e.outcome.toLowerCase()}`,
-          runId: `demo-attack:${stamp}`,
-          proposalId: null,
-          payload: e,
-        });
-      process.stdout.write(
-        `Persisted ${verdicts.length} verdicts and ${entries.length} audit events (run demo-attack:${stamp}).\n`,
-      );
-    } finally {
-      await database.close();
-    }
-  }
   return ok ? 0 : 1;
 }
 

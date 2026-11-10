@@ -14,8 +14,8 @@ export default async function PolicyPage() {
     ],
     [
       'Market data',
-      p.marketData === 'mainnet-reference'
-        ? 'MAINNET reference prices (Pyth, then DefiLlama) applied to TESTNET tokens'
+      p.marketData === 'mainnet-live'
+        ? 'MAINNET prices (Pyth, DefiLlama, exchanges)'
         : p.dataSource === 'simulation'
           ? 'Fixed demo prices'
           : `Burrow oracle on ${p.network}`,

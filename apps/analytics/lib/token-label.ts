@@ -43,10 +43,6 @@ export const CURATED: Readonly<Record<string, { symbol: string; name: string }>>
   'meta-pool.near': { symbol: 'stNEAR', name: 'Meta Pool staked NEAR' },
   'linear-protocol.near': { symbol: 'LiNEAR', name: 'LiNEAR staked NEAR' },
   'token.burrow.near': { symbol: 'BRRR', name: 'Burrow' },
-  // Testnet stand-ins used by the simulation and testnet deployments (labelled as such in the tooltip).
-  'wrap.testnet': { symbol: 'wNEAR', name: 'Wrapped NEAR (testnet)' },
-  'usdt.fakes.testnet': { symbol: 'USDt', name: 'Tether USD (testnet fake)' },
-  'usdc.fakes.testnet': { symbol: 'USDC', name: 'USD Coin (testnet fake)' },
 };
 
 export interface TokenLabel {
@@ -103,8 +99,7 @@ export function label(id: string, onChain: ReadonlyMap<string, string>): TokenLa
   };
 }
 
-export const nearblocks = (id: string) =>
-  `https://${id.endsWith('.testnet') ? 'testnet.' : ''}nearblocks.io/token/${encodeURIComponent(id)}`;
+export const nearblocks = (id: string) => `https://nearblocks.io/token/${encodeURIComponent(id)}`;
 
 /**
  * Makes stored free text readable: curated token ids (full, or shortened as `<first 12>…`) become their symbols, and

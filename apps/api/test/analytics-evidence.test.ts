@@ -30,7 +30,7 @@ const verdict = (
   checks: [],
   violations: [],
   input: {
-    intent: { kind: 'lending.repay', token: 'usdt.fakes.testnet', amount: '40000000' },
+    intent: { kind: 'lending.repay', token: 'usdt.tether-token.near', amount: '40000000' },
     config: {},
   },
   dataSource,
@@ -39,7 +39,7 @@ const verdict = (
 
 const evidence = {
   verdicts: async () => [
-    verdict('v1', 'ALLOW', 'simulation', 'testnet', 'run-1'),
+    verdict('v1', 'ALLOW', 'simulation', 'mainnet', 'run-1'),
     verdict('v2', 'BLOCK', 'simulation', 'mainnet', 'demo-attack:2026'),
   ],
   chains: async () => ({
@@ -111,7 +111,7 @@ describe('analytics evidence endpoints (read-only)', () => {
       verdicts: Array<Record<string, unknown>>;
     }>();
     expect(r.verdicts.map((v) => [v.id, v.environment, v.fixture])).toEqual([
-      ['v1', 'simulation:testnet', false],
+      ['v1', 'simulation:mainnet', false],
       ['v2', 'simulation:mainnet', true],
     ]);
     expect(r.verdicts[0]).toMatchObject({ intent: { kind: 'lending.repay' }, configStored: true });

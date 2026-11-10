@@ -26,16 +26,6 @@ const mainnetEnv = (): ApiEnv =>
     NEAR_NETWORK: 'mainnet',
     NEAR_RPC_URL: 'https://rpc.example.invalid',
   });
-const testnetEnv = (): ApiEnv =>
-  loadApiEnv({
-    ...baseEnv,
-    NEAR_NETWORK: 'testnet',
-    NEAR_RPC_URL: 'https://rpc.example.invalid',
-    RHEA_CONTRACT_ID: 'ref.example.testnet',
-    BURROW_CONTRACT_ID: 'burrow.example.testnet',
-    BURROW_ORACLE_ID: 'oracle.example.testnet',
-  });
-
 /** Fake RPC transport that answers `status` with the given chain id and records every method called. */
 function rpcReporting(chainId: string) {
   const methods: string[] = [];
@@ -68,18 +58,9 @@ describe('wire (composition root)', () => {
   });
 
   it('refuses to start when the RPC serves a different chain than NEAR_NETWORK', async () => {
-    // The dangerous case: config says testnet (so live would be allowed) but the endpoint is mainnet.
-    const { result } = wireWith({ ...testnetEnv(), EXECUTION_MODE: 'live' }, 'mainnet');
-    await expect(result).rejects.toBeInstanceOf(NetworkMismatchError);
-    await expect(wireWith(mainnetEnv(), 'testnet').result).rejects.toBeInstanceOf(
+    await expect(wireWith(mainnetEnv(), 'localnet').result).rejects.toBeInstanceOf(
       NetworkMismatchError,
     );
-  });
-
-  it('refuses live mode without a signer even on a verified testnet', async () => {
-    const { result, methods } = wireWith({ ...testnetEnv(), EXECUTION_MODE: 'live' }, 'testnet');
-    await expect(result).rejects.toThrow('requires a TransactionSigner');
-    expect(methods).toEqual(['status']);
   });
 
   it('wires dry-run once the chain id matches', async () => {

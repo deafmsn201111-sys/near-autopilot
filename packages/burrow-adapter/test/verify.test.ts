@@ -5,7 +5,6 @@ import {
   BURROW,
   BURROW_BETA,
   BURROW_FUNCTIONS,
-  BURROW_TESTNET,
   makeWorld,
   ORACLE,
   ORACLE_FUNCTIONS,
@@ -43,7 +42,7 @@ describe('BurrowVerifier.verifyDeployment', () => {
   });
 
   it('refuses a node on the wrong chain and looks at no code', async () => {
-    const w = makeWorld({ chainId: 'testnet', network: 'mainnet' });
+    const w = makeWorld({ chainId: 'localnet', network: 'mainnet' });
     await expect(w.verifier.verifyDeployment()).rejects.toThrow(NetworkMismatchError);
     expect(w.rpc.codeLookups).toEqual([]);
     expect(w.viewer.calls).toEqual([]);
@@ -56,11 +55,6 @@ describe('BurrowVerifier.verifyDeployment', () => {
     expect(w.rpc.calls).toEqual([]);
   });
 
-  it('refuses a mainnet Burrow account configured for testnet (listing is per network)', async () => {
-    const w = makeWorld({ network: 'testnet', contractId: BURROW });
-    expect(await reasonOf(w.verifier.verifyDeployment())).toBe('UNLISTED_CONTRACT');
-  });
-
   it('allows an unlisted contract only when explicitly opted in, still running every other check', async () => {
     const fork = accountId('burrow.fork.near');
     const w = makeWorld({ contractId: fork, allowUnlistedContract: true });
@@ -70,19 +64,10 @@ describe('BurrowVerifier.verifyDeployment', () => {
     expect(await reasonOf(bad.verifier.verifyDeployment())).toBe('MISSING_EXPORTS');
   });
 
-  it('accepts the testnet entry on testnet', async () => {
-    const w = makeWorld({ network: 'testnet', contractId: BURROW_TESTNET });
-    expect(await w.verifier.verifyDeployment()).toMatchObject({
-      network: 'testnet',
-      contractId: BURROW_TESTNET,
-    });
-  });
-
   it('lists exactly the documented deployments', () => {
     expect(Object.values(BURROW_DEPLOYMENTS).map((d) => `${d.network}:${d.contractId}`)).toEqual([
       `mainnet:${BURROW}`,
       `mainnet:${BURROW_BETA}`,
-      `testnet:${BURROW_TESTNET}`,
     ]);
   });
 

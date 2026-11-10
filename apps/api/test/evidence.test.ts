@@ -95,8 +95,8 @@ describe('audit hash chain', () => {
 
 // ------------------------------------------------------------------------------------------------ replay
 
-const ACCOUNT = 'your-account.testnet';
-const configFile = 'autopilot.testnet.example.json';
+const ACCOUNT = 'your-account.near';
+const configFile = 'autopilot.example.json';
 const config = parseAutopilotConfig(
   JSON.parse(
     readFileSync(new URL(`../../../config/${configFile}`, import.meta.url), 'utf8'),
@@ -106,16 +106,16 @@ const config = parseAutopilotConfig(
 
 /** Real verdicts: the production composition root on the offline simulation, both engines. */
 async function storedVerdicts(engine: string, portfolio: string): Promise<StoredVerdict[]> {
-  const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'testnet' });
+  const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'mainnet' });
   const env = loadApiEnv({
     API_TOKEN: 'test-token-test-token-test-token-test',
     DATABASE_URL: 'postgres://u:p@localhost:5432/db',
     AUTOPILOT_ACCOUNT_ID: ACCOUNT,
-    NEAR_NETWORK: 'testnet',
+    NEAR_NETWORK: 'mainnet',
     NEAR_RPC_URL: 'https://rpc.must-not-be-contacted.invalid',
-    RHEA_CONTRACT_ID: 'ref-finance-101.testnet',
-    BURROW_CONTRACT_ID: 'contract.1638481328.burrow.testnet',
-    BURROW_ORACLE_ID: 'priceoracle.testnet',
+    RHEA_CONTRACT_ID: 'v2.ref-finance.near',
+    BURROW_CONTRACT_ID: 'contract.main.burrow.near',
+    BURROW_ORACLE_ID: 'priceoracle.near',
     DATA_SOURCE: 'simulation',
     AUTOPILOT_ENGINE: engine,
     SIMULATION_PORTFOLIO: portfolio,
@@ -171,7 +171,7 @@ describe.each(['legacy', 'orchestrator'])('replay of stored verdicts, %s engine'
     });
     const snapshot = { ...input, snapshot: { ...input.snapshot, nativeBalance: '1' } };
     expect(replayVerdict({ ...row, input: snapshot })).toMatchObject({ stage: 'snapshot_id' });
-    const plan = { ...input, plan: { ...input.plan, receiverId: 'evil.testnet' } };
+    const plan = { ...input, plan: { ...input.plan, receiverId: 'evil.near' } };
     expect(replayVerdict({ ...row, input: plan })).toMatchObject({ stage: 'plan_hash' });
     const cfg = {
       ...input,

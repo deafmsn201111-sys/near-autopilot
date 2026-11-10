@@ -16,7 +16,7 @@ import { InMemoryRepository } from './in-memory-repository';
  * deployment verifier, the planners, the policy engine and the dry-run executor are the real ones; only the NEAR RPC
  * is the in-process mock. Nothing here touches a network.
  */
-const ACCOUNT = 'your-account.testnet';
+const ACCOUNT = 'your-account.near';
 const readConfig = (file: string) =>
   parseAutopilotConfig(
     JSON.parse(
@@ -24,30 +24,30 @@ const readConfig = (file: string) =>
     ) as unknown,
     accountId(ACCOUNT),
   );
-const testnetConfig = readConfig('autopilot.testnet.example.json');
+const config = readConfig('autopilot.example.json');
 
 const envFor = (over: Record<string, string>): ApiEnv =>
   loadApiEnv({
     API_TOKEN: 'test-token-test-token-test-token-test',
     DATABASE_URL: 'postgres://u:p@localhost:5432/db',
     AUTOPILOT_ACCOUNT_ID: ACCOUNT,
-    NEAR_NETWORK: 'testnet',
+    NEAR_NETWORK: 'mainnet',
     // Deliberately unroutable: proves the simulation never uses it.
     NEAR_RPC_URL: 'https://rpc.must-not-be-contacted.invalid',
-    RHEA_CONTRACT_ID: 'ref-finance-101.testnet',
-    BURROW_CONTRACT_ID: 'contract.1638481328.burrow.testnet',
-    BURROW_ORACLE_ID: 'priceoracle.testnet',
+    RHEA_CONTRACT_ID: 'v2.ref-finance.near',
+    BURROW_CONTRACT_ID: 'contract.main.burrow.near',
+    BURROW_ORACLE_ID: 'priceoracle.near',
     DATA_SOURCE: 'simulation',
     ...over,
   });
 
 const simulate = async (over: Record<string, string>) => {
-  const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'testnet' });
+  const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'mainnet' });
   // Any real network call would go through this and fail the test.
   const fetchImpl: typeof fetch = async () => {
     throw new Error('network access attempted during simulation');
   };
-  const wired = await wire(envFor(over), testnetConfig, repo, new SilentLogger(), { fetchImpl });
+  const wired = await wire(envFor(over), config, repo, new SilentLogger(), { fetchImpl });
   const result = await wired.cycle.run();
   return { ...wired, result, repo };
 };
@@ -141,7 +141,7 @@ describe('simulation data is labelled and valued as documented', () => {
     const { snapshots } = await simulate({ SIMULATION_PORTFOLIO: portfolio });
     const dto = toPortfolioDto(await snapshots.take(), {
       dataSource: 'simulation',
-      network: 'testnet',
+      network: 'mainnet',
     });
     expect(portfolioDtoSchema.parse(dto)).toEqual(dto);
     expect(dto).toMatchObject({
@@ -155,22 +155,22 @@ describe('simulation data is labelled and valued as documented', () => {
 
   it('refuses to start when the policy allowlists do not admit the demo assets', async () => {
     const narrowed = {
-      ...testnetConfig,
-      policy: { ...testnetConfig.policy, allowedTokens: [accountId('usdt.fakes.testnet')] },
+      ...config,
+      policy: { ...config.policy, allowedTokens: [accountId('usdt.tether-token.near')] },
     };
     await expect(
       wire(envFor({}), narrowed, new InMemoryRepository(), new SilentLogger()),
-    ).rejects.toThrow('policy allowlists must include wrap.testnet');
+    ).rejects.toThrow('policy allowlists must include wrap.near');
   });
 });
 
 describe('the simulated chain cannot accept a transaction', () => {
   const chain = new SimulatedChain({
-    network: 'testnet',
+    network: 'mainnet',
     accountId: accountId(ACCOUNT),
-    burrowContractId: accountId('contract.1638481328.burrow.testnet'),
-    burrowOracleId: accountId('priceoracle.testnet'),
-    rheaContractId: accountId('ref-finance-101.testnet'),
+    burrowContractId: accountId('contract.main.burrow.near'),
+    burrowOracleId: accountId('priceoracle.near'),
+    rheaContractId: accountId('v2.ref-finance.near'),
     portfolio: DEMO_PORTFOLIOS['demo-500'],
     clock: new FixedClock(new Date('2026-11-04T10:00:00Z')),
   });
@@ -210,14 +210,14 @@ describe('an RPC failure never yields a successful partial snapshot', () => {
   /** Real chain path (DATA_SOURCE=chain) over a mock chain whose oracle answers `failure` for get_price_data. */
   const brokenOracle = (failure: 'invalid_body' | 'rpc_error'): typeof fetch => {
     const chain = new SimulatedChain({
-      network: 'testnet',
+      network: 'mainnet',
       accountId: accountId(ACCOUNT),
-      burrowContractId: accountId('contract.1638481328.burrow.testnet'),
-      burrowOracleId: accountId('priceoracle.testnet'),
-      rheaContractId: accountId('ref-finance-101.testnet'),
+      burrowContractId: accountId('contract.main.burrow.near'),
+      burrowOracleId: accountId('priceoracle.near'),
+      rheaContractId: accountId('v2.ref-finance.near'),
       portfolio: DEMO_PORTFOLIOS['demo-500'],
       clock: new FixedClock(new Date()),
-      otherTokens: testnetConfig.policy.allowedTokens,
+      otherTokens: config.policy.allowedTokens,
     });
     return async (input, init) => {
       const body = typeof init?.body === 'string' ? init.body : '';
@@ -240,10 +240,10 @@ describe('an RPC failure never yields a successful partial snapshot', () => {
   it.each(['invalid_body', 'rpc_error'] as const)(
     'legacy: the run fails and nothing is proposed (%s)',
     async (failure) => {
-      const repo = new InMemoryRepository({ dataSource: 'chain', network: 'testnet' });
+      const repo = new InMemoryRepository({ dataSource: 'chain', network: 'mainnet' });
       const wired = await wire(
         envFor({ DATA_SOURCE: 'chain', AUTOPILOT_ENGINE: 'legacy' }),
-        testnetConfig,
+        config,
         repo,
         new SilentLogger(),
         { fetchImpl: brokenOracle(failure) },
@@ -258,10 +258,10 @@ describe('an RPC failure never yields a successful partial snapshot', () => {
   );
 
   it('orchestrator: no snapshot, no action, and the run says why', async () => {
-    const repo = new InMemoryRepository({ dataSource: 'chain', network: 'testnet' });
+    const repo = new InMemoryRepository({ dataSource: 'chain', network: 'mainnet' });
     const wired = await wire(
       envFor({ DATA_SOURCE: 'chain', AUTOPILOT_ENGINE: 'orchestrator' }),
-      testnetConfig,
+      config,
       repo,
       new SilentLogger(),
       { fetchImpl: brokenOracle('rpc_error') },

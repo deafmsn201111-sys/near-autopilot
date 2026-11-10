@@ -196,7 +196,7 @@ describe('BurrowPlanner', () => {
   });
 
   it('builds nothing when the node is on the wrong chain, and reads no account', async () => {
-    const w = makeWorld({ chainId: 'testnet' });
+    const w = makeWorld({ chainId: 'localnet' });
     w.account = aliceAccount();
     await expect(planner(w).plan(repay, ALICE)).rejects.toThrow('RPC reports chain');
     expect(w.viewer.calls).toEqual([]);

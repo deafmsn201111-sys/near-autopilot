@@ -43,8 +43,6 @@ const str = (v: unknown) =>
 
 const ENV: Record<string, string> = {
   'simulation:mainnet': 'Shadow mainnet',
-  'simulation:testnet': 'Simulation',
-  'chain:testnet': 'Testnet',
 };
 
 export function describeEvent(

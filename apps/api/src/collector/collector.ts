@@ -242,7 +242,7 @@ export class ShadowCollector {
       // 4. Long-tail prices (DefiLlama near:<contract>) for every token that needs a value, decimals checked on-chain.
       const prices = new Map<string, TokenPrice>(market ? curatedPrices(market) : []);
       const priceObs: (PriceObservation & { asset: string })[] = market
-        ? market.assets.flatMap((a) => a.observations.map((o) => ({ ...o, asset: a.testnetToken })))
+        ? market.assets.flatMap((a) => a.observations.map((o) => ({ ...o, asset: a.token })))
         : [];
       const wanted = new Set<string>([
         ...(burrowAssets ?? []).map((a) => a.tokenId),
@@ -325,7 +325,7 @@ export class ShadowCollector {
         yieldReportId: yieldReport?.id ?? null,
         summary: toJsonSafe({
           prices: [...prices]
-            .filter(([t]) => MAINNET_ASSETS.some((a) => a.testnetToken === t))
+            .filter(([t]) => MAINNET_ASSETS.some((a) => a.token === t))
             .map(([t, p]) => ({
               token: t,
               usd: formatDecimal(p.usd),
@@ -745,7 +745,7 @@ export class ShadowCollector {
       }),
     });
     const run = await wired.cycle.run();
-    const ids = demoAssets('mainnet');
+    const ids = demoAssets();
     const pNear = prices.get(ids.near.token);
     const pUsdt = prices.get(ids.usdt.token);
     const walletUsd =

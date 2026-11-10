@@ -428,7 +428,7 @@ describe('collector and analytics code: no LLM, no signing, no sending', () => {
     const src = readFileSync(file, 'utf8');
     expect(src).not.toMatch(/anthropic|openai|LlmClient|claude/i);
     expect(src).not.toMatch(
-      /broadcast|send_tx|signTransaction|sendTransaction|NearKeyPairSigner|loadSigner|testnet-tx/,
+      /broadcast|send_tx|signTransaction|sendTransaction|NearKeyPairSigner|loadSigner/,
     );
   });
 });

@@ -100,7 +100,7 @@ export interface SystemInfo extends Provenance {
   readonly executionMode: 'dry-run' | 'live';
   readonly engine: 'legacy' | 'orchestrator';
   readonly simulationPortfolio: string | null;
-  readonly marketData: 'none' | 'mainnet-reference' | 'mainnet-live';
+  readonly marketData: 'none' | 'mainnet-live';
 }
 
 export function toPolicyDto(

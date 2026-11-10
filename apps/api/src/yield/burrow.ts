@@ -4,7 +4,7 @@ import { dec, div, fromRaw, isNegative, mul, ratio, toBps } from './math';
 import type { BlockRef, YieldEstimate, YieldNetwork, YieldReason } from './model';
 
 export interface YieldLimits {
-  /** A reported APR above this is treated as invalid (testnet markets pinned at 100 % utilisation report ~250 %). */
+  /** A reported APR above this is treated as invalid (markets pinned at 100 % utilisation report ~250 %). */
   readonly maxAprBps: number;
   /** At or above this utilisation a supplier may be unable to withdraw: no strategic use. */
   readonly maxUtilizationBps: number;
@@ -20,7 +20,7 @@ export interface BurrowYieldInput {
   readonly assets: readonly BurrowAsset[];
   readonly block: BlockRef;
   readonly now: Date;
-  /** Testnet decimals of a token (ft_metadata), null if unreadable. */
+  /** Decimals of a token (ft_metadata), null if unreadable. */
   readonly decimals: ReadonlyMap<string, number | null>;
   /** USD per whole token from a usable (fresh, undisputed) reference price, or null. */
   readonly priceUsd: (token: string) => Decimal | null;
@@ -69,7 +69,7 @@ export function burrowEstimates(input: BurrowYieldInput): YieldEstimate[] {
     };
     const base = {
       source: 'burrow',
-      network: input.network ?? 'testnet',
+      network: input.network ?? 'mainnet',
       contract: input.contract,
       methods: METHODS,
       marketId: a.tokenId,

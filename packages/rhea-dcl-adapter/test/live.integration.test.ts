@@ -20,26 +20,24 @@ import { LiveRpc } from './support/live-rpc';
  *   RHEA_DCL_LIVE=1 pnpm --filter @near-autopilot/rhea-dcl-adapter test:live
  *
  * Environment:
- *   RHEA_DCL_RPC_URL     JSON-RPC endpoint (default https://rpc.testnet.near.org; use your provider's URL
+ *   RHEA_DCL_RPC_URL     JSON-RPC endpoint (default https://rpc.mainnet.near.org; use your provider's URL
  *                        if that endpoint is rate limited or retired)
- *   RHEA_DCL_DEPLOYMENT  testnet | testnet-dev | mainnet   (default testnet)
- *   RHEA_DCL_CONTRACT_ID overrides the account (e.g. a DCL_TESTNET_CANDIDATES entry)
+ *   RHEA_DCL_DEPLOYMENT  mainnet   (default mainnet)
+ *   RHEA_DCL_CONTRACT_ID overrides the account
  *
- * Nothing here asserts that testnet liquidity EXISTS. It reports what the chain says and only asserts
+ * Nothing here asserts that liquidity EXISTS. It reports what the chain says and only asserts
  * that whatever comes back parses and is arithmetically self-consistent.
  */
 const live = process.env['RHEA_DCL_LIVE'] === '1';
 const isDeployment = (v: string): v is DclDeployment => Object.hasOwn(DCL_CONTRACT_IDS, v);
-const requestedDeployment = process.env['RHEA_DCL_DEPLOYMENT'] ?? 'testnet';
+const requestedDeployment = process.env['RHEA_DCL_DEPLOYMENT'] ?? 'mainnet';
 if (!isDeployment(requestedDeployment)) {
   throw new Error(
     `RHEA_DCL_DEPLOYMENT must be one of ${Object.keys(DCL_CONTRACT_IDS).join(', ')}; got ${JSON.stringify(requestedDeployment)}`,
   );
 }
 const deployment: DclDeployment = requestedDeployment;
-const rpcUrl =
-  process.env['RHEA_DCL_RPC_URL'] ??
-  (deployment === 'mainnet' ? 'https://rpc.mainnet.near.org' : 'https://rpc.testnet.near.org');
+const rpcUrl = process.env['RHEA_DCL_RPC_URL'] ?? 'https://rpc.mainnet.near.org';
 const contractOverride = process.env['RHEA_DCL_CONTRACT_ID'];
 const contractId = contractOverride ? accountId(contractOverride) : DCL_CONTRACT_IDS[deployment];
 

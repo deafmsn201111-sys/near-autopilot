@@ -5,13 +5,12 @@ Where the evidence is weaker than "I read the source", the row says so.
 
 ## 1. What could and could not be verified
 
-| Question                                                      | Answer                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Is the DCL **contract source** (Rust) verified?               | **No.** I could not locate a publicly readable contract repository (`ref-finance/ref-dcl` and several likely names fail anonymous `git ls-remote`). ABI claims below come from **consumer source code** (see tiers), not from the contract. |
-| Are method names and argument names verified?                 | **Yes, to consumer-code level (tier A)** for every method marked implemented. Each is tied to a file and line in an official Rhea/Ref repository.                                                                                           |
-| Does a deployed testnet contract really export these methods? | **Not checked from this sandbox** (egress to NEAR RPC is blocked by policy). `verifyDeployedAbi` does this check from the chain's own `view_code` and the live test runs it. Until you run it, "exists on testnet" is **unconfirmed**.      |
-| Do testnet pools exist, and do they hold liquidity?           | **Unconfirmed.** No RPC access here. The pool ids that appear in sources are listed in section 7 as _leads_, not facts. The live test prints the real list.                                                                                 |
-| Is the tick/liquidity math right?                             | **Yes, tested.** Exact port of the frontend's integer math; reproduces the published MIN/MAX sqrt-price constants and an on-chain `predict_add_liquidity` result bit for bit (section 5).                                                   |
+| Question                                                | Answer                                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Is the DCL **contract source** (Rust) verified?         | **No.** I could not locate a publicly readable contract repository (`ref-finance/ref-dcl` and several likely names fail anonymous `git ls-remote`). ABI claims below come from **consumer source code** (see tiers), not from the contract. |
+| Are method names and argument names verified?           | **Yes, to consumer-code level (tier A)** for every method marked implemented. Each is tied to a file and line in an official Rhea/Ref repository.                                                                                           |
+| Does the deployed contract really export these methods? | `verifyDeployedAbi` checks it from the chain's own `view_code`, and the live test runs it.                                                                                                                                                  |
+| Is the tick/liquidity math right?                       | **Yes, tested.** Exact port of the frontend's integer math; reproduces the published MIN/MAX sqrt-price constants and an on-chain `predict_add_liquidity` result bit for bit (section 5).                                                   |
 
 ### Evidence tiers
 
@@ -23,23 +22,11 @@ Nothing implemented is tier C. Tier B items are called out.
 
 ## 2. Contract IDs
 
-| Deployment        | Account                     | Evidence                                                                         |
-| ----------------- | --------------------------- | -------------------------------------------------------------------------------- |
-| mainnet           | `dclv2.ref-labs.near`       | A: ref-sdk `src/constant.ts:35`, ref-ui `src/services/config.ts:239`             |
-| **testnet**       | `dclv2.ref-dev.testnet`     | A: ref-sdk `src/constant.ts:47` (`getConfig('testnet')`), ref-ui `config.ts:361` |
-| testnet-dev       | `refv2-dev.ref-dev.testnet` | A: ref-sdk `src/constant.ts:59` (`'dev'`), ref-ui `config.ts:466`                |
-| legacy testnet v1 | `dclv1.ref-dev.testnet`     | A: ref-ui `REF_UNI_SWAP_CONTRACT_ID` (migration reads only; **not used**)        |
+| Deployment | Account               | Evidence                                                             |
+| ---------- | --------------------- | -------------------------------------------------------------------- |
+| mainnet    | `dclv2.ref-labs.near` | A: ref-sdk `src/constant.ts:35`, ref-ui `src/services/config.ts:239` |
 
-**Conflicting testnet references.** Other testnet ids also appear in the same repositories, so the table above is the _current main config_, not the only answer in the sources:
-
-| Account                    | Where                                                                                                         | Reading                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `dcl.ref-dev.testnet`      | ref-sdk `README.md:1334` (example output); ref-ui `src/pages/Orderly/config.ts:153` (separate Orderly module) | older name; main configs moved to `dclv2` |
-| `mock-dcl.ref-dev.testnet` | ref-ui `src/pages/Orderly/config.ts:223` (dev block)                                                          | mock deployment for a side module         |
-
-These are exported as `DCL_TESTNET_CANDIDATES` so `verifyDeployedAbi` can be run against every one of them. The live test accepts `RHEA_DCL_CONTRACT_ID` to point at any candidate. Which of them currently has code is **unknown** until that check runs. The README example also shows a `Swap` message without `referral_id`/`client_id`, which suggests those two fields are optional on the contract; the builders still send them (as the current SDK code does).
-
-All three ids are constants, not discoveries. Whether each account currently has code deployed is checked by `verifyDeployedAbi` (section 8).
+The id is a constant, not a discovery. Whether the account currently has code deployed is checked by `verifyDeployedAbi` (section 8).
 
 ## 3. Method matrix
 
@@ -113,7 +100,7 @@ Cross-checks that run in the test suite:
 
 1. `sqrtPriceX96(-800000) = 337263108622` and `sqrtPriceX96(800000) = 18611883644907511909590774894315720731532604461`: the two constants ref-ui documents beside the table.
 2. SDK price vector: 0.9 USDT (6 dec) ↔ 4.89454792 wNEAR (24 dec), fee 400 → point `431416`; decimal price at that point `5.43528191708623` (**tier B** source for the numbers).
-3. **On-chain vector (tier B):** pool `usdc.fakes.testnet|wrap.testnet|2000`, range `[288680, 289000)`, `amount_x = 1000000`, `amount_y = 1e24`; `predict_add_liquidity` returned `liquidity_amount = 5842542192, need_x = 1000000, need_y = 0`. `computeLiquidity` returns exactly `5842542192` and `requiredDepositForLiquidity` exactly `{x: 1000000, y: 0}`, for any current point below the range.
+3. **On-chain vector (tier B):** a USDC (6 dec) / wNEAR (24 dec) pool with fee 2000, range `[288680, 289000)`, `amount_x = 1000000`, `amount_y = 1e24`; `predict_add_liquidity` returned `liquidity_amount = 5842542192, need_x = 1000000, need_y = 0`. `computeLiquidity` returns exactly `5842542192` and `requiredDepositForLiquidity` exactly `{x: 1000000, y: 0}`, for any current point below the range.
 4. A property test over ~300 range/amount combinations checks that the deposit implied by the computed liquidity never exceeds the supplied amounts.
 
 Limits of this math:
@@ -126,31 +113,21 @@ Limits of this math:
 
 The DCL contract stores raw integer amounts only; it has no decimals field. Decimals come from each token's NEP-141 `ft_metadata` (the repo's `TokenReader` port). Example decimals seen in the SDK vector: USDT 6, wNEAR 24. Read them, don't hardcode them. `pointToDecimalPrice` and `decimalPriceToPoint` take both decimals explicitly.
 
-## 7. Supported testnet pools
-
-**Nothing here is confirmed live.** Leads from sources:
-
-| Pool id                                  | Where it appears                                | Status                                                    |
-| ---------------------------------------- | ----------------------------------------------- | --------------------------------------------------------- |
-| `usdc.fakes.testnet\|wrap.testnet\|2000` | on-chain `predict_add_liquidity` probe (tier B) | pool existed when probed; liquidity unconfirmed           |
-| `usdt.fakes.testnet\|wrap.testnet\|2000` | swap message examples (tier B)                  | unconfirmed                                               |
-| `usdt.fakes.testnet\|wrap.testnet\|100`  | ref-ui `DCL_POOL_BLACK_LIST` for testnet (A)    | existed at some point and ref-ui **hides** it; do not use |
-
-To get the real answer:
+## 7. Live check
 
 ```bash
-RHEA_DCL_LIVE=1 RHEA_DCL_RPC_URL=<testnet rpc> pnpm --filter @near-autopilot/rhea-dcl-adapter test:live
+RHEA_DCL_LIVE=1 RHEA_DCL_RPC_URL=<mainnet rpc> pnpm --filter @near-autopilot/rhea-dcl-adapter test:live
 ```
 
 It prints every pool with `fee, point_delta, current_point, state, liquidity, total_x, total_y`, and reports the count of pools with non-zero liquidity. It never asserts that liquidity exists.
 
 ## 8. Verifying a deployment yourself
 
-`verifyDeployedAbi(rpc, contractId)` calls `query / view_code`, parses the WASM export section, and lists any source-verified method the deployment does not export. This proves **names**, not argument shapes. Argument shapes are proven only by the live parse of real responses (strict Zod schemas fail closed) and by a signed dry run on testnet.
+`verifyDeployedAbi(rpc, contractId)` calls `query / view_code`, parses the WASM export section, and lists any source-verified method the deployment does not export. This proves **names**, not argument shapes. Argument shapes are proven only by the live parse of real responses (strict Zod schemas fail closed) and by a transaction the user signs.
 
 ## 9. Known gaps and risks
 
-1. No contract source: argument _types_ for write calls rest on consumer code. A mismatch would surface as a failed transaction on testnet, which is why the policy engine's dry-run default stays on.
+1. No contract source: argument _types_ for write calls rest on consumer code. A mismatch would surface as a failed transaction, which is why every cascade goes through `validate-cascade.ts` and is signed by the user, never by the server.
 2. Schemas were derived from TypeScript interfaces, which mark many fields optional. Only fields the frontend always reads are required; the live test is the first check against real JSON.
 3. Limit-order point orientation follows ref-sdk (negate when the sold token is not X). The SDK's own snapping happens before negation, so negated points are not guaranteed to be multiples of the delta; `buildLimitOrder` checks range but not alignment for that reason.
 4. Gas and attached-deposit values are copied from the frontend and are not minimums.

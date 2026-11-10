@@ -158,7 +158,7 @@ describe('mainnet read-only shadow analysis', () => {
   });
 
   it('refuses to start when the "mainnet" read RPC serves another chain', async () => {
-    const m = fakeMainnet('testnet');
+    const m = fakeMainnet('localnet');
     await expect(
       wire(envFor(), config, new InMemoryRepository(), new SilentLogger(), {
         mainnetFetchImpl: m.impl,

@@ -11,7 +11,7 @@
 | Plan altered after approval / approval replay      | Approval binds SHA-256 of canonical plan + TTL; executor re-verifies; approvals are single-use  |
 | Forged decision or approval (cast / copied object) | `PolicyEngine` records decisions and approvals it minted; executors check `ApprovalAuthority`   |
 | Smuggled Burrow action (e.g. Withdraw in `msg`)    | `intent_match` requires exactly the one Repay / IncreaseCollateral action for the intent token  |
-| Config says testnet, RPC serves mainnet            | `wire()` asserts the RPC `chain_id` equals `NEAR_NETWORK` before anything else, fail-closed     |
+| RPC serves the wrong chain                         | `wire()` asserts the RPC `chain_id` equals `mainnet` before anything else, fail-closed          |
 | Runaway loop                                       | Per-action cap, rolling 24h cap, swap cooldown, one in-flight cycle, one tx per live cycle      |
 | Leveraging up                                      | No borrow/withdraw intents exist; v1 can only de-risk or rebalance spot                         |
 | Tx built against a wrong chain / contract / oracle | Burrow builders accept only `BurrowVerifier` proofs (chain id, deployed code, oracle, token)    |
@@ -25,11 +25,11 @@
 `TransactionSigner` is a port. The repo ships no implementation, and `EXECUTION_MODE=live` fails at startup
 until `loadSigner()` in `apps/api/src/signer.ts` returns one.
 
-**Mainnet is dry-run only.** Configuration with `EXECUTION_MODE=live` and `NEAR_NETWORK=mainnet` is rejected at
-load time, and the composition root checks it again, so a mainnet signing key cannot be put to use through this
-code. Live signing is possible on testnet only, with a testnet key. Nothing in the adapters or tests reads key
-material. If you fork this project to change that, it is a deliberate security decision to review, not a flag.
-Recommended setups for a testnet signer (and for anything you build yourself), strongest first:
+**The server never signs.** `NEAR_NETWORK` accepts only `mainnet`, and `EXECUTION_MODE=live` on mainnet is rejected
+at load time and again in the composition root, so a signing key cannot be put to use through this code. The user
+signs every transaction in their own wallet. Nothing in the adapters or tests reads key material. If you fork this
+project to change that, it is a deliberate security decision to review, not a flag. Recommended setups for anything
+you build yourself, strongest first:
 
 1. KMS/HSM- or MPC-backed signing behind the `TransactionSigner` interface.
 2. A **function-call access key** restricted to one contract and its methods, with a gas allowance.
@@ -57,9 +57,6 @@ which NEP-141 requires to carry exactly 1 yoctoNEAR, so none passes this guard. 
 a full-access key has no ceiling. Live autonomous execution needs a custody design that does not hand it one, such as
 an MPC or delegated signer with its own limits. Until then every deployment runs dry-run.
 
-The manual testnet tool (`testnet-tx`) is separate. It signs one previewed transaction at a time, only after a human
-confirms that exact transaction, and it needs a full-access key because it attaches deposits.
-
 ## Attack demo: `pnpm demo:attack`
 
 The demo runs hand-written attack **fixtures** through the real defences: the policy engine, the agent-output parser,
@@ -84,41 +81,20 @@ exactly one check: the one it targets.
 **The log** is `docs/evidence/demo-attack.log.jsonl`. It is deterministic: a test fails if the committed log differs
 from what a run produces. The attack verdicts also replay (`audit:replay`) to the same verdict.
 
-`--persist` additionally stores the verdicts and one audit event per attack in Postgres. They are stored as
-`simulation:testnet` rows with run id `demo-attack:<time>`, and the audit chain makes them permanent.
+## Pre-signing checklist
 
-## Testnet evidence (read-only, 2026-11-04)
+The adapters validate responses strictly, so a wrong assumption fails closed, but verify against mainnet in `dry-run`
+(which only reads) before relying on any planner:
 
-Checked from this repository with view calls only (`status`, `view_code`, `call_function`) against
-`https://rpc.testnet.near.org`; no keys, no transactions:
-
-| Component                                                         | Result                                                                                                                                                    |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Burrow `contract.1638481328.burrow.testnet`                       | Passes `BurrowVerifier` (chain id, exports, oracle identity); 9 assets parse; a registered account with debt parses with the current `get_account` schema |
-| Oracle `priceoracle.testnet`                                      | Named by Burrow `get_config`; exports verified; **returned no fresh price for any listed asset**, so no testnet decision can currently be priced          |
-| Rhea v1 `ref-finance-101.testnet`                                 | Has code; `get_pool` and `get_return` answer (2894 pools)                                                                                                 |
-| Rhea DCL `dclv2.ref-dev.testnet`                                  | Exports every source-verified method; `list_pools` needs paging (unpaged it exceeds view gas); quotes and market depth parse                              |
-| Tokens `wrap.testnet`, `usdt.fakes.testnet`, `usdc.fakes.testnet` | Code deployed; `ft_metadata`: wNEAR/24, USDT.e/6, USDC.e/6; export the methods the planners call                                                          |
-| Rhea v1 pool prices                                               | Pools pairing wNEAR with the fake stables exist (e.g. #34, #54) but are not price-meaningful (1 wNEAR quotes ~2.2e22 raw USDT.e): keep `rhea.pools` empty |
-| Pipeline, `DATA_SOURCE=chain`, dry-run                            | With an unregistered account the legacy cycle fails closed (`UNKNOWN_ACCOUNT`) and the orchestrator records `SNAPSHOT_UNAVAILABLE` and does nothing       |
-
-Not verified: any transaction (the autopilot ships no signer; the separate testnet-only `testnet-tx` tool had not sent one when this was written), the mainnet Burrow `get_account` shape, the mainnet oracle
-id. The public RPC rate-limits (HTTP 429) under the live suites; rerun or use a dedicated endpoint.
-
-## Pre-mainnet checklist
-
-The adapters validate responses strictly, so a wrong assumption fails closed, but verify on **testnet**
-(or against mainnet in `dry-run`, which only reads) before relying on any planner:
-
-- [ ] Run the read-only Burrow live test against your target network (`BURROW_LIVE=1 pnpm --filter
+- [ ] Run the read-only Burrow live test against mainnet (`BURROW_LIVE=1 pnpm --filter
 @near-autopilot/burrow-adapter test:live`): it verifies the chain id, the deployed Burrow and oracle code, and
-      that assets and the oracle parse. Treat a testnet failure as "testnet deployment unusable", not as flakiness.
+      that assets and the oracle parse. Treat a failure as "deployment unusable", not as flakiness.
 - [ ] `BURROW_ORACLE_ID` equals the oracle your deployment reports in `get_config` (verification refuses otherwise);
       the built-in mainnet default `priceoracle.near` has not been confirmed against the chain.
 - [ ] Consider pinning `allowedCodeHashes` in the `BurrowVerifier` options once you have audited a deployed version.
 - [ ] Balances from Burrow are INNER units (`raw × 10^extra_decimals`); the adapter converts, but spot-check one position by hand.
-- [ ] The Burrow `Execute` repay/increase-collateral messages are accepted by a real `ft_transfer_call` on testnet
-      (the argument shapes rest on contract and frontend source; they have not been executed by this project).
+- [ ] The Burrow `Execute` repay/increase-collateral messages are accepted by a real `ft_transfer_call` (sign a
+      small one in your own wallet first; the argument shapes rest on contract and frontend source; they have not been executed by this project).
 - [ ] `get_return` and the Rhea instant-swap message (`force`, `actions[]`) match the exchange contract you point at,
       and swap output reaches the wallet (check whether your account needs a storage deposit on the exchange).
 - [ ] Gas defaults (180 Tgas swap; Burrow `ft_transfer_call` 100 Tgas, `execute` 50 Tgas, copied from the Burrow frontend) suffice; unused gas is refunded.

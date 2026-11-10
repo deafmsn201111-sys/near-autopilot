@@ -1,15 +1,10 @@
 import type { YieldDataDto } from '@near-autopilot/core';
 import { formatDecimal } from '../market-data/decimal';
-import {
-  MAINNET_YIELD_LABEL,
-  YIELD_LABEL,
-  type YieldDataProvider,
-  type YieldReport,
-} from './model';
+import { MAINNET_YIELD_LABEL, type YieldDataProvider, type YieldReport } from './model';
 
 const disabled: YieldDataDto = {
   enabled: false,
-  label: YIELD_LABEL,
+  label: MAINNET_YIELD_LABEL,
   network: null,
   observedAt: null,
   blockHeight: null,
@@ -23,7 +18,7 @@ export function yieldReportDto(r: YieldReport): YieldDataDto {
   const count = (s: string) => r.estimates.filter((e) => e.validationStatus === s).length;
   return {
     enabled: true,
-    label: r.network === 'mainnet' ? MAINNET_YIELD_LABEL : YIELD_LABEL,
+    label: MAINNET_YIELD_LABEL,
     network: r.network,
     observedAt: r.observedAt.toISOString(),
     blockHeight: r.block?.height ?? null,

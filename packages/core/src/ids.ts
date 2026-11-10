@@ -32,7 +32,7 @@ export const u128StringSchema = z
   .regex(/^\d+$/, 'Expected an unsigned integer string')
   .transform((v) => BigInt(v));
 
-export type Network = 'mainnet' | 'testnet';
-export const networkSchema = z.enum(['mainnet', 'testnet']);
+export type Network = 'mainnet';
+export const networkSchema = z.enum(['mainnet']);
 
 export type ProtocolId = 'rhea' | 'burrow';

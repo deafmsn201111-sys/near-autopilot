@@ -20,9 +20,9 @@ import {
 } from '../src';
 import { POOL_ID } from './fixtures/shapes';
 
-const dcl = DCL_CONTRACT_IDS.testnet;
-const usdc = accountId('usdc.fakes.testnet');
-const wrap = accountId('wrap.testnet');
+const dcl = DCL_CONTRACT_IDS.mainnet;
+const usdc = accountId('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1');
+const wrap = accountId('wrap.near');
 
 describe('swap messages (shape per ref-sdk dcl-swap/swap.ts)', () => {
   it('Swap is an ft_transfer_call on the input token with 1 yoctoNEAR and 180 Tgas', () => {
@@ -45,7 +45,7 @@ describe('swap messages (shape per ref-sdk dcl-swap/swap.ts)', () => {
     expect(action?.args).toEqual({
       receiver_id: dcl,
       amount: '1000000',
-      msg: '{"Swap":{"pool_ids":["usdc.fakes.testnet|wrap.testnet|2000"],"output_token":"wrap.testnet","min_output_amount":"0","referral_id":"","client_id":""}}',
+      msg: '{"Swap":{"pool_ids":["17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1|wrap.near|2000"],"output_token":"wrap.near","min_output_amount":"0","referral_id":"","client_id":""}}',
     });
   });
 
@@ -104,7 +104,7 @@ describe('swap messages (shape per ref-sdk dcl-swap/swap.ts)', () => {
   it('orients a limit-order point by the sold token like ref-sdk', () => {
     expect(orientLimitOrderPoint(POOL_ID, usdc, 100)).toBe(100);
     expect(orientLimitOrderPoint(POOL_ID, wrap, 100)).toBe(-100);
-    expect(() => orientLimitOrderPoint(POOL_ID, accountId('other.testnet'), 1)).toThrow(RangeError);
+    expect(() => orientLimitOrderPoint(POOL_ID, accountId('other.near'), 1)).toThrow(RangeError);
   });
 
   it('rejects nonsense before it can reach a signer', () => {
@@ -142,7 +142,7 @@ describe('swap messages (shape per ref-sdk dcl-swap/swap.ts)', () => {
       buildLimitOrder({
         dcl,
         sellToken: usdc,
-        buyToken: accountId('other.testnet'),
+        buyToken: accountId('other.near'),
         amount: 1n,
         poolId: POOL_ID,
         point: 0,
@@ -161,7 +161,7 @@ describe('swap messages (shape per ref-sdk dcl-swap/swap.ts)', () => {
     expect(() =>
       buildSwapToStopPoint({
         dcl,
-        tokenIn: accountId('other.testnet'),
+        tokenIn: accountId('other.near'),
         amountIn: 1n,
         poolId: POOL_ID,
         stopPoint: 0,
@@ -286,14 +286,14 @@ describe('liquidity messages (shape per ref-ui services/swapV3.ts)', () => {
     expect(() =>
       buildCreatePool({ dcl, tokenA: wrap, tokenB: usdc, fee: 7, initPoint: 0 }),
     ).toThrow(RangeError);
-    const storage = buildDclStorageDeposit({ dcl, accountId: accountId('alice.testnet') });
+    const storage = buildDclStorageDeposit({ dcl, accountId: accountId('alice.near') });
     expect(storage.actions[0]).toMatchObject({
       methodName: 'storage_deposit',
       deposit: DCL_DEPOSITS.firstRegistration,
     });
     expect(storage.actions[0]?.args).toEqual({
       registration_only: true,
-      account_id: 'alice.testnet',
+      account_id: 'alice.near',
     });
     expect(DCL_DEPOSITS.firstRegistration).toBe(5n * 10n ** 23n);
   });

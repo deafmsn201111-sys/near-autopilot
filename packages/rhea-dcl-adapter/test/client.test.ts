@@ -10,8 +10,8 @@ import {
 } from '../src';
 import { orderFixture, POOL_ID, poolFixture, positionFixture } from './fixtures/shapes';
 
-const DCL = DCL_CONTRACT_IDS.testnet;
-const ALICE = accountId('alice.testnet');
+const DCL = DCL_CONTRACT_IDS.mainnet;
+const ALICE = accountId('alice.near');
 
 function client(viewer: ScriptedContractViewer) {
   return new RheaDclClient(viewer, { contractId: DCL });
@@ -19,16 +19,24 @@ function client(viewer: ScriptedContractViewer) {
 
 describe('pool ids', () => {
   it('sorts tokens and validates the fee tier (ref-sdk getDCLPoolId)', () => {
-    expect(canonicalPoolId('wrap.testnet', 'usdc.fakes.testnet', 2000)).toBe(POOL_ID);
-    expect(normalisePoolId('wrap.testnet|usdc.fakes.testnet|2000')).toBe(POOL_ID);
-    expect(() => canonicalPoolId('a.testnet', 'b.testnet', 123)).toThrow(RangeError);
-    expect(() => canonicalPoolId('a.testnet', 'a.testnet', 100)).toThrow(RangeError);
+    expect(
+      canonicalPoolId(
+        'wrap.near',
+        '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+        2000,
+      ),
+    ).toBe(POOL_ID);
+    expect(
+      normalisePoolId(
+        'wrap.near|17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1|2000',
+      ),
+    ).toBe(POOL_ID);
+    expect(() => canonicalPoolId('a.near', 'b.near', 123)).toThrow(RangeError);
+    expect(() => canonicalPoolId('a.near', 'a.near', 100)).toThrow(RangeError);
     expect(() => parsePoolId('only|two')).toThrow(RangeError);
   });
 
-  it('pins the testnet contract ids found in ref-sdk/ref-ui', () => {
-    expect(DCL_CONTRACT_IDS.testnet).toBe('dclv2.ref-dev.testnet');
-    expect(DCL_CONTRACT_IDS['testnet-dev']).toBe('refv2-dev.ref-dev.testnet');
+  it('pins the contract id found in ref-sdk/ref-ui', () => {
     expect(DCL_CONTRACT_IDS.mainnet).toBe('dclv2.ref-labs.near');
   });
 });
@@ -36,7 +44,9 @@ describe('pool ids', () => {
 describe('RheaDclClient views (argument names are asserted exactly)', () => {
   it('get_pool sends a canonical pool_id and parses u128 fields to bigint', async () => {
     const viewer = new ScriptedContractViewer().on(DCL, 'get_pool', poolFixture);
-    const pool = await client(viewer).getPool('wrap.testnet|usdc.fakes.testnet|2000');
+    const pool = await client(viewer).getPool(
+      'wrap.near|17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1|2000',
+    );
     expect(viewer.calls).toEqual([
       { contractId: DCL, methodName: 'get_pool', args: { pool_id: POOL_ID } },
     ]);
@@ -97,7 +107,7 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
     const all = await c.listPositions(ALICE);
     expect(viewer.calls.map((x) => [x.methodName, x.args])).toEqual([
       ['get_liquidity', { lpt_id: positionFixture.lpt_id }],
-      ['list_liquidities', { account_id: 'alice.testnet' }],
+      ['list_liquidities', { account_id: 'alice.near' }],
     ]);
     expect(one?.amount).toBe(5842542192n);
     expect(all[0]?.left_point).toBe(288680);
@@ -106,11 +116,11 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
   it('list_user_assets returns a bigint map and tolerates null', async () => {
     const assets = await client(
       new ScriptedContractViewer().on(DCL, 'list_user_assets', {
-        'wrap.testnet': '5',
-        'usdc.fakes.testnet': '7',
+        'wrap.near': '5',
+        '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1': '7',
       }),
     ).listInternalBalances(ALICE);
-    expect(assets.get('wrap.testnet')).toBe(5n);
+    expect(assets.get('wrap.near')).toBe(5n);
     expect(
       (
         await client(
@@ -137,10 +147,10 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
       .on(DCL, 'quote', { amount: '990', tag: 't1' })
       .on(DCL, 'quote_by_output', { amount: '1010', tag: null });
     const c = client(viewer);
-    const wrap = accountId('wrap.testnet');
-    const usdc = accountId('usdc.fakes.testnet');
+    const wrap = accountId('wrap.near');
+    const usdc = accountId('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1');
     const q = await c.quote({
-      poolIds: ['wrap.testnet|usdc.fakes.testnet|2000'],
+      poolIds: ['wrap.near|17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1|2000'],
       inputToken: wrap,
       outputToken: usdc,
       inputAmount: 1000n,
@@ -156,15 +166,15 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
     expect(qo.amount).toBe(1010n);
     expect(viewer.calls[0]?.args).toEqual({
       pool_ids: [POOL_ID],
-      input_token: 'wrap.testnet',
-      output_token: 'usdc.fakes.testnet',
+      input_token: 'wrap.near',
+      output_token: '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
       input_amount: '1000',
       tag: 't1',
     });
     expect(viewer.calls[1]?.args).toEqual({
       pool_ids: [POOL_ID],
-      input_token: 'wrap.testnet',
-      output_token: 'usdc.fakes.testnet',
+      input_token: 'wrap.near',
+      output_token: '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
       output_amount: '1000',
     });
     await expect(
@@ -190,9 +200,9 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
     expect(order?.unclaimed_amount).toBeNull();
     expect(viewer.calls.map((x) => [x.methodName, x.args])).toEqual([
       ['get_order', { order_id: orderFixture.order_id }],
-      ['find_order', { account_id: 'alice.testnet', pool_id: POOL_ID, point: 288000 }],
-      ['list_active_orders', { account_id: 'alice.testnet' }],
-      ['list_history_orders', { account_id: 'alice.testnet' }],
+      ['find_order', { account_id: 'alice.near', pool_id: POOL_ID, point: 288000 }],
+      ['list_active_orders', { account_id: 'alice.near' }],
+      ['list_history_orders', { account_id: 'alice.near' }],
     ]);
   });
 
@@ -204,11 +214,11 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
       locked_near: '500000000000000000000000',
       storage_for_asset: '0',
       slot_price: '100000000000000000000000',
-      sponsor_id: 'alice.testnet',
+      sponsor_id: 'alice.near',
     };
     const viewer = new ScriptedContractViewer().on(DCL, 'get_user_storage_detail', detail);
     const parsed = await client(viewer).getUserStorageDetail(ALICE);
-    expect(viewer.calls[0]?.args).toEqual({ user_id: 'alice.testnet' });
+    expect(viewer.calls[0]?.args).toEqual({ user_id: 'alice.near' });
     expect(parsed?.slot_price).toBe(100000000000000000000000n);
     expect(
       await client(
@@ -223,6 +233,6 @@ describe('RheaDclClient views (argument names are asserted exactly)', () => {
       available: '4',
     });
     expect(await client(viewer).getStorageBalance(ALICE)).toEqual({ total: 10n, available: 4n });
-    expect(viewer.calls[0]?.args).toEqual({ account_id: 'alice.testnet' });
+    expect(viewer.calls[0]?.args).toEqual({ account_id: 'alice.near' });
   });
 });

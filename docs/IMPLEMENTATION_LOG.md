@@ -26,6 +26,16 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 
 **Next:** P1 `T1.1` provenance enum.
 
+## 2026-11-10 — #12 remove testnet
+
+- Env: `NEAR_NETWORK` mainnet only; `mainnet-reference` and `testnet-onchain` removed (D7).
+- Market data: testnet reference assets and labels removed; `testnetToken` → `token` in the API contract.
+- Adapters: testnet Burrow/DCL deployments and `DCL_TESTNET_CANDIDATES` removed; fixtures use mainnet ids.
+- Attack demo runs on mainnet ids with an inline policy; `docs/evidence/demo-attack.log.jsonl` regenerated (8/8 stopped).
+- `config/autopilot.testnet.example.json` deleted; `docs/market-data.md` and `docs/yield-data.md` folded into
+  `docs/mainnet-shadow.md`.
+- Left for #13: `apps/dashboard`, `autopilot-config`, `EXECUTION_MODE=live` / `signer.ts`.
+
 ## 2026-11-10 — Security 1: guard `/api/prepare` (#9)
 
 - `apps/analytics/app/api/prepare/route.ts` answers 415 unless `content-type` is `application/json` (also blocks

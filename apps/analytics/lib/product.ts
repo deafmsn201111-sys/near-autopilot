@@ -138,11 +138,9 @@ export function scopeName(scope: string): { name: string; env: string } {
       ? 'Shadow mainnet'
       : source === 'simulation'
         ? 'Simulation'
-        : network === 'testnet'
-          ? 'Testnet'
-          : `${source}:${network}`;
+        : `${source}:${network}`;
   return {
-    name: portfolio ? `Demo portfolio ${portfolio.replace('demo-', '$')}` : 'Testnet account',
+    name: portfolio ? `Demo portfolio ${portfolio.replace('demo-', '$')}` : 'Account',
     env,
   };
 }

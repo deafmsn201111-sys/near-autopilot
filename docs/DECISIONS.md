@@ -37,3 +37,14 @@ _Architecture Decision Record (lightweight). Each entry: context → decision �
 **Context:** The planner's Claude Docs document never shipped; the owner supplied the full master prompt directly.
 **Decision:** Use the master brief (§4 thirteen layers) as the authoritative target. (Superseded by `REWORK_PLAN.md` and `HACKATHON_PLAN.md`.)
 **Consequences:** No further blocking on an external doc; proceed through the roadmap.
+
+## D7 — Mainnet only; DB names kept as history
+
+**Context:** Testnet code paths (`NEAR_NETWORK=testnet`, `MARKET_DATA=mainnet-reference`, `YIELD_DATA=testnet-onchain`,
+testnet deployments in the adapters) made the code and the README tell different stories (#12).
+**Decision:** The env schema accepts only `NEAR_NETWORK=mainnet`, `MARKET_DATA=none|mainnet-live`,
+`YIELD_DATA=none|mainnet-onchain`. The database is not migrated: the `testnet_transactions` table, the `testnet_token`
+column and the CHECK constraints that still allow `'testnet'` stay as history; only the TypeScript field is renamed
+(`token`). Reads are filtered to the deployment's own provenance, which is mainnet.
+**Consequences:** No migration risk on the VPS. `packages/db/src/schema.ts` and the migrations keep the word
+"testnet". `EXECUTION_MODE=live` is now always refused; its removal belongs to #13.

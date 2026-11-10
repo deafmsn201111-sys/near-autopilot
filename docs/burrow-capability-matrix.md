@@ -26,14 +26,13 @@ Notes on "the official SDK and API":
 
 ## 2. Contracts and networks
 
-| Deployment     | Network | Account                              | Source of the id                                |
-| -------------- | ------- | ------------------------------------ | ----------------------------------------------- |
-| `mainnet`      | mainnet | `contract.main.burrow.near`          | A: `store/constants.ts:57`                      |
-| `mainnet-beta` | mainnet | `contract.beta.burrow.near`          | A: `store/constants.ts:58`                      |
-| `testnet`      | testnet | `contract.1638481328.burrow.testnet` | A: `README.md:37` (`NEXT_PUBLIC_CONTRACT_NAME`) |
+| Deployment     | Network | Account                     | Source of the id           |
+| -------------- | ------- | --------------------------- | -------------------------- |
+| `mainnet`      | mainnet | `contract.main.burrow.near` | A: `store/constants.ts:57` |
+| `mainnet-beta` | mainnet | `contract.beta.burrow.near` | A: `store/constants.ts:58` |
 
 - A contract id is accepted only if it is listed **for the configured network** (or the operator explicitly sets
-  `allowUnlistedContract` for a fork). A mainnet account configured on testnet is rejected before any RPC call.
+  `allowUnlistedContract` for a fork).
 - The oracle account is **not hard-coded**. It is read from the contract's own `get_config.oracle_account_id`
   (S: `config.rs:83`) and compared with the operator-configured `BURROW_ORACLE_ID`. The default
   `priceoracle.near` in `packages/config` is **unverified**; on any mismatch verification fails.
@@ -116,8 +115,8 @@ registered in a runtime `WeakSet` and frozen, so a hand-built or copied object i
 `verifyDeployment()` performs, in this order, and stops at the first failure:
 
 1. Contract id is a listed deployment for the configured network (no RPC traffic otherwise).
-2. RPC `status.chain_id` equals the configured network (`NetworkMismatchError`). _This guards against pointing a
-   testnet config at a mainnet endpoint and vice versa; it is not a defence against a hostile RPC node._
+2. RPC `status.chain_id` equals the configured network (`NetworkMismatchError`). _This guards against a misconfigured
+   endpoint; it is not a defence against a hostile RPC node._
 3. The WASM deployed at the Burrow contract (`view_code`, final finality) **exports** every method the adapter uses.
 4. Optional code-hash allowlist for Burrow.
 5. `get_config.oracle_account_id` equals the expected oracle (`ORACLE_MISMATCH`).
@@ -158,26 +157,17 @@ liq. threshold = health factor × LTV                                  (LTV at w
   is below 10^-15 USD, always in the direction of "looks worse".
 - Interest accrual is not projected. Model it through `debtShockBps`.
 
-## 8. Testnet support: what is and is not established
+## 8. Checking a deployment yourself
 
-| Claim                                                   | Status                                                                         |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Burrow publishes a testnet contract id                  | **Documented** (A: `burrow-cash/README.md:37`)                                 |
-| That account currently has the expected code on testnet | **Not verified.** The build sandbox could not reach any NEAR RPC.              |
-| Its interface matches burrowland v0.7.0                 | **Not verified.** Enforced at runtime by the export check                      |
-| Testnet oracle account id                               | **Unknown.** Must be set via `BURROW_ORACLE_ID`; verified against `get_config` |
-| Testnet markets / test tokens with liquidity            | **Unknown.** Never assumed by any code or test                                 |
-| Repay / increase-collateral succeed on testnet          | **Never executed** by this project                                             |
-
-Consequently the builders are gated: on testnet they produce a transaction only after `verifyDeployment()` and
-`verifyToken()` succeed against the live chain. To check testnet support yourself (read-only, no keys):
+The builders produce a transaction only after `verifyDeployment()` and `verifyToken()` succeed against the live chain.
+Read-only check, no keys:
 
 ```
 BURROW_LIVE=1 pnpm --filter @near-autopilot/burrow-adapter test:live
-# BURROW_DEPLOYMENT=testnet|mainnet|mainnet-beta, BURROW_RPC_URL=..., BURROW_CONTRACT_ID=..., BURROW_ACCOUNT_ID=...
+# BURROW_DEPLOYMENT=mainnet|mainnet-beta, BURROW_RPC_URL=..., BURROW_CONTRACT_ID=..., BURROW_ACCOUNT_ID=...
 ```
 
-A failure there on testnet is a finding (deployment retired or interface changed), not a flaky test.
+A failure there is a finding (deployment retired or interface changed), not a flaky test.
 
 ## 9. Signing keys
 
@@ -189,7 +179,7 @@ A failure there on testnet is a finding (deployment retired or interface changed
 ## 10. Known gaps
 
 1. Deployed contract versions unverified against the source commits (drift is possible); mitigated by export checks, not eliminated.
-2. Argument shapes of `Execute` actions are tier S/A only; there is no runtime proof until a testnet transaction is made.
+2. Argument shapes of `Execute` actions are tier S/A only; there is no runtime proof until a user signs one on mainnet.
 3. Genesis hashes are not pinned.
 4. Oracle price format is read from price-oracle source (`df2efbe`); the deployed oracle for a given network was not inspected.
 5. Pager semantics of `get_assets_paged_detailed` are tolerated, not established.

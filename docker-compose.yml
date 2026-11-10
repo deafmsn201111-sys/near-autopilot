@@ -107,7 +107,7 @@ services:
       RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
       # Read-only mainnet RPC (view calls only).
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
-      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
       PYTH_API_KEY: ${PYTH_API_KEY:-}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
@@ -169,7 +169,7 @@ services:
       YIELD_DATA: mainnet-onchain
       RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
-      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
       PYTH_API_KEY: ${PYTH_API_KEY:-}
       PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
       DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
@@ -219,7 +219,7 @@ services:
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
       # "your account" (read-only view calls): the same private RPC and key as the collector
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
-      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-${TESTNET_RPC_API_KEY:-}}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
       AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'

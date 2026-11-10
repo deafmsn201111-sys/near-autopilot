@@ -82,7 +82,7 @@ describe('parseWasmExports', () => {
 });
 
 describe('verifyDeployedAbi', () => {
-  const contract = accountId('dclv2.ref-dev.testnet');
+  const contract = accountId('dclv2.ref-labs.near');
 
   it('requests view_code at final finality and lists exported functions', async () => {
     const rpc = rpcReturning(wasmWithExports(['get_pool']));

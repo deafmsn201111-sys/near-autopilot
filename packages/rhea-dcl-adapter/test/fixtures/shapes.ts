@@ -4,12 +4,13 @@
  * `UserStorageDetail`) and ref-finance/ref-sdk (`UserOrderInfo`). They are NOT recorded chain
  * responses and prove nothing about what a live node returns - test/live.integration.test.ts does that.
  */
-export const POOL_ID = 'usdc.fakes.testnet|wrap.testnet|2000';
+export const POOL_ID =
+  '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1|wrap.near|2000';
 
 export const poolFixture = {
   pool_id: POOL_ID,
-  token_x: 'usdc.fakes.testnet',
-  token_y: 'wrap.testnet',
+  token_x: '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+  token_y: 'wrap.near',
   fee: 2000,
   point_delta: 40,
   current_point: 288000,
@@ -25,7 +26,7 @@ export const poolFixture = {
 
 export const positionFixture = {
   lpt_id: `${POOL_ID}#12`,
-  owner_id: 'alice.testnet',
+  owner_id: 'alice.near',
   pool_id: POOL_ID,
   left_point: 288680,
   right_point: 289000,
@@ -36,11 +37,11 @@ export const positionFixture = {
 
 export const orderFixture = {
   order_id: `${POOL_ID}#3`,
-  owner_id: 'alice.testnet',
+  owner_id: 'alice.near',
   pool_id: POOL_ID,
   point: 288000,
-  sell_token: 'wrap.testnet',
-  buy_token: 'usdc.fakes.testnet',
+  sell_token: 'wrap.near',
+  buy_token: '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
   created_at: '1700000000000000000',
   original_deposit_amount: '1000',
   swap_earn_amount: '0',

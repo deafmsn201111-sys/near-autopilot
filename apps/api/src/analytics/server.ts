@@ -175,7 +175,7 @@ export function buildAnalyticsServer(
     const snapshot = await deps.store.latestSnapshot();
     if (!snapshot) return { snapshot: null, assets: [] };
     const obs = await deps.store.pricesForSnapshot(snapshot.id);
-    const curated = MAINNET_ASSETS.map((a) => a.testnetToken);
+    const curated = MAINNET_ASSETS.map((a) => a.token);
     const assets = [...new Set(obs.map((o) => o.asset))]
       .sort(
         (a, b) => Number(!curated.includes(a)) - Number(!curated.includes(b)) || a.localeCompare(b),
@@ -192,7 +192,7 @@ export function buildAnalyticsServer(
         const b = llama?.status === 'valid' && llama.priceUsd ? parseDecimal(llama.priceUsd) : null;
         const divergence =
           a && b && a.mantissa > 0n && b.mantissa > 0n ? Number(deviationBps(a, b)) : null;
-        const ref = MAINNET_ASSETS.find((x) => x.testnetToken === asset);
+        const ref = MAINNET_ASSETS.find((x) => x.token === asset);
         // Every source of this asset (Pyth, DefiLlama and the NEAR exchanges), one row each. The status is judged on the
         // USD-quoted valid ones: a USDT quote (Binance) is shown as quoted, converted only inside the price service.
         const sources = [...new Set(rows.map((r) => r.source))].sort().map((src) => pick(src));

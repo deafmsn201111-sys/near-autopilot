@@ -63,11 +63,7 @@ async function main(): Promise<void> {
   // engine and executor (dry-run) as the cycles. Only in simulation; the other portfolio is wired on first use.
   const services = new Map<string, Promise<UserRequestService>>();
   const asset = (token: string): 'near' | 'usdt' | null =>
-    token === 'wrap.near' || token === 'wrap.testnet'
-      ? 'near'
-      : token === 'usdt.tether-token.near' || token === 'usdt.fakes.testnet'
-        ? 'usdt'
-        : null;
+    token === 'wrap.near' ? 'near' : token === 'usdt.tether-token.near' ? 'usdt' : null;
   const serviceOf = (w: typeof wired, portfolio: DemoPortfolioId) =>
     new UserRequestService({
       portfolio,
@@ -212,11 +208,9 @@ async function main(): Promise<void> {
     dataSource: env.DATA_SOURCE,
     engine: env.AUTOPILOT_ENGINE,
     marketData:
-      env.MARKET_DATA === 'mainnet-reference'
-        ? 'MAINNET MARKET DATA → TESTNET EXECUTION'
-        : env.MARKET_DATA === 'mainnet-live'
-          ? 'MAINNET READ-ONLY DATA → SIMULATED PORTFOLIO (NO EXECUTION)'
-          : 'none',
+      env.MARKET_DATA === 'mainnet-live'
+        ? 'MAINNET READ-ONLY DATA → SIMULATED PORTFOLIO (NO EXECUTION)'
+        : 'none',
     mainnetReadRpc: env.MAINNET_READ_RPC_URL ? 'set' : 'not set',
     pythKey: env.PYTH_API_KEY ? 'set' : 'not set',
     yieldData: env.YIELD_DATA,

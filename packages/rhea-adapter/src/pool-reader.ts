@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 /**
  * Read-only views of the Rhea v1 (ref-exchange) contract used for LP data. Field names were checked against
- * ref-finance-101.testnet (v1.9.19) on 2026-11-04: `get_pool` -> PoolInfo, `get_pool_volumes` -> SwapVolume[]
+ * ref-exchange v1.9.19 on 2026-11-04: `get_pool` -> PoolInfo, `get_pool_volumes` -> SwapVolume[]
  * (cumulative since the pool was created), `metadata` -> ContractMetadata (`admin_fee_bps`).
  */
 const poolInfoSchema = z

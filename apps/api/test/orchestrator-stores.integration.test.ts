@@ -25,7 +25,7 @@ import { makeWorld, NOW } from '../../../packages/orchestrator/test/support/worl
  * executed one.
  */
 const adminUrl = process.env['DATABASE_TEST_URL'];
-const CHAIN = 'simulation:testnet';
+const CHAIN = 'simulation:mainnet';
 const watch = { collateralNear: 100, debtUsdt: 230 }; // HF in the watch band: the guardian proposes a repay
 
 describe.skipIf(!adminUrl)('durable orchestrator state (PostgreSQL)', () => {
@@ -48,8 +48,7 @@ describe.skipIf(!adminUrl)('durable orchestrator state (PostgreSQL)', () => {
   });
 
   let n = 0;
-  const newScope = () =>
-    `test:testnet:alice.testnet:s${(n += 1)}-${randomBytes(3).toString('hex')}`;
+  const newScope = () => `test:mainnet:alice.near:s${(n += 1)}-${randomBytes(3).toString('hex')}`;
   /** One orchestrator "process" on `scope`. */
   const processOn = (scope: string, opts: Parameters<typeof makeWorld>[0] = {}) =>
     makeWorld({

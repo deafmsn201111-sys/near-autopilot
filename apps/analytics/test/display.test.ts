@@ -52,7 +52,6 @@ describe('token labels (symbols are untrusted)', () => {
 
   it('links to the token on NearBlocks', () => {
     expect(nearblocks('wrap.near')).toBe('https://nearblocks.io/token/wrap.near');
-    expect(nearblocks('wrap.testnet')).toBe('https://testnet.nearblocks.io/token/wrap.testnet');
   });
 });
 

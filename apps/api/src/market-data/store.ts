@@ -29,12 +29,12 @@ export class DrizzleMarketPriceStore implements MarketReportSink {
     const sources = report.sources.map((s) => ({ ...s }));
     await this.db.insert(marketPrices).values(
       report.assets.map((a) => ({
-        id: `${report.id}:${a.testnetToken}`,
+        id: `${report.id}:${a.token}`,
         reportId: report.id,
         fetchedAt: report.fetchedAt,
         marketNetwork: report.marketNetwork,
         executionNetwork: report.executionNetwork,
-        testnetToken: a.testnetToken,
+        token: a.token,
         referenceSymbol: a.referenceSymbol,
         mainnetContract: a.mainnetContract,
         status: a.status,

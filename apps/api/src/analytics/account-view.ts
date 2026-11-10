@@ -459,9 +459,8 @@ export function registerAccountView(
     const out = new Map<string, number>();
     for (const [asset, list] of by) {
       const c = consensus(list);
-      if (c.price !== null) out.set(asset === 'wrap.testnet' ? WNEAR : asset, c.price);
+      if (c.price !== null) out.set(asset, c.price);
     }
-    // curated assets are keyed by their testnet id in the observations; map the mainnet ids too
     const summary = (snap.summary ?? {}) as {
       prices?: { token: string; usd: string; quality: string }[];
     };

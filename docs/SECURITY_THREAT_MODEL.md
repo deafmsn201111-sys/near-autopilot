@@ -63,7 +63,7 @@ Core principle: **enforcement is on-chain in the Guard**, not in AI, backend, or
 
 ## 6. Required before any mainnet execution
 
-1. Guard contract implemented, testnet-deployed, adversarially tested (brief §18 scenarios).
+1. Guard contract implemented, adversarially tested in a local sandbox (brief §18 scenarios).
 2. Independent security review (no self-declared audit).
 3. Explicit, revocable user authorization; autonomous off by default.
 4. Rollback/kill plan (Emergency Stop + key revocation) rehearsed.

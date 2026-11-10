@@ -10,17 +10,17 @@ const rawString = z.string().regex(/^\d+$/);
 /**
  * Where a value came from. `chain`: read from the NEAR network named in `network`. `simulation`: a deterministic demo
  * portfolio served by an in-process mock RPC; nothing was read from or sent to any network. Every DTO that shows
- * portfolio or pipeline data carries both, so a consumer can never mistake simulated or testnet data for mainnet.
+ * portfolio or pipeline data carries both, so a consumer can never mistake simulated data for chain data.
  */
 export const dataSourceSchema = z.enum(['chain', 'simulation']);
 export type DataSource = z.infer<typeof dataSourceSchema>;
 const provenance = {
   dataSource: dataSourceSchema,
-  network: z.enum(['mainnet', 'testnet']),
+  network: z.literal('mainnet'),
 };
 export interface Provenance {
   readonly dataSource: DataSource;
-  readonly network: 'mainnet' | 'testnet';
+  readonly network: 'mainnet';
 }
 
 export const holdingDtoSchema = z.object({
@@ -105,8 +105,7 @@ export const policyDtoSchema = z.object({
   engine: z.enum(['legacy', 'orchestrator']),
   /** Demo portfolio id when dataSource is `simulation`, else null. */
   simulationPortfolio: z.string().nullable(),
-  /** `mainnet-reference`: MAINNET market data priced onto TESTNET tokens (labelled reference prices). */
-  marketData: z.enum(['none', 'mainnet-reference', 'mainnet-live']),
+  marketData: z.enum(['none', 'mainnet-live']),
   enabled: z.boolean(),
   executionMode: z.enum(['dry-run', 'live']),
   maxActionUsd: usdString,
@@ -152,7 +151,7 @@ export const marketObservationDtoSchema = z.object({
   reason: z.string().nullable(),
 });
 export const marketAssetDtoSchema = z.object({
-  testnetToken: z.string(),
+  token: z.string(),
   referenceSymbol: z.string(),
   mainnetContract: z.string(),
   status: z.enum(['corroborated', 'single_source', 'price_disputed', 'unpriced']),
@@ -169,12 +168,12 @@ export const marketAssetDtoSchema = z.object({
   observations: z.array(marketObservationDtoSchema),
 });
 export const marketDataDtoSchema = z.object({
-  /** False when this API does not use mainnet reference prices (simulation, or MARKET_DATA=none). */
+  /** False when this API does not use market data (MARKET_DATA=none). */
   enabled: z.boolean(),
   flow: z.string(),
   marketNetwork: z.literal('mainnet'),
   /** `none`: shadow analysis, nothing is executed anywhere. */
-  executionNetwork: z.enum(['mainnet', 'testnet', 'none']),
+  executionNetwork: z.enum(['mainnet', 'none']),
   fetchedAt: z.string().nullable(),
   sources: z.array(
     z.object({
@@ -190,7 +189,7 @@ export type MarketDataDto = z.infer<typeof marketDataDtoSchema>;
 
 export const yieldEstimateDtoSchema = z.object({
   source: z.enum(['burrow', 'rhea_v1', 'rhea_dcl']),
-  network: z.enum(['testnet', 'mainnet']),
+  network: z.literal('mainnet'),
   contract: z.string(),
   methods: z.array(z.string()),
   marketId: z.string(),
@@ -213,10 +212,10 @@ export const yieldEstimateDtoSchema = z.object({
   reasons: z.array(z.object({ code: z.string(), detail: z.string() })),
 });
 export const yieldDataDtoSchema = z.object({
-  /** False unless YIELD_DATA=testnet-onchain. */
+  /** False unless YIELD_DATA=mainnet-onchain. */
   enabled: z.boolean(),
   label: z.string(),
-  network: z.enum(['testnet', 'mainnet']).nullable(),
+  network: z.literal('mainnet').nullable(),
   observedAt: z.string().nullable(),
   blockHeight: z.number().int().nullable(),
   sources: z.array(

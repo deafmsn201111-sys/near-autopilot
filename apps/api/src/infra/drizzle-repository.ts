@@ -74,11 +74,14 @@ export async function appendAuditIn(
 const qualified = (table: Table, column: Column): SQL =>
   sql`${table}.${sql.identifier(column.name)}`;
 
-/** Rows from before migration 0001 have no network; they can only have come from the chain path. */
+/**
+ * Reads are filtered to this deployment's provenance (`ownRows`), and the network is mainnet only. Rows from before
+ * migration 0001 have no network; they can only have come from the chain path.
+ */
 const provenanceOf = (row: {
   dataSource: Provenance['dataSource'];
-  network: Provenance['network'] | null;
-}): Provenance => ({ dataSource: row.dataSource, network: row.network ?? 'mainnet' });
+  network: string | null;
+}): Provenance => ({ dataSource: row.dataSource, network: 'mainnet' });
 
 const toRecord = (row: ProposalRow): ProposalRecord & Provenance => ({
   ...provenanceOf(row),
@@ -199,6 +202,7 @@ export class DrizzleRepository implements AutopilotRepository {
       .limit(options.limit);
     return rows.map((r) => ({
       ...r,
+      ...provenanceOf(r),
       valueUsdMicro: r.valueUsdMicro === null ? null : BigInt(r.valueUsdMicro),
     }));
   }
@@ -239,7 +243,11 @@ export class DrizzleRepository implements AutopilotRepository {
       )
       .orderBy(desc(executionRoutes.createdAt))
       .limit(options.limit);
-    return rows.map((r) => ({ ...r, amountIn: r.amountIn === null ? null : BigInt(r.amountIn) }));
+    return rows.map((r) => ({
+      ...r,
+      ...provenanceOf(r),
+      amountIn: r.amountIn === null ? null : BigInt(r.amountIn),
+    }));
   }
 
   async getExecutionStats(
@@ -313,7 +321,7 @@ export class DrizzleRepository implements AutopilotRepository {
   }
 
   /**
-   * Rows of this deployment's provenance only, so a simulation API and a testnet API sharing one database never show
+   * Rows of this deployment's provenance only, so two APIs with different provenance sharing one database never show
    * each other's data. Rows from before migration 0001 have no network and count as mainnet (see provenanceOf).
    */
   private ownRows(
