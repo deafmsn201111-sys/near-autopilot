@@ -35,6 +35,7 @@ git checkout main && git pull   # back to main
 
 ## When code reaches near-autopilot.tech
 
-Only after a manual deploy by the owner: merge alone changes nothing on the site. Steps: `deploy/public/README.md`,
-section "Update" (build a new bundle from `main`, copy it to the server, carry `.env` and `checkpoints/` over, run
-`./setup.sh`). `[live]` steps are checked after that.
+Only after a deploy: merge alone changes nothing on the site. Deploy with `/deploy` in Claude Code (from the main
+checkout, needs SSH access to the server as host `near-autopilot`). It builds the bundle from `main`, uploads it,
+carries `.env` over, restarts, checks health, rolls back on failure, and then runs the open `[live]` steps. Manual
+steps: `deploy/public/README.md`, section "Update".

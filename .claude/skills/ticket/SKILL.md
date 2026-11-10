@@ -101,9 +101,8 @@ commits, PRs and issue comments in English.
 
 - Comment on the issue: what changed, what was verified, what was not, which skills ran, and the `[live]` /
   `[live, owner]` / `[owner]` steps still open.
-- Merge does not deploy. Deploy is manual and done by the owner (`deploy/public/README.md`, "Update": new bundle,
-  copy `.env` and `checkpoints/` across). If the issue has `[live]` steps, say "needs a deploy", and after the owner
-  deploys run the `[live]` steps and tick them on the issue.
+- Merge does not deploy. If the issue has `[live]` steps, say "needs a deploy: run `/deploy`"; the `deploy` skill
+  runs and ticks the `[live]` steps after deploying.
 - New work found on the way becomes a new issue (template: Goal / Done when / Testing / README / Depends on) in the right
   milestone with labels; never scope creep in this PR.
 - Tell the owner: the PR link, whether a deploy is needed, their remaining `owner` steps, what comes next.
