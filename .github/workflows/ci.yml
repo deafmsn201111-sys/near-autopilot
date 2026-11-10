@@ -84,3 +84,35 @@ jobs:
           push: false
           cache-from: type=gha,scope=dashboard
           cache-to: type=gha,scope=dashboard,mode=max
+
+  notify:
+    # Push to main only: a red main opens (or comments on) one "main is red" issue; the next green main closes it.
+    if: always() && github.event_name == 'push'
+    needs: [verify, db, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FAILED: ${{ contains(needs.*.result, 'failure') }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SHA: ${{ github.sha }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - run: |
+          open=$(gh issue list --label main-red --state open --json number --jq '.[].number')
+          issue=$(echo "$open" | head -n1)
+          if [ "$FAILED" = true ]; then
+            msg="CI failed on \`main\` at $SHA (merged by @$ACTOR): $RUN_URL"
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --body "$msg"
+            else
+              gh label create main-red --color B60205 --description "CI is failing on main" --force
+              gh issue create --title "main is red" --label main-red --assignee "$ACTOR" --body "$msg" ||
+                gh issue create --title "main is red" --label main-red --body "$msg"
+            fi
+          else
+            for n in $open; do gh issue close "$n" --comment "main is green again at $SHA: $RUN_URL"; done
+          fi
