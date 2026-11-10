@@ -95,8 +95,8 @@ describe.skipIf(!adminUrl)('operator controls (PostgreSQL)', () => {
   });
 
   it('read-only on a scope goes through the durable control store; an unknown scope is a 404', async () => {
-    const scope = 'simulation:testnet:demo.testnet:demo-500';
-    await new PgControlStore(handle.db, scope, 'simulation:testnet', clock).load(); // the scope exists
+    const scope = 'simulation:mainnet:demo.near:demo-500';
+    await new PgControlStore(handle.db, scope, 'simulation:mainnet', clock).load(); // the scope exists
     const app = api();
     const engage = await app.inject({
       method: 'POST',
@@ -106,7 +106,7 @@ describe.skipIf(!adminUrl)('operator controls (PostgreSQL)', () => {
     });
     expect(engage.json()).toMatchObject({ scope, mode: 'read_only' });
     expect(
-      (await new PgControlStore(handle.db, scope, 'simulation:testnet', clock).load()).mode,
+      (await new PgControlStore(handle.db, scope, 'simulation:mainnet', clock).load()).mode,
     ).toBe('read_only');
     const back = await app.inject({
       method: 'POST',

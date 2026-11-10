@@ -46,8 +46,8 @@ The code, tests and documentation were written with AI:
 - Claude Code, from 2026-11-04.
 
 The author set the requirements, the safety constraints and the limits, and reviewed the results. Every real
-transaction was the author's decision: each testnet transaction was confirmed by its preview hash, and the Burrow
-registration was sent by the author personally.
+transaction was the author's decision: each was confirmed by its preview hash, and the Burrow registration was sent
+by the author personally.
 
 ## Libraries and services (FAQ Q-005)
 
@@ -67,12 +67,12 @@ Besides these, the workspace declares only type packages (`@types/*`), `globals`
 
 External services:
 
-| Service                                                            | Used for                                                                             |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| NEAR mainnet and testnet RPC (FastNEAR, public near.org, archival) | Chain state. Mainnet: view calls only.                                               |
-| Rhea (Ref v1, DCL) and Burrow contracts                            | Reading pools and markets. Testnet: four transactions, each confirmed by the author. |
-| Pyth, DefiLlama, exchange tickers                                  | Reference prices, cross-checked against each other.                                  |
-| NEAR Intents 1Click API                                            | **Dry quotes only.** `dry: true` is a constant in the client; no swap is executed.   |
+| Service                                                | Used for                                                                           |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| NEAR mainnet RPC (FastNEAR, public near.org, archival) | Chain state, view calls only.                                                      |
+| Rhea (Ref v1, DCL) and Burrow contracts                | Reading pools and markets.                                                         |
+| Pyth, DefiLlama, exchange tickers                      | Reference prices, cross-checked against each other.                                |
+| NEAR Intents 1Click API                                | **Dry quotes only.** `dry: true` is a constant in the client; no swap is executed. |
 
 The data collector makes no LLM API calls.
 
@@ -85,4 +85,3 @@ The data collector makes no LLM API calls.
 | Attacks are stopped                | `pnpm demo:attack`: 8 of 8 stopped, 2 controls allowed, `signed 0, broadcast 0`.                                                            |
 | Audit trail is intact              | `docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify`: hash chains and ed25519 checkpoints `ok` |
 | Thesis is reproducible             | `pnpm thesis:rebuild && git diff --stat`: no changes.                                                                                       |
-| Real testnet transactions          | Removed with the testnet code (mainnet only).                                                                                               |

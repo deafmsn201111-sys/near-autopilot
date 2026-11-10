@@ -96,8 +96,8 @@ export default async function MarketPage() {
           </thead>
           <tbody>
             {market.assets.map((a) => (
-              <tr key={a.testnetToken}>
-                <td>{a.testnetToken}</td>
+              <tr key={a.token}>
+                <td>{a.token}</td>
                 <td>
                   {a.referenceSymbol}
                   <div className="muted small">{a.mainnetContract}</div>
@@ -140,8 +140,8 @@ export default async function MarketPage() {
           <tbody>
             {market.assets.flatMap((a) =>
               a.observations.map((o) => (
-                <tr key={`${a.testnetToken}:${o.source}:${o.assetId}`}>
-                  <td>{a.testnetToken}</td>
+                <tr key={`${a.token}:${o.source}:${o.assetId}`}>
+                  <td>{a.token}</td>
                   <td>
                     {o.source} ({o.network})<div className="muted small">{o.assetId}</div>
                   </td>

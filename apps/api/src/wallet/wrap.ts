@@ -1,7 +1,7 @@
 import type { AccountId, FunctionCallAction } from '@near-autopilot/core';
 
 /**
- * Pure builders for wrapping and unwrapping NEAR on the canonical wrapped-NEAR contract (wrap.near / wrap.testnet).
+ * Pure builders for wrapping and unwrapping NEAR on the canonical wrapped-NEAR contract (wrap.near).
  * Wrapped NEAR is an ordinary NEP-141 token backed 1:1 by native NEAR (spec ft-1.0.0, "Wrapped NEAR fungible
  * token"); `near_deposit` mints wNEAR from the attached NEAR, `near_withdraw { amount }` burns wNEAR back to native
  * NEAR. `near_withdraw` is `#[payable]` and asserts exactly one yoctoNEAR. These never sign and never hold keys.

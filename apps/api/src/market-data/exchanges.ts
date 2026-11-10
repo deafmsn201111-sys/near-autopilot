@@ -150,7 +150,7 @@ export class ExchangeSource implements PriceSource {
         };
       }
       if (obs.status !== 'valid') bad += 1;
-      out.set(a.testnetToken, [...(out.get(a.testnetToken) ?? []), obs]);
+      out.set(a.token, [...(out.get(a.token) ?? []), obs]);
     }
     const health =
       markets.length > 0 && failed === markets.length ? 'unavailable' : bad > 0 ? 'degraded' : 'ok';

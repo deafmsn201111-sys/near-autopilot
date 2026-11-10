@@ -38,7 +38,7 @@ describe('scenario: stale-data protection', () => {
   });
 
   it('a slow read is not future-dated: freshness is judged when the observation completes (regression)', async () => {
-    // The public testnet RPC took ~13 s for a snapshot; judged against the cycle's start time, the snapshot looked
+    // A public RPC took ~13 s for a snapshot; judged against the cycle's start time, the snapshot looked
     // 13 s in the future and every cycle was blocked with FUTURE_TIMESTAMP.
     const w = makeWorld({ lending: watchPosition, snapshotTakesSeconds: 13 });
     const r = await w.orchestrator.runCycle(w.nextKey());

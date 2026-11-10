@@ -9,39 +9,14 @@ import { accountId, type AccountId } from '@near-autopilot/core';
  */
 
 /**
- * Rhea/Ref v2 DCL ("dclv2") contract per deployment.
- *   testnet      ref-sdk  src/constant.ts  getConfig('testnet').REF_DCL_SWAP_CONTRACT_ID
- *                ref-ui   src/services/config.ts  (testnet block) REF_UNI_V3_SWAP_CONTRACT_ID
- *   testnet-dev  ref-sdk  getConfig('dev')   ; ref-ui "pub_testnet/dev" block
- *   mainnet      both repos
- * Existence of code on these accounts is NOT asserted here: use `verifyDeployedAbi` to check.
+ * Rhea/Ref v2 DCL ("dclv2") contract, named in ref-sdk and ref-ui.
+ * Existence of code on the account is NOT asserted here: use `verifyDeployedAbi` to check.
  */
-export type DclDeployment = 'mainnet' | 'testnet' | 'testnet-dev';
+export type DclDeployment = 'mainnet';
 
 export const DCL_CONTRACT_IDS: Readonly<Record<DclDeployment, AccountId>> = {
   mainnet: accountId('dclv2.ref-labs.near'),
-  testnet: accountId('dclv2.ref-dev.testnet'),
-  'testnet-dev': accountId('refv2-dev.ref-dev.testnet'),
 };
-
-/**
- * Every testnet DCL account named anywhere in ref-sdk / ref-ui, in order of how authoritative the reference is.
- * Only the first is used by default; run `verifyDeployedAbi` on each to learn which actually has code.
- */
-export const DCL_TESTNET_CANDIDATES: readonly AccountId[] = [
-  accountId('dclv2.ref-dev.testnet'),
-  accountId('refv2-dev.ref-dev.testnet'),
-  accountId('dcl.ref-dev.testnet'),
-  accountId('mock-dcl.ref-dev.testnet'),
-];
-
-/** Legacy testnet DCL ("dclv1") still referenced by ref-ui for migration reads. Not used by this adapter. */
-export const LEGACY_TESTNET_DCL_V1 = accountId('dclv1.ref-dev.testnet');
-
-/** Testnet pool ref-ui hides (DCL_POOL_BLACK_LIST, src/services/config.ts testnet block). */
-export const TESTNET_POOL_BLACKLIST_IN_REF_UI: readonly string[] = [
-  'usdt.fakes.testnet|wrap.testnet|100',
-];
 
 /** ref-sdk src/dcl-swap/dcl-pool.ts DCL_POOL_FEE_LIST; units are 1/1_000_000 (2000 = 0.2%). */
 export const DCL_FEE_TIERS = [100, 400, 2000, 10000] as const;

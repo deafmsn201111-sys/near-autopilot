@@ -13,10 +13,10 @@ import { toWad } from '../yield/math';
 import { isStrategic, type YieldDataProvider, type YieldReport } from '../yield/model';
 
 function unitPrice(a: AssetPrice, which: 'chosen' | 'crossCheck'): UnitPrice | null {
-  const asset = referenceAssetFor(a.testnetToken);
+  const asset = referenceAssetFor(a.token);
   const price = which === 'chosen' ? a.priceUsd : a.crossCheck?.priceUsd;
   if (!asset || !price || !usable(a)) return null;
-  return toUnitPrice(price, asset.testnetDecimals);
+  return toUnitPrice(price, asset.decimals);
 }
 
 /** Oldest publish time among the prices actually used; the report time if none is used. */
@@ -28,7 +28,7 @@ function pricesAsOf(report: MarketReport, assets: readonly AssetPrice[]): Date {
 }
 
 /**
- * Snapshot prices for TESTNET tokens from MAINNET reference data (testnet profile only, see packages/config). Only
+ * Snapshot prices from MAINNET market data (shadow profile only, see packages/config). Only
  * `corroborated` and `single_source` assets are priced; disputed and unpriced ones are absent, so every caller
  * fails closed exactly as it does for an oracle without a price.
  */
@@ -40,7 +40,7 @@ export class ReferencePriceOracle implements PriceOracle {
     const prices = new Map<TokenId, UnitPrice>();
     const used: AssetPrice[] = [];
     for (const token of tokens) {
-      const a = report.assets.find((x) => x.testnetToken === token);
+      const a = report.assets.find((x) => x.token === token);
       const p = a ? unitPrice(a, 'chosen') : null;
       if (a && p) {
         prices.set(token, p);
@@ -108,7 +108,7 @@ export function yieldContext(
 /**
  * The orchestrator's market context. `referencePrices` are the CROSS-CHECK observations (a lower-priority source), so
  * Market Intelligence compares two sources rather than a price with itself. Yields, when a yield provider is given,
- * are the VALID Burrow supply rates of the allocation tokens (testnet, one pinned block); every other token carries a
+ * are the VALID Burrow supply rates of the allocation tokens (one pinned block); every other token carries a
  * reason. No LP positions are read for the account, so the LP Optimizer has nothing to re-centre.
  */
 export class ReferenceMarketProvider implements MarketProvider {
@@ -126,10 +126,10 @@ export class ReferenceMarketProvider implements MarketProvider {
     const referencePrices = new Map<TokenId, UnitPrice>();
     const volatility24hBps = new Map<TokenId, number>();
     for (const a of used) {
-      const token = accountIdSchema.parse(a.testnetToken);
+      const token = accountIdSchema.parse(a.token);
       const p = unitPrice(a, 'crossCheck');
       if (p) referencePrices.set(token, p);
-      const v = report.range24hBps.get(a.testnetToken);
+      const v = report.range24hBps.get(a.token);
       if (v !== undefined) volatility24hBps.set(token, v);
     }
     const y = yieldReport ? yieldContext(yieldReport, this.yieldTokens) : null;

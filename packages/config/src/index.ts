@@ -66,17 +66,16 @@ const apiEnvRaw = z.object({
   BURROW_CONTRACT_ID: optionalAccountId,
   BURROW_ORACLE_ID: optionalAccountId,
   /**
-   * `none`: prices come from the Burrow oracle of NEAR_NETWORK only.
-   * `mainnet-reference`: MAINNET market data (Pyth, then DefiLlama) priced onto TESTNET tokens as conditional
-   * REFERENCE prices. Testnet + chain + dry-run only: a mainnet price never confirms a testnet token's value.
+   * `none`: prices come from the Burrow oracle only.
+   * `mainnet-live`: Pyth, DefiLlama and exchange prices for the simulated shadow analysis (simulation + dry-run).
    */
-  MARKET_DATA: z.enum(['none', 'mainnet-reference', 'mainnet-live']).default('none'),
+  MARKET_DATA: z.enum(['none', 'mainnet-live']).default('none'),
   /**
    * `none`: no yield data (the Capital Allocator reports missing yields).
-   * `testnet-onchain`: Burrow rates, Rhea v1 pool fees and Rhea DCL pool state read from TESTNET contracts (read-only
-   * views at one pinned block). Testnet + chain + dry-run + mainnet-reference prices only.
+   * `mainnet-onchain`: Burrow rates, Rhea v1 pool fees and Rhea DCL pool state read from mainnet contracts (read-only
+   * views at one pinned block). Requires MARKET_DATA=mainnet-live.
    */
-  YIELD_DATA: z.enum(['none', 'testnet-onchain', 'mainnet-onchain']).default('none'),
+  YIELD_DATA: z.enum(['none', 'mainnet-onchain']).default('none'),
   /**
    * Read-only MAINNET RPC for the shadow analysis (MARKET_DATA=mainnet-live, YIELD_DATA=mainnet-onchain): view calls
    * only; the API checks at start-up that it serves mainnet. Never used to sign or broadcast; no signer exists.
@@ -121,7 +120,7 @@ export interface ApiEnv {
   readonly API_PORT: number;
   readonly API_TOKEN: string;
   readonly DATABASE_URL: string;
-  readonly NEAR_NETWORK: 'mainnet' | 'testnet';
+  readonly NEAR_NETWORK: 'mainnet';
   readonly NEAR_RPC_URL: string;
   readonly NEAR_RPC_API_KEY: string | undefined;
   readonly AUTOPILOT_ACCOUNT_ID: AccountId;
@@ -134,8 +133,8 @@ export interface ApiEnv {
   readonly RHEA_CONTRACT_ID: AccountId;
   readonly BURROW_CONTRACT_ID: AccountId;
   readonly BURROW_ORACLE_ID: AccountId;
-  readonly MARKET_DATA: 'none' | 'mainnet-reference' | 'mainnet-live';
-  readonly YIELD_DATA: 'none' | 'testnet-onchain' | 'mainnet-onchain';
+  readonly MARKET_DATA: 'none' | 'mainnet-live';
+  readonly YIELD_DATA: 'none' | 'mainnet-onchain';
   readonly MAINNET_READ_RPC_URL: string | undefined;
   readonly MAINNET_READ_RPC_API_KEY: string | undefined;
   readonly RHEA_DCL_CONTRACT_ID: AccountId | undefined;
@@ -152,13 +151,12 @@ export interface ApiEnv {
 }
 
 export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
-  // Hard rule: this system never signs on mainnet. There is no override. Live signing is testnet-only.
-  if (env.EXECUTION_MODE === 'live' && env.NEAR_NETWORK === 'mainnet') {
+  // Hard rule: the server never signs. There is no override.
+  if (env.EXECUTION_MODE === 'live') {
     ctx.addIssue({
       code: 'custom',
       path: ['EXECUTION_MODE'],
-      message:
-        'live execution is refused on mainnet (no mainnet signing keys, ever); use dry-run, or NEAR_NETWORK=testnet',
+      message: 'live execution is refused on mainnet (no server signing keys, ever); use dry-run',
     });
   }
   if (env.EXECUTION_MODE === 'live' && env.AUTOPILOT_ENGINE === 'orchestrator') {
@@ -176,32 +174,14 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
       message: 'simulation never executes: use EXECUTION_MODE=dry-run',
     });
   }
-  if (env.MARKET_DATA === 'mainnet-reference') {
-    const why =
-      env.NEAR_NETWORK !== 'testnet'
-        ? 'NEAR_NETWORK=testnet'
-        : env.DATA_SOURCE !== 'chain'
-          ? 'DATA_SOURCE=chain'
-          : env.EXECUTION_MODE !== 'dry-run'
-            ? 'EXECUTION_MODE=dry-run'
-            : null;
-    if (why)
-      ctx.addIssue({
-        code: 'custom',
-        path: ['MARKET_DATA'],
-        message: `mainnet reference prices are for testnet analysis only: requires ${why}`,
-      });
-  }
   if (env.MARKET_DATA === 'mainnet-live') {
     // Shadow analysis: real mainnet prices for a SIMULATED portfolio. Nothing is ever executed.
     const why =
       env.DATA_SOURCE !== 'simulation'
         ? 'DATA_SOURCE=simulation'
-        : env.NEAR_NETWORK !== 'mainnet'
-          ? 'NEAR_NETWORK=mainnet'
-          : env.EXECUTION_MODE !== 'dry-run'
-            ? 'EXECUTION_MODE=dry-run'
-            : null;
+        : env.EXECUTION_MODE !== 'dry-run'
+          ? 'EXECUTION_MODE=dry-run'
+          : null;
     if (why)
       ctx.addIssue({
         code: 'custom',
@@ -214,8 +194,7 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
       ctx.addIssue({
         code: 'custom',
         path: ['YIELD_DATA'],
-        message:
-          'mainnet yield data requires MARKET_DATA=mainnet-live (simulation, mainnet, dry-run)',
+        message: 'mainnet yield data requires MARKET_DATA=mainnet-live (simulation, dry-run)',
       });
     if (!env.MAINNET_READ_RPC_URL)
       ctx.addIssue({
@@ -231,35 +210,12 @@ export const apiEnvSchema = apiEnvRaw.superRefine((env, ctx) => {
       message:
         'required when MARKET_DATA=mainnet-live (mainnet token decimals are verified on-chain)',
     });
-  if (env.YIELD_DATA === 'testnet-onchain' && env.MARKET_DATA !== 'mainnet-reference')
-    // Implies testnet + chain + dry-run through the rule above; liquidity and pool checks need those prices.
-    ctx.addIssue({
-      code: 'custom',
-      path: ['YIELD_DATA'],
-      message:
-        'testnet yield data requires MARKET_DATA=mainnet-reference (testnet, chain, dry-run)',
-    });
-  // Protocol contract ids differ per network; only mainnet has safe built-in defaults.
-  if (env.NEAR_NETWORK === 'testnet') {
-    for (const key of Object.keys(MAINNET_DEFAULTS) as Array<keyof typeof MAINNET_DEFAULTS>) {
-      if (!env[key])
-        ctx.addIssue({
-          code: 'custom',
-          path: [key],
-          message: 'required when NEAR_NETWORK=testnet',
-        });
-    }
-  }
 });
 
 export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
   const env = parseEnv(apiEnvSchema, source);
-  const mainnet = env.NEAR_NETWORK === 'mainnet';
-  const pick = (key: keyof typeof MAINNET_DEFAULTS): AccountId => {
-    const value = env[key] ?? (mainnet ? (MAINNET_DEFAULTS[key] as AccountId) : undefined);
-    if (!value) throw new EnvValidationError([`${key}: required`]);
-    return value;
-  };
+  const pick = (key: keyof typeof MAINNET_DEFAULTS): AccountId =>
+    env[key] ?? (MAINNET_DEFAULTS[key] as AccountId);
   return {
     NODE_ENV: env.NODE_ENV,
     LOG_LEVEL: env.LOG_LEVEL,

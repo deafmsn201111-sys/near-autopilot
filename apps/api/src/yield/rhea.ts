@@ -226,7 +226,7 @@ export function rheaV1Estimate(input: RheaV1Input): YieldEstimate {
 
   return {
     source: 'rhea_v1',
-    network: input.network ?? 'testnet',
+    network: input.network ?? 'mainnet',
     contract: input.contract,
     methods: ['get_pool', 'get_pool_volumes', 'metadata'],
     marketId: `pool:${pool.poolId}`,
@@ -296,7 +296,7 @@ export function dclEstimate(input: PoolContext & { readonly pool: DclPool }): Yi
     typeof extra[k] === 'string' || typeof extra[k] === 'bigint' ? String(extra[k]) : null;
   return {
     source: 'rhea_dcl',
-    network: input.network ?? 'testnet',
+    network: input.network ?? 'mainnet',
     contract: input.contract,
     methods: ['get_pool'],
     marketId: pool.pool_id,

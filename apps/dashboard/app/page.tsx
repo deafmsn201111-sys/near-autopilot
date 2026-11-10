@@ -25,8 +25,8 @@ export default async function PositionPage() {
       {portfolio.pricing.unpriced.length > 0 && (
         <p className="provenance provenance-unknown" role="status">
           {portfolio.pricing.priced.length === 0
-            ? policy.marketData === 'mainnet-reference'
-              ? 'No usable reference price for any tracked token (see Market data). '
+            ? policy.marketData === 'mainnet-live'
+              ? 'No usable market price for any tracked token (see Market data). '
               : 'No usable price: the oracle returned none for any tracked token. '
             : 'Some tokens have no usable price. '}
           Unpriced: {portfolio.pricing.unpriced.join(', ')}. They are excluded from the totals
@@ -73,8 +73,8 @@ export default async function PositionPage() {
         Read at {formatTimestamp(portfolio.asOf)}.{' '}
         {portfolio.dataSource === 'simulation'
           ? `Fixed demo prices (${portfolio.pricing.priced.length} tokens).`
-          : policy.marketData === 'mainnet-reference'
-            ? `MAINNET reference prices as of ${formatTimestamp(portfolio.pricesAsOf)} (${portfolio.pricing.priced.length} tokens): REFERENCE_PRICE — NOT A REAL TESTNET TOKEN PRICE. Sources and validity on the Market data page.`
+          : policy.marketData === 'mainnet-live'
+            ? `MAINNET prices as of ${formatTimestamp(portfolio.pricesAsOf)} (${portfolio.pricing.priced.length} tokens). Sources and validity on the Market data page.`
             : portfolio.pricing.priced.length === 0
               ? `The Burrow oracle (answered at ${formatTimestamp(portfolio.pricesAsOf)}) priced no tracked token.`
               : `Prices from the Burrow oracle as of ${formatTimestamp(portfolio.pricesAsOf)} (${portfolio.pricing.priced.length} tokens).`}{' '}

@@ -99,7 +99,7 @@ export class RheaDclClient {
    * a silently truncated list.
    */
   /**
-   * `list_pools { from_index?, limit? }`. Pass a page on large deployments: unpaged, testnet (11k+ pools, checked
+   * `list_pools { from_index?, limit? }`. Pass a page on large deployments: unpaged, an 11k+ pool deployment (checked
    * 2026-11-04) exceeds the view-call gas limit (`GasLimitExceeded`).
    */
   async listPools(page?: {

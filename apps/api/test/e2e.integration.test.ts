@@ -24,13 +24,10 @@ import { wire } from '../src/wiring';
  */
 const adminUrl = process.env['DATABASE_TEST_URL'];
 const TOKEN = 'e2e-token-e2e-token-e2e-token-e2e-token';
-const ACCOUNT = 'your-account.testnet';
+const ACCOUNT = 'your-account.near';
 const config = parseAutopilotConfig(
   JSON.parse(
-    readFileSync(
-      new URL('../../../config/autopilot.testnet.example.json', import.meta.url),
-      'utf8',
-    ),
+    readFileSync(new URL('../../../config/autopilot.example.json', import.meta.url), 'utf8'),
   ) as unknown,
   accountId(ACCOUNT),
 );
@@ -65,11 +62,11 @@ describe.skipIf(!adminUrl)(
         API_TOKEN: TOKEN,
         DATABASE_URL: 'postgres://unused:unused@localhost:5432/unused',
         AUTOPILOT_ACCOUNT_ID: ACCOUNT,
-        NEAR_NETWORK: 'testnet',
+        NEAR_NETWORK: 'mainnet',
         NEAR_RPC_URL: 'https://rpc.must-not-be-contacted.invalid',
-        RHEA_CONTRACT_ID: 'ref-finance-101.testnet',
-        BURROW_CONTRACT_ID: 'contract.1638481328.burrow.testnet',
-        BURROW_ORACLE_ID: 'priceoracle.testnet',
+        RHEA_CONTRACT_ID: 'v2.ref-finance.near',
+        BURROW_CONTRACT_ID: 'contract.main.burrow.near',
+        BURROW_ORACLE_ID: 'priceoracle.near',
         DATA_SOURCE: 'simulation',
         SIMULATION_PORTFOLIO: 'demo-500',
         AUTOPILOT_ENGINE: engine,
@@ -120,7 +117,7 @@ describe.skipIf(!adminUrl)(
         expect(stored).toMatchObject({
           verdict: 'ALLOW',
           dataSource: 'simulation',
-          network: 'testnet',
+          network: 'mainnet',
         });
         if (!stored) throw new Error('no verdict');
         expect(replayVerdict({ ...stored })).toMatchObject({
@@ -138,7 +135,7 @@ describe.skipIf(!adminUrl)(
         });
 
         // 3. The audit chain holds the cycle and verifies from seq 1.
-        const chain = await evidence.verify('simulation:testnet');
+        const chain = await evidence.verify('simulation:mainnet');
         expect(chain.ok).toBe(true);
         expect(chain.entries).toBeGreaterThan(0);
 
@@ -170,14 +167,14 @@ describe.skipIf(!adminUrl)(
         }>();
         expect(page.verdicts[0]).toMatchObject({
           id: stored.id,
-          environment: 'simulation:testnet',
+          environment: 'simulation:mainnet',
           fixture: false,
         });
         expect(page.verdicts[0]?.checks).toHaveLength(12);
         const audit = (await analytics.inject({ url: '/v1/analytics/audit', headers: auth })).json<{
           chains: Array<{ chain: string; verification: { ok: boolean } }>;
         }>();
-        expect(audit.chains.find((c) => c.chain === 'simulation:testnet')?.verification.ok).toBe(
+        expect(audit.chains.find((c) => c.chain === 'simulation:mainnet')?.verification.ok).toBe(
           true,
         );
         await api.close();
@@ -186,10 +183,10 @@ describe.skipIf(!adminUrl)(
 
     it('a restarted API process continues the same chain; tampering with a stored entry is detected', async () => {
       const evidence = new EvidenceStore(handle.db);
-      const before = await evidence.verify('simulation:testnet');
+      const before = await evidence.verify('simulation:mainnet');
       const api = await apiProcess('legacy'); // a new process: new repository, new wiring
       await api.inject({ method: 'POST', url: '/v1/runs', headers: auth });
-      const after = await evidence.verify('simulation:testnet');
+      const after = await evidence.verify('simulation:mainnet');
       expect(after).toMatchObject({ ok: true });
       expect(after.entries).toBeGreaterThan(before.entries);
       await api.close();
@@ -199,9 +196,9 @@ describe.skipIf(!adminUrl)(
       );
       try {
         await handle.db.execute(
-          sql`update audit_events set type = 'forged' where chain = 'simulation:testnet' and seq = 2`,
+          sql`update audit_events set type = 'forged' where chain = 'simulation:mainnet' and seq = 2`,
         );
-        expect(await evidence.verify('simulation:testnet')).toMatchObject({
+        expect(await evidence.verify('simulation:mainnet')).toMatchObject({
           ok: false,
           brokenAt: { seq: 2, kind: 'hash' },
         });

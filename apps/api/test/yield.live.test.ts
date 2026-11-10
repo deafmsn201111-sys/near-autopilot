@@ -4,33 +4,38 @@ import { describe, expect, it } from 'vitest';
 import { YieldService } from '../src/yield/service';
 
 /**
- * READ-ONLY live check against NEAR TESTNET (view calls only; nothing is signed or sent). Skipped unless YIELD_LIVE=1:
+ * READ-ONLY live check against NEAR MAINNET (view calls only; nothing is signed or sent). Skipped unless YIELD_LIVE=1:
  *   YIELD_LIVE=1 pnpm --filter @near-autopilot/api test:live:yield
- * Uses TESTNET_RPC_URL (+ TESTNET_RPC_API_KEY as a Bearer header) from the local .env, else the public endpoint.
+ * Uses MAINNET_READ_RPC_URL (+ MAINNET_READ_RPC_API_KEY as a Bearer header) from the local .env, else the public
+ * endpoint.
  * No prices are supplied on purpose: every estimate must then be rejected with MISSING_PRICE, never valued.
  */
 const live = process.env.YIELD_LIVE === '1';
-const url = process.env.TESTNET_RPC_URL || 'https://rpc.testnet.near.org';
-const key = process.env.TESTNET_RPC_API_KEY;
+const url = process.env.MAINNET_READ_RPC_URL || 'https://rpc.mainnet.near.org';
+const key = process.env.MAINNET_READ_RPC_API_KEY;
 
-describe.skipIf(!live)('testnet yield sources (live, read-only)', () => {
-  it('reads Burrow, Rhea v1 and Rhea DCL at one final testnet block', async () => {
+describe.skipIf(!live)('mainnet yield sources (live, read-only)', () => {
+  it('reads Burrow, Rhea v1 and Rhea DCL at one final block', async () => {
     const rpc = new NearRpcClient({
       url,
       ...(key ? { headers: { authorization: `Bearer ${key}` } } : {}),
       maxConcurrent: 2,
     });
     const status = (await rpc.call('status', [])) as { chain_id: string };
-    expect(status.chain_id).toBe('testnet');
+    expect(status.chain_id).toBe('mainnet');
     const r = await new YieldService({
       rpc,
-      burrowContract: accountId('contract.1638481328.burrow.testnet'),
-      rheaContract: accountId('ref-finance-101.testnet'),
-      dclContract: accountId('dclv2.ref-dev.testnet'),
-      rheaV1Pools: [34, 54],
-      dclPools: ['usdt.fakes.testnet|wrap.testnet|2000'],
+      burrowContract: accountId('contract.main.burrow.near'),
+      rheaContract: accountId('v2.ref-finance.near'),
+      dclContract: accountId('dclv2.ref-labs.near'),
+      rheaV1Pools: [4512, 3879],
+      dclPools: ['17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1|wrap.near|2000'],
       allowlist: new Set(),
-      allowedTokens: new Set(['wrap.testnet', 'usdt.fakes.testnet', 'usdc.fakes.testnet']),
+      allowedTokens: new Set([
+        'wrap.near',
+        'usdt.tether-token.near',
+        '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+      ]),
       prices: async () => () => null,
       history: null,
       limits: {
@@ -76,8 +81,8 @@ describe.skipIf(!live)('testnet yield sources (live, read-only)', () => {
     expect(r.estimates.some((e) => e.validationStatus === 'valid')).toBe(false);
     for (const e of supply) expect(e.reasons.map((x) => x.code)).toContain('MISSING_PRICE');
     expect(r.estimates.filter((e) => e.source === 'rhea_v1').map((e) => e.marketId)).toEqual([
-      'pool:34',
-      'pool:54',
+      'pool:4512',
+      'pool:3879',
     ]);
     for (const e of r.estimates.filter((x) => x.source !== 'burrow'))
       expect(e.reasons.map((x) => x.code)).toContain('UNVERIFIED_POOL');

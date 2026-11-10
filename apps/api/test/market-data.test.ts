@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TokenId } from '@near-autopilot/core';
 import { ReferenceMarketProvider, ReferencePriceOracle } from '../src/market-data/adapters';
-import { REFERENCE_ASSETS, type ReferenceAsset } from '../src/market-data/assets';
+import { MAINNET_ASSETS, type ReferenceAsset } from '../src/market-data/assets';
 import {
   decimalFromJsonNumber,
   deviationBps,
@@ -12,7 +12,7 @@ import {
 import { HttpJsonClient, MarketHttpError } from '../src/market-data/http';
 import { ExchangeSource, fetchLastTrade } from '../src/market-data/exchanges';
 import {
-  REFERENCE_LABEL,
+  MAINNET_PRICE_LABEL,
   type MarketReport,
   type PriceObservation,
   type SourceName,
@@ -23,12 +23,12 @@ import { DefiLlamaSource, PythSource } from '../src/market-data/sources';
 const NOW = new Date('2026-11-04T12:00:00Z');
 const nowS = NOW.getTime() / 1000;
 const asset = (token: string): ReferenceAsset => {
-  const a = REFERENCE_ASSETS.find((x) => x.testnetToken === token);
+  const a = MAINNET_ASSETS.find((x) => x.token === token);
   if (!a) throw new Error(token);
   return a;
 };
-const NEAR = asset('wrap.testnet');
-const USDT = asset('usdt.fakes.testnet');
+const NEAR = asset('wrap.near');
+const USDT = asset('usdt.tether-token.near');
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
@@ -54,7 +54,7 @@ const noSleep = { sleep: async () => {}, random: () => 0.5 };
 
 const pythFeeds = () =>
   json(
-    REFERENCE_ASSETS.flatMap((a) =>
+    MAINNET_ASSETS.flatMap((a) =>
       a.pyth
         ? [{ id: a.pyth.feedId, attributes: { symbol: a.pyth.symbol, quote_currency: 'USD' } }]
         : [],
@@ -64,9 +64,9 @@ const pythLatest = (
   over: Partial<Record<string, { price: string; conf?: string; t?: number }>> = {},
 ) =>
   json({
-    parsed: REFERENCE_ASSETS.flatMap((a) => {
+    parsed: MAINNET_ASSETS.flatMap((a) => {
       if (!a.pyth) return [];
-      const o = over[a.testnetToken] ?? { price: a === NEAR ? '398000000' : '99990000' };
+      const o = over[a.token] ?? { price: a === NEAR ? '398000000' : '99990000' };
       return [
         {
           id: a.pyth.feedId,
@@ -105,17 +105,17 @@ const llamaCoins = (
       decimals: 24,
     },
     'coingecko:tether': { price: 0.99876, symbol: 'USDT', timestamp: nowS - 10, confidence: 0.99 },
-    'near:dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near': {
+    'near:usdt.tether-token.near': {
       price: 0.999,
-      symbol: 'USDT.e',
+      symbol: 'USDt',
       timestamp: nowS - 10,
       confidence: 0.7,
       decimals: 6,
     },
     'coingecko:usd-coin': { price: 0.9998, symbol: 'USDC', timestamp: nowS - 10, confidence: 0.99 },
-    'near:a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near': {
+    'near:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1': {
       price: 0.9994,
-      symbol: 'USDC.e',
+      symbol: 'USDC',
       timestamp: nowS - 10,
       confidence: 0.7,
       decimals: 6,
@@ -172,7 +172,7 @@ describe('resolveAsset (consensus)', () => {
     expect(r.status).toBe('corroborated');
     expect(r.chosen?.source).toBe('pyth');
     expect(r.crossCheck?.source).toBe('defillama');
-    expect(r.label).toBe(REFERENCE_LABEL);
+    expect(r.label).toBe(MAINNET_PRICE_LABEL);
   });
   it('fallback (no quorum, stablecoins): Pyth unavailable -> DefiLlama alone, flagged single_source', () => {
     const r = resolveAsset(USDT, [obs('pyth', '0', 'unavailable'), obs('defillama', '0.999')], 6);
@@ -196,7 +196,7 @@ describe('resolveAsset (consensus)', () => {
     expect(r.reason).toContain('stale');
     expect(r.reason).toContain('low_confidence');
   });
-  it('testnet decimals differing from the mapping: unpriced even with valid prices', () => {
+  it('token decimals differing from the mapping: unpriced even with valid prices', () => {
     const r = resolveAsset(USDT, [obs('pyth', '1'), obs('defillama', '1')], 18);
     expect(r.status).toBe('unpriced');
     expect(r.reason).toContain('decimals 18');
@@ -212,10 +212,10 @@ describe('PythSource', () => {
       apiKey: undefined,
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
-    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
+    const r = await pyth.observe(MAINNET_ASSETS, NOW);
     expect(r.status.health).toBe('unavailable');
     expect(f.calls).toHaveLength(0);
-    expect(r.observations.get('wrap.testnet')?.[0]?.status).toBe('unavailable');
+    expect(r.observations.get('wrap.near')?.[0]?.status).toBe('unavailable');
   });
   it('HTTP 403 (a plan without this feed) is NOT_ENTITLED, not an outage, and is not retried', async () => {
     const f = fakeFetch([['/v2/price_feeds', () => new Response('forbidden', { status: 403 })]]);
@@ -224,8 +224,8 @@ describe('PythSource', () => {
       apiKey: 'k-12345678',
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
-    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
-    expect(r.observations.get('wrap.testnet')?.[0]).toMatchObject({ status: 'not_entitled' });
+    const r = await pyth.observe(MAINNET_ASSETS, NOW);
+    expect(r.observations.get('wrap.near')?.[0]).toMatchObject({ status: 'not_entitled' });
     expect(f.calls).toHaveLength(1);
   });
   it('verifies feed ids, sends the key as a bearer header, and parses exact integer prices', async () => {
@@ -238,8 +238,8 @@ describe('PythSource', () => {
       apiKey: 'test-key-123',
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
-    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
-    const near = r.observations.get('wrap.testnet')?.[0];
+    const r = await pyth.observe(MAINNET_ASSETS, NOW);
+    const near = r.observations.get('wrap.near')?.[0];
     expect(near?.status).toBe('valid');
     expect(formatDecimal(near!.priceUsd!)).toBe('3.98');
     expect(near?.network).toBe('mainnet');
@@ -257,7 +257,8 @@ describe('PythSource', () => {
             { id: NEAR.pyth!.feedId, attributes: { symbol: 'Crypto.OTHER/USD' } },
             { id: USDT.pyth!.feedId, attributes: { symbol: USDT.pyth!.symbol } },
             {
-              id: asset('usdc.fakes.testnet').pyth!.feedId,
+              id: asset('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1').pyth!
+                .feedId,
               attributes: { symbol: 'Crypto.USDC/USD' },
             },
           ]),
@@ -266,8 +267,11 @@ describe('PythSource', () => {
         '/v2/updates/price/latest',
         () =>
           pythLatest({
-            'usdt.fakes.testnet': { price: '99990000', t: nowS - 600 },
-            'usdc.fakes.testnet': { price: '100000000', conf: '50000000' },
+            'usdt.tether-token.near': { price: '99990000', t: nowS - 600 },
+            '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1': {
+              price: '100000000',
+              conf: '50000000',
+            },
           }),
       ],
     ]);
@@ -276,10 +280,13 @@ describe('PythSource', () => {
       apiKey: 'k-12345678',
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
-    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
-    expect(r.observations.get('wrap.testnet')?.[0]?.status).toBe('mapping_mismatch');
-    expect(r.observations.get('usdt.fakes.testnet')?.[0]?.status).toBe('stale');
-    expect(r.observations.get('usdc.fakes.testnet')?.[0]?.status).toBe('low_confidence');
+    const r = await pyth.observe(MAINNET_ASSETS, NOW);
+    expect(r.observations.get('wrap.near')?.[0]?.status).toBe('mapping_mismatch');
+    expect(r.observations.get('usdt.tether-token.near')?.[0]?.status).toBe('stale');
+    expect(
+      r.observations.get('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1')?.[0]
+        ?.status,
+    ).toBe('low_confidence');
   });
   it('401 (rejected key) is not retried and never leaks the key', async () => {
     const f = fakeFetch([
@@ -291,9 +298,9 @@ describe('PythSource', () => {
       apiKey: 'secret-key-xyz',
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
-    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
+    const r = await pyth.observe(MAINNET_ASSETS, NOW);
     // One request per feed, none retried.
-    const feeds = REFERENCE_ASSETS.filter((a) => a.pyth).length;
+    const feeds = MAINNET_ASSETS.filter((a) => a.pyth).length;
     expect(f.calls.filter((c) => c.url.includes('/latest'))).toHaveLength(feeds);
     expect(r.status.health).toBe('unavailable');
     expect(r.status.detail).toContain('unauthorized');
@@ -312,12 +319,12 @@ describe('PythSource', () => {
       apiKey: 'secret-key-xyz',
       http: new HttpJsonClient({ fetchImpl: f.impl, ...noSleep }),
     });
-    const r = await pyth.observe(REFERENCE_ASSETS, NOW);
+    const r = await pyth.observe(MAINNET_ASSETS, NOW);
     expect(r.status.health).toBe('degraded');
-    const near = r.observations.get(NEAR.testnetToken)?.[0];
+    const near = r.observations.get(NEAR.token)?.[0];
     expect(near?.status).toBe('not_entitled'); // 403: not on this plan (reported apart from outages)
     expect(near?.reason).toContain('not entitled');
-    expect(r.observations.get(USDT.testnetToken)?.[0]?.status).toBe('valid');
+    expect(r.observations.get(USDT.token)?.[0]?.status).toBe('valid');
     expect(
       JSON.stringify([...r.observations.values()], (_k: string, v: unknown) =>
         typeof v === 'bigint' ? v.toString() : v,
@@ -344,14 +351,17 @@ describe('DefiLlamaSource', () => {
         () => llamaCoins({ 'near:wrap.near': { decimals: 18 }, 'coingecko:usd-coin': null }),
       ],
     ]);
-    const r = await src.observe(REFERENCE_ASSETS, NOW);
-    const near = r.observations.get('wrap.testnet') ?? [];
+    const r = await src.observe(MAINNET_ASSETS, NOW);
+    const near = r.observations.get('wrap.near') ?? [];
     expect(near.map((o) => o.status)).toEqual(['valid', 'mapping_mismatch']);
-    expect(r.observations.get('usdt.fakes.testnet')?.map((o) => o.status)).toEqual([
+    expect(r.observations.get('usdt.tether-token.near')?.map((o) => o.status)).toEqual([
       'valid',
       'low_confidence',
     ]);
-    expect(r.observations.get('usdc.fakes.testnet')?.[0]?.status).toBe('not_found');
+    expect(
+      r.observations.get('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1')?.[0]
+        ?.status,
+    ).toBe('not_found');
     expect(r.status.health).toBe('degraded');
   });
   it('zero, negative and stale prices are refused', async () => {
@@ -366,9 +376,9 @@ describe('DefiLlamaSource', () => {
           }),
       ],
     ]);
-    const r = await src.observe(REFERENCE_ASSETS, NOW);
-    expect(r.observations.get('wrap.testnet')?.map((o) => o.status)).toEqual(['invalid', 'stale']);
-    expect(r.observations.get('usdt.fakes.testnet')?.[0]?.status).toBe('invalid');
+    const r = await src.observe(MAINNET_ASSETS, NOW);
+    expect(r.observations.get('wrap.near')?.map((o) => o.status)).toEqual(['invalid', 'stale']);
+    expect(r.observations.get('usdt.tether-token.near')?.[0]?.status).toBe('invalid');
   });
   it('HTTP 429: bounded retries honouring Retry-After, then unavailable (no endless retry)', async () => {
     const waits: number[] = [];
@@ -387,7 +397,7 @@ describe('DefiLlamaSource', () => {
         random: () => 0,
       }),
     });
-    const r = await src.observe(REFERENCE_ASSETS, NOW);
+    const r = await src.observe(MAINNET_ASSETS, NOW);
     expect(f.calls).toHaveLength(3);
     expect(waits).toEqual([2000, 2000]);
     expect(r.status.health).toBe('unavailable');
@@ -446,16 +456,14 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
     const recorded: MarketReport[] = [];
     let t = NOW.getTime();
     const market = new ReferenceMarketData({
-      assets: REFERENCE_ASSETS,
+      assets: MAINNET_ASSETS,
       sources: [
         new PythSource({ baseUrl: 'https://hermes.test', apiKey: opts.pythKey, http }),
         llama,
       ],
       history: llama,
-      testnetDecimals: async (token) =>
-        opts.decimals?.[token] ??
-        REFERENCE_ASSETS.find((a) => a.testnetToken === token)?.testnetDecimals ??
-        null,
+      tokenDecimals: async (token) =>
+        opts.decimals?.[token] ?? MAINNET_ASSETS.find((a) => a.token === token)?.decimals ?? null,
       sink: { record: async (r) => void recorded.push(r) },
       now: () => new Date(t),
       ids: () => `report-${recorded.length + 1}`,
@@ -475,20 +483,20 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
     );
     const oracle = new ReferencePriceOracle(market);
     const { prices, asOf } = await oracle.getPrices([
-      'wrap.testnet',
-      'usdt.fakes.testnet',
-      'usdc.fakes.testnet',
-      'other.testnet',
+      'wrap.near',
+      'usdt.tether-token.near',
+      '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+      'other.near',
     ] as TokenId[]);
     expect([...prices.keys()].sort()).toEqual([
-      'usdc.fakes.testnet',
-      'usdt.fakes.testnet',
-      'wrap.testnet',
+      '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+      'usdt.tether-token.near',
+      'wrap.near',
     ]);
-    expect(prices.get('wrap.testnet' as TokenId)).toEqual({ multiplier: 398n, decimals: 26 }); // Pyth, priority
+    expect(prices.get('wrap.near' as TokenId)).toEqual({ multiplier: 398n, decimals: 26 }); // Pyth, priority
     expect(asOf.getTime()).toBe(NOW.getTime() - 2000);
     const ctx = await new ReferenceMarketProvider(market).get();
-    expect(ctx?.referencePrices.get('wrap.testnet' as TokenId)).toEqual({
+    expect(ctx?.referencePrices.get('wrap.near' as TokenId)).toEqual({
       multiplier: 399n,
       decimals: 26,
     }); // DefiLlama cross-check
@@ -503,17 +511,17 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
       ['/chart/', () => json({ coins: {} })],
     ]);
     const report = await market.report();
-    const by = (t: string) => report.assets.find((a) => a.testnetToken === t);
+    const by = (t: string) => report.assets.find((a) => a.token === t);
     // NEAR has a quorum: DefiLlama alone (whose two keys even disagree) is one provider, never enough.
-    expect(by('wrap.testnet')?.status).toBe('unpriced');
-    expect(by('usdt.fakes.testnet')?.status).toBe('single_source');
+    expect(by('wrap.near')?.status).toBe('unpriced');
+    expect(by('usdt.tether-token.near')?.status).toBe('single_source');
     expect(report.sources.find((s) => s.source === 'pyth')?.health).toBe('unavailable');
     const { prices } = await new ReferencePriceOracle(market).getPrices([
-      'wrap.testnet',
-      'usdt.fakes.testnet',
+      'wrap.near',
+      'usdt.tether-token.near',
     ] as TokenId[]);
-    expect(prices.has('wrap.testnet' as TokenId)).toBe(false);
-    expect(prices.has('usdt.fakes.testnet' as TokenId)).toBe(true);
+    expect(prices.has('wrap.near' as TokenId)).toBe(false);
+    expect(prices.has('usdt.tether-token.near' as TokenId)).toBe(true);
   });
 
   it('end to end: Pyth for USDT, NEAR from the exchange quorum with Binance converted through USDT/USD', async () => {
@@ -542,7 +550,7 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
       freshness: { maxAgeMs: 180_000, maxFutureSkewMs: 5_000 },
     });
     const market = new ReferenceMarketData({
-      assets: REFERENCE_ASSETS,
+      assets: MAINNET_ASSETS,
       sources: [
         new PythSource({ baseUrl: 'https://hermes.test', apiKey: 'k-12345678', http }),
         llama,
@@ -550,13 +558,12 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
         new ExchangeSource({ name: 'kraken', baseUrl: 'https://kr.test', http }),
         new ExchangeSource({ name: 'binance', baseUrl: 'https://bn.test', http }),
       ],
-      testnetDecimals: async (t) =>
-        REFERENCE_ASSETS.find((a) => a.testnetToken === t)?.testnetDecimals ?? null,
+      tokenDecimals: async (t) => MAINNET_ASSETS.find((a) => a.token === t)?.decimals ?? null,
       now: () => NOW,
       ids: () => 'r1',
     });
     const report = await market.report();
-    const near = report.assets.find((a) => a.testnetToken === 'wrap.testnet');
+    const near = report.assets.find((a) => a.token === 'wrap.near');
     expect(near?.status).toBe('corroborated');
     // coinbase 3.7065, kraken 3.7082, binance 3.711 x 0.9999 (Pyth USDT) = 3.7106289. DefiLlama's coingecko key is
     // stale, so its vote is near:wrap.near (4.00): an outlier, excluded and named.
@@ -578,23 +585,21 @@ describe('ReferenceMarketData -> oracle and orchestrator market context', () => 
     const { market } = build([['/', () => new Response('down', { status: 500 })]], {
       pythKey: 'k-12345678',
     });
-    const { prices } = await new ReferencePriceOracle(market).getPrices([
-      'wrap.testnet',
-    ] as TokenId[]);
+    const { prices } = await new ReferencePriceOracle(market).getPrices(['wrap.near'] as TokenId[]);
     expect(prices.size).toBe(0);
     expect(await new ReferenceMarketProvider(market).get()).toBeNull();
   });
 
-  it('a testnet token whose live decimals differ from the mapping is unpriced', async () => {
+  it('a token whose live decimals differ from the mapping is unpriced', async () => {
     const { market } = build(
       [
         ['/prices/current/', () => llamaCoins()],
         ['/chart/', () => json({ coins: {} })],
       ],
-      { decimals: { 'usdt.fakes.testnet': 18 } },
+      { decimals: { 'usdt.tether-token.near': 18 } },
     );
     const report = await market.report();
-    expect(report.assets.find((a) => a.testnetToken === 'usdt.fakes.testnet')?.status).toBe(
+    expect(report.assets.find((a) => a.token === 'usdt.tether-token.near')?.status).toBe(
       'unpriced',
     );
   });
@@ -753,14 +758,14 @@ describe('exchange sources (last trade, public, no key)', () => {
       baseUrl: 'https://cb.test',
       http: h,
     }).observe([NEAR], NOW);
-    expect(cb.observations.get(NEAR.testnetToken)?.[0]?.status).toBe('stale');
+    expect(cb.observations.get(NEAR.token)?.[0]?.status).toBe('stale');
     expect(cb.status.health).toBe('degraded');
     const kr = await new ExchangeSource({
       name: 'kraken',
       baseUrl: 'https://kr.test',
       http: h,
     }).observe([NEAR], NOW);
-    expect(kr.observations.get(NEAR.testnetToken)?.[0]?.status).toBe('unavailable');
+    expect(kr.observations.get(NEAR.token)?.[0]?.status).toBe('unavailable');
     expect(kr.status.health).toBe('unavailable');
   });
   it('assets without a market on the exchange get no observation and no request', async () => {

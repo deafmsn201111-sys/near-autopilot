@@ -253,7 +253,7 @@ export const marketPrices = pgTable(
     marketNetwork: text('market_network', { enum: ['mainnet'] }).notNull(),
     /** `none`: read-only shadow analysis of a simulated portfolio; nothing executed anywhere. */
     executionNetwork: text('execution_network', { enum: ['testnet', 'none'] }).notNull(),
-    testnetToken: text('testnet_token').notNull(),
+    token: text('testnet_token').notNull(),
     referenceSymbol: text('reference_symbol').notNull(),
     mainnetContract: text('mainnet_contract').notNull(),
     status: text('status', {
@@ -272,7 +272,7 @@ export const marketPrices = pgTable(
   },
   (t) => [
     index('market_prices_fetched_idx').on(t.fetchedAt),
-    index('market_prices_token_idx').on(t.testnetToken, t.fetchedAt),
+    index('market_prices_token_idx').on(t.token, t.fetchedAt),
   ],
 );
 

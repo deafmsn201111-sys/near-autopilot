@@ -1,15 +1,12 @@
 import type { Decimal } from './decimal';
 import type { ReferenceAsset } from './assets';
 
-/** Printed wherever a mainnet price is applied to a testnet token. */
-export const REFERENCE_LABEL = 'REFERENCE_PRICE — NOT A REAL TESTNET TOKEN PRICE';
 /** Shadow analysis: a real mainnet price of the mainnet token itself, applied to a SIMULATED portfolio. */
 export const MAINNET_PRICE_LABEL = 'MAINNET PRICE — SIMULATED PORTFOLIO, NOTHING EXECUTED';
 export const SHADOW_FLOW_LABEL = 'MAINNET READ-ONLY DATA → SIMULATED PORTFOLIO (NO EXECUTION)';
-export type PriceLabel = typeof REFERENCE_LABEL | typeof MAINNET_PRICE_LABEL;
-/** Where the prices are used: testnet execution (dry-run) or nowhere (shadow analysis). */
-export type ExecutionNetwork = 'testnet' | 'none';
-export const DATA_FLOW_LABEL = 'MAINNET MARKET DATA → TESTNET EXECUTION';
+export type PriceLabel = typeof MAINNET_PRICE_LABEL;
+/** Where the prices are used: nowhere, the shadow analysis executes nothing. */
+export type ExecutionNetwork = 'none';
 
 export type ExchangeName = 'coinbase' | 'kraken' | 'binance';
 export type SourceName = 'pyth' | 'defillama' | ExchangeName;
@@ -52,12 +49,12 @@ export interface PriceObservation {
  * - `corroborated`: at least two PROVIDERS returned valid prices within the asset's deviation limit.
  * - `single_source`: exactly one provider is valid (all of its keys agree). Usable, flagged.
  * - `price_disputed`: valid prices disagree beyond the limit. Excluded from every decision until reviewed.
- * - `unpriced`: no valid price, or the testnet<->mainnet mapping failed its checks.
+ * - `unpriced`: no valid price, or the token mapping failed its checks.
  */
 export type AssetPriceStatus = 'corroborated' | 'single_source' | 'price_disputed' | 'unpriced';
 
 export interface AssetPrice {
-  readonly testnetToken: string;
+  readonly token: string;
   readonly referenceSymbol: string;
   readonly mainnetContract: string;
   readonly status: AssetPriceStatus;

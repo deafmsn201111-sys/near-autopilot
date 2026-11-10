@@ -1,14 +1,13 @@
 import type { Decimal } from '../market-data/decimal';
 
 /**
- * TESTNET YIELD DATA. Every estimate is read from a testnet contract at one pinned block, validated, and traceable to
+ * MAINNET YIELD DATA. Every estimate is read from a mainnet contract at one pinned block, validated, and traceable to
  * the contract, method and block it came from. Nothing here is a forecast: lending rates are what the contract reports
  * for its current utilisation; LP fee rates are historical (an observation period is always stated).
  */
-export const YIELD_LABEL = 'TESTNET YIELD — OBSERVED, NOT A FORECAST';
 export const MAINNET_YIELD_LABEL =
   'MAINNET YIELD (READ-ONLY) — OBSERVED, NOT A FORECAST, NOTHING EXECUTED';
-export type YieldNetwork = 'testnet' | 'mainnet';
+export type YieldNetwork = 'mainnet';
 
 export type YieldSourceName = 'burrow' | 'rhea_v1' | 'rhea_dcl';
 

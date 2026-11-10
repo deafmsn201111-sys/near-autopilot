@@ -10,7 +10,7 @@ import { accountId, type AccountId, type Network } from '@near-autopilot/core';
  * re-checks method names against the deployed WASM before any transaction is built.
  */
 
-export type BurrowDeploymentId = 'mainnet' | 'mainnet-beta' | 'testnet';
+export type BurrowDeploymentId = 'mainnet' | 'mainnet-beta';
 
 export interface BurrowDeploymentInfo {
   readonly network: Network;
@@ -20,14 +20,12 @@ export interface BurrowDeploymentInfo {
 /**
  * Burrow contract per deployment.
  *   mainnet / mainnet-beta  A: burrow-cash `store/constants.ts` CONTRACT_MAIN / CONTRACT_BETA
- *   testnet                 A: burrow-cash `README.md` (NEXT_PUBLIC_CONTRACT_NAME)
  * Whether each account currently has code deployed is NOT assumed: verification checks it.
  * The oracle account is deliberately absent: it is read from the contract's own `get_config`.
  */
 export const BURROW_DEPLOYMENTS: Readonly<Record<BurrowDeploymentId, BurrowDeploymentInfo>> = {
   mainnet: { network: 'mainnet', contractId: accountId('contract.main.burrow.near') },
   'mainnet-beta': { network: 'mainnet', contractId: accountId('contract.beta.burrow.near') },
-  testnet: { network: 'testnet', contractId: accountId('contract.1638481328.burrow.testnet') },
 };
 
 /** Burrow view methods this adapter calls (S + A). */

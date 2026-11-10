@@ -17,7 +17,7 @@ describe('PersistentAuditLog', () => {
     const log = new PersistentAuditLog(
       new InMemoryAuditLog(),
       { appendAudit: async (e) => void written.push(e) },
-      { dataSource: 'chain', network: 'testnet' },
+      { dataSource: 'chain', network: 'mainnet' },
     );
     const a = await log.append(entry);
     await log.append({ ...entry, type: 'cycle.completed' });
@@ -31,7 +31,7 @@ describe('PersistentAuditLog', () => {
         agent: 'market-intelligence',
         seq: a.seq,
         hash: a.hash,
-        network: 'testnet',
+        network: 'mainnet',
         dataSource: 'chain',
       },
     });
@@ -47,7 +47,7 @@ describe('PersistentAuditLog', () => {
           throw new Error('db down');
         },
       },
-      { dataSource: 'chain', network: 'testnet' },
+      { dataSource: 'chain', network: 'mainnet' },
     );
     await expect(log.append(entry)).rejects.toThrow('db down');
   });

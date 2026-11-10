@@ -141,9 +141,7 @@ export class PythSource implements PriceSource {
       status: ObservationStatus = 'unavailable',
     ): SourceResult => {
       for (const a of feeds)
-        out.set(a.testnetToken, [
-          unavailable('pyth', a.pyth?.feedId ?? '', null, now, reason, status),
-        ]);
+        out.set(a.token, [unavailable('pyth', a.pyth?.feedId ?? '', null, now, reason, status)]);
       return { observations: out, status: { source: 'pyth', health, detail: reason } };
     };
     if (!this.o.apiKey)
@@ -159,7 +157,7 @@ export class PythSource implements PriceSource {
       const feed = a.pyth;
       if (!feed) return [];
       if (known.get(feed.feedId) !== feed.symbol) {
-        out.set(a.testnetToken, [
+        out.set(a.token, [
           unavailable(
             'pyth',
             feed.feedId,
@@ -200,7 +198,7 @@ export class PythSource implements PriceSource {
     for (const f of fetched) {
       if (!f.error) continue;
       const a = feeds.find((x) => x.pyth?.feedId === f.id);
-      if (a) out.set(a.testnetToken, [unavailable('pyth', f.id, null, now, f.error, f.status)]);
+      if (a) out.set(a.token, [unavailable('pyth', f.id, null, now, f.error, f.status)]);
     }
     if (fetched.every((f) => f.error))
       return {
@@ -212,10 +210,10 @@ export class PythSource implements PriceSource {
     const maxConf = BigInt(this.o.maxConfidenceBps ?? 200);
     for (const a of feeds) {
       const feed = a.pyth;
-      if (!feed || out.has(a.testnetToken)) continue;
+      if (!feed || out.has(a.token)) continue;
       const p = parsed.parsed.find((x) => x.id.toLowerCase() === feed.feedId);
       if (!p) {
-        out.set(a.testnetToken, [
+        out.set(a.token, [
           unavailable(
             'pyth',
             feed.feedId,
@@ -243,7 +241,7 @@ export class PythSource implements PriceSource {
         status = 'low_confidence';
         reason = `confidence interval wider than ${maxConf} bps of the price`;
       }
-      out.set(a.testnetToken, [
+      out.set(a.token, [
         {
           source: 'pyth',
           network: 'mainnet',
@@ -320,7 +318,7 @@ export class DefiLlamaSource implements PriceSource {
       const reason = errorText(e);
       for (const a of assets)
         out.set(
-          a.testnetToken,
+          a.token,
           a.defillama.map((k) => unavailable('defillama', k.key, contractOf(k.key), now, reason)),
         );
       return {
@@ -332,7 +330,7 @@ export class DefiLlamaSource implements PriceSource {
     const minConf = this.o.minConfidence ?? 0.9;
     for (const a of assets) {
       out.set(
-        a.testnetToken,
+        a.token,
         a.defillama.map((k): PriceObservation => {
           const c = coins[k.key];
           if (!c)

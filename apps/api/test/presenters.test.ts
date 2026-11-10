@@ -33,8 +33,8 @@ const snapshot: PortfolioSnapshot = {
 
 describe('presenters produce payloads that satisfy the shared wire contract', () => {
   it('portfolio', () => {
-    const dto = toPortfolioDto(snapshot, { dataSource: 'simulation', network: 'testnet' });
-    expect(dto).toMatchObject({ dataSource: 'simulation', network: 'testnet' });
+    const dto = toPortfolioDto(snapshot, { dataSource: 'simulation', network: 'mainnet' });
+    expect(dto).toMatchObject({ dataSource: 'simulation', network: 'mainnet' });
     expect(portfolioDtoSchema.parse(dto)).toEqual(dto);
     expect(dto.walletValueUsd).toBe('10.00');
     expect(dto.healthFactor).toBeNull();
@@ -100,7 +100,7 @@ describe('presenters produce payloads that satisfy the shared wire contract', ()
       guardianConfigSchema.parse({ triggerHealthFactor: 1.3, targetHealthFactor: 1.6 }),
       {
         dataSource: 'chain',
-        network: 'testnet',
+        network: 'mainnet',
         executionMode: 'dry-run',
         engine: 'legacy',
         simulationPortfolio: null,

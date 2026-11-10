@@ -349,7 +349,7 @@ export class Orchestrator {
     }
 
     // Judge freshness at the moment the observation is complete, not when the cycle began: reading the chain can take
-    // many seconds (the public testnet RPC answers in ~3 s per call), and data read after `now` would look future-dated.
+    // many seconds (a public RPC can answer in ~3 s per call), and data read after `now` would look future-dated.
     const observedAt = d.clock.now();
     const dq = checkDataQuality({
       now: observedAt,

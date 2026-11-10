@@ -10,11 +10,11 @@ import { InMemoryRepository } from './in-memory-repository';
 
 /**
  * "Let the agent do it", end to end on the in-process simulation (no network): the request goes through the real
- * Burrow planner, the real policy engine (testnet example limits: auto-approve up to $50, at most $100 per action)
+ * Burrow planner, the real policy engine (example limits: auto-approve up to $50, at most $100 per action)
  * and the real dry-run executor.
  */
-const ACCOUNT = 'your-account.testnet';
-const USDT = accountId('usdt.fakes.testnet');
+const ACCOUNT = 'your-account.near';
+const USDT = accountId('usdt.tether-token.near');
 const noNetwork: typeof fetch = async () => {
   throw new Error('network access attempted');
 };
@@ -22,10 +22,7 @@ const noNetwork: typeof fetch = async () => {
 async function service(portfolio: 'demo-500' | 'demo-5000' = 'demo-500') {
   const config = parseAutopilotConfig(
     JSON.parse(
-      readFileSync(
-        new URL('../../../config/autopilot.testnet.example.json', import.meta.url),
-        'utf8',
-      ),
+      readFileSync(new URL('../../../config/autopilot.example.json', import.meta.url), 'utf8'),
     ) as unknown,
     accountId(ACCOUNT),
   );
@@ -33,15 +30,15 @@ async function service(portfolio: 'demo-500' | 'demo-5000' = 'demo-500') {
     API_TOKEN: 'request-token-request-token-request-token',
     DATABASE_URL: 'postgres://u:p@localhost:5432/x',
     AUTOPILOT_ACCOUNT_ID: ACCOUNT,
-    NEAR_NETWORK: 'testnet',
+    NEAR_NETWORK: 'mainnet',
     NEAR_RPC_URL: 'https://rpc.must-not-be-contacted.invalid',
-    RHEA_CONTRACT_ID: 'ref-finance-101.testnet',
-    BURROW_CONTRACT_ID: 'contract.1638481328.burrow.testnet',
-    BURROW_ORACLE_ID: 'priceoracle.testnet',
+    RHEA_CONTRACT_ID: 'v2.ref-finance.near',
+    BURROW_CONTRACT_ID: 'contract.main.burrow.near',
+    BURROW_ORACLE_ID: 'priceoracle.near',
     DATA_SOURCE: 'simulation',
     SIMULATION_PORTFOLIO: portfolio,
   });
-  const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'testnet' });
+  const repo = new InMemoryRepository({ dataSource: 'simulation', network: 'mainnet' });
   const w = await wire(env, config, repo, new SilentLogger(), {
     fetchImpl: noNetwork,
     marketFetchImpl: noNetwork,

@@ -7,7 +7,7 @@
 # What it does, and does not:
 #   - creates .env from .env.example ONLY if .env does not exist, with fresh random secrets (never printed), the
 #     simulation data source and the orchestrator engine; an existing .env is never touched
-#   - creates config/autopilot.json from the testnet example ONLY if it does not exist
+#   - creates config/autopilot.json from the mainnet example ONLY if it does not exist
 #   - builds and starts the containers (bound to 127.0.0.1), waits until they are healthy, runs one dry-run cycle
 #   - never creates a key, never signs, never sends a transaction; mainnet is read with view calls only
 set -euo pipefail
@@ -52,7 +52,7 @@ else
   set_var DATABASE_URL "postgres://autopilot:${pw}@localhost:5432/autopilot"
   set_var DATA_SOURCE simulation
   set_var AUTOPILOT_ENGINE orchestrator
-  set_var AUTOPILOT_ACCOUNT_ID demo-autopilot.testnet
+  set_var AUTOPILOT_ACCOUNT_ID demo-autopilot.near
   chmod 600 .env
   echo "• .env created with fresh secrets (not shown), simulation mode, dry-run"
 fi
@@ -63,9 +63,9 @@ if [ -f config/autopilot.json ]; then
   echo "• config/autopilot.json exists: using it as it is"
 else
   account="$(grep '^AUTOPILOT_ACCOUNT_ID=' .env | cut -d= -f2-)"
-  sed "s|\"signerAccountId\": \"[^\"]*\"|\"signerAccountId\": \"${account}\"|" config/autopilot.testnet.example.json \
+  sed "s|\"signerAccountId\": \"[^\"]*\"|\"signerAccountId\": \"${account}\"|" config/autopilot.example.json \
     >config/autopilot.json
-  echo "• config/autopilot.json created from the testnet example (signer ${account}, never used to sign)"
+  echo "• config/autopilot.json created from the example (signer ${account}, never used to sign)"
 fi
 
 profiles=()

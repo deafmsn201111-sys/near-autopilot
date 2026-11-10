@@ -120,7 +120,7 @@ export function curatedPrices(report: MarketReport): Map<string, TokenPrice> {
   const out = new Map<string, TokenPrice>();
   for (const a of report.assets) {
     if (!usable(a) || !a.priceUsd || !a.chosen) continue;
-    out.set(a.testnetToken, {
+    out.set(a.token, {
       usd: a.priceUsd,
       quality: 'OK',
       source: a.chosen.source,

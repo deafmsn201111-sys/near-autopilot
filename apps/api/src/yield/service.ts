@@ -21,7 +21,7 @@ import { dclEstimate, rheaV1Estimate } from './rhea';
 
 export interface YieldServiceOptions {
   readonly rpc: Pick<NearRpcClient, 'call'>;
-  /** Network the contracts live on (checked at start-up by the caller). Default testnet. */
+  /** Network the contracts live on (checked at start-up by the caller). */
   readonly network?: YieldNetwork;
   readonly burrowContract: AccountId;
   readonly rheaContract: AccountId;
@@ -52,7 +52,7 @@ interface SourceRun {
 }
 
 /**
- * Testnet yield data: Burrow lending rates, Rhea v1 pool fees, Rhea DCL pool state, all read at ONE final block.
+ * Mainnet yield data: Burrow lending rates, Rhea v1 pool fees, Rhea DCL pool state, all read at ONE final block.
  * Each source is isolated: a failing source is reported `unavailable` and contributes nothing; it is never replaced by
  * another protocol's data or by an older report. Reports are reused for `ttlMs` so a cycle sees one consistent set.
  */
@@ -154,7 +154,7 @@ export class YieldService implements YieldDataProvider {
         new Map(await Promise.all(ts.map(async (t) => [t, await decimalsOf(t)] as const)));
       const priceUsd = await this.o.prices().catch(() => () => null);
       const ctx = {
-        network: this.o.network ?? 'testnet',
+        network: this.o.network ?? 'mainnet',
         block,
         now: this.o.now(),
         priceUsd,
@@ -172,7 +172,7 @@ export class YieldService implements YieldDataProvider {
     const report: YieldReport = {
       id: this.o.ids(),
       origin,
-      network: this.o.network ?? 'testnet',
+      network: this.o.network ?? 'mainnet',
       observedAt,
       block,
       sources: runs.map((r) => r.status),
@@ -323,7 +323,7 @@ export class YieldService implements YieldDataProvider {
       const client = new RheaDclClient(viewer, { contractId: contract });
       const estimates: YieldEstimate[] = [];
       const missing: string[] = [];
-      // Configured pools only, one get_pool each: no listing of the 11k+ testnet pools, no view-gas risk.
+      // Configured pools only, one get_pool each: no listing of 11k+ pools, no view-gas risk.
       for (const id of this.o.dclPools) {
         const pool = await client.getPool(id);
         if (!pool) {

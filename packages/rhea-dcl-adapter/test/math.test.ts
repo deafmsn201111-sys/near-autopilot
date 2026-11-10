@@ -99,7 +99,7 @@ describe('range validation', () => {
 });
 
 describe('liquidity math', () => {
-  // On-chain predict_add_liquidity result observed on testnet (tier B): pool usdc.fakes.testnet|wrap.testnet|2000,
+  // predict_add_liquidity result observed on-chain (tier B): a usdc/wrap 0.2% pool,
   // left 288680, right 289000, amount_x 1000000, amount_y 1e24 -> liquidity_amount 5842542192, need_x 1000000, need_y 0.
   // The pool was below the range (need_y = 0), and the result is independent of where below the range it sits.
   it('reproduces the on-chain predict_add_liquidity vector for a range above the current point', () => {

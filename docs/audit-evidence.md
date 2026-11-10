@@ -18,8 +18,8 @@ docker compose exec api-shadow node --import tsx src/evidence/cli.ts replay --co
 
 ## The hash chain (`audit_events`, migration 0011)
 
-**One chain per deployment.** The chain id is `<dataSource>:<network>`: `simulation:testnet` (API on 4000),
-`chain:testnet` (testnet API), `simulation:mainnet` (shadow API and collector). Every event of the legacy cycle and of
+**One chain per deployment.** The chain id is `<dataSource>:<network>`: `simulation:mainnet` (API on 4000, shadow API
+and collector). Every event of the legacy cycle and of
 the orchestrator is appended to it, with:
 
 ```

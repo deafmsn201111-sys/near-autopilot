@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 const statusSchema = z.object({ chain_id: z.string().min(1) }).passthrough();
 
-/** The `chain_id` the RPC node reports in `status` ("mainnet", "testnet", ...). */
+/** The `chain_id` the RPC node reports in `status` ("mainnet", ...). */
 export async function fetchChainId(rpc: JsonRpcCaller): Promise<string> {
   const raw = await rpc.call('status', []);
   const parsed = statusSchema.safeParse(raw);
@@ -25,7 +25,7 @@ export class NetworkMismatchError extends Error {
 
 /**
  * Fails unless the RPC node reports the expected chain. A node can lie, so this is a misconfiguration guard
- * (pointing a testnet config at a mainnet endpoint, or the reverse), not a defence against a hostile RPC.
+ * (a config pointed at an endpoint that serves another chain), not a defence against a hostile RPC.
  */
 export async function assertChainId(rpc: JsonRpcCaller, expected: Network): Promise<void> {
   const actual = await fetchChainId(rpc);

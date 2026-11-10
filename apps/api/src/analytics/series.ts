@@ -106,7 +106,7 @@ export function registerSeries(
     return {
       hours,
       assets: [...groups].map(([asset, snaps]) => {
-        const ref = MAINNET_ASSETS.find((a) => a.testnetToken === asset);
+        const ref = MAINNET_ASSETS.find((a) => a.token === asset);
         return {
           asset,
           curated: ref !== undefined,

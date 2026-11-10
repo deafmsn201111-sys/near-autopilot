@@ -2,14 +2,13 @@ import type { ReferenceAsset } from './assets';
 import { compareDecimal, deviationBps } from './decimal';
 import { mul, truncate } from '../yield/math';
 import {
-  REFERENCE_LABEL,
+  MAINNET_PRICE_LABEL,
   type AssetPrice,
   type MarketDataProvider,
   type MarketReport,
   type MarketReportSink,
   type PriceObservation,
   type PriceLabel,
-  type ExecutionNetwork,
   type PriceSource,
   type SourceStatus,
 } from './model';
@@ -18,7 +17,7 @@ import type { DefiLlamaSource } from './sources';
 /**
  * Combines the sources for one asset. Pure. Priority: the sources' order (Pyth first), then each source's own key
  * order. Rules, in order:
- *  1. testnet decimals differ from the mapping -> `unpriced` (the mapping is wrong for this token);
+ *  1. token decimals differ from the mapping -> `unpriced` (the mapping is wrong for this token);
  *  2. no valid observation -> `unpriced`, with every source's reason;
  *  3. valid observations spread beyond the asset's limit -> `price_disputed`, no price;
  *  4. otherwise the highest-priority valid observation is the price; `corroborated` if two different providers
@@ -28,27 +27,27 @@ import type { DefiLlamaSource } from './sources';
 export function resolveAsset(
   asset: ReferenceAsset,
   observations: readonly PriceObservation[],
-  testnetDecimals: number | null,
-  label: PriceLabel = REFERENCE_LABEL,
+  decimals: number | null,
+  label: PriceLabel = MAINNET_PRICE_LABEL,
 ): AssetPrice {
   const base = {
-    testnetToken: asset.testnetToken,
+    token: asset.token,
     referenceSymbol: asset.reference.symbol,
     mainnetContract: asset.reference.mainnetContract,
     observations,
     label,
   } as const;
   const none = { priceUsd: null, chosen: null, crossCheck: null } as const;
-  if (testnetDecimals !== asset.testnetDecimals) {
+  if (decimals !== asset.decimals) {
     return {
       ...base,
       ...none,
       spreadBps: null,
       status: 'unpriced',
       reason:
-        testnetDecimals === null
-          ? 'testnet token metadata unavailable: mapping cannot be checked'
-          : `testnet decimals ${testnetDecimals} differ from the mapping (${asset.testnetDecimals})`,
+        decimals === null
+          ? 'token metadata unavailable: mapping cannot be checked'
+          : `token decimals ${decimals} differ from the mapping (${asset.decimals})`,
     };
   }
   // Only USD quotes are comparable; a USDT quote must have gone through convertQuotes first.
@@ -121,7 +120,7 @@ function resolveQuorum(
   valid: readonly PriceObservation[],
   base: Pick<
     AssetPrice,
-    'testnetToken' | 'referenceSymbol' | 'mainnetContract' | 'observations' | 'label'
+    'token' | 'referenceSymbol' | 'mainnetContract' | 'observations' | 'label'
   >,
 ): AssetPrice {
   const q = asset.quorum ?? { min: 2, maxDeviationBps: asset.maxDeviationBps };
@@ -221,20 +220,17 @@ export interface ReferenceMarketDataOptions {
   readonly sources: readonly PriceSource[];
   /** For the 24h range (volatility proxy). Optional. */
   readonly history?: Pick<DefiLlamaSource, 'range24hBps'>;
-  /** Live testnet decimals of a token (ft_metadata), or null if unreadable. */
-  readonly testnetDecimals: (token: string) => Promise<number | null>;
+  /** Live decimals of a token (ft_metadata), or null if unreadable. */
+  readonly tokenDecimals: (token: string) => Promise<number | null>;
   readonly sink?: MarketReportSink;
   readonly now: () => Date;
   readonly ids: () => string;
   /** Reports are reused for this long, so one cycle sees one consistent set of prices. */
   readonly ttlMs?: number;
   readonly onError?: (message: string) => void;
-  /** Defaults: REFERENCE_LABEL / 'testnet' (mainnet prices on testnet tokens). Shadow: MAINNET_PRICE_LABEL / 'none'. */
-  readonly label?: PriceLabel;
-  readonly executionNetwork?: ExecutionNetwork;
 }
 
-/** The `MarketDataProvider`: mainnet market data, resolved per testnet asset. Agents never see a source directly. */
+/** The `MarketDataProvider`: mainnet market data, resolved per asset. Agents never see a source directly. */
 export class ReferenceMarketData implements MarketDataProvider {
   private cached: { at: number; value: Promise<MarketReport> } | null = null;
 
@@ -282,11 +278,10 @@ export class ReferenceMarketData implements MarketDataProvider {
       }),
     );
     const decimals = await Promise.all(
-      assets.map((a) => this.o.testnetDecimals(a.testnetToken).catch(() => null)),
+      assets.map((a) => this.o.tokenDecimals(a.token).catch(() => null)),
     );
-    const label = this.o.label ?? REFERENCE_LABEL;
-    const raw = (a: ReferenceAsset) =>
-      results.flatMap((r) => r.observations.get(a.testnetToken) ?? []);
+    const label = MAINNET_PRICE_LABEL;
+    const raw = (a: ReferenceAsset) => results.flatMap((r) => r.observations.get(a.token) ?? []);
     // USDT/USD first (it never needs a conversion itself), then everything with its USDT quotes converted.
     const usdtIndex = assets.findIndex((a) => a.convertsQuote === 'USDT');
     const usdtAsset = usdtIndex >= 0 ? assets[usdtIndex] : undefined;
@@ -306,13 +301,13 @@ export class ReferenceMarketData implements MarketDataProvider {
     for (const a of resolved) {
       const key = keyOf(a);
       const v = key === undefined ? undefined : byKey.get(key);
-      if (a.priceUsd !== null && v !== undefined) range24hBps.set(a.testnetToken, v);
+      if (a.priceUsd !== null && v !== undefined) range24hBps.set(a.token, v);
     }
     const report: MarketReport = {
       id: this.o.ids(),
       fetchedAt: now,
       marketNetwork: 'mainnet',
-      executionNetwork: this.o.executionNetwork ?? 'testnet',
+      executionNetwork: 'none',
       assets: resolved,
       sources: results.map((r) => r.status),
       range24hBps,

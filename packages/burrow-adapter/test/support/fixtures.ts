@@ -8,7 +8,6 @@ import { BurrowClient, BurrowVerifier, type BurrowVerifierOptions } from '../../
  */
 export const BURROW = accountId('contract.main.burrow.near');
 export const BURROW_BETA = accountId('contract.beta.burrow.near');
-export const BURROW_TESTNET = accountId('contract.1638481328.burrow.testnet');
 export const ORACLE = accountId('priceoracle.near');
 export const ALICE = accountId('alice.near');
 export const WNEAR = accountId('wrap.near');

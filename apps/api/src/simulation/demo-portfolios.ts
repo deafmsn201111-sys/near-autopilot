@@ -1,10 +1,8 @@
-import { accountId, type AccountId, type Network } from '@near-autopilot/core';
+import { accountId, type AccountId } from '@near-autopilot/core';
 
 /**
  * SYNTHETIC demo portfolios. Every number here is invented for demonstration; none of it was read from a chain.
- * The asset parameters for testnet mirror what Burrow testnet reported on 2026-11-04 (wrap.testnet volatility ratio
- * 7500, usdt.fakes.testnet 9500 with 12 extra decimals); the PRICES are fixed demo values, because the testnet
- * oracle reported no fresh prices at all.
+ * The PRICES are fixed demo values.
  */
 export type DemoPortfolioId = 'demo-500' | 'demo-5000';
 
@@ -38,11 +36,8 @@ const NEAR = 10n ** 24n;
 const USDT = 10n ** 6n;
 
 /** Demo prices: 1 NEAR = $3.00, 1 USDt = $1.00. */
-export function demoAssets(network: Network): { near: DemoAsset; usdt: DemoAsset } {
-  const ids =
-    network === 'testnet'
-      ? { near: 'wrap.testnet', usdt: 'usdt.fakes.testnet' }
-      : { near: 'wrap.near', usdt: 'usdt.tether-token.near' };
+export function demoAssets(): { near: DemoAsset; usdt: DemoAsset } {
+  const ids = { near: 'wrap.near', usdt: 'usdt.tether-token.near' };
   return {
     near: {
       token: accountId(ids.near),

@@ -72,7 +72,7 @@ export class SimulatedChain {
   }
 
   constructor(private readonly options: SimulatedChainOptions) {
-    this.assets = demoAssets(options.network);
+    this.assets = demoAssets();
     this.codes = new Map<string, readonly string[]>([
       [options.burrowContractId, BURROW_EXPORTS],
       [options.burrowOracleId, ORACLE_EXPORTS],
