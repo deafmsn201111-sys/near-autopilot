@@ -1,0 +1,6 @@
+.env
+.env.*
+config/autopilot.json
+config/*.local.json
+.claude/settings.local.json
+deploy/public/config/
