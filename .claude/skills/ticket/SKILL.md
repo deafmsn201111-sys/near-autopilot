@@ -15,7 +15,9 @@ commits, PRs and issue comments in English.
 - **No argument:** take the first open, unassigned issue in the earliest open milestone whose "Depends on" issues are
   all closed. Prefer `never-cut`, then `security`, then the rest; `cut-N` last. Say which one and why in one line, then
   go on.
-- `gh issue view <N> --comments`. The "Done when" list is the acceptance criteria; comments may change them.
+- `gh issue view <N> --comments`. The "Done when" list is the acceptance criteria; comments may change them. The
+  "Testing" list is the manual QA: steps a person does on the site and what they see. It may be missing on older
+  issues.
 - **Blocked:** if an issue in "Depends on" is still open, stop and say what blocks it and what could be done instead.
 - **`ops` issue:** never do the human part (buying, accounts, keys, wallets, deposits, posting). If there is
   repo-side preparation, run the steps below for that part only and comment the exact owner steps on the issue. If
@@ -43,6 +45,10 @@ commits, PRs and issue comments in English.
 - Call the Skill tool with `grilling`, scoped to this issue: only decisions the issue and the plan leave open and that
   change what gets built (API shape, data stored, limits, UX, what to cut). Find facts yourself; ask decisions.
 - Four days to the deadline: keep the tree small. If nothing is open, say so in one line and go on without asking.
+- **Testing:** if the issue has no "Testing" list, draft one and confirm it with the owner here. Plain user steps
+  with the expected result, no code words: "Open /admin on the live site. The page is not found." Cover the happy
+  path and one or two failure cases. No UI change (ops, refactor, removal) → one smoke step (site opens, demo
+  portfolio loads) or `none — covered by CI`. Once confirmed, add it to the issue body with `gh issue edit`.
 - Do not plan until the owner confirms shared understanding.
 
 ## 5. Plan
@@ -65,6 +71,9 @@ commits, PRs and issue comments in English.
 
 - `pnpm verify` green (plus `test:db` when the schema changes and `DATABASE_TEST_URL` is set).
 - Walk the "Done when" list item by item: done, not done, or needs the live site / a real wallet.
+- Walk the "Testing" list on a local run (the `run` skill, or `./scripts/quickstart.sh`), driving the browser with
+  `claude-in-chrome`; screenshot each checked result. Steps that need a real wallet, signing or the live server are
+  marked "owner" and not faked. A failing step is a bug in this branch: fix it before the PR.
 - Behaviour changed → README in the same branch (plan, Process). Decision made → `docs/DECISIONS.md`. Notable work →
   `docs/IMPLEMENTATION_LOG.md`.
 - Conventional commits (`feat(scope): …`, `fix(scope): …`).
@@ -79,14 +88,19 @@ commits, PRs and issue comments in English.
 ## 9. PR and merge
 
 - `git push -u origin HEAD`, then `gh pr create`: title = the main commit's message, body = why (one or two
-  sentences), what changed (facts from the diff), verification, `Closes #<N>`.
+  sentences), what changed (facts from the diff), verification, the "Testing" list with each step marked checked
+  locally / owner, `Closes #<N>`.
 - Watch CI in the background (`gh pr checks <pr> --watch`). Red: fix in the same branch. Green:
   `gh pr merge --squash --delete-branch`, then `ExitWorktree` with `keep`, `git worktree remove <path>`,
   `git checkout main && git pull`.
 
 ## 10. Report
 
-- Comment on the issue: what changed, what was verified, what was not, which skills ran.
-- New work found on the way becomes a new issue (template: Goal / Done when / README / Depends on) in the right
+- Comment on the issue: what changed, what was verified, what was not, which skills ran, and the "Testing" steps
+  left for the owner.
+- Merge does not deploy: there is no deploy workflow, the live site changes only after a manual deploy. Say so when
+  listing live-site steps.
+- New work found on the way becomes a new issue (template: Goal / Done when / Testing / README / Depends on) in the right
   milestone with labels; never scope creep in this PR.
-- Tell the owner: the PR link, what to check on the live site or with a real wallet, what comes next.
+- Tell the owner: the PR link, the "Testing" steps to run on the live site after deploy or with a real wallet, what
+  comes next.
