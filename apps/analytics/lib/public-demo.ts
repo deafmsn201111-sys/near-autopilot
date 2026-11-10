@@ -1,5 +1,5 @@
 import 'server-only';
-import { withinLimit as withinRateLimit } from './rate-limit';
+import { consume } from './rate-limit';
 
 /**
  * PUBLIC DEMO MODE (`PUBLIC_DEMO=1`): the dashboard served to anyone on the internet.
@@ -28,7 +28,7 @@ const LIMITS = {
  */
 export async function withinLimit(kind: keyof typeof LIMITS, now = Date.now()): Promise<boolean> {
   if (!PUBLIC_DEMO) return true;
-  return withinRateLimit(kind, LIMITS[kind], now);
+  return consume(kind, LIMITS[kind], now);
 }
 
 export const RATE_LIMITED =

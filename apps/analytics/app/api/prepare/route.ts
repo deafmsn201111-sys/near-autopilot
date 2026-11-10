@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { apiPost } from '../../../lib/api';
-import { withinLimit } from '../../../lib/rate-limit';
+import { consume } from '../../../lib/rate-limit';
 
 /**
  * Server proxy for `POST /v1/wallet/prepare`. The analytics API ASSEMBLES an unsigned, signable transaction cascade
@@ -20,7 +20,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!isJson(req)) {
     return NextResponse.json({ error: 'content-type must be application/json' }, { status: 415 });
   }
-  if (!(await withinLimit('prepare', LIMIT))) {
+  if (!(await consume('prepare', LIMIT))) {
     return NextResponse.json(
       { error: 'Too many requests. Wait a few minutes and try again.' },
       { status: 429, headers: { 'retry-after': String(LIMIT.windowMs / 1000) } },

@@ -14,7 +14,7 @@ Runs the read-only mainnet analytics dashboard on a server, in public demo mode,
 - The network, the data source, the execution mode and `PUBLIC_DEMO=1` are fixed in `docker-compose.yml`, not read
   from `.env`.
 - Operator controls (start an analysis, pause the collector, read-only mode) are refused on the server.
-- Visitor actions are rate-limited ([`apps/analytics/lib/public-demo.ts`](../../apps/analytics/lib/public-demo.ts)).
+- Visitor actions and `/api/prepare` are rate-limited per visitor ([`apps/analytics/lib/rate-limit.ts`](../../apps/analytics/lib/rate-limit.ts)).
 
 The dashboard listens on `127.0.0.1:3000` of the server only. Postgres, the APIs and the collector are on the
 internal Docker network. One of two front doors puts the dashboard on the internet over HTTPS:
