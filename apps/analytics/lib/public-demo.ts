@@ -1,5 +1,5 @@
 import 'server-only';
-import { headers } from 'next/headers';
+import { consume } from './rate-limit';
 
 /**
  * PUBLIC DEMO MODE (`PUBLIC_DEMO=1`): the dashboard served to anyone on the internet.
@@ -23,34 +23,12 @@ const LIMITS = {
   account: { perVisitor: 30, overall: 600, windowMs: 10 * 60_000 },
 } as const;
 
-const hits = new Map<string, number[]>();
-
-function take(key: string, limit: number, windowMs: number, now: number): boolean {
-  const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-  if (recent.length >= limit) {
-    hits.set(key, recent);
-    return false;
-  }
-  recent.push(now);
-  hits.set(key, recent);
-  return true;
-}
-
-/** The visitor's address as the reverse proxy reports it (first X-Forwarded-For entry), else a fixed key. */
-async function visitor(): Promise<string> {
-  const h = await headers();
-  return (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim();
-}
-
 /**
- * In public mode, whether this call is within the limits (and counts it); always true otherwise. Counted per visitor
- * first, so one visitor over the limit does not use up the overall allowance.
+ * In public mode, whether this call is within the limits (and counts it); always true otherwise.
  */
 export async function withinLimit(kind: keyof typeof LIMITS, now = Date.now()): Promise<boolean> {
   if (!PUBLIC_DEMO) return true;
-  const l = LIMITS[kind];
-  if (!take(`${kind}:${await visitor()}`, l.perVisitor, l.windowMs, now)) return false;
-  return take(`${kind}:*`, l.overall, l.windowMs, now);
+  return consume(kind, LIMITS[kind], now);
 }
 
 export const RATE_LIMITED =
