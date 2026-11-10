@@ -34,3 +34,5 @@ deploy/public/.env
 deploy/public/checkpoints/
 deploy/public/config/
 .obsidian
+
+.claude/worktrees/

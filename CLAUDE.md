@@ -61,7 +61,9 @@ Dependency boundaries are enforced in CI by `boundaries.config.mjs` — check it
 
 ## Git workflow
 
-- Never push code to `main` directly. One task = one branch from fresh `main` (`feat/<topic>`, `fix/<topic>`).
+- Never push code to `main` directly. One task = one GitHub issue = one branch from fresh `main`. Start with
+  `/start-issue <N>` (`scripts/start-issue.sh <N>`): it creates a worktree in `.claude/worktrees/` on
+  `feat/<N>-<slug>` (`fix/` for bugs). PR body contains `Closes #<N>`.
 - Push the branch, open a PR with `gh pr create` (short description: what and why).
 - No code review: a green CI is the only gate. If CI is red, fix it in the same branch.
 - When CI is green: `gh pr merge --squash --delete-branch`, then `git checkout main && git pull`.
