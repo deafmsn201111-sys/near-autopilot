@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { apiPost } from '../../../lib/api';
+import { consume } from '../../../lib/rate-limit';
 
 /**
  * Server proxy for `POST /v1/wallet/prepare`. The analytics API ASSEMBLES an unsigned, signable transaction cascade
@@ -8,7 +9,23 @@ import { apiPost } from '../../../lib/api';
  */
 export const dynamic = 'force-dynamic';
 
+const LIMIT = { perVisitor: 30, overall: 600, windowMs: 10 * 60_000 };
+
+function isJson(req: Request): boolean {
+  const type = req.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+  return type === 'application/json';
+}
+
 export async function POST(req: Request): Promise<NextResponse> {
+  if (!isJson(req)) {
+    return NextResponse.json({ error: 'content-type must be application/json' }, { status: 415 });
+  }
+  if (!(await consume('prepare', LIMIT))) {
+    return NextResponse.json(
+      { error: 'Too many requests. Wait a few minutes and try again.' },
+      { status: 429, headers: { 'retry-after': String(LIMIT.windowMs / 1000) } },
+    );
+  }
   let body: unknown;
   try {
     body = await req.json();

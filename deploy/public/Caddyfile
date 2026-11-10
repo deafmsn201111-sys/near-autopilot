@@ -2,7 +2,7 @@
 	encode gzip
 
 	# Only the dashboard is exposed. The visitor's address is set by Caddy, never taken from the request:
-	# the public demo rate limits key on it (apps/analytics/lib/public-demo.ts).
+	# the rate limits key on it (apps/analytics/lib/rate-limit.ts).
 	reverse_proxy analytics:3000 {
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Real-IP {remote_host}
