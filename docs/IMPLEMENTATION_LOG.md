@@ -25,3 +25,12 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 **Remaining issues / blockers:** target architecture confirmed from the master brief (planner doc never shipped). Autonomous execution blocked on Guard + review.
 
 **Next:** P1 `T1.1` provenance enum.
+
+## 2026-11-10 — Security 1: guard `/api/prepare` (#9)
+
+- `apps/analytics/app/api/prepare/route.ts` answers 415 unless `content-type` is `application/json` (also blocks
+  cross-site form posts) and 429 with `retry-after` over 30 calls per visitor / 600 overall per 10 minutes.
+- The in-memory limiter moved from `lib/public-demo.ts` to `lib/rate-limit.ts` and is always on for prepare. The
+  visitor key is the `X-Forwarded-For` that Caddy overwrites. Map bounding stays with #11.
+
+**Tests run:** `pnpm verify` (green), new `apps/analytics/test/prepare-route.test.ts`.
