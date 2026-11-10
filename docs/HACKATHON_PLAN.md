@@ -45,48 +45,28 @@ can fund the portfolio from other chains. No autonomy: the server never holds a 
 
 ## Schedule
 
+Status lives in GitHub issues (one issue = one branch = one PR, `Closes #N`), grouped by the Day 1–4 milestones, and
+on the [board](https://github.com/users/derevyanko/projects/1). Bugs from the evening live-site tests are filed as
+`bug` issues in that day's milestone.
+
 ### Day 1 — 11 Nov: foundation
 
-- [ ] Buy domain; move the demo from Tailscale Funnel to a VPS (`deploy/public/`).
-- [ ] Security items 1, 6, 7.
-- [ ] Remove testnet code, scripts and docs.
-- [ ] Remove autopilot, `apps/dashboard` and `PUBLIC_DEMO`; signing controlled by `MAINNET_WALLET_SIGNING`; entry in
-      `DECISIONS.md`.
-- [ ] Anthropic `LlmClient` adapter; compare Haiku vs Sonnet on both demo portfolios; pick the default.
-- [ ] Create the mainnet demo wallet (~$30–50: NEAR, USDC, Burrow supply, a Rhea position, stNEAR).
-- [ ] Create the API key, $20 deposit, spend limit in the console.
-- [ ] Evening: test the live site with a real wallet, file bugs.
+#8 domain + VPS · #9, #10, #11 security 1, 6, 7 · #12 remove testnet · #13 remove autopilot, dashboard, `PUBLIC_DEMO`
+· #14 API key · #15 `LlmClient` adapter · #16 Haiku vs Sonnet · #17 demo wallet
 
 ### Day 2 — 12 Nov: LLM core
 
-- [ ] Tool-use loop: orchestrator agents as tools, on the connected-wallet path.
-- [ ] Input sanitising, zod output validation, heuristic fallback (security item 3).
-- [ ] NEP-413 ownership check for LLM analysis.
-- [ ] `llm_calls` table (model, tokens, cost $, latency, tools called, outcome); daily spend cap; limits (security item 2).
-- [ ] Pool allowlist for `add_liquidity`.
-- [ ] Three strategy presets in UI and prompt.
-- [ ] "Reasoning trace" in UI: which agents were called and what they returned.
-- [ ] Evening: test the live site, file bugs.
+#18 tool-use loop · #19 security 3 · #20 NEP-413 · #21, #22 security 2 · #23 pool allowlist · #24 demo portfolio cache
+· #25 strategies · #26 reasoning trace
 
 ### Day 3 — 13 Nov: 1Click + end-to-end
 
-- [ ] 1Click inbound deposit: server quote client with verification, refund address, QR, status polling (security
-      items 4, 5); entry in `DECISIONS.md`.
-- [ ] Real signing on the mainnet wallet; full run connect → analyse → prepare → sign → portfolio refresh.
-- [ ] Evening: `events` table (connect, analyse, prepare by intent, signed with tx hash verified by RPC, 1Click
-      started/finished) and admin screens 1–3 + kill switch.
-- [ ] Evening: test the live site, file bugs.
+#27, #28, #29 1Click deposit (security 4, 5) · #30 end-to-end signing · #31 admin spend + kill switch · #32 `events`
+table · #33 admin funnel + LLM quality
 
 ### Day 4 — 14 Nov: finish
 
-- [ ] Bug fixes.
-- [ ] Admin screen 4 (1Click), if time allows.
-- [ ] Final README pass: remove every claim that does not match behaviour (testnet, autonomy, guard contract,
-      "signing locked", dead branch links, old agent table); document architecture C, intents, 1Click, what we log,
-      roadmap.
-- [ ] README check "as a judge": click through every claim on the live site.
-- [ ] Video script and recording — **by 18:00 UTC**.
-- [ ] X post text; post + submit — **by 21:00 UTC**. ~3 h buffer.
+#34 admin 1Click · #35 README pass · #36 judge check · #37 video **by 18:00 UTC** · #38 post + submit **by 21:00 UTC**
 
 ## Admin screens
 
