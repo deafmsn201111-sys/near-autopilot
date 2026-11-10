@@ -1,6 +1,6 @@
 ---
 name: ticket
-description: Run one GitHub issue of NEAR Autopilot end to end — pick and read it, open its worktree, grill the owner on open decisions, plan, test first, verify, review, open the PR, merge on green CI and report on the issue. Use when the user says "/ticket 15", gives an issue number to do, or asks to take the next task.
+description: Run one GitHub issue of NEAR Autopilot end to end — pick and read it, open its worktree, grill the owner on open decisions, plan, test first, verify, review, open the PR, merge on green CI and report on the issue. Use when the user says "/ticket 15", "start issue #15", "take ticket 15", gives an issue number to do, or asks to take the next task.
 argument-hint: "[issue number] (empty = next issue)"
 ---
 
@@ -23,8 +23,12 @@ commits, PRs and issue comments in English.
 
 ## 2. Worktree
 
-- `scripts/start-issue.sh <N>` from the main checkout, then `EnterWorktree` with `path` = the last line it printed. It
-  reuses an existing worktree and branch, so a resumed issue continues from its last commit.
+- Run `scripts/start-issue.sh <N>` from the main checkout. It creates `.claude/worktrees/<N>-<slug>` on branch
+  `feat/<N>-<slug>` (`fix/` for `bug` issues) from fresh `origin/main`, copies `.worktreeinclude` files, runs
+  `pnpm install`, assigns the issue and moves it to In Progress on the board. It reuses an existing worktree and
+  branch, so a resumed issue continues from its last commit.
+- Call `EnterWorktree` with `path` = the last stdout line it printed. All further work happens there, never in the
+  main checkout (another session may be using it).
 
 ## 3. Context
 
