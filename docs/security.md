@@ -22,8 +22,8 @@
 
 ## Key custody (deliberately not included)
 
-`TransactionSigner` is a port. The repo ships no implementation, and `EXECUTION_MODE=live` fails at startup
-until `loadSigner()` in `apps/api/src/signer.ts` returns one.
+`TransactionSigner` is a port. The repo ships no implementation and nothing in `apps/api` loads one:
+`EXECUTION_MODE=live` fails at startup, and the composition root always wires the dry-run executor.
 
 **The server never signs.** `NEAR_NETWORK` accepts only `mainnet`, and `EXECUTION_MODE=live` on mainnet is rejected
 at load time and again in the composition root, so a signing key cannot be put to use through this code. The user

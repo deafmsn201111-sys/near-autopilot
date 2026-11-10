@@ -1,240 +1,103 @@
 # Architecture
 
-## Principles
+NEAR Autopilot reads a connected wallet's real mainnet portfolio, ranks what could be done with it, and builds an exact
+**unsigned** transaction cascade that the user signs in their own wallet. The server never holds a key and never signs.
 
-1. **Ports and adapters.** `@near-autopilot/core` defines every interface the system needs
-   (`ContractViewer`, `TokenReader`, `PriceOracle`, `LendingReader`, `SwapQuoter`, `ProtocolPlanner`,
-   `TransactionSigner`, `TransactionBroadcaster`, `PlanExecutor`, `Agent`, `Clock`, `Logger`, ...).
-   Business logic depends on these interfaces, never on a concrete chain client.
-2. **No fake integrations.** Every adapter talks to the real chain (JSON-RPC view calls, real contract
-   methods). Test doubles exist only for the port interfaces, live in `core/testing` or in test
-   directories, and cannot be imported by production code (lint + CI enforced).
-3. **Fail closed.** Missing prices, unknown response shapes, stale data, unregistered storage, unknown
-   recipients: all stop the action rather than guessing.
-4. **Policy is the only door to execution.** The executor accepts `ApprovedPlan`, a branded type only
-   `PolicyEngine.approve()` mints.
-5. **Exact arithmetic.** Token amounts are `bigint`; USD values are `bigint` micro-USD; ratios are basis points.
-   Floating point appears only in display values (health factor as a `number`).
+## Request path: wallet to signature
 
-## Layers and allowed dependencies
-
-```mermaid
-flowchart TD
-  subgraph apps
-    API[apps/api]
-    DASH[apps/dashboard]
-  end
-  subgraph logic
-    AG[agents]
-    POL[policy-engine]
-    TX[tx-execution]
-    FIN[financial-engine]
-    ORCH[orchestrator]
-  end
-  subgraph adapters
-    NEAR[near-adapter]
-    RHEA[rhea-adapter]
-    DCL[rhea-dcl-adapter]
-    BUR[burrow-adapter]
-  end
-  CORE[core]
-  CFG[config]
-  DB[db]
-
-  API --> AG & ORCH & POL & TX & NEAR & RHEA & BUR & DB & CFG & FIN & CORE
-  DASH --> CFG & CORE
-  AG --> FIN & CORE
-  ORCH --> FIN & CORE
-  POL --> FIN & CORE
-  TX --> CORE
-  FIN --> CORE
-  NEAR --> CORE
-  RHEA --> CORE
-  BUR --> CORE
-  CFG --> CORE
-  DB --> CFG
+```
+ browser (apps/analytics, :3001)                 analytics API (apps/api/src/analytics, :4003)
+ ───────────────────────────────                 ─────────────────────────────────────────────
+ connect wallet (HOT Connector) ──account id──►  GET /v1/analytics/account/:id
+   lib/wallet.ts                                   view calls: wallet, Burrow, Rhea v1 + DCL, stNEAR/LiNEAR
+                                                   + stored prices and markets (Postgres, from the collector)
+ recommendations  ◄──portfolio + ranked recs───    portfolioRecommendations()
+ "prepare" ─► /api/prepare (Next.js proxy) ────►  POST /v1/wallet/prepare
+                                                   builders (adapters, src/wallet/*) -> assembleCascade
+                                                   validateCascade -> refuse, or return unsigned txs
+ PrepareDialog: preview  ◄──unsigned cascade───
+ lib/wallet-sign.ts ─► user's wallet signs and sends (only if MAINNET_WALLET_SIGNING=1)
 ```
 
-Rules that follow from this (all checked by `scripts/check-boundaries.mjs` and ESLint):
+1. **Connect.** `apps/analytics/lib/wallet.ts` uses HOT Connector (`@hot-labs/near-connect`) with
+   `signInWithoutAddKey`: connecting adds no access key, and only the account id leaves the wallet.
+2. **Read.** `GET /v1/analytics/account/:id` (`apps/api/src/analytics/account-view.ts`) reads the account with view
+   calls only: NEAR and token balances, the Burrow position and health factor, Rhea v1 LP shares on allowlisted pools,
+   Rhea DCL positions, and liquid-staking tokens (stNEAR, LiNEAR). Prices, Burrow markets and token metadata come from
+   what the collector stored in Postgres.
+3. **Recommend.** `portfolioRecommendations()` in the same file returns ranked recommendations (reduce concentration,
+   improve loan safety, put idle funds to work, reposition an out-of-range DCL position), each with an intent and the
+   numbers behind it. The site renders them in `components/Recommendations.tsx`.
+4. **Prepare.** The site posts the intent to `apps/analytics/app/api/prepare/route.ts`, a rate-limited proxy that adds
+   the server-side API token, which forwards to `POST /v1/wallet/prepare`. The request is zod-validated (supply, repay,
+   swap, add_liquidity, reposition_dcl, unwrap, borrow, withdraw). The API verifies the protocol deployment, resolves
+   exact base-unit amounts (`src/wallet/amounts.ts`), prepends storage registration and wrapping where needed
+   (`src/wallet/wrap.ts`), builds the transactions with the adapter builders and orders them (`src/wallet/cascade.ts`).
+5. **Validate.** Every cascade passes `validateCascade` (`apps/api/src/wallet/validate-cascade.ts`) before it is
+   returned: every transaction's signer must be the connected account, receivers and `ft_transfer_call` targets must be
+   on the per-cascade allowlist, methods on a fixed allowlist, gas at most 300 Tgas per action, deposits at most
+   0.15 NEAR per action and 0.3 NEAR per cascade (wrapping NEAR is exempt, it is the user's own value). A failure
+   refuses the whole cascade.
+6. **Sign.** `components/PrepareDialog.tsx` shows the preview. `apps/analytics/lib/wallet-sign.ts` is the only file
+   that asks a wallet to sign (enforced by `apps/analytics/test/signing-lock.test.ts`), and only when
+   `MAINNET_WALLET_SIGNING=1`. The wallet shows every action again; the user approves or rejects there.
 
-- Adapters never import each other. Rhea/Burrow reach the chain through the `ContractViewer` port; the
-  concrete `NearContractViewer` is injected by `apps/api/src/wiring.ts`.
-- `agents`, `policy-engine`, `tx-execution` never import an adapter. They see only core ports.
-- The dashboard cannot import adapters, the DB, or engines; it speaks the wire contract over HTTP.
-- `core` stays isomorphic: `node:*` is allowed only in `hash.ts` (entry `@near-autopilot/core/hash`) and the test doubles.
-- No cycles.
+## Data path: collector, Postgres, analytics API
 
-`apps/api/src/wiring.ts` is the only composition root where concrete adapters are bound to ports.
-
-## The pipeline
-
-```mermaid
-sequenceDiagram
-  participant S as SnapshotService
-  participant A as Agents
-  participant P as PlannerRegistry
-  participant PE as PolicyEngine
-  participant DB as Repository
-  participant X as PlanExecutor
-  S->>S: read native balance, tokens, Burrow position, oracle prices, risk
-  S-->>A: PortfolioSnapshot
-  A-->>P: ActionIntent (swap | repay | supply)
-  P-->>PE: PlannedTransaction (ft_transfer_call)
-  PE-->>PE: evaluate all rules (no short-circuit)
-  alt rejected / needs approval
-    PE-->>DB: proposal + violations
-  else approved
-    PE-->>DB: proposal status=approved (persisted BEFORE executing)
-    PE->>X: ApprovedPlan (plan hash + expiry)
-    X-->>DB: executed | dry_run | failed (+ tx hash)
-  end
+```
+ NEAR mainnet (views) ┐
+ Pyth, DefiLlama,     ├─► collector ──► Postgres ◄── analytics-api ◄── apps/analytics
+ exchanges, 1Click    ┘   (src/collector/main.ts)    (src/analytics/main.ts)
 ```
 
-`AutopilotCycle` (`apps/api/src/services/cycle.ts`):
+- **collector** (`apps/api/src/collector/main.ts`; service `collector` locally, `shadow-collector` on the public
+  server) reads mainnet with view calls and public price APIs on a schedule (default 900 s) and stores prices, Burrow
+  markets, Rhea pools and yields. Each cycle also runs the orchestrator (`wire()` in `apps/api/src/wiring.ts`) on the two
+  **simulated** demo portfolios. Its executor is the dry-run [Shadow Gateway](shadow-gateway.md); policy verdicts,
+  routes and the audit chain are stored. Details: [mainnet-shadow.md](mainnet-shadow.md),
+  [orchestrator.md](orchestrator.md).
+- **analytics-api** (`apps/api/src/analytics/main.ts`) applies the DB migrations at start, then serves the stored data
+  read-only under `/v1/analytics/*` (bearer token) plus `POST /v1/wallet/prepare`.
+- **analytics** (`apps/analytics`, Next.js 15 App Router) is the site. Server components call the API over HTTP; the
+  token never reaches the browser.
+- Config: `config/market.json` (allowlisted pools and tokens, policy limits, orchestrator settings), loaded by
+  `apps/api/src/market-config.ts` from `MARKET_CONFIG_FILE`. Env is validated in `packages/config`, which rejects
+  `EXECUTION_MODE=live`.
 
-- Runs at most one cycle at a time (`409` for overlap).
-- Consults agents in order (guardian first). In `live` mode it stops after the first transaction is sent
-  because the snapshot is stale afterwards.
-- A failing agent is logged and audited; it does not fail the run.
-- Persists the `approved` row and audit event before calling the executor, so a crash mid-send leaves a
-  visible record.
+Local stack: `./scripts/quickstart.sh` (postgres, analytics-api, collector, analytics; see `docker-compose.yml`).
+Public server: `deploy/public/README.md`.
 
 ## Packages
 
-### core
+| Package                     | Role                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| `packages/core`             | Domain types, ports, `ActionIntent`, `PlannedTransaction`, provenance, canonical JSON     |
+| `packages/config`           | Zod env schema                                                                            |
+| `packages/db`               | Drizzle schema and migrations                                                             |
+| `packages/near-adapter`     | NEAR JSON-RPC client, account and token readers                                           |
+| `packages/burrow-adapter`   | Burrow readers, risk maths, verified transaction builders                                 |
+| `packages/rhea-adapter`     | Rhea v1 pool reader, swap quoter, swap and liquidity builders                             |
+| `packages/rhea-dcl-adapter` | Rhea DCL (concentrated liquidity) client, tick maths, message builders                    |
+| `packages/financial-engine` | Valuation, health factor, swap, IL and yield maths (bigint, no floats)                    |
+| `packages/orchestrator`     | Multi-agent engine and pure decision engine; `LlmAgent` exists but is not wired           |
+| `packages/agents`           | Older heuristic agents                                                                    |
+| `packages/policy-engine`    | Policy rules and `ApprovedPlan` minting ([policy-verdicts.md](policy-verdicts.md))        |
+| `packages/tx-execution`     | Planner registry, approval checks, dry-run executor                                       |
+| `apps/api`                  | Collector, analytics API, wallet cascade builder; `src/wiring.ts` is the composition root |
+| `apps/analytics`            | The site; speaks HTTP to the analytics API only                                           |
 
-Branded ids (`AccountId`), domain types, `ActionIntent` union (swap, repay, supply; deliberately no
-borrow/withdraw), `PlannedTransaction`, `ApprovedPlan`, ports, errors, USD helpers, canonical JSON, and the
-API wire contracts (Zod). Entry points: `.`, `./hash` (node-only), `./testing` (test doubles).
+Dependency rules live in `boundaries.config.mjs` and are checked in CI (`scripts/check-boundaries.mjs`):
 
-### financial-engine
+- adapters depend only on `core` and never import each other;
+- `agents`, `policy-engine` and `orchestrator` depend only on `financial-engine` and `core`; the orchestrator reaches
+  policy and execution through ports it defines;
+- `apps/analytics` may import only `config` and `core`: no adapters, no DB;
+- only `apps/api` binds concrete adapters to ports.
 
-Pure functions: `valueUsd`/`rawForValueUsd`, `lendingTotals`, `healthFactor`,
-`repayAmountForTargetHealthFactor`, `collateralValueForTargetHealthFactor`, `minAmountOut`,
-`oracleDeviationBps`, `computeAllocation`, `planRebalance`, `valuePortfolio`. Prices use the oracle's native
-`multiplier / 10^decimals` USD-per-raw-unit form, so valuation never needs token decimals or floats.
-Health factor follows Burrow's definition: `Σ collateral × collateralFactor ÷ Σ debt ÷ borrowFactor`.
+## Principles
 
-The package also holds the deterministic financial engine (all `bigint`, explicit rounding, no floats):
-`clmm` (concentrated-liquidity valuation, fee growth), `amm` (constant-product and v3-style quotes, slippage),
-`impermanent-loss`, `yield` (fee APR, net yield; realized, marked and estimated are separate types),
-`rebalance` (swap sizing and cost), `risk` (health factor, liquidation buffers and prices, stress tests,
-liquidation simulation) and `allocate` (exact constrained allocation). Every assumption and limitation is in
-[financial-engine.md](financial-engine.md).
-
-### near-adapter
-
-`NearRpcClient` (timeouts, bounded retries on idempotent reads only, never retries broadcasts),
-`NearContractViewer`, `NearAccountReader` (spendable balance net of storage reserve), `NearTokenReader`
-(NEP-141 + NEP-145), `NearChainContextProvider` (nonce + block hash), `NearTransactionBroadcaster`
-(waits for `FINAL`, treats a failed receipt anywhere in the tree as failure).
-
-### rhea-adapter
-
-`RheaSwapQuoter` calls the exchange's `get_return` on operator-listed pools and picks the best.
-`RheaPlanner` builds the instant-swap `ft_transfer_call` and refuses to plan if the output token's storage
-is not registered for the signer (the output would otherwise be stranded).
-
-### rhea-dcl-adapter
-
-Rhea/Ref **v2 concentrated liquidity**, kept separate from `rhea-adapter` (which talks to the v1 AMM). It has
-four layers: `RheaDclClient` (read-only, strict Zod-validated views over the core `ContractViewer` port),
-`math` (exact bigint tick and liquidity arithmetic ported from Rhea's frontend), `messages` (pure builders
-that return `FunctionCallAction`s and never sign), and `wasm-exports` (`verifyDeployedAbi`: reads the
-deployed WASM's export table over `view_code` to prove a method name exists on a given deployment).
-It depends only on `core`; it is not yet wired into the agents or the API. What is verified, and against
-what, is in [rhea-dcl-capability-matrix.md](rhea-dcl-capability-matrix.md).
-
-### burrow-adapter
-
-Depends only on `core`. Read side: `BurrowClient` (`get_config`, `get_asset`, `get_assets_paged_detailed`,
-`get_account`, `storage_balance_of`) and `BurrowOracleClient` (`get_price_data`), all Zod-validated, in Burrow's
-**inner** units; `BurrowLendingReader`/`BurrowPriceOracle` adapt them to the core ports (converting inner → raw
-with `extra_decimals`, and refusing prices if Burrow is configured with an unexpected oracle).
-
-Risk side (`risk.ts`): pure bigint reproduction of the contract's liquidation rule (`volatility_ratio` weights
-collateral and divides debt; equality is safe): health factor, LTV, liquidation threshold, max liquidation
-discount, stress scenarios and per-asset breakeven moves.
-
-Write side: `BurrowVerifier` mints `VerifiedBurrowDeployment`/`VerifiedBurrowToken` proofs after checking the RPC's
-chain id, the code actually deployed at Burrow, its oracle and the token (using `core`'s `assertChainId` and
-`checkExportedMethods`). `buildRepay`, `buildSupply`, `buildSupplyAsCollateral` and
-`buildIncreaseCollateralFromSupplied` accept only those proofs; `BurrowPlanner` composes them. Borrow and
-withdraw are intentionally not implemented. Evidence and gaps: [burrow-capability-matrix.md](burrow-capability-matrix.md).
-
-### agents
-
-`HealthGuardianAgent` decides on the exact health factor in basis points (`healthFactorBps`, bigint; config values
-are schema-limited to 4 decimals), sizes repayments/collateral with exact bigint maths and caps by wallet holdings.
-`RebalancerAgent` plans one capped trade and derives the slippage floor from a live quote. Agents are
-pure: they observe a snapshot and return intents.
-
-### orchestrator
-
-Coordinates Market Intelligence, LP Optimizer, Liquidation Guardian and Capital Allocator. Agents return untrusted
-`unknown`; a strict schema + capability table turns it into typed proposals (no field can carry a receiver, method, key
-or signature). A pure `decide()` re-derives value, risk, size, benefit and cost and ranks candidates; the policy engine,
-injected through a port, separately authorises; a final re-check and a mode check run before `policy.approve`. Provides
-no-action decisions, stale-data protection, cycle- and action-level idempotency with an in-doubt protocol, a fail-closed
-hash-chained audit log, risk escalation, and an emergency read-only mode. It depends only on `core` and
-`financial-engine`; `policy-engine` and `tx-execution` are test-only dependencies. Persistence ports have in-memory
-reference implementations only. It is wired into `apps/api` behind `AUTOPILOT_ENGINE=orchestrator`
-(`services/orchestrated-cycle.ts`), using the same snapshot service, planners, policy engine and executor as the legacy
-path; because its stores are in-memory, configuration refuses it with `EXECUTION_MODE=live`. No market-data source is
-integrated, so Market Intelligence, LP Optimizer and Capital Allocator report `insufficient_data` outside tests.
-See [orchestrator.md](orchestrator.md).
-
-### simulation (apps/api/src/simulation)
-
-`DATA_SOURCE=simulation` replaces the NEAR RPC transport with `SimulatedChain`, an in-process mock serving a
-synthetic demo portfolio (`demo-500` or `demo-5000`, see `demo-portfolios.ts`). Everything above the transport is the
-production code, unchanged. It is dry-run only, never opens a socket, refuses `send_tx`, and every run/proposal row and
-DTO is labelled `dataSource: "simulation"`; the dashboard shows a permanent SIMULATION banner.
-
-### policy-engine
-
-`PolicyEngine` is also the `ApprovalAuthority` (core port): it remembers every decision it produced (bound to the
-evaluated plan's hash, single use) and every `ApprovedPlan` it minted, and executors refuse approvals it does not
-recognise. The `ApprovedPlan` brand alone is compile-time only.
-
-Config schema (strict, cross-validated) and 12 rules. The engine re-values every intent from oracle prices
-itself (never trusting the agent), checks the plan matches the intent byte-for-byte on the fields that move
-money, and produces a decision with every violation. `approve()` binds an approval to a SHA-256 of the
-canonical plan with a TTL.
-
-### tx-execution
-
-`PlannerRegistry`, `verifyApproval` (expiry + plan hash), `TransactionExecutor` (verify → nonce/block hash →
-sign → broadcast; one-time-use approvals), `DryRunExecutor` (same verification, no signing, reports `dry_run`).
-
-### db
-
-Drizzle schema for `runs`, `proposals`, `audit_events` (append-only), client factory and migrator. The
-migration SQL is committed in `packages/db/drizzle`; generate new ones with `pnpm db:generate`.
-
-### apps/api
-
-Fastify server (bearer auth with constant-time compare, Zod-validated queries, generic 500s), the cycle,
-snapshot service (+15 s cache for dashboard polling), Drizzle repository, wiring, scheduler.
-
-### apps/dashboard
-
-Next.js App Router, server components only talk to the API (the token never reaches the browser),
-responses are re-validated against the shared Zod contracts.
-
-## Data model
-
-- `runs(id, account_id, status, started_at, finished_at, error, snapshot jsonb)`
-- `proposals(id, run_id → runs, agent_id, kind, summary, reason, intent jsonb, value_usd_micro, status,
-violations jsonb, plan_hash, execution_mode, tx_hash, error, created_at, updated_at)`
-- `audit_events(id, at, type, run_id, proposal_id, payload jsonb)` — append-only
-
-Proposal `status`: `rejected | approved | requires_approval | planning_failed | dry_run | executed | failed`.
-`approved` is transient; a row left in it means execution did not resolve and needs manual reconciliation.
-
-## Extending
-
-- **New protocol:** add `packages/<name>-adapter` depending only on `core`; implement `SwapQuoter`/`LendingReader`/`ProtocolPlanner`;
-  register it in `wiring.ts`; add it to `boundaries.config.mjs`; extend `ActionIntent` and policy rules.
-- **New agent:** implement `Agent` in `packages/agents`, register in `wiring.ts`. It can only emit existing intent kinds.
-- **New policy rule:** add a `Rule` to `packages/policy-engine/src/rules.ts` and `DEFAULT_RULES`; add a test.
+- **No server signing.** No signer is wired anywhere; signing happens only in the user's wallet.
+- **Fail closed.** Missing prices, stale data, unknown response shapes or unexpected receivers stop the action.
+- **Exact amounts.** On-chain values are bigint / integer strings in base units; floats only for display.
+- **Untrusted input.** Chain data, market data and agent or LLM output are validated with zod and re-derived before
+  use; agent output goes through the same policy and cascade validation.

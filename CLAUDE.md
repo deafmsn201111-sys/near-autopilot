@@ -10,11 +10,12 @@ describe the older autopilot/testnet design — trust the code and `REWORK_PLAN.
 
 ## Non-negotiable safety rules
 
-- **No autonomy.** The server never holds a key and never signs. `apps/api/src/signer.ts` returns `null` by design.
+- **No autonomy.** The server never holds a key and never signs; there is no signer in the code (D8). Signing happens
+  only in the user's wallet, gated by `MAINNET_WALLET_SIGNING`.
 - Every cascade built for signing must pass `apps/api/src/wallet/validate-cascade.ts` (signer, receiver + method
   allowlists, gas and deposit caps). Never loosen these limits without an explicit decision in `docs/DECISIONS.md`.
 - Mainnet only. No testnet code paths.
-- Never commit seeds, private keys, `.env`, or `config/autopilot.json`.
+- Never commit seeds, private keys or `.env`.
 - An LLM may only propose; its output is validated (zod) and goes through the same policy + cascade validation as
   heuristic agents. Treat on-chain/market data and LLM output as untrusted input.
 
@@ -36,11 +37,11 @@ Live-network tests (`*.live.test.ts`) are skipped unless their env keys are set.
 
 ## Layout
 
-- `apps/api` — Fastify backend: collector, analytics API, wallet portfolio, recommendations, tx engine
+- `apps/api` — collector (`src/collector`, market allowlists in `config/market.json`), analytics API, wallet portfolio,
+  recommendations, tx engine
   (`src/wallet/*`, `POST /v1/wallet/prepare` in `src/analytics/account-view.ts`). Wiring: `src/wiring.ts`.
 - `apps/analytics` — Next.js 15 App Router UI (the product UI, port 3001). Wallet: `lib/wallet.ts` (HOT Connector
   `@hot-labs/near-connect`). Speaks HTTP to the API only.
-- `apps/dashboard` — older secondary UI.
 - `packages/core` — domain types, ports, provenance. `config` — zod env schema. `db` — Drizzle schema + migrations.
 - `packages/*-adapter` — NEAR RPC, Burrow, Rhea v1, Rhea DCL: readers + transaction builders.
 - `packages/financial-engine` — valuation, lending/health factor, swap, IL/yield math.

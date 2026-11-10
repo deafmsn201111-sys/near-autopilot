@@ -48,3 +48,28 @@ column and the CHECK constraints that still allow `'testnet'` stay as history; o
 (`token`). Reads are filtered to the deployment's own provenance, which is mainnet.
 **Consequences:** No migration risk on the VPS. `packages/db/src/schema.ts` and the migrations keep the word
 "testnet". `EXECUTION_MODE=live` is now always refused; its removal belongs to #13.
+
+## D8 — Remove the autopilot; keep the collector's agents
+
+**Context:** The autopilot layer (its HTTP API with `/v1/runs` and `/v1/requests`, `signer.ts`, the operator controls
+`/v1/control/*`, `apps/dashboard`, `PUBLIC_DEMO`) described a product that signs on its own. The rework
+(`REWORK_PLAN.md`) is an analyst: the user signs every transaction in their own wallet (#13).
+**Decision:** Delete the autopilot API process, the server signer extension point, the operator controls (pause,
+read-only mode, "run now", the `/autopilot` page, "Refresh with live data", "Reset demo"), `apps/dashboard` and
+`PUBLIC_DEMO`. Keep the collector and its orchestrated cycle on the two simulated demo portfolios (dry-run, Shadow
+Gateway quotes, policy verdicts); its agents become LLM tools in #18. The collector's allowlists and limits move to
+`config/market.json` (`MARKET_CONFIG_FILE`, zod schema in `apps/api/src/market-config.ts`). `analytics-api` now applies
+the migrations. The account-lookup rate limit no longer depends on a flag: it is always on.
+**Consequences:** No process can sign, and no HTTP route changes the system state except building an unsigned cascade.
+The `collector_control` and orchestrator mode tables stay in the database, unused by the UI. The legacy engine
+(`AUTOPILOT_ENGINE=legacy`) stays in code for tests; nothing deployed runs it.
+
+## D9 — Wallet signing on the public site, caps unchanged
+
+**Context:** With `PUBLIC_DEMO` gone, signing is controlled only by `MAINNET_WALLET_SIGNING` (`HACKATHON_PLAN.md`,
+Signing).
+**Decision:** `deploy/public/docker-compose.yml` sets `MAINNET_WALLET_SIGNING: '1'` (fixed, not read from `.env`). The
+cascade caps in `apps/api/src/wallet/validate-cascade.ts` stay as they are: 0.15 NEAR per action, 0.3 NEAR per
+cascade, plus the signer, receiver and method allowlists and the gas cap.
+**Consequences:** A visitor can sign a validated cascade for their own account in their own wallet. The server still
+holds no key. Raising a cap needs a new entry here.

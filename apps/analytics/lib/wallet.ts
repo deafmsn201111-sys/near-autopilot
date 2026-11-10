@@ -9,7 +9,7 @@ import { NearConnector } from '@hot-labs/near-connect';
  * ONE-CLICK SIGNING IS OWNER-WALLET-ONLY:
  *  - the ONLY place that asks a wallet to sign is `lib/wallet-sign.ts`; a test (test/signing-lock.test.ts) fails if
  *    any OTHER source file calls a wallet's transaction-signing method or asks for a function-call access key;
- *  - signing is behind a flag and is always off on the public demo; the user signs their own account's cascade in
+ *  - signing is behind the MAINNET_WALLET_SIGNING flag; the user signs their own account's cascade in
  *    their own wallet, which shows every action again for approval. The server holds no key and sends nothing.
  */
 export const MAINNET_SIGNING = 'owner-wallet-only' as const;

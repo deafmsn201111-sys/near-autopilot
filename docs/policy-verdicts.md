@@ -22,13 +22,19 @@ Each decision carries:
 
 ## Storage: `policy_verdicts`
 
-Both decision paths (the legacy cycle and the orchestrator) store every verdict **before** acting on it: if the
-write fails, the cycle stops and nothing is executed. Rows are append-only and keep the full evaluation input
-(`intent`, `plan`, `snapshot`, `history` as canonical JSON, and since stage 4 the policy `config`), so a decision can
-be re-evaluated with `pnpm audit:replay` ([audit-evidence.md](audit-evidence.md)). The table refuses
-a verdict that contradicts its outcome (`policy_verdicts_consistent_check`). Migration `0009` only adds the table.
+Verdicts are produced by the collector's cycle (`apps/api/src/collector/main.ts`): on each market snapshot the
+orchestrator runs on the two simulated demo portfolios, and every plan it proposes is evaluated here. The cycle stores
+each verdict **before** acting on it: if the write fails, the cycle stops and nothing is executed (and execution is a
+dry run through the [Shadow Gateway](shadow-gateway.md) anyway). Rows are append-only and keep the full evaluation
+input (`intent`, `plan`, `snapshot`, `history` as canonical JSON, and since stage 4 the policy `config`), so a decision
+can be re-evaluated with `pnpm audit:replay` ([audit-evidence.md](audit-evidence.md)). The table refuses a verdict that
+contradicts its outcome (`policy_verdicts_consistent_check`). Migration `0009` only adds the table.
 
-`GET /v1/policy/verdicts?limit=50&verdict=BLOCK` (bearer token) lists them, newest first, without the input.
+Read them on the site's `/policy` page, or from the analytics API (bearer token), newest first, without the full input:
 
-Verdicts are written only when an agent actually proposes an action. In the read-only shadow analysis most cycles
-propose nothing, so the table is legitimately empty until a proposal (or a labelled demo fixture) is evaluated.
+```bash
+curl -s -H "authorization: Bearer $API_TOKEN" 'http://127.0.0.1:4003/v1/analytics/policy/verdicts?limit=50&verdict=BLOCK'
+```
+
+Verdicts are written only when an agent actually proposes an action. Most cycles propose nothing, so the table is
+legitimately empty until a proposal (or a labelled demo fixture) is evaluated.

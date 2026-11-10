@@ -352,12 +352,6 @@ export async function wire(
     simulation,
     market,
     yields,
-    /** The same planners and executor the cycles use, for operator requests (services/requests.ts). */
-    planners,
-    executor,
-    accountId: env.AUTOPILOT_ACCOUNT_ID,
-    /** The orchestrator's control state (mode), for the operator endpoints; null on the legacy engine. */
-    control: env.AUTOPILOT_ENGINE === 'orchestrator' ? { scope, store: stores.control } : null,
   };
 }
 

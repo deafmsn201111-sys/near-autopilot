@@ -51,7 +51,7 @@ export const marketConfigSchema = z
         message: 'minObservationSeconds must not exceed maxObservationSeconds',
       })
       .optional(),
-    /** Used only when AUTOPILOT_ENGINE=orchestrator; every field has a conservative default. */
+    /** The orchestrator agents (the collector runs AUTOPILOT_ENGINE=orchestrator); every field has a conservative default. */
     orchestrator: orchestratorConfigSchema.optional(),
   })
   .strict();

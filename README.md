@@ -5,12 +5,12 @@ A policy-gated autopilot for NEAR DeFi positions. Agents watch a wallet and its
 rebalance through [Rhea](https://rhea.finance) pools), and a deterministic **policy engine** decides
 whether each action may run. Nothing is signed unless policy approved that exact transaction.
 
-> **Safe by default.** The system starts in `dry-run`: it reads the chain, plans transactions,
-> evaluates policy and records everything, but never signs or broadcasts. Live execution requires
-> you to supply a key-custody implementation (see [docs/security.md](docs/security.md)).
+> **The server never signs.** It holds no key. It builds an exact **unsigned** transaction cascade, checks it
+> against fixed caps (allowlisted contracts and methods, at most 0.15 NEAR per action and 0.3 NEAR per cascade) and
+> hands it to your own wallet, where you sign it or not ([docs/security.md](docs/security.md)).
 >
-> **Status:** a working local demo (simulation + dry-run) and read-only mainnet integration. **Mainnet execution is
-> not a finished or verified feature**, and no seed phrase, private key or wallet is needed to run anything below.
+> **Status:** read-only mainnet analytics and wallet-signed cascades. No seed phrase, private key or wallet is needed
+> to run anything below.
 
 **Plan and roadmap:** [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).
 
@@ -27,7 +27,7 @@ the hackathon work apart: [HACKATHON_BUILD.md](HACKATHON_BUILD.md).
   connected, and imported into git on 2026-11-04. The next commits audit and fix it. Git cannot prove the dates
   before 2026-11-04; they rest on the author's statement.
 
-NEAR Autopilot is a DeFi manager for NEAR on its way to full autonomy. It guards lending positions against
+NEAR Autopilot is an AI DeFi analyst for NEAR. It guards lending positions against
 liquidation, refuses actions that lose money after costs, and analyses liquidity pools. Three levels are kept apart
 everywhere in this repository:
 
@@ -37,11 +37,11 @@ everywhere in this repository:
 | **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                     |
 | **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                     |
 
-Mainnet is read-only: signing on mainnet is locked in code, and NEAR Intents 1Click is used for dry quotes only.
+The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet, and NEAR
+Intents 1Click is used for dry quotes only.
 
-**Live demo (public, read-only):** https://near-autopilot.tech. It runs in public demo mode: live
-mainnet data, the two simulated demo portfolios, "Let the agent do it" as a dry run; operator controls are off
-([deploy/public](deploy/public/README.md)).
+**Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
+account once you connect a wallet ([deploy/public](deploy/public/README.md)).
 
 Every "try it" step below starts from the [Quick start](#quick-start): `./scripts/quickstart.sh`, then the dashboard on
 `http://127.0.0.1:3001`. On a fresh clone it took 6 min 13 s (2026-11-08).
@@ -68,12 +68,11 @@ attach a deposit**, not even 1 yoctoNEAR. But every action this agent takes is a
 repayment or deposit on Burrow, or a swap on Rhea. NEP-141 requires exactly 1 yoctoNEAR on that call. So:
 
 - a function-call key cannot sign any of these actions: the NEAR runtime rejects them;
-- a full-access key could, but it can also add keys, deploy code and drain the account. The executor **refuses a
-  full-access key** before any cycle runs ([`key-guard.ts`](packages/tx-execution/src/key-guard.ts)).
+- a full-access key could, but it can also add keys, deploy code and drain the account.
 
-The result is deliberate: the agent cannot sign on its own, and everything runs dry-run. Real autonomous execution
-needs custody with its own limits, for example an on-chain guard contract or an MPC signer. That is on the roadmap,
-not built.
+The result is deliberate: the server holds no key and never signs. The agents' proposals run as dry runs on the demo
+portfolios; for a connected wallet the server builds the unsigned cascade, `validateCascade` checks it
+([`validate-cascade.ts`](apps/api/src/wallet/validate-cascade.ts)), and the user signs it in their own wallet.
 
 **Try it**
 
@@ -81,22 +80,18 @@ not built.
    - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
      approval and a full-access key.
    - The log is in `docs/evidence/demo-attack.log.jsonl`.
-2. Open `:3001` and keep the demo portfolio and Demo mode. On "Repay … of the loan", press **Let the agent do it**:
-   - enter `30`: you see "Done as a dry run", and the demo balances change under a "Changed by the agent
-     (simulated)" note;
-   - enter `80`: the policy asks for your confirmation ("exceeds auto-approval threshold $50").
-3. Open `:3001/activity`. You see your request, the policy's answer and that nothing was signed or sent.
-4. Run `docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify`. You see
-   every audit chain `ok` and `"checkpoints":"ok"`. `:3001/audit` shows the same.
-5. Open `:3001/policy`. You see stored verdicts, each check with its inputs.
-6. Run `pnpm --filter @near-autopilot/analytics test`. You see `signing-lock.test.ts` pass. It fails if any dashboard
-   source calls a wallet's signing method.
+2. Open `:3001/activity`. You see what the agents proposed for a demo portfolio each cycle, the policy's answer, and
+   that nothing was signed or sent.
+3. Run `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify`. You see every audit chain
+   `ok` and `"checkpoints":"ok"`. `:3001/audit` shows the same.
+4. Open `:3001/policy`. You see stored verdicts, each check with its inputs.
+5. Run `pnpm --filter @near-autopilot/analytics test`. You see `signing-lock.test.ts` pass. It fails if any site
+   source other than `lib/wallet-sign.ts` calls a wallet's signing method.
 
 **Not done**
 
-- No autonomous signing and no guard contract.
+- No server-side signing (by design) and no guard contract.
 - No TEE attestation and no counterparty-reputation service.
-- Mainnet signing is locked; the wallet connection is sign-in only.
 
 ### DeFi track: protect the position, refuse value-losing actions
 
@@ -123,12 +118,13 @@ not built.
 2. Open `:3001/opportunities`, then a "USDC / wNEAR (concentrated …)" pool. You see a table for ±5/±15/±50 % ranges:
    fees, divergence loss and net result, plus what actually happened over the stored window.
 3. Open `:3001/routes`. You see Rhea compared with 1Click for an allowed plan, with `executed: false`.
-4. Press **Connect wallet** and sign in with a NEAR wallet (checked with HOT). You see your own mainnet account, read
-   only: holdings, Burrow position, options. Nothing can be signed.
+4. Press **Connect wallet** and sign in with a NEAR wallet (checked with HOT). You see your own mainnet account:
+   holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
+   them in your wallet or cancel.
 
 **Not done**
 
-- No real swaps, deposits or repayments on mainnet.
+- The agents never act on their own: every mainnet transaction is one the user signed.
 - No LP execution: pools are analysis only.
 - No Chain Signatures and no cross-chain settlement.
 
@@ -154,10 +150,11 @@ counter-evidence written out.
 
 ## What it does
 
-Two interchangeable decision engines feed the same pipeline
-(snapshot → agents → planner → **policy engine** → executor → Postgres → dashboard), selected by `AUTOPILOT_ENGINE`:
+The collector runs the agents on the two simulated demo portfolios every cycle
+(snapshot → agents → planner → **policy engine** → dry-run executor → Postgres → site). Two engines exist, selected by
+`AUTOPILOT_ENGINE`; the collector uses `orchestrator`:
 
-**`legacy`** (default)
+**`legacy`**
 
 | Agent             | Job                                                                                                                     |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -175,16 +172,15 @@ Two interchangeable decision engines feed the same pipeline
 
 Agent output is strictly schema-validated, then a pure decision engine ranks candidates; each one still has to pass
 the same policy engine and executor as the legacy path. Every proposal, policy decision and execution result is stored
-in Postgres and visible in the dashboard.
+in Postgres and visible on the site.
 
 ## Repository layout
 
 ```
 apps/
-  api/            Fastify HTTP API + pipeline orchestration (composition root); also the MAINNET read-only
-                  shadow collector (src/collector) and the read-only analytics API (src/analytics)
-  dashboard/      Next.js dashboard for the autopilot APIs (talks to the API over HTTP only)
-  analytics/      Next.js analytics dashboard for the collector's data (read-only, talks to the analytics API only)
+  api/            MAINNET read-only collector (src/collector), analytics API + wallet cascade builder
+                  (src/analytics, src/wallet), pipeline wiring (src/wiring.ts)
+  analytics/      Next.js site, the product UI (talks to the analytics API only)
 packages/
   core/             Shared types, ports (interfaces), Zod schemas, wire contracts, errors
   config/           Environment validation (Zod)
@@ -196,9 +192,9 @@ packages/
   agents/           Health guardian and rebalancer (pure decision logic)
   orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; AUTOPILOT_ENGINE=orchestrator, dry-run only)
   policy-engine/    12 checks -> ALLOW / WARN / BLOCK verdict with policy version and snapshot id (stored in policy_verdicts, docs/policy-verdicts.md); the only code that can mint an ApprovedPlan
-  tx-execution/     Planner registry, live executor, explicit dry-run executor
+  tx-execution/     Planner registry, dry-run executor
   db/               Drizzle schema, client, SQL migrations
-config/             autopilot.example.json (mainnet ids), autopilot.shadow.example.json (mainnet read-only shadow profile)
+config/             market.json: token/pool allowlists and market limits for the collector and its agents
 docs/               architecture.md, security.md, financial-engine.md, orchestrator.md, mainnet-shadow.md,
                     rhea-dcl-capability-matrix.md, burrow-capability-matrix.md,
                     policy-verdicts.md, shadow-gateway.md, audit-evidence.md
@@ -206,7 +202,7 @@ docs/               architecture.md, security.md, financial-engine.md, orchestra
 
 In dry-run, every approved plan goes through the **Shadow Gateway** (`apps/api/src/gateway/`). The gateway re-checks
 the stored ALLOW verdict and the approval, then quotes Rhea pool #4512 and a NEAR Intents 1Click **dry** quote. It
-records the best execution in `execution_routes` (`GET /v1/routes`). It has no signer. See
+records the best execution in `execution_routes` (`:3001/routes`). It has no signer. See
 [docs/shadow-gateway.md](docs/shadow-gateway.md).
 
 Every audit event is appended to a **hash chain in Postgres**, which continues across restarts. Every policy verdict
@@ -219,7 +215,7 @@ outputs differ from what the raw data gives. `pnpm thesis:fetch` re-reads the ra
 
 `pnpm demo:attack` runs labelled attack fixtures (prompt injection, foreign recipient, extra Withdraw, stale price,
 thin pool, forged approval, full-access key) through the real defences. Every attack is stopped and the log is
-written to `docs/evidence/demo-attack.log.jsonl`. The live executor refuses full-access keys. See
+written to `docs/evidence/demo-attack.log.jsonl`. See
 [docs/security.md](docs/security.md).
 
 Dependency direction is enforced mechanically (ESLint + `scripts/check-boundaries.mjs`, both driven by
@@ -231,17 +227,15 @@ Dependency direction is enforced mechanically (ESLint + `scripts/check-boundarie
 
 ```bash
 git clone https://github.com/deafmsn201111-sys/near-autopilot && cd near-autopilot
-./scripts/quickstart.sh            # or --offline: simulation only, nothing leaves the machine
-open http://127.0.0.1:3001         # analytics: policy decisions, routes, audit trail, thesis, markets
+./scripts/quickstart.sh
+open http://127.0.0.1:3001         # portfolio, opportunities, policy decisions, routes, audit trail, thesis
 ```
 
 The script never overwrites anything. It works as follows:
 
-1. Creates `.env` with fresh random secrets (never printed) and `config/autopilot.json`, only if they are missing.
-2. Starts Postgres, the simulation autopilot (dashboard `:3004`) and the read-only mainnet analytics (`:3001`, shadow
-   autopilot `:3003`).
-3. Waits until every container is healthy.
-4. Runs one dry-run cycle, so a policy verdict, a gateway record and audit entries exist from the start.
+1. Creates `.env` with fresh random secrets (never printed), only if it is missing.
+2. Starts Postgres, the analytics API (applies the migrations), the mainnet collector and the site (`:3001`).
+3. Waits until every container is healthy. The collector's first cycle fills the pages within a few minutes.
 
 Nothing is signed or sent. Mainnet is read with view calls through a public RPC.
 
@@ -250,29 +244,25 @@ Pyth is skipped and cycles report `partial`; the NEAR price still comes from the
 Set `MAINNET_READ_RPC_API_KEY` (FastNEAR) and `PYTH_API_KEY` in `.env` for full-speed, complete cycles.
 
 **Measured on a fresh clone** (2026-11-08, macOS, Docker Desktop): `./scripts/quickstart.sh` took 6 min 13 s to
-healthy containers, with no manual edits, and `pnpm verify` passed. (Earlier, 2026-11-06: 3 min 51 s; `audit:verify`
-passed and `audit:replay` matched 1 of 1 verdict.)
+healthy containers, with no manual edits, and `pnpm verify` passed (measured before the autopilot API was removed).
 
 ## Using the dashboard (`:3001`)
 
-Four pages for a person who wants to use the autopilot, and one area for reviewers.
+Four pages for a person, and one area for reviewers.
 
-| Page              | What you see and do                                                                                                                                                                                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision; "Refresh with live data" |
-| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                 |
-| **Activity**      | Every decision of the autopilot for the portfolio, in plain words: what each agent saw, what was proposed, what the safety policy said and why. Identical checks in a row are grouped                                                                                |
-| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                              |
-| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, controls (pause, read-only), system health, raw markets, prices, simulations, collector log                                                                     |
+| Page              | What you see and do                                                                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision |
+| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                       |
+| **Activity**      | Every decision of the autopilot for the portfolio, in plain words: what each agent saw, what was proposed, what the safety policy said and why. Identical checks in a row are grouped                                                      |
+| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                    |
+| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                        |
 
 **Shadow mode.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two portfolios ($500 and
 $5,000) are simulated and labelled as such.
 
-- **Let the agent do it** (Demo mode, demo portfolios): the agent plans the action, the policy runs its 12 checks,
-  and the executor runs it as a dry run. The demo balances then change as if it had been sent: a simulated ledger
-  with a "Reset demo" button. Nothing is signed or sent.
-- **Connect wallet** (HOT Connector): sign-in only, no access key added. It opens a read-only view of your own mainnet
-  account. The two mainnet modes are shown, but their signing is locked.
+- **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
+  recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
 
 **Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 
@@ -298,136 +288,97 @@ costs), or why the autopilot would not do it.
 | Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)                                                                        |
 | Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                                                                                         |
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
-| Wallet connection                                                                   | Sign-in only (HOT Connector) with a read-only account view; signing locked                                                                       |
-| Mainnet execution, AI assistant                                                     | **Not implemented.** Planned, see [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md)                                                               |
+| Wallet connection and signing                                                       | HOT Connector; unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)                          |
+| Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
+| AI assistant                                                                        | **Not implemented.** Planned, see [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md)                                                               |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 
 ```bash
-docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify   # chains + signed checkpoints
-docker compose exec api node --import tsx src/evidence/cli.ts replay    # every stored verdict, recomputed
+docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify   # chains + signed checkpoints
+docker compose exec analytics-api node --import tsx src/evidence/cli.ts replay   # every stored verdict, recomputed
 ```
 
 With Node and `pnpm install`: `pnpm demo:attack` (attack fixtures against the real defences) and
 `pnpm thesis:rebuild` (thesis outputs from the committed raw data, byte-identical).
 
-**Developer setup:** Node 22 (`.nvmrc`), pnpm 9.15 (`packageManager`), Docker with Compose v2 (for Postgres, or the
-whole stack).
+**Developer setup:** Node 22 (`.nvmrc`), pnpm 9.15 (`packageManager`), Docker with Compose v2.
 
 ```bash
 pnpm install --frozen-lockfile
-cp .env.example .env              # mainnet + dry-run by default; set API_TOKEN, POSTGRES_PASSWORD, DATABASE_URL, AUTOPILOT_ACCOUNT_ID
-cp config/autopilot.example.json config/autopilot.json   # then edit (see below)
-
-docker compose up -d postgres
-pnpm dev                          # API on :4000, dashboard on :3000 (migrations run on API start)
+pnpm verify                       # format, lint (incl. boundaries), typecheck, tests
+./scripts/quickstart.sh           # the whole stack in containers
 ```
 
-Or run everything in containers: `docker compose up --build`.
+### Local stack
 
-Trigger a cycle manually:
+Everything in containers, bound to `127.0.0.1` only. `.env` is git-ignored; the quickstart generates fresh secrets.
 
-```bash
-curl -X POST -H "Authorization: Bearer $API_TOKEN" http://localhost:4000/v1/runs
-```
-
-Set `CYCLE_INTERVAL_SECONDS` to run on a schedule (0 = off).
-
-### Demo without a wallet: simulation mode
-
-`DATA_SOURCE=simulation` runs the full production pipeline (adapters, Burrow verifier, planners, policy engine,
-dry-run executor) against an in-process **mock** NEAR RPC serving a synthetic portfolio. Nothing is read from or sent
-to any network, every row and API response is labelled `simulation`, and the dashboard shows a SIMULATION banner.
-
-| `SIMULATION_PORTFOLIO` | Synthetic position (demo prices: NEAR $3, USDt $1)            | What happens                                                  |
-| ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
-| `demo-500`             | gross $500: 120 wNEAR collateral, 200 USDt debt, HF ~1.28     | guardian repays ~$40 USDt; policy approves; dry-run, not sent |
-| `demo-5000`            | gross $5,000: 1150 wNEAR collateral, 2000 USDt debt, HF ~1.23 | needed repay ~$464 exceeds the $100 per-action cap; rejected  |
-
-Use it with `config/autopilot.example.json` (the demo tokens must be allowlisted).
-`AUTOPILOT_ENGINE=orchestrator` runs the multi-agent orchestrator instead of the legacy guardian; both are covered by
-`apps/api/test/simulation.test.ts`.
-
-### Local Docker demo (simulation, orchestrator, dry-run)
-
-Everything in containers, bound to `127.0.0.1` only. `.env` and `config/autopilot.json` are git-ignored; generate
-fresh secrets rather than reusing the example values.
+| Service         | What it does                                                                                        | Port (127.0.0.1) |
+| --------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
+| `postgres`      | Database (volume `pgdata`)                                                                          | 5432             |
+| `analytics-api` | Applies the migrations, serves the stored data read-only, builds unsigned wallet cascades           | 4003             |
+| `collector`     | Reads mainnet on a schedule (view calls only), runs the agents on the two simulated demo portfolios | none             |
+| `analytics`     | The site                                                                                            | 3001             |
 
 ```bash
-cp .env.example .env    # then set: API_TOKEN / POSTGRES_PASSWORD (openssl rand -hex 32), DATABASE_URL to match,
-                        # DATA_SOURCE=simulation, AUTOPILOT_ENGINE=orchestrator, EXECUTION_MODE=dry-run,
-                        # AUTOPILOT_ACCOUNT_ID=<any valid *.near id>; DASHBOARD_PORT etc. if a port is taken
-cp config/autopilot.example.json config/autopilot.json   # set policy.signerAccountId = AUTOPILOT_ACCOUNT_ID
-docker compose up -d --build        # postgres -> api (runs migrations) -> dashboard; all three have health checks
 docker compose ps                   # wait for (healthy)
-docker compose logs -f api          # structured JSON logs
+docker compose logs -f collector    # one JSON line per cycle: status, records, duration
 docker compose stop                 # stop, keep data   |   docker compose start   # resume
 ```
 
-Two images serve every API and dashboard container: `near-autopilot-api:local` (built by `api`) and
-`near-autopilot-dashboard:local` (built by `dashboard`). The shadow / analytics services reuse them, so a
-rebuild runs each Dockerfile once instead of once per service: `docker compose build api dashboard`, then
-`docker compose --profile shadow up -d` to restart whatever runs the old image.
+The `pgdata` volume survives `stop`, `down` and reboots. `docker compose down -v` deletes the database: don't, unless
+you mean it.
 
-The `pgdata` volume survives `stop`, `down` and reboots (`restart: unless-stopped` brings the stack back when Docker
-Desktop starts). `docker compose down -v` deletes the database: don't, unless you mean it. Switch portfolio with
-`SIMULATION_PORTFOLIO=demo-5000` in `.env` and `docker compose up -d api`.
+### The mainnet collector
 
-In this mode the three market-dependent agents (market intelligence, LP optimizer, capital allocator) report
-`no_action / insufficient_data` every cycle because no market-data source is integrated; only the liquidation
-guardian acts. Each run's `snapshot.agents` records what every agent returned.
+A read-only MAINNET analysis of two simulated portfolios, with the price quorum and yield rules:
+[docs/mainnet-shadow.md](docs/mainnet-shadow.md). The collector reads MAINNET with view calls only (no signer exists,
+no transaction is sent, no LLM is called) and stores everything in Postgres:
 
-### Mainnet read-only analytics: shadow collector and analytics dashboard
+- every Rhea v1 and DCL pool (full registry rescan every `COLLECTOR_REGISTRY_EVERY` cycles, and after downtime longer
+  than that), classified as `DISCOVERED / LIQUID / LOW_LIQUIDITY / UNSUPPORTED / DATA_INVALID / ANALYTICS_ELIGIBLE /
+LP_SIMULATION_ELIGIBLE` with reason codes. Discovery never allowlists a pool;
+- all Burrow markets (supply / borrow APR, utilisation, limits, reward programmes);
+- prices per source (Pyth, DefiLlama, exchanges), with freshness, confidence and divergence checks;
+- fee windows 1H / 24H / 7D / 30D from cumulative pool volumes, an LP entry simulation (fees, impermanent loss,
+  entry/exit cost, gas) and a strategy comparison for the demo portfolios, all from one snapshot per cycle;
+- the agents' decision for each demo portfolio (`DATA_SOURCE=simulation`: an in-process mock RPC serves the
+  synthetic balances, every row is labelled `simulation`), the policy verdicts and the Shadow Gateway's dry quotes.
 
-A read-only MAINNET shadow analysis of a simulated portfolio, with the price quorum and yield rules:
-[docs/mainnet-shadow.md](docs/mainnet-shadow.md). Read-only integration suites:
+The cycle interval is `SHADOW_CYCLE_INTERVAL_SECONDS` (default 900 s, counted from the end of a cycle). Opening the
+site never triggers a read from the chain for the market pages: they show what the collector stored. Without
+`PYTH_API_KEY` the collector skips Pyth and marks every cycle `partial`.
+
+| Demo portfolio | Synthetic position                                        | What the agents do                                            |
+| -------------- | --------------------------------------------------------- | ------------------------------------------------------------- |
+| `demo-500`     | gross $500: 120 wNEAR collateral, 200 USDt debt, HF ~1.28 | guardian repays ~$40 USDt; policy approves; dry-run, not sent |
+| `demo-5000`    | gross $5,000: 1150 wNEAR collateral, 2000 USDt debt       | needed repay ~$464 exceeds the $100 per-action cap; rejected  |
+
+**Looping** (`apps/api/src/analytics/looping.ts`): same-asset loops only. With Burrow's health factor
+`Σ collateral·vr / Σ debt/vr` and the same asset on both sides, HF = L·vr²/(L−1), so a target HF h gives
+L = h/(h−vr²) exactly. Net = L·supply − (L−1)·borrow − gas for every round in and out. Reports the break-even borrow
+rate and the days until rate drift alone would bring the health factor to 1.0.
+
+Read-only integration suites:
 
 ```bash
 pnpm --filter @near-autopilot/burrow-adapter test:live     # BURROW_LIVE=1
 pnpm --filter @near-autopilot/rhea-dcl-adapter test:live   # RHEA_DCL_LIVE=1
 ```
 
-Profile `shadow` also runs an autonomous **collector** that reads MAINNET with view calls only (no signer exists, no
-transaction is built or sent, no LLM is called) and stores everything in Postgres:
+### Market config
 
-- every Rhea v1 and DCL pool (full registry rescan every `COLLECTOR_REGISTRY_EVERY` cycles, and after downtime longer
-  than that), classified as `DISCOVERED / LIQUID / LOW_LIQUIDITY / UNSUPPORTED / DATA_INVALID / ANALYTICS_ELIGIBLE /
-LP_SIMULATION_ELIGIBLE` with reason codes. Discovery never allowlists a pool;
-- all Burrow markets (supply / borrow APR, utilisation, limits, reward programmes);
-- prices per source (Pyth, DefiLlama), with freshness, confidence and divergence checks;
-- fee windows 1H / 24H / 7D / 30D from cumulative pool volumes, an LP entry simulation (fees, impermanent loss,
-  entry/exit cost, gas) and a strategy comparison for the simulated demo portfolios, all from one snapshot per cycle.
+`config/market.json` (validated at startup by `apps/api/src/market-config.ts`, unknown keys rejected) holds:
 
-```bash
-docker compose --profile shadow up -d --build
-# analytics dashboard http://127.0.0.1:3001 (analytics API :4003)   |   shadow autopilot dashboard :3003, API :4002
-docker compose --profile shadow logs -f shadow-collector   # one JSON line per cycle: status, records, duration
-```
+- `policy` — signer account (the demo account, never used to sign), contract/token/recipient allowlists, per-action and
+  daily USD limits, approval threshold, slippage and oracle-deviation caps, cooldown;
+- `guardian`, `rebalancer`, `orchestrator` — the agents' thresholds;
+- `rhea.pools` — the exact pools a swap may use;
+- `yield` — the pools observed for fee APRs and the yield plausibility limits.
 
-The cycle interval is `SHADOW_CYCLE_INTERVAL_SECONDS` (default 900 s, counted from the end of a cycle). Opening the
-dashboard never triggers a read from the chain: it only shows what the collector stored. Without `PYTH_API_KEY` the
-collector uses DefiLlama only and marks every cycle `partial`. Details: [docs/mainnet-shadow.md](docs/mainnet-shadow.md).
-
-| Port (127.0.0.1) | Service                              | Profile  |
-| ---------------- | ------------------------------------ | -------- |
-| 3001             | analytics dashboard (collector data) | `shadow` |
-| 3003             | shadow autopilot dashboard           | `shadow` |
-| 3004             | simulation autopilot dashboard       | default  |
-| 4000, 4002, 4003 | API: simulation, shadow, analytics   | as above |
-| 5432             | Postgres (volume `pgdata`)           | default  |
-
-### Configuring the autopilot
-
-`config/autopilot.json` (validated at startup, unknown keys rejected) holds:
-
-- `policy` — signer account, contract/token/recipient allowlists, per-action and daily USD limits,
-  approval threshold, slippage and oracle-deviation caps, cooldown. Every limit is enforced before signing.
-- `guardian` — health factor trigger and target.
-- `rebalancer` — target weights, drift threshold, max trade size (disabled by default).
-- `rhea.pools` — the exact pools swaps may use. **Empty by default, which means no swap can be quoted.**
-  You must review pools yourself and list them (`poolId`, `tokenA`, `tokenB`).
-
-`policy.signerAccountId` must equal `AUTOPILOT_ACCOUNT_ID`.
+`policy.signerAccountId` must equal `AUTOPILOT_ACCOUNT_ID`. The wallet cascade limits are separate and fixed in code
+(`apps/api/src/wallet/validate-cascade.ts`).
 
 ### Environment
 
@@ -439,7 +390,7 @@ mainnet contract defaults are built in.
 
 | Command                                     | Purpose                                                                                                          |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`                                  | API + dashboard in watch mode                                                                                    |
+| `pnpm dev`                                  | Analytics API + site in watch mode                                                                               |
 | `pnpm verify`                               | format check, lint, typecheck, tests (what CI runs)                                                              |
 | `pnpm test`                                 | Vitest across all packages (via Turborepo)                                                                       |
 | `pnpm typecheck`                            | `tsc` in strict mode across all packages                                                                         |
@@ -452,35 +403,24 @@ mainnet contract defaults are built in.
 ## Security rules
 
 - Never put a seed phrase, private key or wallet file in this repository; none is needed for the demo or the
-  read-only mainnet mode. `.env`, `config/autopilot.json`, key and credential files are git-ignored.
-- `EXECUTION_MODE=live` is refused on mainnet, with the orchestrator engine, and with simulation; it also refuses to
-  start without a signer, and the autopilot ships none. Users sign in their own wallet.
+  read-only mainnet mode. `.env`, key and credential files are git-ignored.
+- The server holds no key and never signs: `EXECUTION_MODE=live` is refused at start-up, and there is no signer in
+  the code. Users sign in their own wallet, only when `MAINNET_WALLET_SIGNING=1`, and only cascades that pass
+  `validateCascade`.
 - Generate `API_TOKEN` and `POSTGRES_PASSWORD` locally (`openssl rand -hex 32`); never reuse example values.
 - All published ports bind to `127.0.0.1`. Details and threat model: [docs/security.md](docs/security.md).
 
 ## HTTP API
 
-All `/v1/*` routes require `Authorization: Bearer <API_TOKEN>`.
-
-| Route                 | Description                                                     |
-| --------------------- | --------------------------------------------------------------- |
-| `GET /health`         | Liveness                                                        |
-| `GET /ready`          | Readiness (database reachable)                                  |
-| `GET /v1/portfolio`   | Live valuation, health factor, holdings                         |
-| `GET /v1/runs`        | Recent pipeline runs                                            |
-| `GET /v1/proposals`   | Proposals with policy outcome and tx hash                       |
-| `GET /v1/policy`      | Active limits (read-only)                                       |
-| `GET /v1/market-data` | Mainnet prices, per source and asset (shadow profile)           |
-| `GET /v1/yield`       | Mainnet yield estimates per source, with validation and reasons |
-| `POST /v1/runs`       | Run one cycle now (409 if one is running)                       |
-
-Response shapes live in `packages/core/src/api-contracts.ts` and are shared with the dashboard.
+The analytics API (`apps/api/src/analytics`). All `/v1/*` routes require `Authorization: Bearer <API_TOKEN>`; the site
+calls them from its server, so the token never reaches the browser. Every route is read-only (`GET /v1/analytics/*`)
+except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it with `validateCascade`.
 
 ## Honest limitations
 
-- **The autopilot ships no signer, and the server never signs.** `EXECUTION_MODE=live` refuses to start until you implement
-  `loadSigner()` (`apps/api/src/signer.ts`), and `loadApiEnv`/`wire()` reject live execution on mainnet outright
-  (there is no override). Mainnet runs are dry-run. See [docs/security.md](docs/security.md).
+- **The server never signs.** There is no signer in the code, and `loadApiEnv`/`wire()` reject live execution
+  outright (there is no override). The agents' runs are dry-run; a mainnet transaction is only ever signed by the user
+  in their own wallet. See [docs/security.md](docs/security.md).
 - **Simulation is not on-chain.** `DATA_SOURCE=simulation` uses synthetic balances and fixed demo prices served by
   an in-process mock RPC; nothing it shows was read from NEAR, and nothing is ever sent.
 - **`dry-run` sends nothing.** A `dry_run` proposal is a plan that passed policy, not a transaction; it has no tx hash.

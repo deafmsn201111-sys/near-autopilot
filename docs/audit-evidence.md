@@ -13,7 +13,7 @@ Both print one JSON object per line and a summary line. They exit 1 on a broken 
 
 ```bash
 docker compose exec api-shadow node --import tsx src/evidence/cli.ts verify
-docker compose exec api-shadow node --import tsx src/evidence/cli.ts replay --config /etc/autopilot/autopilot.json
+docker compose exec collector node --import tsx src/evidence/cli.ts replay --config /etc/near-autopilot/market.json
 ```
 
 ## The hash chain (`audit_events`, migration 0011)
