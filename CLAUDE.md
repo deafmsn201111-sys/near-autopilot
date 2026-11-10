@@ -61,6 +61,7 @@ Dependency boundaries are enforced in CI by `boundaries.config.mjs` — check it
 
 ## Git workflow
 
+- `/ticket <N>` runs an issue end to end (grill → plan → TDD → verify → review → PR → merge → report).
 - Never push code to `main` directly. One task = one GitHub issue = one branch from fresh `main`. Start with
   `/start-issue <N>` (`scripts/start-issue.sh <N>`): it creates a worktree in `.claude/worktrees/` on
   `feat/<N>-<slug>` (`fix/` for bugs). PR body contains `Closes #<N>`.
