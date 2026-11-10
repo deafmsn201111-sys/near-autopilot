@@ -20,7 +20,7 @@ describe the older autopilot/testnet design — trust the code and `REWORK_PLAN.
 
 ## Commands
 
-pnpm 9 via corepack (`corepack enable`), Node ≥ 22.
+pnpm 9 (`npm i -g pnpm@9` — Node ≥ 25 no longer ships corepack), Node ≥ 22. A pre-push hook (`.githooks/pre-push`, enabled by `pnpm install`) runs `pnpm verify`.
 
 ```bash
 pnpm install

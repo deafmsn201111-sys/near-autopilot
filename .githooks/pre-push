@@ -1,0 +1,5 @@
+#!/bin/sh
+echo "pre-push: pnpm verify (skip with git push --no-verify)"
+if command -v pnpm >/dev/null; then exec pnpm run verify; fi
+pm=$(node -p "require('./package.json').packageManager")
+exec npx -y "$pm" run verify

@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -24,6 +24,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: actions/cache@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ github.sha }}
+          restore-keys: turbo-
       - run: pnpm install --frozen-lockfile
       - run: pnpm run format:check
       - run: pnpm run lint # eslint (incl. layer boundaries) + scripts/check-boundaries.mjs
@@ -62,7 +67,6 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: verify
     steps:
       - uses: actions/checkout@v4
       - name: Validate compose file
