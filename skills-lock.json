@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "near-dapp": {
+      "source": "near/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/near-dapp/SKILL.md",
+      "computedHash": "107bdc80fcae07d82086f46d6e958df451b121be3326039e3c4dc73dc5afdc20"
+    },
+    "near-intents": {
+      "source": "near/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/near-intents/SKILL.md",
+      "computedHash": "0f763c182b01e69695f730f359f6ebbbbb732c1ce23f4d71d7a0202060fed18f"
+    },
+    "security-review": {
+      "source": "getsentry/skills",
+      "sourceType": "github",
+      "skillPath": "skills/security-review/SKILL.md",
+      "computedHash": "194b70d3a2a4e0b23a436866c95496457962d1a818c382c56e4912bcd0cc3424"
+    }
+  }
+}

@@ -8,3 +8,5 @@ packages/db/drizzle
 THESIS.md
 thesis
 docs/evidence
+.claude/skills
+skills-lock.json
