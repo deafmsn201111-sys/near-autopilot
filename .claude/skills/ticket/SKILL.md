@@ -90,9 +90,13 @@ commits, PRs and issue comments in English.
 - `git push -u origin HEAD`, then `gh pr create`: title = the main commit's message, body = why (one or two
   sentences), what changed (facts from the diff), verification, the "Testing" list with each step marked checked
   locally / owner, `Closes #<N>`.
-- Watch CI in the background (`gh pr checks <pr> --watch`). Red: fix in the same branch. Green:
+- Watch CI in the background (`gh pr checks <pr> --watch`). Red: fix in the same branch.
+- Green and no "owner" step that can run before merge (on a local run of this branch, e.g. with a real wallet):
   `gh pr merge --squash --delete-branch`, then `ExitWorktree` with `keep`, `git worktree remove <path>`,
   `git checkout main && git pull`.
+- Green but such "owner" steps remain: do not merge. Comment them on the PR, tell the owner the exact steps and how
+  to run the branch locally, and stop. Merge only after the owner confirms they pass; a failure is fixed in the same
+  branch first. Steps that need the deployed live site do not block the merge: they go to the report (step 10).
 
 ## 10. Report
 

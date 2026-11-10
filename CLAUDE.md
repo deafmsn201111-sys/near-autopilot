@@ -66,7 +66,9 @@ Dependency boundaries are enforced in CI by `boundaries.config.mjs` — check it
   `/ticket <N>` (runs `scripts/start-issue.sh <N>`): it creates a worktree in `.claude/worktrees/` on
   `feat/<N>-<slug>` (`fix/` for bugs). PR body contains `Closes #<N>`.
 - Push the branch, open a PR with `gh pr create` (short description: what and why).
-- No code review: a green CI is the only gate. If CI is red, fix it in the same branch.
-- When CI is green: `gh pr merge --squash --delete-branch`, then `git checkout main && git pull`.
+- No code review: a green CI is the gate, plus the owner's manual "Testing" steps that can run before merge. If CI
+  is red, fix it in the same branch.
+- When CI is green and no pre-merge owner step is left: `gh pr merge --squash --delete-branch`, then
+  `git checkout main && git pull`. Otherwise wait for the owner to confirm those steps.
 - Exception: changes to `.md` files only may be pushed to `main` directly.
 - Never bypass the pre-push hook (`--no-verify`) and never force-push `main`.
