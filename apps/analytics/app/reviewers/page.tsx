@@ -21,11 +21,6 @@ const PAGES = [
     'Rhea vs NEAR Intents (1Click) quotes for allowed plans; nothing is executed.',
   ],
   [
-    '/autopilot',
-    'Controls',
-    'Pause the analysis or put a portfolio into read-only mode; every change is audited.',
-  ],
-  [
     '/system',
     'System health',
     'API, database, collector and each data source, with reasons when one fails.',

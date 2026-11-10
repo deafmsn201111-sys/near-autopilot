@@ -32,3 +32,7 @@ export async function consume(kind: string, l: Limit, now = Date.now()): Promise
   if (!take(`${kind}:${await visitor()}`, l.perVisitor, l.windowMs, now)) return false;
   return take(`${kind}:*`, l.overall, l.windowMs, now);
 }
+
+// "Your account" reads a mainnet account through our RPC key: limited for every visitor of the public site.
+export const ACCOUNT_LIMIT: Limit = { perVisitor: 30, overall: 600, windowMs: 10 * 60_000 };
+export const RATE_LIMITED = 'Too many requests right now. Wait a few minutes and try again.';

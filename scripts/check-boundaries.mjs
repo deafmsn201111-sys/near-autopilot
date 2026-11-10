@@ -62,11 +62,11 @@ for (const [name, location] of Object.entries(LOCATIONS)) {
         problems.push(
           `${rel}: test doubles (${dep}/testing) must not be imported by production code`,
         );
-      if (sub === '/hash' && name === '@near-autopilot/dashboard')
-        problems.push(`${rel}: node-only ${dep}/hash must not be imported by the dashboard`);
+      if (sub === '/hash' && name === '@near-autopilot/analytics')
+        problems.push(`${rel}: node-only ${dep}/hash must not be imported by the analytics UI`);
     }
-    if (name === '@near-autopilot/dashboard' && /from\s+['"]node:/.test(source)) {
-      problems.push(`${rel}: dashboard must not import node: builtins directly`);
+    if (name === '@near-autopilot/analytics' && !isTest(rel) && /from\s+['"]node:/.test(source)) {
+      problems.push(`${rel}: analytics UI must not import node: builtins directly`);
     }
     if (
       name === '@near-autopilot/core' &&

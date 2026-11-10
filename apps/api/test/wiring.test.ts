@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { loadApiEnv, type ApiEnv } from '@near-autopilot/config';
 import { accountId, NetworkMismatchError } from '@near-autopilot/core';
 import { SilentLogger } from '@near-autopilot/core/testing';
-import { parseAutopilotConfig } from '../src/autopilot-config';
+import { parseMarketConfig } from '../src/market-config';
 import { wire } from '../src/wiring';
 import { InMemoryRepository } from './in-memory-repository';
 
 const ACCOUNT = 'your-account.near';
-const config = parseAutopilotConfig(
+const config = parseMarketConfig(
   JSON.parse(
-    readFileSync(new URL('../../../config/autopilot.example.json', import.meta.url), 'utf8'),
+    readFileSync(new URL('./fixtures/agents-config.json', import.meta.url), 'utf8'),
   ) as unknown,
   accountId(ACCOUNT),
 );

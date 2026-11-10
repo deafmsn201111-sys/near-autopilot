@@ -20,11 +20,9 @@ import {
 } from '@near-autopilot/core';
 import {
   NearAccountReader,
-  NearChainContextProvider,
   NearContractViewer,
   NearRpcClient,
   NearTokenReader,
-  NearTransactionBroadcaster,
 } from '@near-autopilot/near-adapter';
 import {
   CapitalAllocatorAgent,
@@ -42,15 +40,9 @@ import {
 } from '@near-autopilot/orchestrator';
 import { PolicyEngine } from '@near-autopilot/policy-engine';
 import { RheaPlanner, RheaSwapQuoter, StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
-import {
-  assertNotFullAccessKey,
-  DryRunExecutor,
-  PlannerRegistry,
-  TransactionExecutor,
-} from '@near-autopilot/tx-execution';
-import type { AutopilotConfig } from './autopilot-config';
+import { DryRunExecutor, PlannerRegistry } from '@near-autopilot/tx-execution';
+import type { MarketConfig } from './market-config';
 import type { AutopilotRepository } from './repository';
-import { loadSigner } from './signer';
 import { AutopilotCycle } from './services/cycle';
 import { OrchestratedCycle, RepositoryNotifier } from './services/orchestrated-cycle';
 import { PersistentAuditLog } from './services/persistent-audit';
@@ -119,7 +111,7 @@ export interface WireOptions {
  */
 export async function wire(
   env: ApiEnv,
-  config: AutopilotConfig,
+  config: MarketConfig,
   repo: AutopilotRepository,
   logger: Logger,
   options: WireOptions = {},
@@ -213,73 +205,50 @@ export async function wire(
 
   const policy = new PolicyEngine(config.policy, { clock: systemClock, ids: uuidGenerator });
 
-  let executor: PlanExecutor;
-  if (env.EXECUTION_MODE === 'live') {
-    const signer = loadSigner(env);
-    if (!signer) {
-      throw new Error(
-        'EXECUTION_MODE=live requires a TransactionSigner: implement loadSigner() in src/signer.ts (see docs/security.md)',
-      );
-    }
-    if (signer.accountId !== env.AUTOPILOT_ACCOUNT_ID)
-      throw new Error('Signer account does not match AUTOPILOT_ACCOUNT_ID');
-    const contextProvider = new NearChainContextProvider(rpc);
-    // Refuse to start with a full-access key; every transaction is checked again before signing.
-    await assertNotFullAccessKey(contextProvider, signer);
-    executor = new TransactionExecutor({
-      signer,
-      contextProvider,
-      broadcaster: new NearTransactionBroadcaster(rpc),
-      clock: systemClock,
-      logger,
-      approvals: policy,
-    });
-  } else {
-    // SHADOW GATEWAY: the dry-run boundary. Re-checks the STORED verdict, then the approval (dry-run executor), then
-    // quotes the venues and records the best execution. No signer exists on this path.
-    const quotesMainnet = mainnetViewer !== null;
-    const venues: Venue[] = [
-      new RheaVenue(mainnetViewer ?? viewer, {
-        contractId: env.RHEA_CONTRACT_ID,
-        pools: new StaticPoolRegistry(config.rhea.pools),
-      }),
-    ];
-    // 1Click knows mainnet tokens only: quoted when the trade is priced on mainnet market data (shadow).
-    if (quotesMainnet && env.MARKET_DATA === 'mainnet-live' && env.ONE_CLICK_URL !== '')
-      venues.push(
-        new OneClickVenue(
-          new OneClickClient({
-            http: new HttpJsonClient({
-              fetchImpl: options.marketFetchImpl,
-              timeoutMs: 30_000,
-              maxRetries: 1,
-              maxConcurrent: 1,
-            }),
-            baseUrl: env.ONE_CLICK_URL,
+  // SHADOW GATEWAY: the dry-run boundary. Re-checks the STORED verdict, then the approval (dry-run executor), then
+  // quotes the venues and records the best execution. The server never signs: there is no signer on any path.
+  const quotesMainnet = mainnetViewer !== null;
+  const venues: Venue[] = [
+    new RheaVenue(mainnetViewer ?? viewer, {
+      contractId: env.RHEA_CONTRACT_ID,
+      pools: new StaticPoolRegistry(config.rhea.pools),
+    }),
+  ];
+  // 1Click knows mainnet tokens only: quoted when the trade is priced on mainnet market data (shadow).
+  if (quotesMainnet && env.MARKET_DATA === 'mainnet-live' && env.ONE_CLICK_URL !== '')
+    venues.push(
+      new OneClickVenue(
+        new OneClickClient({
+          http: new HttpJsonClient({
+            fetchImpl: options.marketFetchImpl,
+            timeoutMs: 30_000,
+            maxRetries: 1,
+            maxConcurrent: 1,
           }),
-        ),
-      );
-    const gasRpc = mainnetRead ?? shared?.rpc ?? rpc;
-    executor = new ShadowGateway({
-      inner: new DryRunExecutor({ clock: systemClock, logger, approvals: policy }),
-      repo,
-      venues,
-      prices: oracle,
-      gasPrice: () => gasPrice(gasRpc),
-      nearToken: accountIdSchema.parse('wrap.near'),
-      exchange: env.RHEA_CONTRACT_ID,
-      account: env.ONE_CLICK_QUOTE_ACCOUNT ?? env.AUTOPILOT_ACCOUNT_ID,
-      policyVersion: policy.version,
-      limits: {
-        maxQuoteAgeSeconds: config.policy.maxPriceAgeSeconds,
-        maxOracleDeviationBps: config.policy.maxOracleDeviationBps,
-        slippageBps: config.policy.maxSlippageBps,
-      },
-      clock: systemClock,
-      ids: uuidGenerator,
-      logger,
-    });
-  }
+          baseUrl: env.ONE_CLICK_URL,
+        }),
+      ),
+    );
+  const gasRpc = mainnetRead ?? shared?.rpc ?? rpc;
+  const executor: PlanExecutor = new ShadowGateway({
+    inner: new DryRunExecutor({ clock: systemClock, logger, approvals: policy }),
+    repo,
+    venues,
+    prices: oracle,
+    gasPrice: () => gasPrice(gasRpc),
+    nearToken: accountIdSchema.parse('wrap.near'),
+    exchange: env.RHEA_CONTRACT_ID,
+    account: env.ONE_CLICK_QUOTE_ACCOUNT ?? env.AUTOPILOT_ACCOUNT_ID,
+    policyVersion: policy.version,
+    limits: {
+      maxQuoteAgeSeconds: config.policy.maxPriceAgeSeconds,
+      maxOracleDeviationBps: config.policy.maxOracleDeviationBps,
+      slippageBps: config.policy.maxSlippageBps,
+    },
+    clock: systemClock,
+    ids: uuidGenerator,
+    logger,
+  });
 
   const agents: Agent[] = [new HealthGuardianAgent(config.guardian)];
   if (config.rebalancer?.enabled) agents.push(new RebalancerAgent(config.rebalancer));
@@ -430,7 +399,7 @@ async function mainnetReadRpc(
 
 function mainnetYields(
   env: ApiEnv,
-  config: AutopilotConfig,
+  config: MarketConfig,
   rpc: NearRpcClient,
   market: MarketDataProvider,
   logger: Logger,
@@ -549,7 +518,7 @@ function referenceMarket(
  */
 function simulatedChain(
   env: ApiEnv,
-  config: AutopilotConfig,
+  config: MarketConfig,
   current?: () => DemoPortfolio,
 ): SimulatedChain {
   if (env.EXECUTION_MODE !== 'dry-run') {
@@ -574,7 +543,7 @@ function simulatedChain(
   if (missing.length > 0) {
     throw new Error(
       `DATA_SOURCE=simulation on ${env.NEAR_NETWORK}: the policy allowlists must include ${[...new Set(missing)].join(', ')} ` +
-        '(use config/autopilot.example.json)',
+        '(see config/market.json)',
     );
   }
   return chain;
@@ -586,7 +555,7 @@ function simulatedChain(
  */
 export async function shadowSources(
   env: ApiEnv,
-  config: AutopilotConfig,
+  config: MarketConfig,
   logger: Logger,
   options: WireOptions = {},
 ): Promise<{ rpc: NearRpcClient; market: MarketDataProvider; yields: YieldService }> {

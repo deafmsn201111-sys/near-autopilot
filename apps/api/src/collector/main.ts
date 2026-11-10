@@ -1,12 +1,10 @@
 import { checkpointAll } from '../evidence/checkpoint';
-import { createHash, timingSafeEqual } from 'node:crypto';
-import { ControlService } from '../control/service';
 import { collectorRouteProbe } from '../gateway/probe';
 import { createServer } from 'node:http';
 import { loadApiEnv } from '@near-autopilot/config';
 import { createDatabase } from '@near-autopilot/db';
 import { z } from 'zod';
-import { loadAutopilotConfig } from '../autopilot-config';
+import { loadMarketConfig } from '../market-config';
 import { DrizzleRepository } from '../infra/drizzle-repository';
 import { createJsonLogger } from '../logger';
 import { HttpJsonClient } from '../market-data/http';
@@ -43,7 +41,7 @@ async function main(): Promise<void> {
   const env = loadApiEnv();
   const c = collectorEnv.parse(process.env);
   const logger = createJsonLogger(env.LOG_LEVEL);
-  const config = loadAutopilotConfig(env.AUTOPILOT_CONFIG_FILE, env.AUTOPILOT_ACCOUNT_ID);
+  const config = loadMarketConfig(env.MARKET_CONFIG_FILE, env.AUTOPILOT_ACCOUNT_ID);
   const database = createDatabase(env.DATABASE_URL, { max: 4 });
   const provenance = { dataSource: env.DATA_SOURCE, network: env.NEAR_NETWORK } as const;
   const repo = new DrizzleRepository(database.db, provenance);
@@ -102,7 +100,6 @@ async function main(): Promise<void> {
 
   let last: CycleSummary | null = null;
   let nextRunAt = new Date();
-  const control = new ControlService(database.db);
   // Signed checkpoint of every audit chain head after each cycle (see evidence/checkpoint.ts). A failure is logged and
   // never stops collection: the chain itself is intact either way, only its external anchor is late.
   const checkpoint = async () => {
@@ -117,42 +114,13 @@ async function main(): Promise<void> {
       logger.error('audit checkpoint failed', { error: String(e) });
     }
   };
-  let paused = false;
   const status = () => ({
     running: collector.isRunning,
-    paused,
     intervalSeconds: c.SHADOW_CYCLE_INTERVAL_SECONDS,
     nextRunAt: nextRunAt.toISOString(),
     last: last && { id: last.id, status: last.status, records: last.records, error: last.error },
   });
-  const expected = createHash('sha256').update(env.API_TOKEN).digest();
-  const authorised = (h: string | undefined) => {
-    const token = h?.startsWith('Bearer ') ? h.slice(7) : '';
-    return timingSafeEqual(createHash('sha256').update(token).digest(), expected);
-  };
   createServer((req, res) => {
-    // On-demand cycle (dashboard "Run market analysis"): token-protected, internal network only, one at a time. It
-    // reads mainnet and analyses the simulated portfolios exactly like a scheduled cycle; it never sends anything.
-    if (req.url === '/run' && req.method === 'POST') {
-      res.setHeader('content-type', 'application/json');
-      if (!authorised(req.headers.authorization)) {
-        res.writeHead(401).end(JSON.stringify({ error: 'unauthorized' }));
-        return;
-      }
-      if (collector.isRunning) {
-        res.writeHead(409).end(JSON.stringify({ error: 'a collection cycle is already running' }));
-        return;
-      }
-      void collector
-        .runCycle('on_demand')
-        .then(async (r) => {
-          last = r;
-          await checkpoint();
-        })
-        .catch((e: unknown) => logger.error('on-demand cycle crashed', { error: String(e) }));
-      res.writeHead(202).end(JSON.stringify({ started: true, trigger: 'on_demand' }));
-      return;
-    }
     if (req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(status()));
@@ -165,14 +133,7 @@ async function main(): Promise<void> {
   const tick = async (): Promise<void> => {
     if (stopping) return;
     try {
-      // An operator pause (dashboard, audited) skips SCHEDULED cycles only. If the pause cannot be read, collect as
-      // usual: collection is read-only and pausing it is a convenience, not a safety control.
-      paused = await control
-        .collectorState()
-        .then((x) => x.paused)
-        .catch(() => false);
-      if (paused) logger.info('scheduled collection skipped: paused by an operator');
-      else last = await collector.runCycle('scheduled');
+      last = await collector.runCycle('scheduled');
       await checkpoint();
     } catch (e) {
       logger.error('collector tick crashed', { error: String(e) });

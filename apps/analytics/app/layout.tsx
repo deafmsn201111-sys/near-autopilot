@@ -1,4 +1,3 @@
-import { PUBLIC_DEMO } from '../lib/public-demo';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -56,14 +55,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="page">
-          {PUBLIC_DEMO && (
-            <div className="callout" role="note" style={{ marginBottom: 16 }}>
-              <b>Public demo.</b> Live NEAR mainnet data, read only. The demo portfolios are
-              simulated and shared by every visitor; what you ask the agent to do runs as a dry run
-              and is never signed or sent. Operator controls are disabled here: run the project
-              locally to use them.
-            </div>
-          )}
           <SubNav />
           {children}
         </main>

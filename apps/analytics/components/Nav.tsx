@@ -84,7 +84,6 @@ export const REVIEWER_TABS = [
   { href: '/policy', label: 'Safety policy' },
   { href: '/audit', label: 'Audit trail' },
   { href: '/routes', label: 'Execution routes' },
-  { href: '/autopilot', label: 'Controls' },
   { href: '/system', label: 'System health' },
   { href: '/rhea', label: 'Rhea pools' },
   { href: '/burrow', label: 'Burrow markets' },

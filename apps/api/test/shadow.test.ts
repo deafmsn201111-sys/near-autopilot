@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadApiEnv, type ApiEnv } from '@near-autopilot/config';
 import { accountId, NetworkMismatchError } from '@near-autopilot/core';
 import { SilentLogger } from '@near-autopilot/core/testing';
-import { parseAutopilotConfig } from '../src/autopilot-config';
+import { parseMarketConfig } from '../src/market-config';
 import { wire } from '../src/wiring';
 import { InMemoryRepository } from './in-memory-repository';
 
@@ -14,9 +14,9 @@ import { InMemoryRepository } from './in-memory-repository';
  */
 const ACCOUNT = 'shadow-demo.near';
 const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
-const config = parseAutopilotConfig(
+const config = parseMarketConfig(
   JSON.parse(
-    readFileSync(new URL('../../../config/autopilot.shadow.example.json', import.meta.url), 'utf8'),
+    readFileSync(new URL('../../../config/market.json', import.meta.url), 'utf8'),
   ) as unknown,
   accountId(ACCOUNT),
 );

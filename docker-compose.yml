@@ -1,7 +1,35 @@
-# Local/staging stack: Postgres + API + dashboard.
-#   cp .env.example .env && cp config/autopilot.example.json config/autopilot.json
-#   docker compose up --build
-# Host ports are bound to 127.0.0.1 only; override with POSTGRES_HOST_PORT / API_HOST_PORT / DASHBOARD_PORT if taken.
+# Local stack: Postgres + mainnet collector (view calls only) + read-only analytics API + the site (127.0.0.1:3001).
+#   ./scripts/quickstart.sh       (or: cp .env.example .env, fill the secrets, docker compose up -d --build)
+# Host ports are bound to 127.0.0.1 only; override with POSTGRES_HOST_PORT / ANALYTICS_API_HOST_PORT /
+# ANALYTICS_DASHBOARD_PORT if taken. The server never holds a key: a transaction is only ever signed in the user's wallet.
+x-collector-env: &collector-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+  DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
+  NEAR_NETWORK: mainnet
+  # The demo portfolios are simulated (in-process mock RPC, NEAR_RPC_URL never contacted); market data is real mainnet.
+  DATA_SOURCE: simulation
+  EXECUTION_MODE: dry-run
+  NEAR_RPC_URL: https://rpc.mainnet.near.org
+  AUTOPILOT_ACCOUNT_ID: shadow-demo.near
+  AUTOPILOT_ENGINE: orchestrator
+  MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
+  MARKET_DATA: mainnet-live
+  YIELD_DATA: mainnet-onchain
+  RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
+  MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+  MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+  PYTH_API_KEY: ${PYTH_API_KEY:-}
+  PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
+  DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
+  COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
+  KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
+  BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
+  ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
+  # shadow-demo.near does not exist on mainnet and 1Click refuses it; a dry quote sends nothing to this account.
+  ONE_CLICK_QUOTE_ACCOUNT: ${ONE_CLICK_QUOTE_ACCOUNT:-near}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,7 +48,8 @@ services:
       timeout: 3s
       retries: 10
 
-  api:
+  # Applies the migrations, then serves the stored data read-only (plus the wallet cascade builder).
+  analytics-api:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
@@ -31,154 +60,33 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      API_HOST: 0.0.0.0
-      API_PORT: 4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      NEAR_NETWORK: ${NEAR_NETWORK:-mainnet}
-      NEAR_RPC_URL: ${NEAR_RPC_URL:?set NEAR_RPC_URL in .env}
-      AUTOPILOT_ACCOUNT_ID: ${AUTOPILOT_ACCOUNT_ID:?set AUTOPILOT_ACCOUNT_ID in .env}
-      EXECUTION_MODE: ${EXECUTION_MODE:-dry-run}
-      CYCLE_INTERVAL_SECONDS: ${CYCLE_INTERVAL_SECONDS:-0}
-      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
-      AUTOPILOT_ENGINE: ${AUTOPILOT_ENGINE:-legacy}
-      DATA_SOURCE: ${DATA_SOURCE:-chain}
-      SIMULATION_PORTFOLIO: ${SIMULATION_PORTFOLIO:-demo-500}
-      # Mainnet has built-in defaults; set these only to override the contract ids.
-      RHEA_CONTRACT_ID: ${RHEA_CONTRACT_ID:-}
-      BURROW_CONTRACT_ID: ${BURROW_CONTRACT_ID:-}
-      BURROW_ORACLE_ID: ${BURROW_ORACLE_ID:-}
-    volumes:
-      - ./config/autopilot.json:/etc/autopilot/autopilot.json:ro
-    ports:
-      - '127.0.0.1:${API_HOST_PORT:-4000}:4000'
-
-  dashboard:
-    build:
-      context: .
-      dockerfile: docker/dashboard.Dockerfile
-    image: near-autopilot-dashboard:local
-    restart: unless-stopped
-    depends_on:
-      api:
-        condition: service_healthy
-    environment:
-      API_BASE_URL: http://api:4000
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-    ports:
-      - '127.0.0.1:${DASHBOARD_PORT:-3000}:3000'
-
-  # ---- Read-only MAINNET shadow analysis: `docker compose --profile shadow up -d` ----
-  # A SIMULATED demo portfolio (mock RPC) analysed with REAL mainnet prices, Burrow rates and rewards, Rhea pools and
-  # quotes, read with view calls only through MAINNET_READ_RPC_URL. Network, data source and execution mode are fixed:
-  # there is no signer, the executor is dry-run, and nothing is ever sent to any network.
-  api-shadow:
-    profiles: [shadow]
-    # the image the `api` service builds (built once, not once per service)
-    image: near-autopilot-api:local
-    pull_policy: never
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      API_HOST: 0.0.0.0
       API_PORT: 4000
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      NEAR_NETWORK: mainnet
-      DATA_SOURCE: simulation
-      EXECUTION_MODE: dry-run
-      SIMULATION_PORTFOLIO: ${SHADOW_PORTFOLIO:-demo-500}
-      # Served by the in-process mock in simulation; never contacted.
-      NEAR_RPC_URL: https://rpc.mainnet.near.org
-      AUTOPILOT_ACCOUNT_ID: shadow-demo.near
-      AUTOPILOT_ENGINE: orchestrator
-      # The schedule belongs to shadow-collector (SHADOW_CYCLE_INTERVAL_SECONDS); this API only runs cycles on demand.
-      CYCLE_INTERVAL_SECONDS: 0
-      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
-      MARKET_DATA: mainnet-live
-      YIELD_DATA: mainnet-onchain
-      RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
-      # Read-only mainnet RPC (view calls only).
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
+      # "your account" (read-only view calls): the same private RPC and key as the collector
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
-      PYTH_API_KEY: ${PYTH_API_KEY:-}
-      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
-      DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
-      COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
-      KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
-      BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
-      ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
-      # shadow-demo.near does not exist on mainnet and 1Click refuses it; a dry quote sends nothing to this account.
-      ONE_CLICK_QUOTE_ACCOUNT: ${ONE_CLICK_QUOTE_ACCOUNT:-near}
+      MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
+    ports:
+      - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
     volumes:
-      - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
-    ports:
-      - '127.0.0.1:${SHADOW_API_HOST_PORT:-4002}:4000'
+      - ./evidence/checkpoints:/checkpoints:ro
+      - ./config/market.json:/etc/near-autopilot/market.json:ro
 
-  dashboard-shadow:
-    profiles: [shadow]
-    # the image the `dashboard` service builds (built once, not once per service)
-    image: near-autopilot-dashboard:local
-    pull_policy: never
-    restart: unless-stopped
-    depends_on:
-      api-shadow:
-        condition: service_healthy
-    environment:
-      API_BASE_URL: http://api-shadow:4000
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-    ports:
-      - '127.0.0.1:${SHADOW_DASHBOARD_PORT:-3003}:3000'
-
-  # ---- Autonomous shadow collector + analytics: `docker compose --profile shadow up -d` ----
-  # Plain Node services (no LLM). The collector reads MAINNET with view calls only on a schedule and stores everything in
-  # Postgres; analytics-api serves it read-only; analytics (127.0.0.1:3001) renders it. No signer exists anywhere here.
-  shadow-collector:
-    profiles: [shadow]
-    # the image the `api` service builds (built once, not once per service)
+  # Reads mainnet on a schedule (view calls only), stores it and analyses the demo portfolios. No LLM, no signer.
+  collector:
     image: near-autopilot-api:local
     pull_policy: never
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
-      # api-shadow applies the migrations first.
-      api-shadow:
+      analytics-api:
         condition: service_healthy
     command: ['node', '--import', 'tsx', 'src/collector/main.ts']
     environment:
-      NODE_ENV: production
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      NEAR_NETWORK: mainnet
-      DATA_SOURCE: simulation
-      EXECUTION_MODE: dry-run
-      NEAR_RPC_URL: https://rpc.mainnet.near.org
-      AUTOPILOT_ACCOUNT_ID: shadow-demo.near
-      AUTOPILOT_ENGINE: orchestrator
-      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
-      MARKET_DATA: mainnet-live
-      YIELD_DATA: mainnet-onchain
-      RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
-      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
-      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
-      PYTH_API_KEY: ${PYTH_API_KEY:-}
-      PYTH_HERMES_URL: ${PYTH_HERMES_URL:-https://hermes.pyth.network}
-      DEFILLAMA_URL: ${DEFILLAMA_URL:-https://coins.llama.fi}
-      COINBASE_URL: ${COINBASE_URL:-https://api.exchange.coinbase.com}
-      KRAKEN_URL: ${KRAKEN_URL:-https://api.kraken.com}
-      BINANCE_URL: ${BINANCE_URL:-https://data-api.binance.vision}
-      ONE_CLICK_URL: ${ONE_CLICK_URL:-https://1click.chaindefuser.com}
-      # shadow-demo.near does not exist on mainnet and 1Click refuses it; a dry quote sends nothing to this account.
-      ONE_CLICK_QUOTE_ACCOUNT: ${ONE_CLICK_QUOTE_ACCOUNT:-near}
+      <<: *collector-env
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
       COLLECTOR_REGISTRY_EVERY: ${COLLECTOR_REGISTRY_EVERY:-4}
       COLLECTOR_HEALTH_PORT: 4100
@@ -186,7 +94,7 @@ services:
       AUDIT_CHECKPOINT_KEY: ${AUDIT_CHECKPOINT_KEY:-}
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
     volumes:
-      - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
+      - ./config/market.json:/etc/near-autopilot/market.json:ro
       # outside the database volume: the independent copy of the checkpoints
       - ./evidence/checkpoints:/checkpoints
     healthcheck:
@@ -195,40 +103,7 @@ services:
       timeout: 5s
       retries: 5
 
-  analytics-api:
-    profiles: [shadow]
-    # the image the `api` service builds (built once, not once per service)
-    image: near-autopilot-api:local
-    pull_policy: never
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      api-shadow:
-        condition: service_healthy
-    command: ['node', '--import', 'tsx', 'src/analytics/main.ts']
-    environment:
-      NODE_ENV: production
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-      DATABASE_URL: postgres://${POSTGRES_USER:-autopilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-autopilot}
-      API_PORT: 4000
-      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
-      # internal network only: the dashboard's "Run market analysis" (token-protected, read-only collection)
-      COLLECTOR_URL: http://shadow-collector:4100
-      AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
-      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
-      # "your account" (read-only view calls): the same private RPC and key as the collector
-      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
-      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
-      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
-    ports:
-      - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
-    volumes:
-      - ./evidence/checkpoints:/checkpoints:ro
-      - ./config/autopilot.shadow.example.json:/etc/autopilot/autopilot.json:ro
-
   analytics:
-    profiles: [shadow]
     build:
       context: .
       dockerfile: docker/analytics.Dockerfile
@@ -239,10 +114,8 @@ services:
     environment:
       API_BASE_URL: http://analytics-api:4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-      # "let the agent do it" on the demo portfolios: the shadow autopilot (simulation, dry-run only)
-      AUTOPILOT_API_URL: http://api-shadow:4000
-      # 1 = public demo: operator controls refused, visitor actions rate-limited (apps/analytics/lib/public-demo.ts)
-      PUBLIC_DEMO: ${PUBLIC_DEMO:-}
+      # 1 = the site may hand a validated, unsigned cascade to the connected wallet for the user to sign.
+      MAINNET_WALLET_SIGNING: ${MAINNET_WALLET_SIGNING:-}
     ports:
       - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
 

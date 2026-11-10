@@ -1,10 +1,11 @@
-# PUBLIC DEMO on a server: the read-only mainnet analytics dashboard, served over HTTPS by Caddy or Tailscale Funnel.
+# The public site on a server: the mainnet analytics dashboard, served over HTTPS by Caddy or Tailscale Funnel.
 # See deploy/public/README.md. Nothing listens on a public interface except Caddy (80, 443) when its profile is on;
 # the dashboard is on 127.0.0.1:3000, every other service is on the internal network only.
 #
-# What this stack can do: read NEAR mainnet with view calls, analyse two SIMULATED demo portfolios, and let a visitor
-# run "Let the agent do it" on them as a DRY RUN. What it cannot do: sign or send anything. There is no signer, the
-# executor is dry-run, and NEAR_NETWORK / DATA_SOURCE / EXECUTION_MODE / PUBLIC_DEMO are fixed here, not read from .env.
+# What this stack can do: read NEAR mainnet with view calls, analyse two SIMULATED demo portfolios, and build an exact
+# UNSIGNED transaction cascade for a connected wallet (validateCascade caps: 0.15 NEAR per action, 0.3 per cascade).
+# What it cannot do: sign or send anything. The server holds no key; NEAR_NETWORK / DATA_SOURCE / EXECUTION_MODE /
+# MAINNET_WALLET_SIGNING are fixed here, not read from .env.
 name: near-autopilot-public
 
 x-common-env: &common-env
@@ -19,7 +20,7 @@ x-common-env: &common-env
   NEAR_RPC_URL: https://rpc.mainnet.near.org
   AUTOPILOT_ACCOUNT_ID: shadow-demo.near
   AUTOPILOT_ENGINE: orchestrator
-  AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+  MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
   MARKET_DATA: mainnet-live
   YIELD_DATA: mainnet-onchain
   RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
@@ -52,30 +53,13 @@ services:
       timeout: 3s
       retries: 10
 
-  # The shadow autopilot: applies the migrations, runs "Let the agent do it" on the demo portfolios (dry run).
-  api-shadow:
-    image: ${API_IMAGE:-near-autopilot-api:public}
-    pull_policy: never
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      <<: *common-env
-      API_HOST: 0.0.0.0
-      API_PORT: 4000
-      SIMULATION_PORTFOLIO: demo-500
-      CYCLE_INTERVAL_SECONDS: 0
-    volumes:
-      - ./config/autopilot.shadow.json:/etc/autopilot/autopilot.json:ro
-
   # Reads mainnet on a schedule (view calls only) and stores it. No LLM calls.
   shadow-collector:
     image: ${API_IMAGE:-near-autopilot-api:public}
     pull_policy: never
     restart: unless-stopped
     depends_on:
-      api-shadow:
+      analytics-api:
         condition: service_healthy
     command: ['node', '--import', 'tsx', 'src/collector/main.ts']
     environment:
@@ -86,7 +70,7 @@ services:
       AUDIT_CHECKPOINT_KEY: ${AUDIT_CHECKPOINT_KEY:-}
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
     volumes:
-      - ./config/autopilot.shadow.json:/etc/autopilot/autopilot.json:ro
+      - ./config/market.json:/etc/near-autopilot/market.json:ro
       - ./checkpoints:/checkpoints
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4100/health']
@@ -94,13 +78,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # Serves the stored data to the dashboard, read-only.
+  # Applies the migrations, then serves the stored data to the dashboard, read-only.
   analytics-api:
     image: ${API_IMAGE:-near-autopilot-api:public}
     pull_policy: never
     restart: unless-stopped
     depends_on:
-      api-shadow:
+      postgres:
         condition: service_healthy
     command: ['node', '--import', 'tsx', 'src/analytics/main.ts']
     environment:
@@ -109,17 +93,16 @@ services:
       DATABASE_URL: postgres://autopilot:${POSTGRES_PASSWORD}@postgres:5432/autopilot
       API_PORT: 4000
       SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
-      COLLECTOR_URL: http://shadow-collector:4100
       AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
-      AUTOPILOT_CONFIG_FILE: /etc/autopilot/autopilot.json
+      MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     volumes:
       - ./checkpoints:/checkpoints:ro
-      - ./config/autopilot.shadow.json:/etc/autopilot/autopilot.json:ro
+      - ./config/market.json:/etc/near-autopilot/market.json:ro
 
-  # The dashboard, in public demo mode (fixed: not read from .env).
+  # The site. Wallet signing is on (fixed: not read from .env): the user signs in their own wallet.
   analytics:
     image: ${ANALYTICS_IMAGE:-near-autopilot-analytics:public}
     pull_policy: never
@@ -130,8 +113,7 @@ services:
     environment:
       API_BASE_URL: http://analytics-api:4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
-      AUTOPILOT_API_URL: http://api-shadow:4000
-      PUBLIC_DEMO: '1'
+      MAINNET_WALLET_SIGNING: '1'
     # Loopback only. Exposed by Caddy (profile `caddy`) or by Tailscale Funnel on the host (README).
     ports:
       - '127.0.0.1:3000:3000'

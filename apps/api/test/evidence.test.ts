@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadApiEnv } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
 import { SilentLogger } from '@near-autopilot/core/testing';
-import { parseAutopilotConfig } from '../src/autopilot-config';
+import { parseMarketConfig } from '../src/market-config';
 import {
   auditHash,
   ChainVerifier,
@@ -96,11 +96,9 @@ describe('audit hash chain', () => {
 // ------------------------------------------------------------------------------------------------ replay
 
 const ACCOUNT = 'your-account.near';
-const configFile = 'autopilot.example.json';
-const config = parseAutopilotConfig(
-  JSON.parse(
-    readFileSync(new URL(`../../../config/${configFile}`, import.meta.url), 'utf8'),
-  ) as unknown,
+const configFile = 'agents-config.json';
+const config = parseMarketConfig(
+  JSON.parse(readFileSync(new URL(`./fixtures/${configFile}`, import.meta.url), 'utf8')) as unknown,
   accountId(ACCOUNT),
 );
 

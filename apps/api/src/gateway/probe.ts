@@ -8,7 +8,7 @@ import {
 } from '@near-autopilot/core';
 import { rawForValueUsd } from '@near-autopilot/financial-engine';
 import { StaticPoolRegistry } from '@near-autopilot/rhea-adapter';
-import type { AutopilotConfig } from '../autopilot-config';
+import type { MarketConfig } from '../market-config';
 import { ReferencePriceOracle } from '../market-data/adapters';
 import { HttpJsonClient } from '../market-data/http';
 import type { MarketReport } from '../market-data/model';
@@ -73,7 +73,7 @@ export function collectorRouteProbe(o: {
     ApiEnv,
     'RHEA_CONTRACT_ID' | 'ONE_CLICK_URL' | 'ONE_CLICK_QUOTE_ACCOUNT' | 'AUTOPILOT_ACCOUNT_ID'
   >;
-  readonly config: AutopilotConfig;
+  readonly config: MarketConfig;
   readonly repo: Pick<AutopilotRepository, 'insertExecutionRoute'>;
   readonly logger: Logger;
   readonly ids: () => string;
