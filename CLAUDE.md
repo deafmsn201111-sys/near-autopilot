@@ -58,3 +58,12 @@ Dependency boundaries are enforced in CI by `boundaries.config.mjs` — check it
 - Tag every displayed number with its provenance (`packages/core/src/provenance.ts`).
 - Tests with vitest next to each package (`test/`). Every new transaction builder or intent needs a test.
 - Conventional commits: `feat(scope): …`, `fix(scope): …`. Append to `docs/IMPLEMENTATION_LOG.md` for notable work.
+
+## Git workflow
+
+- Never push code to `main` directly. One task = one branch from fresh `main` (`feat/<topic>`, `fix/<topic>`).
+- Push the branch, open a PR with `gh pr create` (short description: what and why).
+- No code review: a green CI is the only gate. If CI is red, fix it in the same branch.
+- When CI is green: `gh pr merge --squash --delete-branch`, then `git checkout main && git pull`.
+- Exception: changes to `.md` files only may be pushed to `main` directly.
+- Never bypass the pre-push hook (`--no-verify`) and never force-push `main`.
