@@ -3,6 +3,7 @@ import type { ReferenceAsset } from './assets';
 
 /** Shadow analysis: a real mainnet price of the mainnet token itself, applied to a SIMULATED portfolio. */
 export const MAINNET_PRICE_LABEL = 'MAINNET PRICE — SIMULATED PORTFOLIO, NOTHING EXECUTED';
+export const DISABLED_FLOW_LABEL = 'MARKET DATA DISABLED (MARKET_DATA=none)';
 export const SHADOW_FLOW_LABEL = 'MAINNET READ-ONLY DATA → SIMULATED PORTFOLIO (NO EXECUTION)';
 export type PriceLabel = typeof MAINNET_PRICE_LABEL;
 /** Where the prices are used: nowhere, the shadow analysis executes nothing. */

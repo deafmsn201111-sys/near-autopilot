@@ -81,9 +81,6 @@ exactly one check: the one it targets.
 **The log** is `docs/evidence/demo-attack.log.jsonl`. It is deterministic: a test fails if the committed log differs
 from what a run produces. The attack verdicts also replay (`audit:replay`) to the same verdict.
 
-`--persist` additionally stores the verdicts and one audit event per attack in Postgres. They are stored as
-`simulation:mainnet` rows with run id `demo-attack:<time>`, and the audit chain makes them permanent.
-
 ## Pre-signing checklist
 
 The adapters validate responses strictly, so a wrong assumption fails closed, but verify against mainnet in `dry-run`

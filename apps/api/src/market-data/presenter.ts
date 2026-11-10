@@ -1,11 +1,11 @@
 import type { MarketDataDto } from '@near-autopilot/core';
 import { formatDecimal } from './decimal';
-import { SHADOW_FLOW_LABEL, type MarketDataProvider } from './model';
+import { DISABLED_FLOW_LABEL, SHADOW_FLOW_LABEL, type MarketDataProvider } from './model';
 import { observationJson } from './store';
 
 const disabledView = (executionNetwork: 'mainnet'): MarketDataDto => ({
   enabled: false,
-  flow: SHADOW_FLOW_LABEL,
+  flow: DISABLED_FLOW_LABEL,
   marketNetwork: 'mainnet',
   executionNetwork,
   fetchedAt: null,
@@ -28,6 +28,7 @@ export function marketDataView(
         if (!r)
           return {
             ...disabledView(executionNetwork),
+            flow: SHADOW_FLOW_LABEL,
             enabled: true,
             error: 'no market report yet: run a cycle (or wait for the collector)',
           };
@@ -59,6 +60,7 @@ export function marketDataView(
       } catch {
         return {
           ...disabledView(executionNetwork),
+          flow: SHADOW_FLOW_LABEL,
           enabled: true,
           error: 'market data could not be fetched',
         };

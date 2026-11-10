@@ -14,7 +14,7 @@ import type { EvidenceStore } from './evidence/store';
 import { toPortfolioDto, toProposalDto, toRunDto, toRouteDto, toVerdictDto } from './presenters';
 import { CycleInProgressError, type CycleResult } from './services/cycle';
 import { disabledYieldView } from './yield/presenter';
-import { SHADOW_FLOW_LABEL } from './market-data/model';
+import { DISABLED_FLOW_LABEL } from './market-data/model';
 import type { UserRequestService } from './services/requests';
 import { accountIdSchema } from '@near-autopilot/core';
 
@@ -166,7 +166,7 @@ export function buildServer(
       ? deps.marketData.current()
       : {
           enabled: false,
-          flow: SHADOW_FLOW_LABEL,
+          flow: DISABLED_FLOW_LABEL,
           marketNetwork: 'mainnet',
           executionNetwork: deps.provenance.network,
           fetchedAt: null,
