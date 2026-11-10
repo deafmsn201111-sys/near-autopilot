@@ -51,4 +51,15 @@ describe('POST /api/prepare', () => {
     forwardedFor = '198.51.100.7';
     expect((await POST(request('application/json'))).status).toBe(200);
   });
+
+  it('answers 429 to everyone once the overall limit is used up', async () => {
+    const { POST } = await import('../app/api/prepare/route');
+    for (let i = 0; i < 600; i++) {
+      forwardedFor = `10.0.${Math.floor(i / 256)}.${i % 256}`;
+      expect((await POST(request('application/json'))).status).toBe(200);
+    }
+    forwardedFor = '198.51.100.99';
+    expect((await POST(request('application/json'))).status).toBe(429);
+    expect(apiPost).toHaveBeenCalledTimes(600);
+  });
 });
