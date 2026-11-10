@@ -48,8 +48,6 @@ const apiEnvRaw = z.object({
   AUTOPILOT_ACCOUNT_ID: accountIdSchema,
   /** `dry-run` plans and evaluates policy but never signs or broadcasts. */
   EXECUTION_MODE: z.enum(['dry-run', 'live']).default('dry-run'),
-  /** 0 disables the scheduler; cycles can still be triggered via the API. */
-  CYCLE_INTERVAL_SECONDS: z.coerce.number().int().min(0).default(0),
   MARKET_CONFIG_FILE: z.string().min(1).default('./config/market.json'),
   /**
    * `legacy`: packages/agents (health guardian + optional rebalancer) through services/cycle.
@@ -125,7 +123,6 @@ export interface ApiEnv {
   readonly NEAR_RPC_API_KEY: string | undefined;
   readonly AUTOPILOT_ACCOUNT_ID: AccountId;
   readonly EXECUTION_MODE: 'dry-run' | 'live';
-  readonly CYCLE_INTERVAL_SECONDS: number;
   readonly MARKET_CONFIG_FILE: string;
   readonly AUTOPILOT_ENGINE: 'legacy' | 'orchestrator';
   readonly DATA_SOURCE: 'chain' | 'simulation';
@@ -228,7 +225,6 @@ export function loadApiEnv(source: EnvSource = process.env): ApiEnv {
     NEAR_RPC_API_KEY: env.NEAR_RPC_API_KEY,
     AUTOPILOT_ACCOUNT_ID: env.AUTOPILOT_ACCOUNT_ID,
     EXECUTION_MODE: env.EXECUTION_MODE,
-    CYCLE_INTERVAL_SECONDS: env.CYCLE_INTERVAL_SECONDS,
     MARKET_CONFIG_FILE: env.MARKET_CONFIG_FILE,
     AUTOPILOT_ENGINE: env.AUTOPILOT_ENGINE,
     DATA_SOURCE: env.DATA_SOURCE,

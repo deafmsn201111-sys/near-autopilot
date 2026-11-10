@@ -13,7 +13,6 @@ describe('loadApiEnv', () => {
   it('applies safe defaults: dry-run, scheduler off, mainnet contract ids', () => {
     const env = loadApiEnv(valid);
     expect(env.EXECUTION_MODE).toBe('dry-run');
-    expect(env.CYCLE_INTERVAL_SECONDS).toBe(0);
     expect(env.API_PORT).toBe(4000);
     expect(env.RHEA_CONTRACT_ID).toBe('v2.ref-finance.near');
     expect(env.BURROW_ORACLE_ID).toBe('priceoracle.near');

@@ -9,11 +9,11 @@ command each. Nothing is fetched or executed.
 | `pnpm audit:replay` | Every stored policy verdict follows from its stored inputs under the policy it names |
 
 Both print one JSON object per line and a summary line. They exit 1 on a broken chain or a replay mismatch. They read
-`DATABASE_URL` from the environment and never print it. In the Docker stack, run them in any API container:
+`DATABASE_URL` from the environment and never print it. In the Docker stack, run them in the `analytics-api` container (`collector` locally, `shadow-collector` on the public server, works too):
 
 ```bash
-docker compose exec api-shadow node --import tsx src/evidence/cli.ts verify
-docker compose exec collector node --import tsx src/evidence/cli.ts replay --config /etc/near-autopilot/market.json
+docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify
+docker compose exec analytics-api node --import tsx src/evidence/cli.ts replay --config /etc/near-autopilot/market.json
 ```
 
 ## The hash chain (`audit_events`, migration 0011)

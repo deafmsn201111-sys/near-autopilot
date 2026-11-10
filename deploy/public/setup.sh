@@ -37,6 +37,6 @@ fi
 mkdir -p checkpoints
 # the containers run as the unprivileged `node` user (uid 1000)
 chown 1000:1000 checkpoints 2>/dev/null || chmod 777 checkpoints
-docker compose up -d
+docker compose up -d --remove-orphans
 docker compose ps
 echo "• started. First market data appears after the first collector cycle (a few minutes)."

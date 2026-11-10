@@ -12,6 +12,10 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 
 ## Defects / tech debt to address
 
+- **A demo portfolio's read-only mode has no switch back** (#13 removed `/v1/control/mode`). The orchestrator tightens
+  a demo scope to `read_only` on its own (an in-doubt execution after a crash, 3 rejected dry runs in a row, an audit
+  write failure) and the mode survives restarts. Rare; undo by hand:
+  `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope shown on `/activity`).
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence. → `T2.1`.
 - **No uniform provenance tagging** across all financial values. → `T1.1/T1.2`.
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.

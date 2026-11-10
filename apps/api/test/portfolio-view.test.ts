@@ -14,9 +14,9 @@ const market = (token: string, supply: string, borrow: string, cf: number) => ({
   canDeposit: true,
   availableUsd: '5000000',
 });
-const view = (healthFactor: number, nearVr = 0.99) =>
+const view = (healthFactor: number, nearVr = 0.99, id: 'demo-500' | 'demo-5000' = 'demo-5000') =>
   buildPortfolioView({
-    id: 'demo-5000',
+    id,
     analysis: {
       createdAt: new Date('2026-11-07T12:00:00Z'),
       result: {
@@ -38,6 +38,15 @@ const view = (healthFactor: number, nearVr = 0.99) =>
     ],
     symbols: new Map([['usdt.tether-token.near', 'USDt']]),
   });
+
+describe('demo portfolio valuation at NEAR $3, USDt $1 (README)', () => {
+  it.each([
+    ['demo-500', { assetsUsd: 500, debtUsd: 200, idleUsd: 140, netWorthUsd: 300 }],
+    ['demo-5000', { assetsUsd: 5000, debtUsd: 2000, idleUsd: 1500, netWorthUsd: 3000 }],
+  ] as const)('%s', (id, totals) => {
+    expect(view(1.55, 0.99, id).totals).toMatchObject(totals);
+  });
+});
 
 describe('portfolio view (demo-5000)', () => {
   it('values the simulated holdings at the given prices', () => {
