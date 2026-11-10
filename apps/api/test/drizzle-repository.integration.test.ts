@@ -205,8 +205,6 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const mainnet = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     const [old] = (await mainnet.listRuns(50)).filter((r) => r.id === 'run-old');
     expect(old).toMatchObject({ dataSource: 'chain', network: 'mainnet', proposalCount: 0 });
-    const current = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
-    expect((await current.listRuns(50)).map((r) => r.id)).not.toContain('run-old');
   });
 
   it('execution stats count only live rows that may have reached the chain', async () => {
@@ -254,7 +252,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
   });
 
   it('appends audit events and answers ping', async () => {
-    const repo = new DrizzleRepository(handle.db, { dataSource: 'simulation', network: 'mainnet' });
+    const repo = new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' });
     await repo.appendAudit({
       at: new Date(),
       type: 'escalation_warn',
@@ -299,10 +297,12 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const r = await store.verify('simulation:mainnet', 7); // small pages: the verifier pages too
     expect(r).toMatchObject({ ok: true, entries: 23, head: { seq: 23 } });
     // Other deployments have their own chain.
+    const before = (await store.verify('chain:mainnet')).entries;
     await new DrizzleRepository(handle.db, { dataSource: 'chain', network: 'mainnet' }).appendAudit(
       event(99),
     );
-    expect(await store.verify('chain:mainnet')).toMatchObject({ ok: true, entries: 1 });
+    expect(await store.verify('chain:mainnet')).toMatchObject({ ok: true, entries: before + 1 });
+    expect((await store.verify('simulation:mainnet', 7)).entries).toBe(23);
     expect((await store.chains()).chains.map((c) => c.chain)).toContain('simulation:mainnet');
   });
 
