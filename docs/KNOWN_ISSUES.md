@@ -1,6 +1,6 @@
 # KNOWN_ISSUES
 
-_Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadmap — see IMPLEMENTATION_ROADMAP for planned work._
+_Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadmap — see `HACKATHON_PLAN.md` for planned work._
 
 ## Honest limitations (not bugs, by design today)
 

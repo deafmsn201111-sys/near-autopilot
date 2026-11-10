@@ -4,8 +4,8 @@ AI DeFi analyst for NEAR mainnet. User connects a wallet → agents read the rea
 liquid staking) and live market → ranked recommendations with numbers → one click builds an exact **unsigned**
 transaction cascade → the user signs it in their own wallet.
 
-Source of truth for scope and phases: `docs/REWORK_PLAN.md`. Status/decisions: `docs/PROJECT_STATUS.md`,
-`docs/DECISIONS.md`, `docs/KNOWN_ISSUES.md`. Many other docs (README, `CURRENT_ARCHITECTURE.md`, `security.md`) still
+Source of truth for scope and phases: `docs/REWORK_PLAN.md`. Plan/decisions: `docs/HACKATHON_PLAN.md`,
+`docs/DECISIONS.md`, `docs/KNOWN_ISSUES.md`. Many other docs (README, `architecture.md`, `security.md`) still
 describe the older autopilot/testnet design — trust the code and `REWORK_PLAN.md` over them.
 
 ## Non-negotiable safety rules

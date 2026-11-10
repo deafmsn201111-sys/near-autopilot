@@ -155,4 +155,4 @@ It prints every pool with `fee, point_delta, current_point, state, liquidity, to
 3. Limit-order point orientation follows ref-sdk (negate when the sold token is not X). The SDK's own snapping happens before negation, so negated points are not guaranteed to be multiples of the delta; `buildLimitOrder` checks range but not alignment for that reason.
 4. Gas and attached-deposit values are copied from the frontend and are not minimums.
 5. This package builds transactions. It does not sign or broadcast; those stay with the existing `TransactionSigner` / policy engine path, and the API currently has no signer wired (by design).
-6. The existing `rhea-adapter` targets the **v1 AMM** (`v2.ref-finance.near`, `get_return`, `force/actions` swap messages). The DCL adapter is separate and is not yet wired into the agents or API.
+6. The existing `rhea-adapter` targets the **v1 AMM** (`v2.ref-finance.near`, `get_return`, `force/actions` swap messages). The DCL adapter is separate; the API uses it for yield, DCL analytics and the account view (`apps/api/src/yield/rhea.ts`, `analytics/dcl.ts`, `analytics/account-view.ts`).

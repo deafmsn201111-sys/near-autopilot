@@ -41,18 +41,19 @@ Notes on "the official SDK and API":
 
 ## 3. Method matrix
 
-| Method                                                                | Kind                                | Used for                                                              | Evidence                                                         | Implemented                         |
-| --------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
-| `get_config`                                                          | view                                | oracle account, recency limits                                        | S `config.rs:83`                                                 | yes                                 |
-| `get_asset {token_id}`                                                | view                                | listing, `volatility_ratio`, `extra_decimals`, flags                  | S `asset.rs:165`; A                                              | yes                                 |
-| `get_assets_paged_detailed {from_index, limit}`                       | view                                | market listing                                                        | S `asset.rs:201`; A                                              | yes (de-duplicating pager, see 3.1) |
-| `get_account {account_id}`                                            | view                                | supplied / collateral / borrowed (inner units); `null` = unregistered | S `account.rs:199`; A                                            | yes                                 |
-| `storage_balance_of {account_id}`                                     | view                                | NEP-145 registration                                                  | S `storage.rs:185`                                               | yes                                 |
-| `get_price_data {asset_ids}` (oracle)                                 | view                                | prices, block timestamp, recency                                      | S price-oracle `lib.rs:117`                                      | yes                                 |
-| `ft_on_transfer`                                                      | call via token's `ft_transfer_call` | repay / supply / supply-as-collateral                                 | S `fungible_token.rs:24`; A `repay.ts`, `supply.ts`              | yes (builders)                      |
-| `execute {actions}`                                                   | payable call, 1 yocto               | promote supplied balance to collateral                                | S `actions.rs:541` (`assert_one_yocto`); A `adjustCollateral.ts` | yes (builder)                       |
-| `oracle_on_call`                                                      | callback from oracle                | priced actions                                                        | S `price_receiver.rs:35`                                         | export checked only                 |
-| borrow, withdraw, decrease collateral, liquidate, `oracle_call` flows |                                     |                                                                       | S                                                                | **not implemented, on purpose**     |
+| Method                                          | Kind                                | Used for                                                              | Evidence                                                         | Implemented                         |
+| ----------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
+| `get_config`                                    | view                                | oracle account, recency limits                                        | S `config.rs:83`                                                 | yes                                 |
+| `get_asset {token_id}`                          | view                                | listing, `volatility_ratio`, `extra_decimals`, flags                  | S `asset.rs:165`; A                                              | yes                                 |
+| `get_assets_paged_detailed {from_index, limit}` | view                                | market listing                                                        | S `asset.rs:201`; A                                              | yes (de-duplicating pager, see 3.1) |
+| `get_account {account_id}`                      | view                                | supplied / collateral / borrowed (inner units); `null` = unregistered | S `account.rs:199`; A                                            | yes                                 |
+| `storage_balance_of {account_id}`               | view                                | NEP-145 registration                                                  | S `storage.rs:185`                                               | yes                                 |
+| `get_price_data {asset_ids}` (oracle)           | view                                | prices, block timestamp, recency                                      | S price-oracle `lib.rs:117`                                      | yes                                 |
+| `ft_on_transfer`                                | call via token's `ft_transfer_call` | repay / supply / supply-as-collateral                                 | S `fungible_token.rs:24`; A `repay.ts`, `supply.ts`              | yes (builders)                      |
+| `execute {actions}`                             | payable call, 1 yocto               | promote supplied balance to collateral                                | S `actions.rs:541` (`assert_one_yocto`); A `adjustCollateral.ts` | yes (builder)                       |
+| `oracle_on_call`                                | callback from oracle                | priced actions                                                        | S `price_receiver.rs:35`                                         | export checked only                 |
+| borrow, withdraw (`oracle_call` → `execute`)    | via oracle                          | borrow to wallet, withdraw supplied/collateral                        | S; A `buildBorrow`, `buildWithdraw` (`builders.ts:161,184`)      | yes (builders, prepare intents)     |
+| decrease collateral, liquidate                  |                                     |                                                                       | S                                                                | **not implemented, on purpose**     |
 
 ### 3.1 Notes
 
@@ -60,10 +61,12 @@ Notes on "the official SDK and API":
   an end index (the two have both appeared in the Burrow ecosystem). The client requests `limit = from + 50`,
   de-duplicates by token id, and stops on the first page that adds nothing. Both semantics are unit-tested.
 - **Unregistered accounts.** `ft_on_transfer` panics for an account that is not registered (the transfer then
-  bounces). The planner therefore requires `get_account` to be non-null for the signer and never builds a
-  registration (`storage_deposit`) transaction.
-- **Why only risk-reducing actions.** Repay and increase-collateral never lower a health factor. Borrow and
-  withdraw do, and need a priced `oracle_call` flow; they are out of scope and `supports()` returns false.
+  bounces). The `/v1/wallet/prepare` path prepends `buildBurrowStorageDeposit` (deposit = on-chain
+  `storage_balance_bounds().min`) when `storage_balance_of` reports the signer is not registered. The older
+  planner still requires `get_account` to be non-null.
+- **Risk-lowering actions.** Borrow and withdraw lower a health factor, so they go through a priced `oracle_call`
+  flow and Burrow reverts if collateral no longer covers the debt. They exist only as user-signed prepare intents;
+  the planner's `supports()` still covers repay and supply only.
 
 ## 4. Interface shapes (exact, as built)
 
@@ -191,4 +194,4 @@ A failure there on testnet is a finding (deployment retired or interface changed
 4. Oracle price format is read from price-oracle source (`df2efbe`); the deployed oracle for a given network was not inspected.
 5. Pager semantics of `get_assets_paged_detailed` are tolerated, not established.
 6. Farm/booster rewards and `net_tvl_multiplier` effects are not part of any calculation.
-7. No borrow, withdraw, decrease-collateral, liquidation or `oracle_call` support.
+7. No decrease-collateral or liquidation support. Borrow and withdraw exist only as user-signed prepare intents.

@@ -47,7 +47,7 @@ The code, tests and documentation were written with AI:
 
 The author set the requirements, the safety constraints and the limits, and reviewed the results. Every real
 transaction was the author's decision: each testnet transaction was confirmed by its preview hash, and the Burrow
-registration was sent by the author personally. See [docs/testnet-transactions.md](docs/testnet-transactions.md).
+registration was sent by the author personally.
 
 ## Libraries and services (FAQ Q-005)
 
@@ -85,4 +85,4 @@ The data collector makes no LLM API calls.
 | Attacks are stopped                | `pnpm demo:attack`: 8 of 8 stopped, 2 controls allowed, `signed 0, broadcast 0`.                                                            |
 | Audit trail is intact              | `docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify`: hash chains and ed25519 checkpoints `ok` |
 | Thesis is reproducible             | `pnpm thesis:rebuild && git diff --stat`: no changes.                                                                                       |
-| Real testnet transactions          | [docs/testnet-transactions.md](docs/testnet-transactions.md), with explorer links.                                                          |
+| Real testnet transactions          | Removed with the testnet code (mainnet only).                                                                                               |

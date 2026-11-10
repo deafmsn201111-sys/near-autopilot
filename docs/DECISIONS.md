@@ -35,5 +35,5 @@ _Architecture Decision Record (lightweight). Each entry: context → decision �
 ## D6 — Target architecture confirmed from the master brief
 
 **Context:** The planner's Claude Docs document never shipped; the owner supplied the full master prompt directly.
-**Decision:** Use the master brief (§4 thirteen layers) as the authoritative target; `TARGET_ARCHITECTURE.md` maps it to existing code.
+**Decision:** Use the master brief (§4 thirteen layers) as the authoritative target. (Superseded by `REWORK_PLAN.md` and `HACKATHON_PLAN.md`.)
 **Consequences:** No further blocking on an external doc; proceed through the roadmap.

@@ -12,7 +12,7 @@ whether each action may run. Nothing is signed unless policy approved that exact
 > **Status:** a working local demo (simulation + dry-run) and read-only testnet integration. **Mainnet execution is
 > not a finished or verified feature**, and no seed phrase, private key or wallet is needed to run anything below.
 
-**Demo walkthrough:** [DEMO.md](DEMO.md). **What comes next:** [ROADMAP.md](ROADMAP.md).
+**Plan and roadmap:** [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).
 
 ## NEAR HACKATHON 2026
 
@@ -35,7 +35,7 @@ everywhere in this repository:
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Works now**     | Automatic decisions, a 12-check policy engine, a tamper-evident audit trail. Execution is **dry-run only**: plans are built, checked and simulated, never signed or sent. |
 | **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                     |
-| **Roadmap**       | Real execution, an on-chain guard contract, full autonomy ([ROADMAP.md](ROADMAP.md)).                                                                                     |
+| **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                     |
 
 Mainnet is read-only: signing on mainnet is locked in code, and NEAR Intents 1Click is used for dry quotes only.
 
@@ -75,7 +75,7 @@ The result is deliberate: the agent cannot sign on its own, and everything runs 
 needs custody with its own limits, for example an on-chain guard contract or an MPC signer. That is on the roadmap,
 not built.
 
-The four testnet transactions in [docs/testnet-transactions.md](docs/testnet-transactions.md) were made by a separate
+The four testnet transactions were made by a separate
 manual tool. The human confirms each preview hash, and the tool has hard limits: 0.1 NEAR per operation, 1 NEAR in
 total.
 
@@ -205,7 +205,7 @@ packages/
 config/             autopilot.example.json (mainnet ids), autopilot.testnet.example.json (testnet ids),
                     autopilot.shadow.example.json (mainnet read-only shadow profile)
 docs/               architecture.md, security.md, financial-engine.md, orchestrator.md, market-data.md, yield-data.md,
-                    mainnet-shadow.md, testnet-transactions.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md,
+                    mainnet-shadow.md, rhea-dcl-capability-matrix.md, burrow-capability-matrix.md,
                     policy-verdicts.md, shadow-gateway.md, audit-evidence.md
 ```
 
@@ -305,7 +305,7 @@ costs), or why the autopilot would not do it.
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
 | Testnet transactions                                                                | Only manual, each one confirmed separately (`testnet-tx`), outside the autopilot                                                                 |
 | Wallet connection                                                                   | Sign-in only (HOT Connector) with a read-only account view; signing locked                                                                       |
-| Mainnet execution, AI assistant                                                     | **Not implemented.** Planned, see [ROADMAP.md](ROADMAP.md)                                                                                       |
+| Mainnet execution, AI assistant                                                     | **Not implemented.** Planned, see [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md)                                                               |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 
@@ -453,7 +453,7 @@ collector uses DefiLlama only and marks every cycle `partial`. Details: [docs/ma
 `pnpm --filter @near-autopilot/api testnet-tx ...` prepares a read-only preview of one allowlisted operation
 (`wrap.testnet` `storage_deposit` / `near_deposit`), and signs and sends it only when you repeat its exact preview
 hash, with a key file you keep outside the repository. Limits: 0.1 NEAR per operation, 1 NEAR in total, 0.5 NEAR
-always kept, balance never below 14 NEAR. See [docs/testnet-transactions.md](docs/testnet-transactions.md). The autopilot itself still never signs.
+always kept, balance never below 14 NEAR. The autopilot itself still never signs.
 
 ### Configuring the autopilot
 
