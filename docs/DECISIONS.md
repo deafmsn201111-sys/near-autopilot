@@ -109,3 +109,27 @@ Errors: invalid input (zod, Fastify's own 4xx) is a 400 with its reason; a prepa
 `MissingPriceError`, `PreconditionError`, `UnsupportedIntentError`) is a 422 with its reason; everything else is a
 bare 500/502, details only in the log.
 **Consequences:** Every page renders dynamically (nonce). A new inline script needs the nonce from `headers()`.
+
+## D12 — Central LLM on the wallet path (architecture C)
+
+**Context:** #18. The plan has the central LLM call the existing orchestrator agents as tools. On a wallet, the Capital
+Allocator and LP Optimizer had no inputs, and the concentration and DCL checks exist only in the wallet code.
+**Decision:**
+
+- Tools: `LiquidationGuardianAgent`, `CapitalAllocatorAgent` (`supplyIdle`, every Burrow token with an oracle price)
+  and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the wallet (`SnapshotService`, Burrow's oracle);
+  yields are today's Burrow supply rates, the second price source is the collector's confirmed prices. Plus two
+  wallet checks: concentration and DCL out of range. The LP Optimizer waits for a 24 h volume source (separate issue).
+- Only `lending.repay` (guardian) and `lending.supply` (allocator) become recommendations. Allocator swaps (they would
+  move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
+  dropped.
+- The LLM returns only `{picks: [{id, why}]}` (zod). Unknown ids are dropped; a "why" with a number that no tool
+  returned is replaced by the code's text. At most 4 model turns. Any failure returns the rule-based list, labelled.
+- `POST /v1/wallet/prepare` accepts an optional exact `amount` (base units) for repay and supply, capped at the
+  wallet balance. Cascade caps and `validateCascade` are unchanged.
+- The test that banned LLM code from `apps/api/src/analytics` now allows the provider only in `analytics/main.ts`
+  (wiring); the collector stays LLM-free, and the no-signing/no-sending ban is unchanged.
+- The Next route allows 5 analyses per visitor and 60 overall per 10 minutes.
+- `ANTHROPIC_API_KEY` stays off the public server until #20 (NEP-413) and #21 (spend cap) are merged.
+  **Consequences:** An analysis costs one snapshot read (about 2 RPC calls per Burrow token) plus up to 4 model calls.
+  With the key unset the route is free and returns the rule-based list.

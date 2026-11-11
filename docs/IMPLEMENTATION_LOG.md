@@ -121,3 +121,19 @@ missing-account page shows the short message, Caddy (local container) sends both
   no `allowedPools` given, any `add_liquidity` fails (closed by default).
 
 **Tests run:** `pnpm verify` (green); new `prepare-pool-allowlist.test.ts`, two cases in `validate-cascade.test.ts`.
+
+## 2026-11-11 — Tool-use loop: orchestrator agents as LLM tools (#18)
+
+- `packages/orchestrator/src/tool-loop.ts`: `runToolLoop` with a `maxTurns` bound; unknown tools and invalid inputs
+  get an error result and never run. New port `ToolLlm` / `ToolChat` in `ports.ts`.
+- `apps/api/src/llm/anthropic-client.ts`: `AnthropicToolLlm` (manual Messages API tool loop; replays assistant content
+  unchanged; any stop other than `end_turn`/`tool_use` throws). `anthropicToolLlmFromEnv` wired in `analytics/main.ts`.
+- `apps/api/src/analytics/ai-analysis.ts`: five tools (three orchestrator agents, two wallet checks), picks
+  validation, numbers-from-tools check, labelled fallback. `POST /v1/analytics/account/:id/analysis` in
+  `account-view.ts`; the account read is now a reusable `readAccount`.
+- `prepare`: optional exact `amount` for repay/supply (`exactAmount` in `wallet/amounts.ts`).
+- UI: **Run AI analysis** button, source badge, `/api/analysis` route (rate limited), `amount` passed to prepare.
+- Decision D12.
+
+**Tests run:** `pnpm verify` (green); new `tool-loop.test.ts`, `ai-analysis.test.ts` (scripted fake LLM),
+`analysis-endpoint.test.ts`, `analysis-route.test.ts`, `AnthropicToolLlm` and `exactAmount` cases.
