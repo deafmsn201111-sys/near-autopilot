@@ -426,6 +426,12 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
   return recs;
 }
 
+/** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
+interface AccountBody {
+  readonly recommendations: readonly PortfolioRecommendation[];
+  readonly [field: string]: unknown;
+}
+
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 
@@ -465,7 +471,7 @@ export function registerAccountView(
       expectedOracleId: accountIdSchema.parse('priceoracle.near'),
     },
   );
-  const cache = new BoundedMap<string, { at: number; body: unknown }>(ACCOUNT_CACHE_MAX);
+  const cache = new BoundedMap<string, { at: number; body: AccountBody }>(ACCOUNT_CACHE_MAX);
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
@@ -486,12 +492,12 @@ export function registerAccountView(
     return out;
   };
 
-  app.get('/v1/analytics/account/:id', async (req, reply) => {
-    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
-    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
-    const id = parsed.data;
+  const readAccount = async (
+    id: AccountId,
+    log: FastifyRequest['log'],
+  ): Promise<{ status: 200; body: AccountBody } | { status: 404 | 502; body: { error: string } }> => {
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return hit.body;
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, body: hit.body };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -500,9 +506,9 @@ export function registerAccountView(
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/does not exist|UNKNOWN_ACCOUNT/i.test(msg))
-        return reply.code(404).send({ error: `account ${id} does not exist on NEAR mainnet` });
-      req.log.error({ err: e, account: id }, 'account read failed');
-      return reply.code(502).send({ error: 'could not read the account from NEAR right now' });
+        return { status: 404, body: { error: `account ${id} does not exist on NEAR mainnet` } };
+      log.error({ err: e, account: id }, 'account read failed');
+      return { status: 502, body: { error: 'could not read the account from NEAR right now' } };
     }
     const [assets, markets, meta, prices, account] = await Promise.all([
       burrow.listAssets(),
@@ -872,7 +878,14 @@ export function registerAccountView(
       actions,
     };
     cache.set(id, { at: Date.now(), body });
-    return body;
+    return { status: 200, body };
+  };
+
+  app.get('/v1/analytics/account/:id', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    const out = await readAccount(parsed.data, req.log);
+    return reply.code(out.status).send(out.body);
   });
 
   /**
