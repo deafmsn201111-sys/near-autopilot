@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 let proof: string | undefined;
+let ip = '203.0.113.1';
 vi.mock('next/headers', () => ({
-  headers: async () => new Map([['x-forwarded-for', '203.0.113.1']]),
+  headers: async () => new Map([['x-forwarded-for', ip]]),
   cookies: async () => ({ get: () => (proof === undefined ? undefined : { value: proof }) }),
 }));
 const apiPost = vi.fn(async () => ({
@@ -25,6 +26,7 @@ describe('POST /api/analysis', () => {
     vi.resetModules();
     apiPost.mockClear();
     proof = undefined;
+    ip = '203.0.113.1';
   });
 
   it('forwards a valid account to the analysis endpoint', async () => {
@@ -65,6 +67,14 @@ describe('POST /api/analysis', () => {
     expect(limited.status).toBe(429);
     expect(limited.headers.get('retry-after')).toBeTruthy();
     expect(apiPost).toHaveBeenCalledTimes(5);
+  });
+
+  it('leaves the global AI limit to the API: many visitors are never limited here', async () => {
+    const { POST } = await import('../app/api/analysis/route');
+    for (let i = 1; i <= 70; i++) {
+      ip = `198.51.100.${i}`;
+      expect((await POST(request({ account: 'a.near' }))).status).toBe(200);
+    }
   });
 
   it('answers 415 to a non-JSON content-type', async () => {

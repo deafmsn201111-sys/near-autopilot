@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
 import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
+import { analysisMemo } from './ai-analysis';
 import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
 
@@ -75,6 +76,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
             model: llmEnv.ANTHROPIC_MODEL,
             maxTokens: llmEnv.ANTHROPIC_MAX_TOKENS,
             ledger: llmLedger,
+            memo: analysisMemo(),
           }
         : null,
     }

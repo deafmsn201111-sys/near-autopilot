@@ -11,9 +11,11 @@ import {
   type ToolLlm,
   type ToolResult,
 } from '@near-autopilot/orchestrator';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { analysisKey } from '../src/analytics/analysis-key';
 import {
   analyseAccount,
+  analysisMemo,
   walletAgentConfig,
   type LlmCallRecord,
   type ToolLlmDeps,
@@ -130,6 +132,7 @@ const ai = (llm: ToolLlm, l: ToolLlmDeps['ledger'] = ledger()): ToolLlmDeps => (
   model: 'claude-haiku-5-5',
   maxTokens: 4096,
   ledger: l,
+  memo: analysisMemo(),
 });
 /** Haiku 5.5, 100K input + 4096 output: the most one call may cost. */
 const WORST_CALL_MICRO = 12_048n;
@@ -522,6 +525,115 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('heuristic');
   });
 
+  describe('result cache and global limit', () => {
+    const pick = [{ id: 'reduce-concentration', why: 'Most of your portfolio is in one token.' }];
+    const ranked = () => fake([() => callAll, () => final(pick)]);
+    const later = (): AgentObservation => {
+      const obs = observation();
+      const t = new Date(NOW.getTime() + 60_000);
+      return {
+        ...obs,
+        now: t,
+        snapshot: { ...obs.snapshot, takenAt: t, pricesAsOf: t },
+        market: obs.market && { ...obs.market, asOf: t },
+      };
+    };
+
+    it('answers a repeat analysis of an unchanged wallet from the cache, with no model call and no row', async () => {
+      const l = ledger();
+      const deps = ai(ranked().llm, l);
+      const first = await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      expect(first.source).toBe('llm');
+      const again = fake([() => callAll]);
+      const second = await analyseAccount(
+        { ...deps, llm: again.llm },
+        { ...ctx, observe: async () => later(), heuristics: [heuristic] },
+      );
+      expect(second).toEqual(first);
+      expect(again.tools).toEqual([]);
+      expect(l.rows).toHaveLength(1);
+    });
+
+    it('runs the model again once the cached result is 10 minutes old', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        const deps = ai(ranked().llm);
+        await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+        vi.setSystemTime(Date.now() + 10 * 60_000);
+        const again = ranked();
+        await analyseAccount({ ...deps, llm: again.llm }, { ...ctx, heuristics: [heuristic] });
+        expect(again.tools).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not cache a fallback', async () => {
+      const deps = ai(fake([() => final([])]).llm);
+      expect((await analyseAccount(deps, { ...ctx, heuristics: [heuristic] })).fallback).toBe(
+        'empty',
+      );
+      const again = ranked();
+      const out = await analyseAccount(
+        { ...deps, llm: again.llm },
+        { ...ctx, heuristics: [heuristic] },
+      );
+      expect(out.source).toBe('llm');
+    });
+
+    it('never serves a cached result to a visitor who has not proved ownership', async () => {
+      const deps = ai(ranked().llm);
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(deps, {
+        ...ctx,
+        heuristics: [heuristic],
+        ownerVerified: false,
+      });
+      expect(out.fallback).toBe('not_owner');
+    });
+
+    it('over the global limit answers with the rule-based list labelled busy, and no model call', async () => {
+      const l = ledger();
+      const deps = { ...ai(fake([() => final([])]).llm, l), memo: analysisMemo(1) };
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      const again = fake([() => final([])]);
+      const out = await analyseAccount(
+        { ...deps, llm: again.llm },
+        { ...ctx, heuristics: [heuristic] },
+      );
+      expect(out).toMatchObject({
+        source: 'heuristic',
+        fallback: 'busy',
+        recommendations: [heuristic],
+      });
+      expect(out.note).toMatch(/busy/);
+      expect(again.tools).toEqual([]);
+      expect(l.rows).toHaveLength(1);
+    });
+
+    it('counts only runs that reach the model against the global limit', async () => {
+      const memo = analysisMemo(2);
+      const deps = { ...ai(ranked().llm), memo };
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic], ownerVerified: false });
+      await analyseAccount({ ...deps, ledger: ledger(0n) }, { ...ctx, heuristics: [heuristic] });
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      const bob = accountId('bob.near');
+      const other = ranked();
+      const out = await analyseAccount(
+        { ...deps, llm: other.llm },
+        {
+          ...ctx,
+          accountId: bob,
+          observe: async () => ({ ...observation(), accountId: bob }),
+          heuristics: [heuristic],
+        },
+      );
+      expect(other.tools).toHaveLength(1);
+      expect(out.source).toBe('llm');
+    });
+  });
+
   describe('spend', () => {
     it('labels each fallback with its code', async () => {
       expect((await analyseAccount(null, { ...ctx, heuristics: [heuristic] })).fallback).toBe(
@@ -763,5 +875,53 @@ describe('analyseAccount', () => {
       expect(out.fallback).toBe('cap');
       expect(tools).toEqual([]);
     });
+  });
+});
+
+describe('analysisKey', () => {
+  const key = (obs: AgentObservation, preset = 'default') => analysisKey(obs, [heuristic], preset);
+  const base = key(observation());
+
+  it('ignores the snapshot and price fetch times', () => {
+    const obs = observation();
+    const t = new Date(NOW.getTime() + 3_600_000);
+    expect(
+      key({
+        ...obs,
+        now: t,
+        snapshot: { ...obs.snapshot, takenAt: t, pricesAsOf: t },
+        market: obs.market && { ...obs.market, asOf: t },
+      }),
+    ).toBe(base);
+  });
+
+  it('changes with a balance, a debt, a price, the rule-based list or the preset', () => {
+    const obs = observation();
+    const lending = obs.snapshot.lending!;
+    const variants = [
+      { ...obs, snapshot: { ...obs.snapshot, walletBalances: [{ token: WNEAR, raw: near(11) }] } },
+      {
+        ...obs,
+        snapshot: {
+          ...obs.snapshot,
+          lending: { ...lending, borrowed: [{ token: USDT, raw: usdt(231) }] },
+        },
+      },
+      {
+        ...obs,
+        snapshot: {
+          ...obs.snapshot,
+          prices: new Map([...obs.snapshot.prices, [WNEAR, { multiplier: 50_001n, decimals: 28 }]]),
+        },
+      },
+    ].map((o) => key(o));
+    variants.push(analysisKey(obs, [], 'default'), key(obs, 'conservative'));
+    expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
+  });
+
+  it('does not depend on map insertion order', () => {
+    const obs = observation();
+    const prices = new Map([...obs.snapshot.prices].reverse());
+    expect(key({ ...obs, snapshot: { ...obs.snapshot, prices } })).toBe(base);
   });
 });
