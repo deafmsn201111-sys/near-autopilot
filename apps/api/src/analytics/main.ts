@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs';
+import { llmEnvSchema } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
 import { NearRpcClient } from '@near-autopilot/near-adapter';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
 import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
+import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
 import { buildAnalyticsServer } from './server';
 
 /**
@@ -59,6 +61,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
         tokenA: accountId(p.tokenA),
         tokenB: accountId(p.tokenB),
       })),
+      llm: anthropicToolLlmFromEnv(llmEnvSchema.parse(process.env)),
     }
   : undefined;
 const app = buildAnalyticsServer(

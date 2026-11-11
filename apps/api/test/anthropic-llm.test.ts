@@ -71,7 +71,13 @@ describe('AnthropicToolLlm', () => {
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   };
   const use = (id: string) =>
-    ({ type: 'tool_use', id, name: 'echo', input: {}, caller: { type: 'direct' } }) as unknown as Anthropic.ToolUseBlock;
+    ({
+      type: 'tool_use',
+      id,
+      name: 'echo',
+      input: {},
+      caller: { type: 'direct' },
+    }) as unknown as Anthropic.ToolUseBlock;
 
   it('sends system, tools and the prompt, then replays the full assistant turn and the tool results', async () => {
     const create = vi
@@ -96,7 +102,7 @@ describe('AnthropicToolLlm', () => {
       system: 'sys',
       tools: [{ name: 'echo', description: 'd', input_schema: tool.inputSchema }],
     });
-    expect(create.mock.calls[1]?.[0].messages).toEqual([
+    expect((create.mock.calls[1]?.[0] as Anthropic.MessageCreateParams).messages).toEqual([
       { role: 'user', content: 'go' },
       { role: 'assistant', content: [text('let me look'), use('t1')] },
       {
@@ -106,9 +112,14 @@ describe('AnthropicToolLlm', () => {
     ]);
   });
 
-  it.each(['max_tokens', 'refusal', 'pause_turn'] as const)('fails closed on %s', async (stop_reason) => {
-    const create = vi.fn().mockResolvedValue({ stop_reason, content: [text('x')] });
-    const llm = new AnthropicToolLlm({ messages: { create } } as unknown as Anthropic, config);
-    await expect(llm.open({ system: 's', prompt: 'p', tools: [] }).send(null)).rejects.toThrow(stop_reason);
-  });
+  it.each(['max_tokens', 'refusal', 'pause_turn'] as const)(
+    'fails closed on %s',
+    async (stop_reason) => {
+      const create = vi.fn().mockResolvedValue({ stop_reason, content: [text('x')] });
+      const llm = new AnthropicToolLlm({ messages: { create } } as unknown as Anthropic, config);
+      await expect(llm.open({ system: 's', prompt: 'p', tools: [] }).send(null)).rejects.toThrow(
+        stop_reason,
+      );
+    },
+  );
 });

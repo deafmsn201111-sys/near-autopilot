@@ -418,15 +418,17 @@ describe('read-only analytics API', () => {
   });
 });
 
-describe('collector and analytics code: no LLM, no signing, no sending', () => {
+describe('collector and analytics code: no signing, no sending; the LLM only behind its port', () => {
   const dir = (p: string) =>
     readdirSync(new URL(p, import.meta.url)).map((f) =>
       join(new URL(p, import.meta.url).pathname, f),
     );
   const files = [...dir('../src/collector/'), ...dir('../src/analytics/')];
+  // Architecture C: only the analytics entry point wires the LLM provider; everything else sees the ToolLlm port.
+  const wiresLlm = (file: string) => file.endsWith('/analytics/main.ts');
   it.each(files)('%s', (file) => {
     const src = readFileSync(file, 'utf8');
-    expect(src).not.toMatch(/anthropic|openai|LlmClient|claude/i);
+    if (!wiresLlm(file)) expect(src).not.toMatch(/anthropic|openai|LlmClient|claude/i);
     expect(src).not.toMatch(
       /broadcast|send_tx|signTransaction|sendTransaction|NearKeyPairSigner|loadSigner/,
     );

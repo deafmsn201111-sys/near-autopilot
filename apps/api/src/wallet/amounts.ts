@@ -43,6 +43,12 @@ export function resolveIntentAmount(
   return { rawAmount: toRawUnits(humanAmount, decimals), humanAmount };
 }
 
+/** An amount an orchestrator agent already sized in base units, capped at what the wallet holds. */
+export function exactAmount(amount: bigint, walletRaw: bigint, decimals: number): ResolvedAmount {
+  const rawAmount = amount < walletRaw ? amount : walletRaw;
+  return { rawAmount, humanAmount: Number(rawAmount) / 10 ** decimals };
+}
+
 /** One side of a balanced liquidity deposit. */
 export interface LpSide {
   readonly rawAmount: bigint;

@@ -41,14 +41,17 @@ export async function runToolLoop(args: {
   for (let turn = 0; turn < args.maxTurns; turn++) {
     const reply = await chat.send(results);
     if (reply.kind === 'final') return { text: reply.text, trace };
-    if (reply.calls.length === 0) throw new ToolLoopError('model asked for no tool and gave no answer');
-    results = await Promise.all(
-      reply.calls.map(async (call) => {
-        const entry = await execute(byName, call);
-        trace.push(entry);
-        return { id: call.id, content: JSON.stringify(entry.output), isError: !entry.ok };
-      }),
+    if (reply.calls.length === 0)
+      throw new ToolLoopError('model asked for no tool and gave no answer');
+    const done = await Promise.all(
+      reply.calls.map(async (call) => ({ id: call.id, entry: await execute(byName, call) })),
     );
+    trace.push(...done.map((d) => d.entry));
+    results = done.map(({ id, entry }) => ({
+      id,
+      content: JSON.stringify(entry.output),
+      isError: !entry.ok,
+    }));
   }
   throw new ToolLoopError(`no answer within ${args.maxTurns} turns`);
 }
