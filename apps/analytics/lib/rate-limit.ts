@@ -16,7 +16,7 @@ function take(key: string, limit: number, windowMs: number, now: number): boolea
 }
 
 // Trusted only because Caddy overwrites X-Forwarded-For (deploy/public/Caddyfile).
-async function visitor(): Promise<string> {
+export async function visitor(): Promise<string> {
   const h = await headers();
   return (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim();
 }

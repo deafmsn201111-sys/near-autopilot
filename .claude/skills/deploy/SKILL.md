@@ -12,7 +12,8 @@ to the owner in Russian, short. Never print, cat or copy `.env` anywhere except 
 
 - Run from the main checkout: on `main`, clean tree, `git pull` done. Never deploy a branch.
 - CI green on that commit: `gh run list --branch main --workflow ci.yml --limit 1` shows `success` for `HEAD`.
-- Docker is running locally (`docker info`).
+- Docker is running locally (`docker info`). The owner's Mac uses Colima, not Docker Desktop: start it with
+  `colima start`.
 - `ssh near-autopilot true` works. The host alias lives only in the owner's `~/.ssh/config`, never in the repo. If it
   fails, give the owner this and stop:
   ```
@@ -35,13 +36,15 @@ to the owner in Russian, short. Never print, cat or copy `.env` anywhere except 
 - Platform from `ssh near-autopilot uname -m`: `x86_64` → `linux/amd64`, `aarch64` → `linux/arm64`.
 - `deploy/public/build-bundle.sh <platform>` (several minutes; run in background). It refuses images with secrets in
   them: if it does, stop and report.
-- `scp deploy/public/dist/near-autopilot-public-<sha>.tar.gz near-autopilot:`
+- Upload next to `OLD` (its parent dir is `APP`, today `/opt/near-autopilot/app`):
+  `scp deploy/public/dist/near-autopilot-public-<sha>.tar.gz near-autopilot:APP/`
 
 ## 4. Switch
 
 One `ssh near-autopilot` with `set -e`:
 
 ```bash
+cd APP
 tar xzf near-autopilot-public-<sha>.tar.gz
 cp -p OLD/.env near-autopilot-public-<sha>/.env
 cp -a OLD/checkpoints near-autopilot-public-<sha>/ 2>/dev/null || true
@@ -66,7 +69,11 @@ On `$SITE`, no wallet, with `claude-in-chrome`; screenshot each:
 
 - The home page opens, shows data, and the Console has no errors (CSP included).
 - The $5k demo portfolio shows holdings and an "updated" time from the last 30 minutes.
-- "Let the agent do it" on a demo recommendation opens "Exactly what you would sign" with transactions.
+- "See the plan, the costs and the risks" on a demo recommendation expands with steps and numbers, and "What the
+  autopilot decided" does not say "market data out of date".
+- The first `collector cycle finished` in `docker compose logs shadow-collector` (up to 3 minutes after the switch) is
+  `success` with no `HTTP 429` before it. 429s mean the RPC URL and key do not match: `MAINNET_READ_RPC_URL` must be
+  the FastNEAR URL when `MAINNET_READ_RPC_API_KEY` is set.
 - `curl -sI $SITE` has `Strict-Transport-Security`; `curl -s -o /dev/null -w '%{http_code}' $SITE/admin` is `404`.
 
 A failure here (health was fine) does not roll back by itself: report it with the screenshot and ask the owner

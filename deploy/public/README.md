@@ -16,8 +16,9 @@ Runs the NEAR Autopilot site on a server over HTTPS. Services: `postgres`, `anal
 - Every cascade passes `apps/api/src/wallet/validate-cascade.ts` (0.15 NEAR per action, 0.3 NEAR per cascade).
 - The network, the data source, the execution mode and `MAINNET_WALLET_SIGNING` are fixed in `docker-compose.yml`,
   not read from `.env`. The market and policy config is `config/market.json` (no secrets).
-- Account lookups and `/api/prepare` are rate-limited per visitor
-  ([`apps/analytics/lib/rate-limit.ts`](../../apps/analytics/lib/rate-limit.ts)).
+- Account lookups and `/api/prepare` are rate-limited per visitor, and account reads are cached for 60 s
+  ([`apps/analytics/lib/rate-limit.ts`](../../apps/analytics/lib/rate-limit.ts); numbers and reasons in
+  [`docs/DECISIONS.md`](../../docs/DECISIONS.md), D10).
 
 The site listens on `127.0.0.1:3000` of the server only. Postgres, the analytics API and the collector are on the
 internal Docker network. One of two front doors puts the dashboard on the internet over HTTPS:
@@ -80,7 +81,9 @@ audit checkpoint key pair. Nothing secret is printed.
   The address is printed by `tailscale funnel status`. The first request can take a minute while the certificate is
   issued, and the Funnel relays can take a few more minutes to all serve the new name.
 
-Without a FastNEAR key, set `MAINNET_READ_RPC_URL=https://rpc.mainnet.near.org`. It is slower and rate-limited.
+Without a FastNEAR key, set `MAINNET_READ_RPC_URL=https://rpc.mainnet.near.org`. It is slower and rate-limited. With a
+key, `MAINNET_READ_RPC_URL` must stay `https://rpc.mainnet.fastnear.com`: the public RPC ignores the key and answers
+HTTP 429 under load.
 
 ## 3. Check it
 

@@ -11,3 +11,5 @@ deploy/public/dist
 deploy/public/.env
 evidence/checkpoints
 config/*.local.json
+.claude
+**/.env
