@@ -2,13 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const reads = vi.fn();
 let forwardedFor = '203.0.113.7';
+let ownerCookie: string | undefined;
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', forwardedFor]]),
+  cookies: async () => ({
+    get: (name: string) =>
+      name === 'np_owner' && ownerCookie ? { value: ownerCookie } : undefined,
+  }),
 }));
 vi.mock('../lib/api', () => ({
-  tryApi: async (path: string) => {
-    reads(path);
+  tryApi: async (path: string, headers?: Record<string, string>) => {
+    reads(path, headers);
     return { data: { accountId: 'alice.near', recommendations: [] }, error: null };
   },
 }));
@@ -21,6 +26,18 @@ describe('account read cache', () => {
     vi.useRealTimers();
     reads.mockClear();
     forwardedFor = '203.0.113.7';
+    ownerCookie = undefined;
+  });
+
+  it('forwards the ownership proof and reads again once it is signed', async () => {
+    const p = await load();
+    await p.accountView('alice.near');
+    ownerCookie = 'eyJwcm9vZiI6MX0';
+    await p.accountView('alice.near');
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(reads).toHaveBeenLastCalledWith('/v1/analytics/account/alice.near', {
+      'x-ownership-proof': 'eyJwcm9vZiI6MX0',
+    });
   });
 
   it('re-renders within 60 s read the account once', async () => {

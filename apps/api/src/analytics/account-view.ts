@@ -21,9 +21,11 @@ import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts
 import { buildUnwrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
+import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
   NearAccountReader,
+  NearChainContextProvider,
   NearContractViewer,
   NearTokenReader,
   type NearRpcClient,
@@ -465,7 +467,14 @@ export function registerAccountView(
       expectedOracleId: accountIdSchema.parse('priceoracle.near'),
     },
   );
-  const cache = new BoundedMap<string, { at: number; body: unknown }>(ACCOUNT_CACHE_MAX);
+  const cache = new BoundedMap<string, { at: number; body: object }>(ACCOUNT_CACHE_MAX);
+  const accessKeys = new NearChainContextProvider(deps.rpc);
+  const ownership = {
+    now: () => Date.now(),
+    isFullAccessKey: async (account: string, publicKey: string) =>
+      (await accessKeys.getContext(accountIdSchema.parse(account), publicKey)).permission.kind ===
+      'full_access',
+  };
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
@@ -490,8 +499,15 @@ export function registerAccountView(
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const id = parsed.data;
+    // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
+    const ownerVerified = verifyOwnership(
+      proofFromHeader(req.headers[OWNERSHIP_HEADER]),
+      id,
+      ownership,
+    );
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return hit.body;
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS)
+      return { ...hit.body, ownerVerified: await ownerVerified };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -872,7 +888,7 @@ export function registerAccountView(
       actions,
     };
     cache.set(id, { at: Date.now(), body });
-    return body;
+    return { ...body, ownerVerified: await ownerVerified };
   });
 
   /**

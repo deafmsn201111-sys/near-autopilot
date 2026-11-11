@@ -1,6 +1,8 @@
 import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
+import { cookies } from 'next/headers';
+import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import type { RecommendationIntent } from './recommendation-intent';
 
 /** Shapes of the product endpoints (opportunities, activity, system). */
@@ -174,6 +176,8 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
 type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
   accountId: string;
   recommendations: AccountRecommendation[];
+  /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
+  ownerVerified: boolean;
 };
 
 type AccountResult = { data: AccountRead | null; error: string | null };
@@ -181,11 +185,18 @@ type AccountResult = { data: AccountRead | null; error: string | null };
 const ACCOUNT_TTL_MS = 60_000;
 const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
 
-const readKey = async (id: string) => `${await visitor()}:${id.trim().toLowerCase()}`;
+const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
+
+const readKey = async (id: string) =>
+  `${await visitor()}:${id.trim().toLowerCase()}:${(await ownershipProof()).slice(-16)}`;
 
 const fetchAccount = async (id: string): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
-  return tryApi<AccountRead>(`/v1/analytics/account/${encodeURIComponent(id)}`);
+  const proof = await ownershipProof();
+  return tryApi<AccountRead>(
+    `/v1/analytics/account/${encodeURIComponent(id)}`,
+    proof ? { 'x-ownership-proof': proof } : {},
+  );
 };
 
 const readAccount = async (id: string): Promise<AccountResult> => {

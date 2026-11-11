@@ -1,12 +1,14 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
 
 const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
 
 /**
- * Connect a NEAR wallet through HOT Connector to see your own portfolio. Sign-in only: no access key, no signature.
+ * Connect a NEAR wallet through HOT Connector to see your own portfolio. Sign-in only: no access key, no signature
+ * (proving ownership for AI analysis is a separate, optional step: components/OwnershipCheck.tsx).
  * Right after a successful sign-in the page opens that account with a full page load, the same way on the first and
  * on every later connection; an already connected wallet never redirects by itself. Disconnecting returns the page
  * to its starting state (the demo portfolio, Demo mode).
@@ -48,6 +50,7 @@ export function WalletButton() {
             void disconnect().finally(() => {
               setAccount(null);
               document.cookie = 'autopilot-mode=demo; path=/; max-age=31536000; samesite=lax';
+              document.cookie = `${OWNERSHIP_COOKIE}=; path=/; max-age=0; samesite=lax`;
               window.location.assign('/');
             });
           }}

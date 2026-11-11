@@ -109,3 +109,16 @@ Errors: invalid input (zod, Fastify's own 4xx) is a 400 with its reason; a prepa
 `MissingPriceError`, `PreconditionError`, `UnsupportedIntentError`) is a 422 with its reason; everything else is a
 bare 500/502, details only in the log.
 **Consequences:** Every page renders dynamically (nonce). A new inline script needs the nonce from `headers()`.
+
+## D12 — NEP-413 ownership proof gates the LLM analysis
+
+**Context:** Security item 2 (`HACKATHON_PLAN.md`): LLM runs cost money, and connecting a wallet proves nothing (the
+site only learns an account name).
+**Decision:** The wallet signs a fixed NEP-413 message (`packages/core/src/ownership.ts`, recipient
+`near-autopilot.tech`). The nonce holds the signing time; the server accepts it for 24 h (5 min clock skew), with no
+challenge and no stored state. The signing key must be a **full-access** key of the account (`view_access_key`):
+function-call keys are often held by dApps, so they do not count. The proof lives in a session cookie (`np_owner`),
+the UI server forwards it as `x-ownership-proof`, and `GET /v1/analytics/account/:id` returns `ownerVerified`,
+verified per request outside the account cache. Any failure, including a failed RPC read, means false (heuristics).
+**Consequences:** A stolen proof can be replayed for 24 h, but only for the same account under the same rate limits.
+The LLM path (#18) runs only when `ownerVerified` is true. A shorter TTL or a server challenge needs a new entry here.
