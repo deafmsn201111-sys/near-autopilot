@@ -36,3 +36,7 @@ deploy/public/config/
 .obsidian
 
 .claude/worktrees/
+
+# third-party skills without a licence: installed locally, see .claude/skills/README.md
+.claude/skills/near-dapp/
+.claude/skills/near-intents/

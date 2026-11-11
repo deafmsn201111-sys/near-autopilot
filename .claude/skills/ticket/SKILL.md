@@ -43,7 +43,7 @@ commits, PRs and issue comments in English.
 - The sections of `docs/HACKATHON_PLAN.md` the issue touches (Decisions, Security items, Admin screens), plus
   `docs/DECISIONS.md` and `docs/KNOWN_ISSUES.md` where relevant. Trust code and `REWORK_PLAN.md` over older docs.
 - Read the code the change touches before planning; check `boundaries.config.mjs` before adding a workspace import.
-- Load the skills the area needs: `near-dapp` for wallet / RPC / transactions, `near-intents` for 1Click,
+- Load the skills the area needs (install the NEAR ones first: `.claude/skills/README.md`): `near-dapp` for wallet / RPC / transactions, `near-intents` for 1Click,
   `claude-api` for anything LLM, `superpowers:test-driven-development` before writing code.
 
 ## 4. Grill

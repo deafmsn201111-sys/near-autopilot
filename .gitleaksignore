@@ -1,0 +1,2 @@
+# FastNEAR key committed in ed756ee and blanked in #47. Rotated instead of a history rewrite (D15, #45).
+ed756ee7d9723ac48c108cee09d6d8a81814ac0a:.env.example:generic-api-key:62
