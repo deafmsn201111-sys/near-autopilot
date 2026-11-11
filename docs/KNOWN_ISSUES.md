@@ -5,7 +5,7 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 ## Honest limitations (not bugs, by design today)
 
 - **LLM only ranks and explains.** On a connected wallet the central LLM calls the deterministic agents as tools (architecture C, D13); it computes nothing. `LlmAgent` (an LLM as a proposal agent) is still not wired. No "AI confidence" exists.
-- **LLM analysis has no spend cap yet.** NEP-413 ownership (#20) is merged; until #21 (daily spend cap) is merged, `ANTHROPIC_API_KEY` stays off the public server.
+- **The LLM spend cap is per UTC day and held in one process.** Each model call in flight holds one worst-case call (≈ $0.012 on Haiku 5.5) against the cap in memory, which works because the analytics API runs as one process; a second replica would need a reservation row. A call aborted on the deadline is not counted; the worst-case bound assumes a prompt under 100K tokens. With #20 and #21 merged, `ANTHROPIC_API_KEY` may go on the public server.
 - **No autonomous execution.** `loadSigner()` is null; dry-run only. Mainnet execution requires the (unbuilt) Guard contract + review.
 - **Owner-signs path is branch-only.** `feat/mainnet-wallet-confirm` is local, never pushed/merged.
 - **Single-operator model.** No per-user accounts/policies/sessions yet.

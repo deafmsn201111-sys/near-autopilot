@@ -4,6 +4,8 @@ import {
   auditCheckpoints,
   auditEvents,
   demoLedger,
+  llmCalls,
+  llmSettings,
   createDatabase,
   getTableColumns,
   getTableName,
@@ -75,7 +77,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(18);
+    expect(applied.rows[0]?.n).toBe(19);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -104,6 +106,8 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       collectorControl,
       auditCheckpoints,
       demoLedger,
+      llmCalls,
+      llmSettings,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))

@@ -36,13 +36,12 @@ import {
   assessRisk,
   orchestratorConfigSchema,
   type AgentObservation,
-  type ToolLlm,
 } from '@near-autopilot/orchestrator';
 import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
 import { toWad } from '../yield/math';
-import { analyseAccount, walletAgentConfig } from './ai-analysis';
+import { analyseAccount, walletAgentConfig, type ToolLlmDeps } from './ai-analysis';
 import {
   RheaPoolReader,
   RheaSwapQuoter,
@@ -82,8 +81,8 @@ export interface MainnetReadDeps {
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
   /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
   readonly dclId?: AccountId | null;
-  /** The central LLM for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
-  readonly llm?: ToolLlm | null;
+  /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
+  readonly ai?: ToolLlmDeps | null;
 }
 
 interface DclPositionView {
@@ -1040,8 +1039,9 @@ export function registerAccountView(
     const view = await readAccount(parsed.data, req.log);
     if (view.status !== 200) return reply.code(view.status).send(view.body);
     return analyseAccount(
-      deps.llm ?? null,
+      deps.ai ?? null,
       {
+        accountId: parsed.data,
         observe: () =>
           observe(parsed.data, [
             ...new Set(
