@@ -125,6 +125,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(null, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -137,6 +138,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: false,
     });
     expect(tools).toEqual([]);
@@ -150,6 +152,7 @@ describe('analyseAccount', () => {
     await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(tools[0]).toEqual([
@@ -174,6 +177,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('llm');
@@ -206,6 +210,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
@@ -216,6 +221,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     return out.recommendations.find((r) => r.id === id)?.why;
@@ -249,6 +255,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')).toMatchObject({
@@ -267,6 +274,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -278,7 +286,12 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => new Promise<LlmToolTurn>(() => {})]);
     const out = await analyseAccount(
       llm,
-      { observe: async () => observation(), heuristics: [heuristic], ownerVerified: true },
+      {
+        observe: async () => observation(),
+        heuristics: [heuristic],
+        checks: [heuristic],
+        ownerVerified: true,
+      },
       () => {},
       20,
     );
@@ -293,6 +306,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.recommendations.map((r) => r.kind)).toEqual([
@@ -319,6 +333,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [concentrated, outOfRange],
+      checks: [concentrated, outOfRange],
       ownerVerified: true,
     });
     expect(out.recommendations.map((r) => r.kind).sort()).toEqual([
@@ -340,6 +355,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.recommendations.filter((r) => r.id === heuristic.id)).toHaveLength(1);
@@ -351,6 +367,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(turns).toBe(6);
@@ -367,7 +384,12 @@ describe('analyseAccount', () => {
     };
     await analyseAccount(
       llm,
-      { observe: async () => observation(), heuristics: [heuristic], ownerVerified: true },
+      {
+        observe: async () => observation(),
+        heuristics: [heuristic],
+        checks: [heuristic],
+        ownerVerified: true,
+      },
       () => {},
       20,
     );
@@ -393,6 +415,7 @@ describe('analyseAccount', () => {
     await analyseAccount(llm, {
       observe: async () => ({ ...dust, snapshot }),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(candidates).toEqual([]);
@@ -403,6 +426,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -416,6 +440,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     const repay = out.recommendations[0];
@@ -424,7 +449,7 @@ describe('analyseAccount', () => {
     const code = (
       await analyseAccount(
         fake([() => callAll, () => final([{ id: repay!.id, why: '$999' }])]).llm,
-        { observe: async () => observation(), heuristics: [], ownerVerified: true },
+        { observe: async () => observation(), heuristics: [], checks: [], ownerVerified: true },
       )
     ).recommendations[0];
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
@@ -447,6 +472,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(raw).not.toBe('');
@@ -457,7 +483,12 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll]);
     const out = await analyseAccount(
       llm,
-      { observe: () => new Promise(() => {}), heuristics: [heuristic], ownerVerified: true },
+      {
+        observe: () => new Promise(() => {}),
+        heuristics: [heuristic],
+        checks: [heuristic],
+        ownerVerified: true,
+      },
       () => {},
       20,
     );

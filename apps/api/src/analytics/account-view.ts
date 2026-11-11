@@ -66,6 +66,7 @@ import { valueAccount, type AccountReads, type TokenFacts } from './account';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { consensus } from './series';
+import { tokenLabel } from '../thesis/labels';
 
 /**
  * YOUR ACCOUNT, read-only: any mainnet account id -> what it holds, how safe its Burrow loan is, and what could be done
@@ -497,7 +498,10 @@ export function registerAccountView(
       expectedOracleId: ORACLE_ID,
     },
   );
-  const cache = new BoundedMap<string, { at: number; body: AccountBody }>(ACCOUNT_CACHE_MAX);
+  const cache = new BoundedMap<
+    string,
+    { at: number; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+  >(ACCOUNT_CACHE_MAX);
   const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrowOptions);
   const burrowOracle = new BurrowPriceOracle(viewer, burrowOptions);
@@ -545,10 +549,11 @@ export function registerAccountView(
     id: AccountId,
     log: FastifyRequest['log'],
   ): Promise<
-    { status: 200; body: AccountBody } | { status: 404 | 502; body: { error: string } }
+    | { status: 200; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+    | { status: 404 | 502; body: { error: string } }
   > => {
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, body: hit.body };
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, ...hit };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -860,21 +865,30 @@ export function registerAccountView(
     const largestDebt = debts[0]
       ? { token: debts[0].token, symbol: debts[0].symbol, usd: debts[0].usd as number }
       : null;
-    const dclOutOfRange = dclPositions
-      .filter((d) => !d.inRange)
-      .map((d) => ({
-        lptId: d.lptId,
-        poolId: d.poolId,
-        pair: `${d.symbolX}/${d.symbolY}`,
-        usd: d.usd,
-      }))
-      .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+    const outOfRange = (pair: (d: DclPositionView) => string) =>
+      dclPositions
+        .filter((d) => !d.inRange)
+        .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
+        .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+    const loan = { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor };
     const recommendations = portfolioRecommendations({
       metrics,
-      loan: { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor },
+      loan,
       idleEarn,
       largestDebt,
-      dclOutOfRange,
+      dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
+    });
+    // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
+    const labelled = <T extends { token: string }>(x: T) => ({ ...x, symbol: tokenLabel(x.token) });
+    const forModel = portfolioRecommendations({
+      metrics: {
+        ...metrics,
+        concentration: metrics.concentration && labelled(metrics.concentration),
+      },
+      loan,
+      idleEarn: idleEarn.map(labelled),
+      largestDebt: largestDebt && labelled(largestDebt),
+      dclOutOfRange: outOfRange((d) => `${tokenLabel(d.tokenX)}/${tokenLabel(d.tokenY)}`),
     });
 
     const body = {
@@ -928,8 +942,8 @@ export function registerAccountView(
             },
       actions,
     };
-    cache.set(id, { at: Date.now(), body });
-    return { status: 200, body };
+    cache.set(id, { at: Date.now(), body, forModel });
+    return { status: 200, body, forModel };
   };
 
   app.get('/v1/analytics/account/:id', async (req, reply) => {
@@ -1034,6 +1048,7 @@ export function registerAccountView(
             ),
           ]),
         heuristics: view.body.recommendations,
+        checks: view.forModel,
         ownerVerified: await ownerVerified,
       },
       (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
