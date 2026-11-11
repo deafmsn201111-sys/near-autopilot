@@ -69,6 +69,10 @@ services:
       # "your account" (read-only view calls): the same private RPC and key as the collector
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+      # Server LLM: only this service gets the key. Empty = LLM off, heuristics only.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
+      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'

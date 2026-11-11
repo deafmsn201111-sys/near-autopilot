@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EnvValidationError, loadApiEnv, loadDashboardEnv } from '../src';
+import { EnvValidationError, llmEnvSchema, loadApiEnv, loadDashboardEnv } from '../src';
 
 const valid = {
   API_TOKEN: 'x'.repeat(32),
@@ -106,5 +106,32 @@ describe('loadDashboardEnv', () => {
     expect(() => loadDashboardEnv({ API_BASE_URL: 'nope', API_TOKEN: 'short' })).toThrow(
       EnvValidationError,
     );
+  });
+});
+
+describe('llmEnvSchema', () => {
+  it('is off without a key; empty or unset model and max_tokens default to Haiku and 4096', () => {
+    expect(
+      llmEnvSchema.parse({ ANTHROPIC_API_KEY: '', ANTHROPIC_MODEL: '', ANTHROPIC_MAX_TOKENS: '' }),
+    ).toEqual({
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_MODEL: 'claude-haiku-5-5',
+      ANTHROPIC_MAX_TOKENS: 4096,
+    });
+  });
+
+  it('honours overrides and rejects a zero cap', () => {
+    expect(
+      llmEnvSchema.parse({
+        ANTHROPIC_API_KEY: 'sk-test-key',
+        ANTHROPIC_MODEL: 'claude-sonnet-5-5',
+        ANTHROPIC_MAX_TOKENS: '2000',
+      }),
+    ).toEqual({
+      ANTHROPIC_API_KEY: 'sk-test-key',
+      ANTHROPIC_MODEL: 'claude-sonnet-5-5',
+      ANTHROPIC_MAX_TOKENS: 2000,
+    });
+    expect(llmEnvSchema.safeParse({ ANTHROPIC_MAX_TOKENS: '0' }).success).toBe(false);
   });
 });
