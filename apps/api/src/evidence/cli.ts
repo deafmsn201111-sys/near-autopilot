@@ -11,7 +11,7 @@ import { EvidenceStore } from './store';
  *
  *   audit:verify [--chain simulation:mainnet]
  *       Recomputes every audit hash chain from the database, seq 1 to head. Exit 1 if any chain is broken.
- *   audit:replay [--id <verdict id>] [--limit 200] [--config config/autopilot.shadow.example.json ...]
+ *   audit:replay [--id <verdict id>] [--limit 200] [--config config/market.json ...]
  *       Re-evaluates stored policy verdicts on their stored inputs and compares. --config supplies the policy for rows
  *       stored before configs were recorded with verdicts (used only when its version matches). Exit 1 on a mismatch.
  *

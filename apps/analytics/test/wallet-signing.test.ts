@@ -10,7 +10,7 @@ describe('walletSigningEnabled', () => {
     expect(walletSigningEnabled({})).toBe(false);
   });
 
-  it('is always off on the public demo, whatever the env says', () => {
-    expect(walletSigningEnabled({ MAINNET_WALLET_SIGNING: '1', PUBLIC_DEMO: '1' })).toBe(false);
+  it('ignores the removed PUBLIC_DEMO flag', () => {
+    expect(walletSigningEnabled({ MAINNET_WALLET_SIGNING: '1', PUBLIC_DEMO: '1' })).toBe(true);
   });
 });

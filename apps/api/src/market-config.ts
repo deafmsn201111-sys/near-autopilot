@@ -5,7 +5,7 @@ import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import { policyConfigSchema } from '@near-autopilot/policy-engine';
 import { z } from 'zod';
 
-export const autopilotConfigSchema = z
+export const marketConfigSchema = z
   .object({
     policy: policyConfigSchema,
     guardian: guardianConfigSchema,
@@ -51,18 +51,18 @@ export const autopilotConfigSchema = z
         message: 'minObservationSeconds must not exceed maxObservationSeconds',
       })
       .optional(),
-    /** Used only when AUTOPILOT_ENGINE=orchestrator; every field has a conservative default. */
+    /** The orchestrator agents (the collector runs AUTOPILOT_ENGINE=orchestrator); every field has a conservative default. */
     orchestrator: orchestratorConfigSchema.optional(),
   })
   .strict();
 
-export type AutopilotConfig = z.output<typeof autopilotConfigSchema>;
+export type MarketConfig = z.output<typeof marketConfigSchema>;
 
-export function parseAutopilotConfig(json: unknown, expectedSigner: AccountId): AutopilotConfig {
-  const parsed = autopilotConfigSchema.safeParse(json);
+export function parseMarketConfig(json: unknown, expectedSigner: AccountId): MarketConfig {
+  const parsed = marketConfigSchema.safeParse(json);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`);
-    throw new Error(`Invalid autopilot config:\n${issues.map((i) => `  - ${i}`).join('\n')}`);
+    throw new Error(`Invalid market config:\n${issues.map((i) => `  - ${i}`).join('\n')}`);
   }
   if (parsed.data.policy.signerAccountId !== expectedSigner) {
     throw new Error(
@@ -72,13 +72,13 @@ export function parseAutopilotConfig(json: unknown, expectedSigner: AccountId): 
   return parsed.data;
 }
 
-export function loadAutopilotConfig(path: string, expectedSigner: AccountId): AutopilotConfig {
+export function loadMarketConfig(path: string, expectedSigner: AccountId): MarketConfig {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
   } catch (cause) {
     throw new Error(
-      `Cannot read autopilot config at ${path}. Copy config/autopilot.example.json and edit it.`,
+      `Cannot read market config at ${path}. It ships with the repository (config/market.json).`,
       { cause },
     );
   }
@@ -86,7 +86,7 @@ export function loadAutopilotConfig(path: string, expectedSigner: AccountId): Au
   try {
     json = JSON.parse(text);
   } catch (cause) {
-    throw new Error(`Autopilot config at ${path} is not valid JSON`, { cause });
+    throw new Error(`Market config at ${path} is not valid JSON`, { cause });
   }
-  return parseAutopilotConfig(json, expectedSigner);
+  return parseMarketConfig(json, expectedSigner);
 }

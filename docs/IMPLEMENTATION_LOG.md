@@ -44,3 +44,19 @@ _Append-only log of what was actually inspected/changed each session (brief §23
   visitor key is the `X-Forwarded-For` that Caddy overwrites. Map bounding stays with #11.
 
 **Tests run:** `pnpm verify` (green), new `apps/analytics/test/prepare-route.test.ts`.
+
+## 2026-11-11 — #13 remove autopilot, apps/dashboard, PUBLIC_DEMO
+
+- Deleted the autopilot API (`src/main.ts`, `src/server.ts`, `services/requests.ts`, `presenters.ts`), `signer.ts`, the
+  live branch in `wire()`, `control/` and `/v1/control/*`, the collector's `/run` and pause, `apps/dashboard`,
+  `/autopilot`, `request-actions.ts`, `PUBLIC_DEMO` (D8).
+- `autopilot-config.ts` → `market-config.ts`, `config/autopilot.shadow.example.json` → `config/market.json`,
+  `AUTOPILOT_CONFIG_FILE` → `MARKET_CONFIG_FILE`; the old example config is a test fixture now.
+- `analytics-api` applies the migrations; compose: `postgres`, `analytics-api`, `collector`, `analytics` (no profiles).
+  `quickstart.sh` rewritten; CI builds the analytics image instead of the dashboard one.
+- Signing only via `MAINNET_WALLET_SIGNING` (on in deploy/public, D9); the account-lookup rate limit is always on.
+- Docs: README, architecture.md rewritten, orchestrator / policy-verdicts / shadow-gateway / mainnet-shadow /
+  deploy README updated, `docs/dashboard.md` folded into README (looping formula).
+
+**Tests run:** `pnpm verify` (green); new `market-config.test.ts`, `rate-limit.test.ts`, `/v1/control` 404 test.
+Not run here: `./scripts/quickstart.sh` (no Docker on the build machine).

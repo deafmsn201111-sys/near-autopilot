@@ -171,7 +171,7 @@ A failure there is a finding (deployment retired or interface changed), not a fl
 
 ## 9. Signing keys
 
-- The repository ships **no signer** (`apps/api/src/signer.ts` returns `null`) and the adapter has no key handling.
+- The repository ships **no signer** (the server holds no key; users sign in their own wallet) and the adapter has no key handling.
 - `loadApiEnv` rejects `EXECUTION_MODE=live` together with `NEAR_NETWORK=mainnet`, and `wire()` re-checks it. There is
   no override. Mainnet is therefore dry-run only: it plans and reads, and never signs.
 - The live Burrow test reads no key material and sends no transaction.

@@ -10,13 +10,13 @@ It depends only on `core` and `financial-engine`. The policy engine and the exec
 
 ## Status — read this first
 
-|                  |                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Verified here    | Everything below that says "tested": 210 offline tests (scenario, unit, property), a clean typecheck, the dependency-boundary check, and a mutation run against the safety-critical lines (results in §14). The scenarios use the **real** `PolicyEngine`, `PlannerRegistry`, `DryRunExecutor` and `TransactionExecutor` with fake planners, signer and broadcaster.                                                                                           |
-| **Not** verified | Anything against a live chain or a real LLM. The sandbox has no NEAR RPC. Planners in the scenarios emit plans in the shapes the policy engine's intent-matching rule expects; the real Rhea/Burrow planners were tested separately in their own packages.                                                                                                                                                                                                     |
-| **Not built**    | Durable persistence. `AuditLog`, `IdempotencyStore` and `ControlStore` are ports with documented contracts and in-memory reference implementations. There is **no Postgres implementation**. The orchestrator is wired into `apps/api` behind `AUTOPILOT_ENGINE=orchestrator`, **dry-run only** for that reason (enforced by `packages/config`). Until a durable store exists, a restart forgets the audit log, in-flight markers and read-only mode. See §13. |
-| **Not built**    | A liquidity-management transaction path. LP Optimizer output is **advisory only**; no code path turns it into a transaction.                                                                                                                                                                                                                                                                                                                                   |
-| Safety posture   | Dry-run on mainnet. No signer implementation is shipped, and nothing in this package handles keys.                                                                                                                                                                                                                                                                                                                                                             |
+|                  |                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Verified here    | Everything below that says "tested": 210 offline tests (scenario, unit, property), a clean typecheck, the dependency-boundary check, and a mutation run against the safety-critical lines (results in §14). The scenarios use the **real** `PolicyEngine`, `PlannerRegistry`, `DryRunExecutor` and `TransactionExecutor` with fake planners, signer and broadcaster. |
+| Where it runs    | Inside the collector (`apps/api/src/collector/main.ts`): each market snapshot, `wire()` in `apps/api/src/wiring.ts` builds one cycle per **simulated** demo portfolio (`demo-500`, `demo-5000`) with `AUTOPILOT_ENGINE=orchestrator`. Mode and idempotency state are durable in Postgres (§13).                                                                      |
+| Execution        | **Dry-run only.** The executor is the Shadow Gateway (`docs/shadow-gateway.md`): quotes and dry runs, nothing is sent. `EXECUTION_MODE=live` is rejected by env validation, and the server has no signer. Real transactions exist only as unsigned cascades the user signs in their own wallet (`docs/architecture.md`).                                             |
+| **Not built**    | A liquidity-management transaction path. LP Optimizer output is **advisory only**; no code path turns it into a transaction.                                                                                                                                                                                                                                         |
+| **Not verified** | Anything against a real LLM (`LlmAgent` exists but no `LlmClient` is wired). Planners in the scenarios emit plans in the shapes the policy engine's intent-matching rule expects; the real Rhea/Burrow planners are tested in their own packages.                                                                                                                    |
 
 ## 1. Shape of the system
 
@@ -194,7 +194,8 @@ candidates", pinned by a test.
   execution failures; two or more suspicious agents in one cycle; an audit failure; an unreadable control store (treated
   as `read_only` without writing anything).
 - **Loosening requires an operator**: `setMode(mode, reason, actor)` — both reason and actor mandatory, both audited, and
-  failure counters reset. Healthy-looking cycles never release it (tested).
+  failure counters reset. Healthy-looking cycles never release it (tested). These are library calls; no HTTP endpoint
+  exposes them.
 - **Emergency read-only**: `engageEmergencyReadOnly(reason, actor)`. In read-only mode agents still run and the decision
   is still made and audited, so the human sees what _would_ have happened; the cycle returns `read_only` before
   `policy.approve`, so no `ApprovedPlan` is minted. `guardExecutor` independently refuses any execution in read-only mode
@@ -340,9 +341,10 @@ Delivery is a port (`Notifier`). No concrete pager, chat or email implementation
    - Tests: `apps/api/test/orchestrator-stores.integration.test.ts` (restart with read-only, restart mid-execution,
      repeated and concurrent keys, stale loosening, database unreachable, history append-only, chain intact).
    - The in-process audit chain remains in memory; the durable one is `audit_events` (write-through, fails closed).
-2. **Wired into `apps/api`** behind `AUTOPILOT_ENGINE=orchestrator` (dry-run only), with the snapshot service, a
-   reference `MarketProvider`, the Rhea quoter, the planner registry, the policy engine, the Shadow Gateway executor and
-   the durable stores above. LP position views do not exist yet, so the LP Optimizer reports `insufficient_data`.
+2. **Wired into the collector** through `wire()` with `AUTOPILOT_ENGINE=orchestrator` (dry-run only), with the snapshot
+   service over the simulated demo portfolio, a reference `MarketProvider` fed by the collector's mainnet market data,
+   the Rhea quoter, the planner registry, the policy engine, the Shadow Gateway executor and the durable stores above.
+   LP position views do not exist yet, so the LP Optimizer reports `insufficient_data`.
 3. **Market data is an input to be checked, not a fact.** The orchestrator cross-checks oracle prices against a second
    source only to _raise caution_; it cannot tell which source is right.
 4. **Yield and LP-fee figures are estimates.** They are projections from supplied inputs, not realised returns.
@@ -352,7 +354,7 @@ Delivery is a port (`Notifier`). No concrete pager, chat or email implementation
 7. **Single-asset-class view.** Risk is computed for the Burrow position in the snapshot only; no cross-protocol exposure.
 8. **LP actions are advisory.** No liquidity planner exists.
 9. **Read-only freezes de-risking** (see §6) — a human must act.
-10. **Nothing was exercised against a live chain**, a real LLM, or real latency.
+10. **Nothing is ever sent to the chain** by the orchestrator, and it has not been exercised with a real LLM.
 11. **Prompt injection in free text** is contained by structure (schema, capability table, monotone safety), not
     eliminated. See §2.
 12. **Audit tail truncation** is not detectable by the chain alone.

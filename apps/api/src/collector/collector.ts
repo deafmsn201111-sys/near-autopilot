@@ -10,7 +10,7 @@ import {
 } from '@near-autopilot/core';
 import { NearTokenReader, type NearRpcClient } from '@near-autopilot/near-adapter';
 import type { CycleReport } from '@near-autopilot/orchestrator';
-import type { AutopilotConfig } from '../autopilot-config';
+import type { MarketConfig } from '../market-config';
 import { MAINNET_ASSETS } from '../market-data/assets';
 import { formatDecimal } from '../market-data/decimal';
 import type { HttpJsonClient } from '../market-data/http';
@@ -57,7 +57,7 @@ const REFRESH_PRICES_AFTER_MS = 60_000;
 
 export interface CollectorDeps {
   readonly env: ApiEnv;
-  readonly config: AutopilotConfig;
+  readonly config: MarketConfig;
   /** Read-only MAINNET RPC (chain id checked by the caller). View calls only. */
   readonly rpc: Pick<NearRpcClient, 'call'>;
   readonly market: MarketDataProvider;

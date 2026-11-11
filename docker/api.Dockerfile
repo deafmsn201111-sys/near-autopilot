@@ -18,4 +18,4 @@ EXPOSE 4000
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:4000/health || exit 1
 # Run node directly: `pnpm` here would make corepack download pnpm from the npm registry on every fresh container
 # start (as the unprivileged user), so the API could not start offline. tsx is a production dependency.
-CMD ["node", "--import", "tsx", "src/main.ts"]
+CMD ["node", "--import", "tsx", "src/analytics/main.ts"]

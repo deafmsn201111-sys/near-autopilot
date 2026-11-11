@@ -1,4 +1,3 @@
-import { PUBLIC_DEMO } from '../lib/public-demo';
 import { cookies } from 'next/headers';
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
@@ -39,7 +38,6 @@ const TOKEN_KIND: Record<string, string> = {
 /** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
 const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
 import Link from 'next/link';
-import { ConfirmAction } from '../components/ConfirmAction';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {
@@ -54,8 +52,6 @@ import { Recommendations } from '../components/Recommendations';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { AccountForm } from '../components/AccountForm';
-import { runAnalysis } from './autopilot/actions';
-import { resetDemo } from './request-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -240,28 +236,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           page fills in by itself.
         </div>
       )}
-      {!isAccount && data.simulatedChanges && data.simulatedChanges.count > 0 && (
-        <div className="callout demo-changes" style={{ marginBottom: 16 }}>
-          <span>
-            <b>Changed by the agent (simulated).</b>{' '}
-            {data.simulatedChanges.count === 1
-              ? 'One action has run as a dry run on this demo portfolio'
-              : `${data.simulatedChanges.count} actions have run as dry runs on this demo portfolio`}
-            {data.simulatedChanges.since ? ` (the first ${ago(data.simulatedChanges.since)})` : ''}.
-            The amounts below include them; nothing was sent.
-          </span>
-          <ConfirmAction
-            label="Reset demo"
-            title="Reset this demo portfolio?"
-            description="Its balances go back to the starting amounts. The actions stay in Activity and in the audit trail."
-            confirmLabel="Reset"
-            action={async () => {
-              'use server';
-              return resetDemo(id);
-            }}
-          />
-        </div>
-      )}
       <section className="hero">
         <div className="hero-main">
           <span className="eyebrow">
@@ -407,18 +381,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <section className="block">
           <div className="block-head">
             <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
-            {!PUBLIC_DEMO && (
-              <ConfirmAction
-                label="Refresh with live data"
-                title="Run a fresh analysis?"
-                description="The autopilot reads the latest prices, pools and lending rates from NEAR mainnet and recomputes every option. It takes about a minute. Nothing is bought, sold or sent."
-                confirmLabel="Run analysis"
-                action={async () => {
-                  'use server';
-                  return runAnalysis();
-                }}
-              />
-            )}
           </div>
           {data.actions.length === 0 ? (
             <p className="muted-note">

@@ -27,7 +27,7 @@ done
 docker save near-autopilot-api:public | gzip >"$out/images/api.tar.gz"
 docker save near-autopilot-analytics:public | gzip >"$out/images/analytics.tar.gz"
 cp "$root/deploy/public/"{docker-compose.yml,Caddyfile,.env.example,setup.sh,README.md} "$out/"
-cp "$root/config/autopilot.shadow.example.json" "$out/config/autopilot.shadow.json"
+cp "$root/config/market.json" "$out/config/market.json"
 echo "$sha $platform" >"$out/VERSION"
 tar -C "$(dirname "$out")" -czf "$out.tar.gz" "$(basename "$out")"
 rm -rf "$out"

@@ -5,7 +5,6 @@
  * Layering (arrows point at what a package MAY import):
  *
  *   apps/api ─► agents, policy-engine, tx-execution, adapters, db, config, financial-engine, core
- *   apps/dashboard ─► config, core            (never adapters, db, engines: it only speaks HTTP)
  *   agents, policy-engine ─► financial-engine ─► core
  *   orchestrator ─► financial-engine, core    (policy and execution are reached only through ports it defines;
  *                                              its TESTS may use the real policy-engine and tx-execution)
@@ -40,7 +39,6 @@ export const ALLOWED = {
     '@near-autopilot/rhea-dcl-adapter',
     '@near-autopilot/tx-execution',
   ],
-  '@near-autopilot/dashboard': ['@near-autopilot/config', '@near-autopilot/core'],
   // Read-only analytics UI for the shadow collector: HTTP to the analytics API only.
   '@near-autopilot/analytics': ['@near-autopilot/config', '@near-autopilot/core'],
 };
@@ -68,6 +66,5 @@ export const LOCATIONS = {
   '@near-autopilot/tx-execution': 'packages/tx-execution',
   '@near-autopilot/db': 'packages/db',
   '@near-autopilot/api': 'apps/api',
-  '@near-autopilot/dashboard': 'apps/dashboard',
   '@near-autopilot/analytics': 'apps/analytics',
 };

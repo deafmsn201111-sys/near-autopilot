@@ -1,9 +1,9 @@
-import { RATE_LIMITED, withinLimit } from './public-demo';
+import { ACCOUNT_LIMIT, consume, RATE_LIMITED } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
 import type { RecommendationIntent } from './recommendation-intent';
 
-/** Shapes of the product endpoints (opportunities, control, activity, system). */
+/** Shapes of the product endpoints (opportunities, activity, system). */
 export type Level = 'low' | 'medium' | 'high';
 
 /** One recommendation card from the account endpoint: the agents' what/why plus a concrete, one-click intent. */
@@ -54,37 +54,6 @@ export interface OpportunityList {
   matching: number;
   opportunities: Opportunity[];
 }
-export interface ControlView {
-  collector: {
-    paused: boolean;
-    reason: string;
-    by: string | null;
-    at: string | null;
-    live: {
-      running?: boolean;
-      paused?: boolean;
-      nextRunAt?: string;
-      intervalSeconds?: number;
-    } | null;
-  };
-  modes: {
-    scope: string;
-    mode: 'normal' | 'risk_reduction_only' | 'read_only';
-    reason: string;
-    since: string;
-    changedBy: string;
-    version: number;
-    history: {
-      version: number;
-      at: string;
-      mode: string;
-      previousMode: string | null;
-      reason: string;
-      changedBy: string;
-      auditSeq: number | null;
-    }[];
-  }[];
-}
 export interface ActivityItem {
   at: string;
   kind: string;
@@ -125,25 +94,9 @@ export const opportunity = (id: string) =>
     of: number;
     history: Record<string, number | string | null>[];
   }>(`/v1/analytics/opportunities/${encodeURIComponent(id)}`);
-export const control = () => tryApi<ControlView>('/v1/control');
 export const activity = (limit = 50) =>
   tryApi<{ items: ActivityItem[] }>(`/v1/analytics/activity?limit=${limit}`);
 export const system = () => tryApi<SystemView>('/v1/analytics/system');
-
-/** "simulation:mainnet:shadow-demo.near:demo-500" -> a name a person understands. */
-export function scopeName(scope: string): { name: string; env: string } {
-  const [source, network, , portfolio] = scope.split(':');
-  const env =
-    source === 'simulation' && network === 'mainnet'
-      ? 'Shadow mainnet'
-      : source === 'simulation'
-        ? 'Simulation'
-        : `${source}:${network}`;
-  return {
-    name: portfolio ? `Demo portfolio ${portfolio.replace('demo-', '$')}` : 'Account',
-    env,
-  };
-}
 
 export const ago = (iso: string | null | undefined, nowIso?: string): string => {
   if (!iso) return '—';
@@ -155,13 +108,6 @@ export const ago = (iso: string | null | undefined, nowIso?: string): string => 
   if (s < 5400) return `${Math.round(s / 60)} min ago`;
   if (s < 172_800) return `${(s / 3600).toFixed(1)} h ago`;
   return `${Math.round(s / 86_400)} days ago`;
-};
-
-export const inTime = (iso: string): string => {
-  const s = Math.round((Date.parse(iso) - Date.now()) / 1000);
-  if (s <= 0) return 'due now';
-  if (s < 90) return `in ${s} s`;
-  return `in ${Math.round(s / 60)} min`;
 };
 
 export interface PortfolioAction {
@@ -227,7 +173,7 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
 export const accountView = async (id: string) => {
-  if (!(await withinLimit('account'))) return { error: RATE_LIMITED, data: null };
+  if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
   const r = await tryApi<
     Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & { accountId: string }
   >(`/v1/analytics/account/${encodeURIComponent(id)}`);

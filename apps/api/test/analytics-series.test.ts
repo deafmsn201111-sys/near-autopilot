@@ -107,4 +107,16 @@ describe('GET /v1/analytics/risk', () => {
     expect((await app.inject({ url: '/v1/analytics/risk' })).statusCode).toBe(401);
     await app.close();
   });
+
+  it('serves no operator controls: the API is read-only', async () => {
+    const app = buildAnalyticsServer({ apiToken: TOKEN, store, intervalSeconds: 900 });
+    const calls = [
+      { method: 'GET', url: '/v1/control' },
+      { method: 'POST', url: '/v1/control/collector/run' },
+      { method: 'POST', url: '/v1/control/mode' },
+    ] as const;
+    for (const c of calls)
+      expect((await app.inject({ ...c, headers: auth })).statusCode, c.url).toBe(404);
+    await app.close();
+  });
 });

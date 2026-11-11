@@ -1,8 +1,8 @@
 # Shadow Gateway and best execution
 
-The Shadow Gateway is the execution boundary of every dry-run deployment (`apps/api/src/gateway/`). It replaces the
-plain dry-run executor in both engines (legacy cycle and orchestrator). It holds **no signer** and has no way to obtain
-one: its only effect is a row in `execution_routes`. Mainnet stays read-only.
+The Shadow Gateway is the executor of the collector's orchestrated cycle (`apps/api/src/gateway/`, wired in
+`apps/api/src/wiring.ts`), which runs on the simulated demo portfolios. It wraps the plain dry-run executor, holds **no
+signer** and has no way to obtain one: its only effect is a row in `execution_routes`. Nothing is sent to mainnet.
 
 ## What each verdict leads to
 
@@ -20,7 +20,7 @@ For ALLOW the gateway refuses (`status: rejected`, row with `outcome: refused`) 
    unexpired, plan bytes unchanged since approval, not used before.
 
 Tests: `apps/api/test/gateway.test.ts` (missing verdict, WARN, BLOCK, other plan, forged approval, replay, no signer
-in the module) and `apps/api/test/simulation.test.ts` (ALLOW reaches the gateway, BLOCK never does, in both engines).
+in the module) and `apps/api/test/simulation.test.ts` (ALLOW reaches the gateway, BLOCK never does).
 
 ## Venues
 
@@ -34,10 +34,9 @@ in the module) and `apps/api/test/simulation.test.ts` (ALLOW reaches the gateway
 - **1Click** dry quotes carry no deposit address. An answer that has one anyway is refused and never read. Without a
   JWT, 1Click adds its own app fee (20 bps at the time of writing). The fee is already inside `amountOut` and is
   recorded as `feeBps`. Quotes take 5–25 s.
-- **1Click privacy:** it receives the token pair, the amount and an account id: `ONE_CLICK_QUOTE_ACCOUNT`, else
-  `AUTOPILOT_ACCOUNT_ID`. Nothing else is sent. 1Click refuses accounts that do not exist. The shadow profile's demo id
-  `shadow-demo.near` does not exist on mainnet, so that profile quotes for `near`, an existing top-level account. A dry
-  quote sends it nothing.
+- **1Click privacy:** it receives the token pair, the amount and an account id (`ONE_CLICK_QUOTE_ACCOUNT`). Nothing
+  else is sent. 1Click refuses accounts that do not exist, and the demo portfolios' id `shadow-demo.near` does not, so
+  both compose files quote for `near`, an existing top-level account. A dry quote sends it nothing.
 - **Turning 1Click off:** set `ONE_CLICK_URL=` (empty).
 
 ## Choosing the route
@@ -72,7 +71,7 @@ No new thresholds were introduced: the limits are the policy's own `maxPriceAgeS
 
 ## Reference probe
 
-An agent rarely proposes a swap. So every shadow-collector cycle also quotes two reference trades: $10 and $100 of
+An agent rarely proposes a swap. So every collector cycle also quotes two reference trades: $10 and $100 of
 wNEAR → USDC on pool #4512. They use the same venues and the same rule, at the cycle's pinned block and on the cycle's
 prices.
 
@@ -81,8 +80,10 @@ prices.
 
 ## Reading the records
 
+On the site's `/routes` page, or from the analytics API (bearer token):
+
 ```bash
-curl -s -H "authorization: Bearer $API_TOKEN" 'http://127.0.0.1:4002/v1/routes?origin=probe&limit=10'
+curl -s -H "authorization: Bearer $API_TOKEN" 'http://127.0.0.1:4003/v1/analytics/routes?origin=probe&limit=10'
 ```
 
 Every row returns `executed: false`. The `quotes` field holds each venue's quote and score: output, gas, net, oracle

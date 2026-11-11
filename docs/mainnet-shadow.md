@@ -1,13 +1,14 @@
 # Mainnet read-only shadow analysis
 
-`docker compose --profile shadow up -d` → API `:4002`, dashboard `:3003`; shadow collector, analytics API `:4003` and
-analytics dashboard `:3001` (see the README section "Mainnet read-only analytics").
+`./scripts/quickstart.sh` (or `docker compose up -d --build`) → Postgres, the collector, the analytics API on
+`127.0.0.1:4003` and the site on `127.0.0.1:3001`. The public server runs the same collector as `shadow-collector`
+(`deploy/public/docker-compose.yml`).
 
 A pool's fee history starts at its first stored reading **with cumulative volumes**: the registry-scan reading that
 first discovers a pool carries none, so it never starts a fee window or the history used for LP eligibility.
 
-A **simulated** demo portfolio (`SHADOW_PORTFOLIO=demo-500 | demo-5000`, served by the in-process mock RPC) is analysed
-by the full orchestrator with **real mainnet data read with view calls only**:
+Each collector cycle analyses both **simulated** demo portfolios (`demo-500`, `demo-5000`, served by the in-process
+mock RPC) with the full orchestrator with **real mainnet data read with view calls only**:
 
 | Data                                   | Source (mainnet, read-only)                                              |
 | -------------------------------------- | ------------------------------------------------------------------------ |
@@ -22,12 +23,12 @@ Rules (enforced in `packages/config`, re-checked in `apps/api/src/wiring.ts`):
 
 - `MARKET_DATA=mainnet-live` only with `DATA_SOURCE=simulation`, `NEAR_NETWORK=mainnet`, `EXECUTION_MODE=dry-run`, and
   `MAINNET_READ_RPC_URL`; `YIELD_DATA=mainnet-onchain` only with `MARKET_DATA=mainnet-live`.
-- The mainnet read RPC must answer `status` with `chain_id = mainnet`, or the API refuses to start. It is a separate
+- The mainnet read RPC must answer `status` with `chain_id = mainnet`, or the collector refuses to start. It is a separate
   client used for views only; no signer exists, the executor is dry-run, and the portfolio's own state never comes from
   mainnet (it is the mock).
 - Prices are labelled `MAINNET PRICE — SIMULATED PORTFOLIO, NOTHING EXECUTED`; `market_prices.execution_network` is
   `none`; `yield_observations.network` is `mainnet`. Every proposal is a dry run with no transaction hash.
-- Allowlist (`config/autopilot.shadow.example.json` `rhea.pools`): **pool 4512** (wNEAR/USDC native, SIMPLE_POOL,
+- Allowlist (`config/market.json` `rhea.pools`, loaded from `MARKET_CONFIG_FILE`): **pool 4512** (wNEAR/USDC native, SIMPLE_POOL,
   0.30 %), approved by the operator on 2026-11-05. Observed only: v1 3879 (wNEAR/USDt, ≈ $4k), 5515 and 6063
   (DEGEN_SWAP: unsupported curve, rejected), DCL `USDC|wrap.near|100` and `|2000`.
 
@@ -95,7 +96,7 @@ contributes nothing; another protocol's data or an older report is never used in
 - DCL: pool state is collected and validated but **no APR is computed** (it needs in-range liquidity and fee growth).
   Only configured pools are read, one `get_pool` each.
 
-Config (`config/autopilot.shadow.example.json`, `yield`): `rheaV1Pools` (≤ 20), `dclPools` (≤ 20), `maxAprBps`,
+Config (`config/market.json`, `yield`): `rheaV1Pools` (≤ 20), `dclPools` (≤ 20), `maxAprBps`,
 `maxUtilizationBps`, `minLiquidityUsd`, `minObservationSeconds`, `maxObservationSeconds`. Pools there are
 **observed**, not allowlisted; nothing adds a pool to `rhea.pools`.
 
@@ -127,8 +128,10 @@ model-supported v1 pool at one past block per day (default 90 days) through an *
 `get_pool`, `get_pool_volumes` and the exchange `metadata`, all view calls pinned to the block height. Nothing is signed.
 
 ```bash
-docker compose --profile shadow exec shadow-collector node --import tsx src/collector/backfill-main.ts --days 90
+docker compose exec collector node --import tsx src/collector/backfill-main.ts --days 90
 ```
+
+On the public server the service is `shadow-collector`.
 
 - The block is a real block within 10 minutes of the target time; its own timestamp is stored.
 - TVL of a past state uses DefiLlama **historical** prices at the block time (within 2 h; confidence >= 0.9 OK,

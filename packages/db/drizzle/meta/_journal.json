@@ -120,6 +120,13 @@
       "when": 1794010000000,
       "tag": "0016_demo_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794020000000,
+      "tag": "0017_demo_ledger_reset",
+      "breakpoints": true
     }
   ]
 }

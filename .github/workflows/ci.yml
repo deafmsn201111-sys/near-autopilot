@@ -80,10 +80,10 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/dashboard.Dockerfile
+          file: docker/analytics.Dockerfile
           push: false
-          cache-from: type=gha,scope=dashboard
-          cache-to: type=gha,scope=dashboard,mode=max
+          cache-from: type=gha,scope=analytics
+          cache-to: type=gha,scope=analytics,mode=max
 
   notify:
     # Push to main only: a red main opens (or comments on) one "main is red" issue; the next green main closes it.

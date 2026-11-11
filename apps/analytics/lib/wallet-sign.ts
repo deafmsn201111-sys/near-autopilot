@@ -5,7 +5,7 @@ import type { PreparedTransaction } from './prepare-types';
 /**
  * THE ONLY PLACE THE DASHBOARD ASKS A WALLET TO SIGN (test/signing-lock.test.ts enforces it). It signs exactly the
  * cascade the analytics API assembled — the same transactions shown in the preview — and nothing else:
- *  - only when signing is enabled here (a flag, never on the public demo); otherwise the UI never calls this;
+ *  - only when signing is enabled here (MAINNET_WALLET_SIGNING=1); otherwise the UI never calls this;
  *  - only from the account the cascade is for: a wallet connected to another account is refused before it opens;
  *  - only function calls, on NEAR mainnet.
  * The wallet shows every action again and the user approves or declines it there. The server holds no key: it only

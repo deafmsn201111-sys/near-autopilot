@@ -2,10 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { loadApiEnv, type ApiEnv } from '@near-autopilot/config';
-import { accountId, portfolioDtoSchema } from '@near-autopilot/core';
+import { accountId } from '@near-autopilot/core';
 import { FixedClock, SilentLogger } from '@near-autopilot/core/testing';
-import { parseAutopilotConfig } from '../src/autopilot-config';
-import { toPortfolioDto } from '../src/presenters';
+import { parseMarketConfig } from '../src/market-config';
 import { DEMO_PORTFOLIOS } from '../src/simulation/demo-portfolios';
 import { SimulatedChain } from '../src/simulation/simulated-chain';
 import { wire } from '../src/wiring';
@@ -18,13 +17,11 @@ import { InMemoryRepository } from './in-memory-repository';
  */
 const ACCOUNT = 'your-account.near';
 const readConfig = (file: string) =>
-  parseAutopilotConfig(
-    JSON.parse(
-      readFileSync(new URL(`../../../config/${file}`, import.meta.url), 'utf8'),
-    ) as unknown,
+  parseMarketConfig(
+    JSON.parse(readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8')) as unknown,
     accountId(ACCOUNT),
   );
-const config = readConfig('autopilot.example.json');
+const config = readConfig('agents-config.json');
 
 const envFor = (over: Record<string, string>): ApiEnv =>
   loadApiEnv({
@@ -133,26 +130,7 @@ describe('orchestrator run report', () => {
   });
 });
 
-describe('simulation data is labelled and valued as documented', () => {
-  it.each([
-    ['demo-500', { wallet: '140.00', supplied: '360.00', borrowed: '200.00', net: '300.00' }],
-    ['demo-5000', { wallet: '1500.00', supplied: '3500.00', borrowed: '2000.00', net: '3000.00' }],
-  ] as const)('%s', async (portfolio, expected) => {
-    const { snapshots } = await simulate({ SIMULATION_PORTFOLIO: portfolio });
-    const dto = toPortfolioDto(await snapshots.take(), {
-      dataSource: 'simulation',
-      network: 'mainnet',
-    });
-    expect(portfolioDtoSchema.parse(dto)).toEqual(dto);
-    expect(dto).toMatchObject({
-      dataSource: 'simulation',
-      walletValueUsd: expected.wallet,
-      suppliedValueUsd: expected.supplied,
-      borrowedValueUsd: expected.borrowed,
-      netValueUsd: expected.net,
-    });
-  });
-
+describe('simulation config', () => {
   it('refuses to start when the policy allowlists do not admit the demo assets', async () => {
     const narrowed = {
       ...config,

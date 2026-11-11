@@ -78,10 +78,10 @@ The data collector makes no LLM API calls.
 
 ## Evidence a judge can re-run
 
-| Claim                              | How to check                                                                                                                                |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Builds and runs from a fresh clone | `./scripts/quickstart.sh`. On 2026-11-08 it took 6 min 13 s, with no manual edits.                                                          |
-| Tests pass                         | `pnpm verify` (format, lint, boundaries, types, tests); CI runs it on every push.                                                           |
-| Attacks are stopped                | `pnpm demo:attack`: 8 of 8 stopped, 2 controls allowed, `signed 0, broadcast 0`.                                                            |
-| Audit trail is intact              | `docker compose --profile shadow exec analytics-api node --import tsx src/evidence/cli.ts verify`: hash chains and ed25519 checkpoints `ok` |
-| Thesis is reproducible             | `pnpm thesis:rebuild && git diff --stat`: no changes.                                                                                       |
+| Claim                              | How to check                                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Builds and runs from a fresh clone | `./scripts/quickstart.sh`. On 2026-11-08 it took 6 min 13 s, with no manual edits.                                         |
+| Tests pass                         | `pnpm verify` (format, lint, boundaries, types, tests); CI runs it on every push.                                          |
+| Attacks are stopped                | `pnpm demo:attack`: 8 of 8 stopped, 2 controls allowed, `signed 0, broadcast 0`.                                           |
+| Audit trail is intact              | `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify`: hash chains and ed25519 checkpoints `ok` |
+| Thesis is reproducible             | `pnpm thesis:rebuild && git diff --stat`: no changes.                                                                      |

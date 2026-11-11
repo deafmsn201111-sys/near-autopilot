@@ -1,22 +1,25 @@
-# Public demo server
+# Public server
 
-Runs the read-only mainnet analytics dashboard on a server, in public demo mode, over HTTPS.
+Runs the NEAR Autopilot site on a server over HTTPS. Services: `postgres`, `analytics-api`, `shadow-collector`,
+`analytics` (the site) and, with the `caddy` profile, `caddy`.
 
 **What it does:**
 
-- reads NEAR mainnet with view calls only;
-- analyses the two simulated demo portfolios ($500 and $5,000);
-- lets a visitor run "Let the agent do it" on them as a dry run.
+- reads NEAR mainnet with view calls only (the collector on a schedule, the analytics API for a connected account);
+- analyses the two simulated demo portfolios ($500 and $5,000) as dry runs;
+- builds an exact **unsigned** transaction cascade for a connected wallet. Wallet signing is on
+  (`MAINNET_WALLET_SIGNING=1`): the visitor signs in their own wallet.
 
-**What it cannot do:** it cannot sign or send anything.
+**What the server cannot do:** sign or send anything.
 
-- There is no signer, and the executor is dry-run.
-- The network, the data source, the execution mode and `PUBLIC_DEMO=1` are fixed in `docker-compose.yml`, not read
-  from `.env`.
-- Operator controls (start an analysis, pause the collector, read-only mode) are refused on the server.
-- Visitor actions and `/api/prepare` are rate-limited per visitor ([`apps/analytics/lib/rate-limit.ts`](../../apps/analytics/lib/rate-limit.ts)).
+- The server holds no key, and the collector's executor is dry-run.
+- Every cascade passes `apps/api/src/wallet/validate-cascade.ts` (0.15 NEAR per action, 0.3 NEAR per cascade).
+- The network, the data source, the execution mode and `MAINNET_WALLET_SIGNING` are fixed in `docker-compose.yml`,
+  not read from `.env`. The market and policy config is `config/market.json` (no secrets).
+- Account lookups and `/api/prepare` are rate-limited per visitor
+  ([`apps/analytics/lib/rate-limit.ts`](../../apps/analytics/lib/rate-limit.ts)).
 
-The dashboard listens on `127.0.0.1:3000` of the server only. Postgres, the APIs and the collector are on the
+The site listens on `127.0.0.1:3000` of the server only. Postgres, the analytics API and the collector are on the
 internal Docker network. One of two front doors puts the dashboard on the internet over HTTPS:
 
 | Front door           | When                                              | Address                                 |
@@ -47,7 +50,7 @@ The script:
 - checks that no `.env`, key or checkpoint file is inside them;
 - writes `deploy/public/dist/near-autopilot-public-<commit>.tar.gz`.
 
-The bundle holds the images, this folder and the shadow policy config. It contains no secrets.
+The bundle holds the images, this folder and `config/market.json`. It contains no secrets.
 
 ## 2. Install on the server
 
@@ -81,13 +84,13 @@ Without a FastNEAR key, set `MAINNET_READ_RPC_URL=https://rpc.mainnet.near.org`.
 
 ## 3. Check it
 
-| Check            | Command or page                                                                  | Expected                                     |
-| ---------------- | -------------------------------------------------------------------------------- | -------------------------------------------- |
-| Containers       | `docker compose ps`                                                              | all `healthy`                                |
-| Site             | the Caddy or Funnel address                                                      | the dashboard, with the "Public demo" banner |
-| Collector cycles | `docker compose logs -f shadow-collector`                                        | a cycle every 15 minutes                     |
-| Audit trail      | `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify` | chains and checkpoints `ok`                  |
-| Nothing exposed  | `ss -tlnH` on the server                                                         | public: only SSH (and 80/443 with Caddy)     |
+| Check            | Command or page                                                                  | Expected                                 |
+| ---------------- | -------------------------------------------------------------------------------- | ---------------------------------------- |
+| Containers       | `docker compose ps`                                                              | all `healthy`                            |
+| Site             | the Caddy or Funnel address                                                      | the site                                 |
+| Collector cycles | `docker compose logs -f shadow-collector`                                        | a cycle every 15 minutes                 |
+| Audit trail      | `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify` | chains and checkpoints `ok`              |
+| Nothing exposed  | `ss -tlnH` on the server                                                         | public: only SSH (and 80/443 with Caddy) |
 
 Market history starts empty on a new server. Pages that need several days of observations, such as the DCL range
 backtest, show "not enough history yet" until they have them.

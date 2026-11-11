@@ -127,7 +127,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/api/src/main.ts', 'packages/db/src/migrate-cli.ts'],
+    files: ['packages/db/src/migrate-cli.ts'],
     rules: { 'no-console': 'off' },
   },
   prettier,
