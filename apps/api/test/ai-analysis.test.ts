@@ -559,6 +559,22 @@ describe('analyseAccount', () => {
       expect(l.rows).toMatchObject([{ outcome: 'cap', inputTokens: 1000, outputTokens: 100 }]);
     });
 
+    it('holds a call in flight against the budget of a parallel analysis', async () => {
+      let release!: () => void;
+      const slow = fake([
+        () => new Promise<LlmToolTurn>((resolve) => (release = () => resolve(final([])))),
+      ]);
+      const second = fake([() => final([])]);
+      const l = ledger(WORST_CALL_MICRO + 100n);
+      const first = analyseAccount(ai(slow.llm, l), { ...ctx, heuristics: [heuristic] });
+      await new Promise((r) => setTimeout(r, 10));
+      const out = await analyseAccount(ai(second.llm, l), { ...ctx, heuristics: [heuristic] });
+      expect(out.fallback).toBe('cap');
+      expect(second.tools).toEqual([]);
+      release();
+      expect((await first).fallback).toBe('empty');
+    });
+
     it('records one row with the tokens and cost of all turns, the tools called and the outcome', async () => {
       const { llm } = fake([
         () => callAll,
@@ -680,6 +696,17 @@ describe('analyseAccount', () => {
       );
       expect(out.source).toBe('llm');
       expect(errors).toHaveLength(1);
+    });
+
+    // Runs last: the unrecorded spend of the test above stays held in this process.
+    it('keeps counting the spend of a run whose row could not be written', async () => {
+      const { llm, tools } = fake([() => final([])]);
+      const out = await analyseAccount(ai(llm, ledger(WORST_CALL_MICRO + 200n)), {
+        ...ctx,
+        heuristics: [heuristic],
+      });
+      expect(out.fallback).toBe('cap');
+      expect(tools).toEqual([]);
     });
   });
 });

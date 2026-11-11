@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS "llm_calls" (
 	"tools" jsonb NOT NULL,
 	"outcome" text NOT NULL,
 	CONSTRAINT "llm_calls_tokens_check" CHECK ("input_tokens" >= 0 AND "output_tokens" >= 0 AND "cost_micro_usd" >= 0),
-	CONSTRAINT "llm_calls_outcome_check" CHECK ("outcome" IN ('ok', 'off', 'not_owner', 'cap', 'model_error', 'invalid_output', 'empty', 'deadline', 'loop_limit'))
+	CONSTRAINT "llm_calls_outcome_check" CHECK ("outcome" IN ('ok', 'cap', 'model_error', 'invalid_output', 'empty', 'deadline', 'loop_limit'))
 );
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "llm_calls_at_idx" ON "llm_calls" USING btree ("at");

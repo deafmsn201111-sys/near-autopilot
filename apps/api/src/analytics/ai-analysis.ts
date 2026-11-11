@@ -40,6 +40,9 @@ export type FallbackCode =
   | 'deadline'
   | 'loop_limit';
 
+/** A run that reached the model ends in one of these; `off` and `not_owner` never reach it. */
+export type CallOutcome = 'ok' | Exclude<FallbackCode, 'off' | 'not_owner'>;
+
 /** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
 export interface LlmCallRecord {
   readonly at: Date;
@@ -50,7 +53,7 @@ export interface LlmCallRecord {
   readonly costMicroUsd: bigint;
   readonly latencyMs: number;
   readonly tools: readonly string[];
-  readonly outcome: 'ok' | FallbackCode;
+  readonly outcome: CallOutcome;
 }
 
 export interface LlmLedger {
@@ -69,6 +72,13 @@ export interface ToolLlmDeps {
 
 // ponytail: a fixed input bound, well above what 6 turns of these tools replay; derive it from the request size if prompts grow.
 const WORST_CASE_INPUT_TOKENS = 100_000;
+
+/**
+ * Budget held in this process on top of the ledger: one worst-case call per model call in flight, and the cost of any
+ * run whose row could not be written. The analytics API is a single process, so this closes the check-then-spend race.
+ */
+// ponytail: in-process only; move it into the ledger (a reservation row) if the analytics API ever runs replicas.
+let heldMicro = 0n;
 
 class BudgetReached extends Error {
   override readonly name = 'BudgetReached';
@@ -359,13 +369,25 @@ export async function analyseAccount(
     inputTokens: WORST_CASE_INPUT_TOKENS,
     outputTokens: ai.maxTokens,
   });
-  // ponytail: runs still in flight are not in the ledger yet; a global limit (#22) bounds how many overlap.
   const affordable = async () =>
-    (await ai.ledger.remainingTodayMicro()) >= usage.costMicroUsd + worstCall;
+    (await ai.ledger.remainingTodayMicro()) >= heldMicro + usage.costMicroUsd + worstCall;
   // An unreadable budget counts as spent: fail closed, but still answer.
   const withinBudget = await affordable().catch((e: unknown) => (onError(e), false));
   if (!withinBudget) return fallback('cap');
 
+  // A run gives back what it still holds when it ends, even if a call it made never settles.
+  let runHeld = 0n;
+  let ended = false;
+  const hold = (micro: bigint) => {
+    if (ended) return;
+    runHeld += micro;
+    heldMicro += micro;
+  };
+  const release = () => {
+    heldMicro -= runHeld;
+    runHeld = 0n;
+    ended = true;
+  };
   const metered: ToolLlm = {
     open: (request) => {
       const chat = ai.llm.open({
@@ -380,7 +402,12 @@ export async function analyseAccount(
         send: async (results) => {
           if (!(await affordable())) throw new BudgetReached();
           usage.calls++;
-          return chat.send(results);
+          hold(worstCall);
+          try {
+            return await chat.send(results);
+          } finally {
+            hold(-worstCall);
+          }
         },
       };
     },
@@ -391,11 +418,11 @@ export async function analyseAccount(
     run: (input) => (calledTools.add(tool.spec.name), tool.run(input)),
   });
   // ponytail: an aborted call in flight returns no usage and is not counted; the worst-case check covers it.
-  const record = async (outcome: 'ok' | FallbackCode) => {
+  const record = async (outcome: CallOutcome) => {
     if (usage.calls === 0) return;
     await ai.ledger
       .record({
-        at: startedAt,
+        at: new Date(),
         accountId: ctx.accountId,
         model: ai.model,
         inputTokens: usage.inputTokens,
@@ -405,9 +432,12 @@ export async function analyseAccount(
         tools: [...calledTools],
         outcome,
       })
-      .catch(onError);
+      .catch((e: unknown) => {
+        heldMicro += usage.costMicroUsd;
+        onError(e);
+      });
   };
-  const failed = async (code: FallbackCode) => {
+  const failed = async (code: Exclude<CallOutcome, 'ok'>) => {
     await record(code);
     return fallback(code);
   };
@@ -454,10 +484,13 @@ export async function analyseAccount(
 
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
-    reply = await Promise.race([run(), deadline]).finally(() => clearTimeout(timer));
+    reply = await Promise.race([run(), deadline]).finally(() => {
+      clearTimeout(timer);
+      release();
+    });
   } catch (e) {
-    onError(e);
     if (e instanceof BudgetReached) return failed('cap');
+    onError(e);
     if (abort.signal.aborted) return failed('deadline');
     return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
   }
