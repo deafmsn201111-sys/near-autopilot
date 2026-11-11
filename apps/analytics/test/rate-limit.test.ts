@@ -25,6 +25,38 @@ describe('account lookup rate limit', () => {
   });
 });
 
+describe('visitor key', () => {
+  beforeEach(() => vi.resetModules());
+
+  it.each([
+    ['203.0.113.1', '203.0.113.1'],
+    ['2001:db8:1:2:3:4:5:6', '2001:db8:1:2::/64'],
+    ['2001:0DB8:0001:0002:ffff::1', '2001:db8:1:2::/64'],
+    ['2001:db8::1', '2001:db8:0:0::/64'],
+    ['::1', '0:0:0:0::/64'],
+    ['::ffff:198.51.100.7', '198.51.100.7'],
+    ['64:ff9b::198.51.100.7', '64:ff9b:0:0::/64'],
+    ['1:2:3:4:5:6:7:8:9', '1:2:3:4::/64'],
+  ])('keys %s as %s', async (address, key) => {
+    forwardedFor = address;
+    const { visitor } = await import('../lib/rate-limit');
+    expect(await visitor()).toBe(key);
+  });
+
+  it('gives one IPv6 /64 a single per-visitor limit', async () => {
+    const { consume, ACCOUNT_LIMIT } = await import('../lib/rate-limit');
+    const now = 1_000_000;
+    for (let i = 0; i < 30; i++) {
+      forwardedFor = `2001:db8:1:2::${i.toString(16)}`;
+      expect(await consume('account', ACCOUNT_LIMIT, now)).toBe(true);
+    }
+    forwardedFor = '2001:db8:1:2:abcd::1';
+    expect(await consume('account', ACCOUNT_LIMIT, now)).toBe(false);
+    forwardedFor = '2001:db8:1:3::1';
+    expect(await consume('account', ACCOUNT_LIMIT, now)).toBe(true);
+  });
+});
+
 describe('rate limiter memory', () => {
   beforeEach(() => vi.resetModules());
 

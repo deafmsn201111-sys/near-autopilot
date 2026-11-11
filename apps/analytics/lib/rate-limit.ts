@@ -32,10 +32,32 @@ function take(
   return true;
 }
 
+// One home or VPS gets a whole IPv6 /64, so its 2^64 addresses share one key.
+function subnet(address: string): string {
+  if (!address.includes(':')) return address;
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
+  if (mapped) return mapped[1]!;
+  const groups = (part: string | undefined) => (part ? part.split(':') : []);
+  const [head, tail] = address.replace(/\d+\.\d+\.\d+\.\d+$/, '0:0').split('::');
+  const left = groups(head);
+  const right = groups(tail);
+  const full = [
+    ...left,
+    ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill('0'),
+    ...right,
+  ];
+  return `${full
+    .slice(0, 4)
+    .map((g) => parseInt(g, 16).toString(16))
+    .join(':')}::/64`;
+}
+
 // Trusted only because Caddy overwrites X-Forwarded-For (deploy/public/Caddyfile).
 export async function visitor(): Promise<string> {
   const h = await headers();
-  return (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim();
+  return subnet(
+    (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'unknown').trim(),
+  );
 }
 
 export interface Limit {
