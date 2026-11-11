@@ -2,11 +2,12 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 import { refreshAccount } from '../app/account-actions';
+import { poll, POLL_FOR_MS, tabHidden } from '../lib/polling';
 
 /**
  * The on-chain watcher: for the connected account it polls the access-key nonces on NEAR mainnet and, the moment a new
  * transaction from this wallet lands (any nonce goes up), SILENTLY re-renders the page from fresh data (router.refresh,
- * no reload). That re-reads the real portfolio and re-forms the agents' recommendations — so after the user signs an
+ * no reload). That re-reads the real portfolio and re-forms the agents' recommendations, while the tab is visible and for at most 30 minutes — so after the user signs an
  * action (or moves funds elsewhere) the portfolio, allocation and suggestions update on their own, quietly.
  */
 const RPC = 'https://rpc.mainnet.fastnear.com';
@@ -55,19 +56,21 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
     void maxNonce(account).then((n) => {
       if (alive) last.current = n;
     });
-    const id = setInterval(() => {
-      void maxNonce(account).then((n) => {
-        if (!alive || n === null) return;
-        if (last.current !== null && n > last.current)
-          void refreshAccount(account)
-            .catch(() => undefined)
-            .then(() => router.refresh());
-        last.current = n;
-      });
-    }, seconds * 1000);
+    const stop = poll(
+      () =>
+        void maxNonce(account).then((n) => {
+          if (!alive || n === null) return;
+          if (last.current !== null && n > last.current)
+            void refreshAccount(account)
+              .catch(() => undefined)
+              .then(() => router.refresh());
+          last.current = n;
+        }),
+      { everyMs: seconds * 1000, forMs: POLL_FOR_MS, hidden: tabHidden },
+    );
     return () => {
       alive = false;
-      clearInterval(id);
+      stop();
     };
   }, [account, seconds, router]);
 

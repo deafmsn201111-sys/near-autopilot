@@ -41,3 +41,21 @@ describe('rate limiter memory', () => {
     expect(await consume('flood', limit, now)).toBe(false);
   });
 });
+
+describe('overall cap', () => {
+  beforeEach(() => vi.resetModules());
+
+  it('is not reset by a flood of new visitors on another kind', async () => {
+    const { consume, MAX_TRACKED_KEYS } = await import('../lib/rate-limit');
+    const limit = { perVisitor: 100, overall: 1, windowMs: 60_000 };
+    const now = 1_000_000;
+    forwardedFor = '192.0.2.1';
+    expect(await consume('prepare', limit, now)).toBe(true);
+    for (let i = 0; i < MAX_TRACKED_KEYS + 1; i++) {
+      forwardedFor = `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`;
+      await consume('account', limit, now);
+    }
+    forwardedFor = '192.0.2.2';
+    expect(await consume('prepare', limit, now)).toBe(false);
+  });
+});
