@@ -74,11 +74,16 @@ export interface ToolLlmDeps {
 const WORST_CASE_INPUT_TOKENS = 100_000;
 
 /**
- * Budget held in this process on top of the ledger: one worst-case call per model call in flight, and the cost of any
- * run whose row could not be written. The analytics API is a single process, so this closes the check-then-spend race.
+ * Budget held in this process on top of the ledger: one worst-case call per model call in flight, and the cost of a
+ * finished run until its row is written. The analytics API is a single process, so this closes the check-then-spend
+ * race.
  */
 // ponytail: in-process only; move it into the ledger (a reservation row) if the analytics API ever runs replicas.
 let heldMicro = 0n;
+/** Spend whose row could not be written, for the UTC day it happened on. */
+let unrecorded = { day: '', micro: 0n };
+const utcDay = () => new Date().toISOString().slice(0, 10);
+const unrecordedToday = () => (unrecorded.day === utcDay() ? unrecorded.micro : 0n);
 
 class BudgetReached extends Error {
   override readonly name = 'BudgetReached';
@@ -369,23 +374,31 @@ export async function analyseAccount(
     inputTokens: WORST_CASE_INPUT_TOKENS,
     outputTokens: ai.maxTokens,
   });
-  const affordable = async () =>
-    (await ai.ledger.remainingTodayMicro()) >= heldMicro + usage.costMicroUsd + worstCall;
-  // An unreadable budget counts as spent: fail closed, but still answer.
-  const withinBudget = await affordable().catch((e: unknown) => (onError(e), false));
-  if (!withinBudget) return fallback('cap');
+  /** Holds are compared after the read, so a hold taken by a parallel run during the read counts. */
+  const affordable = async (extra: bigint) => {
+    try {
+      const remaining = await ai.ledger.remainingTodayMicro();
+      return remaining >= heldMicro + unrecordedToday() + extra;
+    } catch (e) {
+      // An unreadable budget counts as spent: fail closed, but still answer.
+      onError(e);
+      return false;
+    }
+  };
+  if (!(await affordable(worstCall))) return fallback('cap');
 
-  // A run gives back what it still holds when it ends, even if a call it made never settles.
-  let runHeld = 0n;
+  // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
+  // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
+  let inFlight = 0n;
   let ended = false;
   const hold = (micro: bigint) => {
     if (ended) return;
-    runHeld += micro;
+    inFlight += micro;
     heldMicro += micro;
   };
   const release = () => {
-    heldMicro -= runHeld;
-    runHeld = 0n;
+    heldMicro -= inFlight;
+    inFlight = 0n;
     ended = true;
   };
   const metered: ToolLlm = {
@@ -393,16 +406,23 @@ export async function analyseAccount(
       const chat = ai.llm.open({
         ...request,
         onUsage: (u) => {
+          if (ended) return;
+          const cost = costMicroUsd(ai.model, u);
           usage.inputTokens += u.inputTokens;
           usage.outputTokens += u.outputTokens;
-          usage.costMicroUsd += costMicroUsd(ai.model, u);
+          usage.costMicroUsd += cost;
+          heldMicro += cost;
         },
       });
       return {
         send: async (results) => {
-          if (!(await affordable())) throw new BudgetReached();
-          usage.calls++;
+          // Held before the check, so two runs checking at once both see each other.
           hold(worstCall);
+          if (!(await affordable(0n))) {
+            hold(-worstCall);
+            throw new BudgetReached();
+          }
+          usage.calls++;
           try {
             return await chat.send(results);
           } finally {
@@ -420,6 +440,7 @@ export async function analyseAccount(
   // ponytail: an aborted call in flight returns no usage and is not counted; the worst-case check covers it.
   const record = async (outcome: CallOutcome) => {
     if (usage.calls === 0) return;
+    const cost = usage.costMicroUsd;
     await ai.ledger
       .record({
         at: new Date(),
@@ -433,8 +454,12 @@ export async function analyseAccount(
         outcome,
       })
       .catch((e: unknown) => {
-        heldMicro += usage.costMicroUsd;
+        const day = utcDay();
+        unrecorded = { day, micro: (unrecorded.day === day ? unrecorded.micro : 0n) + cost };
         onError(e);
+      })
+      .finally(() => {
+        heldMicro -= cost;
       });
   };
   const failed = async (code: Exclude<CallOutcome, 'ok'>) => {

@@ -166,9 +166,10 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - Daily cap per UTC day: the `llm_settings` row (#31's admin field) when set, else `LLM_DAILY_CAP_USD`, default $5.
   Before each model call: spent today + this run so far + one worst-case call (100K input, `ANTHROPIC_MAX_TOKENS`
   output) must fit, else no call and fallback code `cap`.
-- Each model call in flight holds one worst-case call against the cap in the analytics API's memory (one process),
-  so parallel analyses cannot all pass the same check; a run whose row fails to write keeps its cost held until
-  restart. An unreadable budget counts as spent (`cap`). The row is stamped with the time the run ends.
+- In the analytics API's memory (one process), each model call in flight holds one worst-case call, taken before the
+  budget is read, and a run holds its actual spend until its row is written; parallel analyses therefore cannot all
+  pass the same check (near the cap both may stop: fail closed). A run whose row fails to write keeps its cost held
+  for that UTC day. An unreadable budget counts as spent (`cap`). The row is stamped with the time the run ends.
 - Usage comes from every reply through `ToolLlm.open({ onUsage })`, before the reply is checked, so a billed
   `max_tokens` or `refusal` reply is counted. SDK `maxRetries: 0`, so no billed retry goes unseen. A call aborted on
   the deadline returns no usage and is not counted (the worst-case check covers it).

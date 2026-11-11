@@ -125,7 +125,7 @@ function ledger(left = 10n ** 9n) {
     },
   };
 }
-const ai = (llm: ToolLlm, l = ledger()): ToolLlmDeps => ({
+const ai = (llm: ToolLlm, l: ToolLlmDeps['ledger'] = ledger()): ToolLlmDeps => ({
   llm,
   model: 'claude-haiku-5-5',
   maxTokens: 4096,
@@ -573,6 +573,61 @@ describe('analyseAccount', () => {
       expect(second.tools).toEqual([]);
       release();
       expect((await first).fallback).toBe('empty');
+    });
+
+    it('never lets two analyses started together both spend the last worst-case call', async () => {
+      const a = fake([() => final([])]);
+      const b = fake([() => final([])]);
+      const l = ledger(WORST_CALL_MICRO + 100n);
+      const outs = await Promise.all([
+        analyseAccount(ai(a.llm, l), { ...ctx, heuristics: [heuristic] }),
+        analyseAccount(ai(b.llm, l), { ...ctx, heuristics: [heuristic] }),
+      ]);
+      expect(outs.map((o) => o.fallback)).toContain('cap');
+      expect(l.rows.length).toBeLessThanOrEqual(1);
+    });
+
+    it('counts a run as spent while its row is being written', async () => {
+      let written!: () => void;
+      const rows: LlmCallRecord[] = [];
+      const slowLedger = {
+        remainingTodayMicro: async () =>
+          WORST_CALL_MICRO + 100n - rows.reduce((t, r) => t + r.costMicroUsd, 0n),
+        record: (row: LlmCallRecord) =>
+          new Promise<void>((resolve) => (written = () => (rows.push(row), resolve()))),
+      };
+      const first = analyseAccount(ai(fake([() => final([])]).llm, slowLedger), {
+        ...ctx,
+        heuristics: [heuristic],
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      const second = fake([() => final([])]);
+      const out = await analyseAccount(ai(second.llm, slowLedger), {
+        ...ctx,
+        heuristics: [heuristic],
+      });
+      expect(out.fallback).toBe('cap');
+      expect(second.tools).toEqual([]);
+      written();
+      await first;
+    });
+
+    it('reports an unreadable budget mid-run as cap', async () => {
+      let reads = 0;
+      const l = ledger();
+      const flaky = {
+        ...l,
+        remainingTodayMicro: async () => {
+          if (++reads === 3) throw new Error('db down');
+          return l.remainingTodayMicro();
+        },
+      };
+      const out = await analyseAccount(ai(fake([() => callAll, () => final([])]).llm, flaky), {
+        ...ctx,
+        heuristics: [heuristic],
+      });
+      expect(out.fallback).toBe('cap');
+      expect(l.rows).toMatchObject([{ outcome: 'cap' }]);
     });
 
     it('records one row with the tokens and cost of all turns, the tools called and the outcome', async () => {
