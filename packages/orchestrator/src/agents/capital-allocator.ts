@@ -31,14 +31,14 @@ export class CapitalAllocatorAgent implements ProposalAgent {
 
   /**
    * Idle wallet tokens earn nothing; Burrow pays its supply rate on them. Proposes depositing the held allocation
-   * asset with the highest estimated supply rate, up to the per-action cap. The decision engine applies the same
+   * asset that earns the most in dollars a year (rate x deposit value), up to the per-action cap. The decision engine applies the same
    * hurdle as for a swap (gas in and out against the yield over the horizon); the policy engine decides the rest.
    */
   private proposeSupply(obs: AgentObservation): Record<string, unknown> | null {
     const { snapshot, market, config } = obs;
     if (!market) return null;
     const capUsd = usdToMicro(config.swap.maxSwapUsd);
-    let best: { token: TokenId; amount: bigint; yieldWad: bigint } | null = null;
+    let best: { token: TokenId; amount: bigint; yieldWad: bigint; earns: bigint } | null = null;
     for (const a of config.allocation.assets) {
       const held = snapshot.walletBalances
         .filter((b) => b.token === a.token)
@@ -49,8 +49,11 @@ export class CapitalAllocatorAgent implements ProposalAgent {
       const value = tokenValueUsd(snapshot.prices, a.token, held);
       const amount = value > capUsd ? rawForValueUsd(capUsd, price) : held;
       if (amount <= 0n) continue;
-      if (!best || y > best.yieldWad)
-        best = { token: a.token, amount: amount > held ? held : amount, yieldWad: y };
+      const deposit = amount > held ? held : amount;
+      // Dollars a year, not the rate: a higher rate on dust must not beat a large idle balance.
+      const earns = tokenValueUsd(snapshot.prices, a.token, deposit) * y;
+      if (!best || earns > best.earns)
+        best = { token: a.token, amount: deposit, yieldWad: y, earns };
     }
     if (!best) return null;
     return {

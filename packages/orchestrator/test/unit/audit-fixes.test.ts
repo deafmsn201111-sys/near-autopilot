@@ -224,6 +224,21 @@ describe('capital allocator: deposits idle tokens into Burrow when enabled', () 
     expect(action?.amount).toBe(100n * 10n ** 6n);
     expect(report.status).toBe('dry_run');
   });
+  it('picks the token that earns the most in dollars, not the highest rate on dust', async () => {
+    const w = makeWorld({
+      lending: null,
+      wallet: { near: 100, usdt: 0.1 }, // ~$500 wNEAR at 8 % vs $0.10 USDt at 10 %
+      yields: { near: 8, usdt: 10 },
+      config: {
+        allocation: { assets: [{ token: WNEAR_ID }, { token: USDT_ID }], supplyIdle: true },
+      },
+    });
+    const report = await w.orchestrator.runCycle('supply-dust');
+    expect(report.decision?.ranked[0]?.action).toMatchObject({
+      kind: 'lending.supply',
+      token: WNEAR_ID,
+    });
+  });
   it('is off by default, and a deposit too small to clear the hurdle is rejected as BELOW_HURDLE', async () => {
     const off = await world(false, 500).orchestrator.runCycle('supply-off');
     expect(off.decision?.ranked.some((r) => r.action.kind === 'lending.supply') ?? false).toBe(
