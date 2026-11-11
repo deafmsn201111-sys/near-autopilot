@@ -60,3 +60,11 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 
 **Tests run:** `pnpm verify` (green); new `market-config.test.ts`, `rate-limit.test.ts`, `/v1/control` 404 test.
 Not run here: `./scripts/quickstart.sh` (no Docker on the build machine).
+
+## 2026-11-11 — #52 account view no longer spends its own rate limit
+
+The layout refreshed every page every 15 s; on "Your account" each refresh re-read the account and took one of the
+30 lookups per visitor per 10 min, so an idle tab hit "Too many requests" in about 7 minutes. `AutoRefresh` now skips
+`?p=account` (`AccountWatcher` already re-renders it on a new transaction). Limit unchanged.
+
+**Tests run:** `pnpm verify` (green), `next build`; new `auto-refresh.test.ts`.
