@@ -149,7 +149,8 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   wallet balance. Cascade caps and `validateCascade` are unchanged.
 - The test that banned LLM code from `apps/api/src/analytics` now allows the provider only in `analytics/main.ts`
   (wiring); the collector stays LLM-free, and the no-signing/no-sending ban is unchanged.
-- The Next route allows 5 analyses per visitor per 10 minutes (it alone knows the visitor). The global limit lives in
+- The Next route allows 5 analyses per visitor per 10 minutes (it alone knows the visitor) and 600 overall, the
+  account-read guard for the RPC reads. The global AI limit lives in
   the analytics API (#22): at most 60 runs that reach the model per 10 minutes for everyone; over it the owner gets the
   rule-based list with fallback `busy`. Rule-based answers (no proof, LLM off, cap) and cache hits never count.
 - AI results are cached in the analytics API for 10 minutes, at most 200 entries (`BoundedMap`, in memory): key =
