@@ -362,7 +362,9 @@ export async function analyseAccount(
   // ponytail: runs still in flight are not in the ledger yet; a global limit (#22) bounds how many overlap.
   const affordable = async () =>
     (await ai.ledger.remainingTodayMicro()) >= usage.costMicroUsd + worstCall;
-  if (!(await affordable())) return fallback('cap');
+  // An unreadable budget counts as spent: fail closed, but still answer.
+  const withinBudget = await affordable().catch((e: unknown) => (onError(e), false));
+  if (!withinBudget) return fallback('cap');
 
   const metered: ToolLlm = {
     open: (request) => {

@@ -648,6 +648,19 @@ describe('analyseAccount', () => {
       expect(l.rows).toMatchObject([{ outcome: 'loop_limit', inputTokens: 6000 }]);
     });
 
+    it('makes no model call and still answers when the budget cannot be read', async () => {
+      const { llm, tools } = fake([() => final([])]);
+      const l = {
+        ...ledger(),
+        remainingTodayMicro: async (): Promise<bigint> => {
+          throw new Error('db down');
+        },
+      };
+      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      expect(tools).toEqual([]);
+      expect(out.fallback).toBe('cap');
+    });
+
     it('still answers when the row cannot be written', async () => {
       const l = {
         ...ledger(),
