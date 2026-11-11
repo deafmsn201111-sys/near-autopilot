@@ -60,6 +60,26 @@ describe('public error messages', () => {
     expect(res.json()).toEqual({ error: 'could not prepare the transaction right now' });
   });
 
+  it('a failed database check reports it is down, not the driver text', async () => {
+    const db = {
+      execute: async () => {
+        throw new Error('connect ECONNREFUSED 172.18.0.2:5432');
+      },
+    };
+    const app = buildAnalyticsServer({
+      apiToken: TOKEN,
+      store: { db, recentCycles: async () => [] } as unknown as CollectorStore,
+      intervalSeconds: 900,
+    });
+    const res = await app.inject({ url: '/v1/analytics/system', headers: auth });
+    expect(res.json<{ database: unknown }>().database).toEqual({
+      ok: false,
+      latencyMs: null,
+      migrations: null,
+      error: 'the database is unreachable',
+    });
+  });
+
   it('an unhandled crash returns a generic 500 without the message or stack', async () => {
     const app = server(UPSTREAM);
     app.get('/v1/boom', async () => {
