@@ -12,12 +12,18 @@ commits, PRs and issue comments in English.
 
 ## 1. Pick and read
 
-- **No argument:** take the first open, unassigned issue in the earliest open milestone whose "Depends on" issues are
-  all closed. Prefer `never-cut`, then `security`, then the rest; `cut-N` last. Say which one and why in one line, then
-  go on.
-- `gh issue view <N> --comments`. The "Done when" list is the acceptance criteria; comments may change them. The
-  "Testing" list is the manual QA: steps a person does and what they see, each tagged `[local]`, `[local, owner]`,
-  `[live]`, `[live, owner]` or `[owner]` (meaning and how to run locally: `docs/TESTING.md`).
+- **No argument:** the order lives in each milestone's description, line `Order: #a → #b → …`
+  (`gh api 'repos/{owner}/{repo}/milestones?state=open' --jq '.[] | .title, .description'`; milestones M1 → M4). Take
+  the first issue in that order that is open, unassigned, and whose "Depends on" issues are all closed. M3 may run in
+  parallel with M2 when "Conflicts with" allows it. Say which one and why in one line, then go on.
+- `gh issue view <N> --comments`. The body follows `.github/ISSUE_TEMPLATE/task.md`: Why, Goal, Scope (in / out),
+  Done when, How to verify, Docs, Depends on / Blocks / Conflicts with, Size, Agent notes. "Done when" is the
+  acceptance criteria; comments may change them. "Scope → Out" is a hard limit: work there belongs to the named issue.
+  "Testing" is the manual QA: steps a person does and what they see, each tagged `[local]`, `[local, owner]`,
+  `[live]`, `[live, owner]` or `[owner]` (meaning and how to run locally: `docs/TESTING.md`). "Agent notes" are
+  starting points checked when the issue was written; re-check them against the code.
+- **Body not in the template shape** (a section missing or empty): fill it from the code and the plan, confirm it in
+  the grill, and `gh issue edit` before planning.
 - **Blocked:** if an issue in "Depends on" is still open, stop and say what blocks it and what could be done instead.
 - **`ops` issue:** never do the human part (buying, accounts, keys, wallets, deposits, posting). If there is
   repo-side preparation, run the steps below for that part only and comment the exact owner steps on the issue. If
@@ -103,6 +109,6 @@ commits, PRs and issue comments in English.
   `[live, owner]` / `[owner]` steps still open.
 - Merge does not deploy. If the issue has `[live]` steps, say "needs a deploy: run `/deploy`"; the `deploy` skill
   runs and ticks the `[live]` steps after deploying.
-- New work found on the way becomes a new issue (template: Goal / Done when / Testing / README / Depends on) in the right
-  milestone with labels; never scope creep in this PR.
+- New work found on the way becomes a new issue (template: `.github/ISSUE_TEMPLATE/task.md`) in the right milestone
+  with labels, and is added to that milestone's `Order:` line at the right place; never scope creep in this PR.
 - Tell the owner: the PR link, whether a deploy is needed, their remaining `owner` steps, what comes next.

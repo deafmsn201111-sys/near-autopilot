@@ -149,3 +149,17 @@ our code), a proof-forwarding case in `account-cache.test.ts`.
 
 **Tests run:** `pnpm verify` (green); new `tool-loop.test.ts`, `ai-analysis.test.ts` (scripted fake LLM),
 `analysis-endpoint.test.ts`, `analysis-route.test.ts`, `AnthropicToolLlm` and `exactAmount` cases.
+
+## 2026-11-11 — Backlog review: template, milestones M1–M4, rewritten issues
+
+**Why:** issues were vague; work found mid-task turned into ad-hoc issues or scope creep, and the Day 1–4 milestones
+no longer said what comes first.
+
+- Issue template `.github/ISSUE_TEMPLATE/task.md` (Why, Goal, Scope in/out, Done when, How to verify, Docs,
+  Depends on / Blocks / Conflicts with, Size, Agent notes). All 37 open issues rewritten to it after a code audit.
+- Milestones M1 Safe to open → M2 Demo works → M3 Full scope → M4 Submission replace Day 2–4; the order of work is
+  the `Order:` line in each milestone's description, which `/ticket` reads.
+- New issues #67–#76 (AI ranking reset, backups/uptime, cross-token unwind, demo decision, docs refresh, LLM on
+  production, full portfolio read, home for judges, live/owner carry-over, positioning). #28 merged into #27.
+- `HACKATHON_PLAN.md`: schedule and cut order follow the milestones; decisions updated (model allowlist and cap
+  fallback, presets without min APR, 1Click chains / optional JWT / status by deposit address, `ADMIN_API_TOKEN`).
