@@ -25,6 +25,8 @@ to the owner in Russian, short. Never print, cat or copy `.env` anywhere except 
 
 - Current deploy dir on the server: `ssh near-autopilot docker compose ls --format json` → the `ConfigFiles` path of
   project `near-autopilot-public`; its directory is `OLD`. Deployed commit: `ssh near-autopilot cat OLD/VERSION`.
+- Site URL: `SITE` = `https://` + the first entry of `SITE_ADDRESS` (`ssh near-autopilot grep ^SITE_ADDRESS= OLD/.env`;
+  the only line of `.env` you may read). Used by the checks below.
 - Same commit as `HEAD` → say "already deployed" and stop.
 - Show `git log --oneline <deployed>..HEAD` in one block, then go on.
 
@@ -52,13 +54,25 @@ the kept database. The compose project name is fixed, so the database volume car
 ## 5. Check — roll back on failure
 
 - Within 5 minutes `docker compose ps` in the new dir shows every service `healthy`.
-- `curl -fsS -o /dev/null -w '%{http_code}' https://near-autopilot.tech` is `200`.
+- `curl -fsS -o /dev/null -w '%{http_code}' $SITE` is `200`.
 - Failure: roll back with `ssh near-autopilot 'cd OLD && ./setup.sh'` (it reloads the old images), show the failing
   service's last 50 log lines (`docker compose logs --tail 50 <service>`), and stop.
 - Success: keep `OLD` for rollback; delete older `near-autopilot-public-*` dirs and all `*.tar.gz` on the server, and
   `deploy/public/dist/*` locally.
 
-## 6. Live Testing steps
+## 6. Smoke
+
+On `$SITE`, no wallet, with `claude-in-chrome`; screenshot each:
+
+- The home page opens, shows data, and the Console has no errors (CSP included).
+- The $5k demo portfolio shows holdings and an "updated" time from the last 30 minutes.
+- "Let the agent do it" on a demo recommendation opens "Exactly what you would sign" with transactions.
+- `curl -sI $SITE` has `Strict-Transport-Security`; `curl -s -o /dev/null -w '%{http_code}' $SITE/admin` is `404`.
+
+A failure here (health was fine) does not roll back by itself: report it with the screenshot and ask the owner
+whether to roll back. Always list for the owner: "connect a wallet with HOT on `$SITE`, the portfolio loads".
+
+## 7. Live Testing steps
 
 - Find closed issues with unticked live steps: `gh issue list --state closed --limit 50 --json number,body` and keep
   those whose body has `- [ ] [live`.
@@ -66,7 +80,7 @@ the kept database. The compose project name is fixed, so the database volume car
   `gh issue edit`. A failing step becomes a new `bug` issue linked to the original.
 - `[live, owner]` steps: list them for the owner by issue.
 
-## 7. Report
+## 8. Report
 
-Deployed commit, what changed (one line per merged PR), health result, `[live]` steps passed / failed, and the
+Deployed commit, what changed (one line per merged PR), health and smoke results, `[live]` steps passed / failed, and the
 `[live, owner]` steps left for the owner.
