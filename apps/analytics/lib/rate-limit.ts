@@ -1,8 +1,11 @@
 import 'server-only';
+import { BoundedMap } from '@near-autopilot/core';
 import { headers } from 'next/headers';
 
-// ponytail: never evicts keys; bounding the map is #11
-const hits = new Map<string, number[]>();
+// Every take() re-sets its key, so the busy `kind:*` keys stay; only long-idle visitors drop out (their count resets).
+export const MAX_TRACKED_KEYS = 10_000;
+const hits = new BoundedMap<string, number[]>(MAX_TRACKED_KEYS);
+export const trackedKeys = () => hits.size;
 
 function take(key: string, limit: number, windowMs: number, now: number): boolean {
   const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);

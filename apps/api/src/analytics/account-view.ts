@@ -1,5 +1,6 @@
 import {
   accountIdSchema,
+  BoundedMap,
   MissingPriceError,
   PreconditionError,
   UnsupportedIntentError,
@@ -460,7 +461,7 @@ export function registerAccountView(
       expectedOracleId: accountIdSchema.parse('priceoracle.near'),
     },
   );
-  const cache = new Map<string, { at: number; body: unknown }>();
+  const cache = new BoundedMap<string, { at: number; body: unknown }>(500);
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
