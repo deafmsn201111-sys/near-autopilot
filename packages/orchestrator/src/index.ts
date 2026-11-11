@@ -15,3 +15,4 @@ export * from './agents/liquidation-guardian';
 export * from './agents/capital-allocator';
 export * from './agents/lp-optimizer';
 export * from './agents/llm-agent';
+export * from './tool-loop';

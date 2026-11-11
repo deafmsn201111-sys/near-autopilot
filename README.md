@@ -174,6 +174,28 @@ Agent output is strictly schema-validated, then a pure decision engine ranks can
 the same policy engine and executor as the legacy path. Every proposal, policy decision and execution result is stored
 in Postgres and visible on the site.
 
+### Architecture C: the central LLM on a connected wallet
+
+**Run AI analysis** on a connected wallet calls `POST /v1/analytics/account/:id/analysis`. The server reads a fresh
+Burrow snapshot of that wallet (balances and loan, priced with the same confirmed prices as the portfolio table) and
+gives the central LLM five tools:
+
+| Tool                      | What runs                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6               |
+| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate |
+| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices      |
+| `portfolio_concentration` | Wallet check: share of the portfolio in one token                                                    |
+| `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                        |
+
+The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
+transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
+by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
+turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
+**AI-ranked**. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
+amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
+needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
+
 ## Repository layout
 
 ```
@@ -263,6 +285,7 @@ $5,000) are simulated and labelled as such.
 
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
+  **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
 - **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
   site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs
   money per run) is only for a visitor who signs a short NEP-413 message in the wallet. It is not a transaction:
@@ -297,7 +320,7 @@ costs), or why the autopilot would not do it.
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
 | Wallet connection and signing                                                       | HOT Connector; unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)                          |
 | Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
-| AI assistant                                                                        | **Not implemented.** Planned, see [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md)                                                               |
+| AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and two wallet checks as tools (architecture C above); rule-based fallback, labelled    |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 
@@ -421,7 +444,8 @@ mainnet contract defaults are built in.
 
 The analytics API (`apps/api/src/analytics`). All `/v1/*` routes require `Authorization: Bearer <API_TOKEN>`; the site
 calls them from its server, so the token never reaches the browser. Every route is read-only (`GET /v1/analytics/*`)
-except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it with `validateCascade`.
+except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it with `validateCascade`, and
+`POST /v1/analytics/account/:id/analysis`, which runs the LLM analysis (reads only; it builds no transaction).
 
 ## Honest limitations
 

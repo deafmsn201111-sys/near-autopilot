@@ -4,7 +4,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 
 ## Honest limitations (not bugs, by design today)
 
-- **No LLM reasoning.** Agents are deterministic heuristics; `LlmAgent` is an unimplemented placeholder. No "AI confidence" exists.
+- **LLM only ranks and explains.** On a connected wallet the central LLM calls the deterministic agents as tools (architecture C, D13); it computes nothing. `LlmAgent` (an LLM as a proposal agent) is still not wired. No "AI confidence" exists.
+- **LLM analysis has no ownership check or spend cap yet.** Until #20 (NEP-413) and #21 (daily spend cap) are merged, `ANTHROPIC_API_KEY` stays off the public server.
 - **No autonomous execution.** `loadSigner()` is null; dry-run only. Mainnet execution requires the (unbuilt) Guard contract + review.
 - **Owner-signs path is branch-only.** `feat/mainnet-wallet-confirm` is local, never pushed/merged.
 - **Single-operator model.** No per-user accounts/policies/sessions yet.

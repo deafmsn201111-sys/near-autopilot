@@ -1,53 +1,17 @@
-import { randomBytes } from 'node:crypto';
 import { KeyPairEd25519 } from '@near-js/crypto';
 import { baseEncode } from '@near-js/utils';
-import { serialize } from 'borsh';
 import { describe, expect, it } from 'vitest';
-import {
-  OWNERSHIP_RECIPIENT,
-  OWNERSHIP_TTL_MS,
-  ownershipMessage,
-  ownershipNonce,
-} from '@near-autopilot/core/ownership';
+import { OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
 import { verifyOwnership } from '../src/wallet/ownership';
-
-const NEP413_TAG = 2 ** 31 + 413;
-const payloadSchema = {
-  struct: {
-    message: 'string',
-    nonce: { array: { type: 'u8', len: 32 } },
-    recipient: 'string',
-    callbackUrl: { option: 'string' },
-  },
-} as const;
+import { signOwnership } from './support/nep413';
 
 const NOW = Date.UTC(2026, 10, 11, 12);
 const key = KeyPairEd25519.fromRandom();
 const owner = 'alice.near';
 
-/** Signs exactly as a NEP-413 wallet does, with near-js + borsh, independent of the code under test. */
-async function sign(
+const sign = (
   over: Partial<{ message: string; recipient: string; at: number; signer: KeyPairEd25519 }> = {},
-) {
-  const signer = over.signer ?? key;
-  const nonce = ownershipNonce(over.at ?? NOW, randomBytes(24));
-  const payload = serialize(payloadSchema, {
-    message: over.message ?? ownershipMessage(owner),
-    nonce: Array.from(nonce),
-    recipient: over.recipient ?? OWNERSHIP_RECIPIENT,
-    callbackUrl: null,
-  });
-  const tag = serialize('u32', NEP413_TAG);
-  const hash = new Uint8Array(
-    await crypto.subtle.digest('SHA-256', new Uint8Array([...tag, ...payload])),
-  );
-  return {
-    accountId: owner,
-    publicKey: signer.getPublicKey().toString(),
-    signature: Buffer.from(signer.sign(hash).signature).toString('base64'),
-    nonce: Buffer.from(nonce).toString('base64'),
-  };
-}
+) => signOwnership({ account: owner, signer: key, at: NOW, ...over });
 
 const fullAccess = new Map([[owner, key.getPublicKey().toString()]]);
 const deps = {

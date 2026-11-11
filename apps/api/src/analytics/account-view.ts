@@ -10,6 +10,8 @@ import {
 } from '@near-autopilot/core';
 import {
   BurrowClient,
+  BurrowLendingReader,
+  BurrowPriceOracle,
   BurrowVerifier,
   buildBorrow,
   buildBurrowStorageDeposit,
@@ -17,7 +19,7 @@ import {
   buildSupply,
   buildWithdraw,
 } from '@near-autopilot/burrow-adapter';
-import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
+import { exactAmount, resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
 import { buildUnwrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
@@ -30,7 +32,17 @@ import {
   NearTokenReader,
   type NearRpcClient,
 } from '@near-autopilot/near-adapter';
-import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
+import {
+  assessRisk,
+  orchestratorConfigSchema,
+  type AgentObservation,
+  type ToolLlm,
+} from '@near-autopilot/orchestrator';
+import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
+import { parseDecimal, toUnitPrice } from '../market-data/decimal';
+import { SnapshotService } from '../services/snapshot';
+import { toWad } from '../yield/math';
+import { analyseAccount, walletAgentConfig } from './ai-analysis';
 import {
   RheaPoolReader,
   RheaSwapQuoter,
@@ -69,6 +81,8 @@ export interface MainnetReadDeps {
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
   /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
   readonly dclId?: AccountId | null;
+  /** The central LLM for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
+  readonly llm?: ToolLlm | null;
 }
 
 interface DclPositionView {
@@ -259,6 +273,9 @@ async function readDclPositions(
 
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
+const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
+/** `valueAccount` lists native NEAR under this pseudo token; the snapshot reads it as `nativeBalance`. */
+const NATIVE_HOLDING = 'near';
 
 const ORCH = orchestratorConfigSchema.parse({});
 const GAS = ORCH.swap.estimatedGasUsd;
@@ -325,8 +342,13 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
 
 export type RecommendationIntent =
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
-  | { readonly action: 'repay'; readonly token: string; readonly approxUsd: number }
-  | { readonly action: 'supply'; readonly token: string; readonly approxUsd: number }
+  | {
+      readonly action: 'repay' | 'supply';
+      readonly token: string;
+      readonly approxUsd: number;
+      /** Exact amount in token base units when an orchestrator agent sized it; prepare uses it as is (capped). */
+      readonly amount?: string;
+    }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
 
 export interface PortfolioRecommendation {
@@ -428,6 +450,13 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
   return recs;
 }
 
+/** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
+interface AccountBody {
+  readonly recommendations: readonly PortfolioRecommendation[];
+  readonly holdings: readonly { readonly token: string }[];
+  readonly [field: string]: unknown;
+}
+
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
@@ -465,10 +494,13 @@ export function registerAccountView(
     {
       network: 'mainnet',
       contractId: deps.burrowId,
-      expectedOracleId: accountIdSchema.parse('priceoracle.near'),
+      expectedOracleId: ORACLE_ID,
     },
   );
-  const cache = new BoundedMap<string, { at: number; body: object }>(ACCOUNT_CACHE_MAX);
+  const cache = new BoundedMap<string, { at: number; body: AccountBody }>(ACCOUNT_CACHE_MAX);
+  const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
+  const lending = new BurrowLendingReader(viewer, burrowOptions);
+  const burrowOracle = new BurrowPriceOracle(viewer, burrowOptions);
   const accessKeys = new NearChainContextProvider(deps.rpc);
   const ownership = {
     now: () => Date.now(),
@@ -509,15 +541,14 @@ export function registerAccountView(
     return out;
   };
 
-  app.get('/v1/analytics/account/:id', async (req, reply) => {
-    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
-    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
-    const id = parsed.data;
-    // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
-    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], id);
+  const readAccount = async (
+    id: AccountId,
+    log: FastifyRequest['log'],
+  ): Promise<
+    { status: 200; body: AccountBody } | { status: 404 | 502; body: { error: string } }
+  > => {
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS)
-      return { ...hit.body, ownerVerified: await ownerVerified };
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, body: hit.body };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -526,9 +557,9 @@ export function registerAccountView(
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/does not exist|UNKNOWN_ACCOUNT/i.test(msg))
-        return reply.code(404).send({ error: `account ${id} does not exist on NEAR mainnet` });
-      req.log.error({ err: e, account: id }, 'account read failed');
-      return reply.code(502).send({ error: 'could not read the account from NEAR right now' });
+        return { status: 404, body: { error: `account ${id} does not exist on NEAR mainnet` } };
+      log.error({ err: e, account: id }, 'account read failed');
+      return { status: 502, body: { error: 'could not read the account from NEAR right now' } };
     }
     const [assets, markets, meta, prices, account] = await Promise.all([
       burrow.listAssets(),
@@ -898,7 +929,115 @@ export function registerAccountView(
       actions,
     };
     cache.set(id, { at: Date.now(), body });
-    return { ...body, ownerVerified: await ownerVerified };
+    return { status: 200, body };
+  };
+
+  app.get('/v1/analytics/account/:id', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
+    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
+    const out = await readAccount(parsed.data, req.log);
+    if (out.status !== 200) return reply.code(out.status).send(out.body);
+    return { ...out.body, ownerVerified: await ownerVerified };
+  });
+
+  /**
+   * What the orchestrator agents see for this wallet: a fresh Burrow snapshot priced with the same confirmed collector
+   * prices as the account view (so the agents' numbers match the portfolio table), today's Burrow supply rates as the
+   * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
+   * recent price). The context is as old as the collector snapshot it was priced from.
+   */
+  const observe = async (id: AccountId, held: readonly TokenId[]): Promise<AgentObservation> => {
+    const [markets, meta, prices, collected] = await Promise.all([
+      store.markets(),
+      store.tokenMetadata(),
+      latestPrices(),
+      store.latestSnapshot(),
+    ]);
+    const decimalsOf = (t: string) => meta.find((x) => x.token === t)?.decimals;
+    const unitPrice = (usd: number | undefined, decimals: number | undefined) => {
+      const d = usd !== undefined ? parseDecimal(String(usd)) : null;
+      return d && d.mantissa > 0n && decimals !== undefined ? toUnitPrice(d, decimals) : null;
+    };
+    const pricedAt = collected?.takenAt ?? clock.now();
+    const collectorOracle: PriceOracle = {
+      getPrices: async (wanted) => {
+        const out = new Map<TokenId, UnitPrice>();
+        for (const t of wanted) {
+          const p = unitPrice(prices.get(t), decimalsOf(t));
+          if (p) out.set(t, p);
+        }
+        return { prices: out, asOf: pricedAt };
+      },
+    };
+    const snapshot = await new SnapshotService({
+      accountId: id,
+      trackedTokens: held,
+      native,
+      tokens: {
+        getBalance: (t, a) => tokens.getBalance(t, a).catch(() => 0n),
+        getMetadata: async (t) => {
+          const m = meta.find((x) => x.token === t);
+          return m ? { id: t, symbol: m.symbol, decimals: m.decimals } : tokens.getMetadata(t);
+        },
+        isStorageRegistered: (t, a) => tokens.isStorageRegistered(t, a),
+      },
+      lending,
+      oracle: collectorOracle,
+      clock,
+    }).take();
+    const priced = [...snapshot.prices.keys()];
+    const config = walletAgentConfig(priced);
+    const estimatedYieldWad = new Map<TokenId, bigint>();
+    for (const token of priced) {
+      const m = markets.find((x) => x.token === token)?.latest as
+        (LoopMarket & { status?: string }) | undefined;
+      const apr = m?.status === 'OK' ? parseDecimal(m.netSupplyApr ?? m.supplyApr ?? '') : null;
+      if (apr && apr.mantissa > 0n) estimatedYieldWad.set(token, toWad(apr));
+    }
+    const reference = await burrowOracle
+      .getPrices(priced)
+      .catch(() => ({ prices: new Map<TokenId, UnitPrice>() }));
+    return {
+      now: clock.now(),
+      accountId: id,
+      snapshot,
+      market: {
+        asOf: pricedAt,
+        estimatedYieldWad,
+        referencePrices: reference.prices,
+        volatility24hBps: new Map(),
+        lpPositions: [],
+      },
+      risk: assessRisk(snapshot, config),
+      config,
+    };
+  };
+
+  /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
+  app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
+    const view = await readAccount(parsed.data, req.log);
+    if (view.status !== 200) return reply.code(view.status).send(view.body);
+    return analyseAccount(
+      deps.llm ?? null,
+      {
+        observe: () =>
+          observe(parsed.data, [
+            ...new Set(
+              view.body.holdings
+                .filter((h) => h.token !== NATIVE_HOLDING)
+                .map((h) => accountIdSchema.parse(h.token)),
+            ),
+          ]),
+        heuristics: view.body.recommendations,
+        ownerVerified: await ownerVerified,
+      },
+      (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
+    );
   });
 
   /**
@@ -909,12 +1048,16 @@ export function registerAccountView(
   app.post('/v1/wallet/prepare', async (req, reply) => {
     const usd = z.number().positive().max(1_000_000);
     const slip = z.number().int().min(1).max(1_000).default(50);
+    const amount = z
+      .string()
+      .regex(/^[1-9]\d{0,38}$/)
+      .optional(); // kept a string: the intent is echoed in the JSON reply
     const parsed = z
       .object({
         account: accountIdSchema,
         intent: z.discriminatedUnion('action', [
-          z.object({ action: z.literal('supply'), token: accountIdSchema, approxUsd: usd }),
-          z.object({ action: z.literal('repay'), token: accountIdSchema, approxUsd: usd }),
+          z.object({ action: z.literal('supply'), token: accountIdSchema, approxUsd: usd, amount }),
+          z.object({ action: z.literal('repay'), token: accountIdSchema, approxUsd: usd, amount }),
           z.object({
             action: z.literal('swap'),
             token: accountIdSchema,
@@ -1343,12 +1486,11 @@ export function registerAccountView(
       const isWrapSwap = intent.action === 'swap' && intent.token === WRAP_NEAR_ID;
       if (walletHuman <= 0 && !isWrapSwap)
         return reply.code(409).send({ error: `your wallet holds no ${sym}` });
-      const { rawAmount, humanAmount } = resolveIntentAmount(
-        intent.approxUsd,
-        price,
-        decimals,
-        walletHuman,
-      );
+      const exact = 'amount' in intent ? intent.amount : undefined;
+      const { rawAmount, humanAmount } =
+        exact !== undefined
+          ? exactAmount(BigInt(exact), walletRaw, decimals)
+          : resolveIntentAmount(intent.approxUsd, price, decimals, walletHuman);
       if (rawAmount <= 0n && !isWrapSwap)
         return reply.code(409).send({ error: 'the resolved amount is zero' });
       const human = humanAmount.toFixed(Math.min(6, decimals));

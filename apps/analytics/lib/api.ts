@@ -57,6 +57,8 @@ export async function tryApi<T>(
 export async function apiPost(
   path: string,
   body?: unknown,
+  timeoutMs = 20_000,
+  extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const env = getEnv();
   try {
@@ -64,11 +66,12 @@ export async function apiPost(
       method: 'POST',
       cache: 'no-store',
       headers: {
+        ...extraHeaders,
         authorization: `Bearer ${env.API_TOKEN}`,
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? null : JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { status: res.status, body: json };

@@ -299,16 +299,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <OwnershipCheck account={accountParam} verified={recs.ownerVerified === true} />
       )}
 
-      {isAccount && recs && recs.recommendations.length > 0 && (
+      {isAccount && recs && (
         <section className="block">
-          <div className="block-head">
-            <h2>What the agents suggest</h2>
-            <span className="muted-note">
-              {recs.recommendations.length}{' '}
-              {recs.recommendations.length === 1 ? 'action' : 'actions'} worth your attention
-            </span>
-          </div>
           <Recommendations
+            key={accountParam}
             account={accountParam}
             recommendations={recs.recommendations}
             signingEnabled={signingEnabled}

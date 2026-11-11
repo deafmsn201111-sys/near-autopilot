@@ -80,6 +80,7 @@ export type PrepareRequestIntent =
       readonly action: 'supply' | 'repay' | 'borrow' | 'withdraw' | 'unwrap';
       readonly token: string;
       readonly approxUsd: number;
+      readonly amount?: string;
     }
   | { readonly action: 'unwrap'; readonly approxUsd: number }
   | {

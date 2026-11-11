@@ -28,6 +28,45 @@ export interface LlmClient {
   complete(prompt: string): Promise<string>;
 }
 
+export interface LlmToolSpec {
+  readonly name: string;
+  readonly description: string;
+  /** JSON Schema of the tool's input object. */
+  readonly inputSchema: Record<string, unknown>;
+}
+
+export interface ToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+export interface ToolResult {
+  readonly id: string;
+  readonly content: string;
+  readonly isError: boolean;
+}
+
+export type LlmToolTurn =
+  | { readonly kind: 'tool_calls'; readonly calls: readonly ToolCall[] }
+  | { readonly kind: 'final'; readonly text: string };
+
+/** One conversation. The first `send` passes null; every later one answers the previous turn's tool calls. */
+export interface ToolChat {
+  send(results: readonly ToolResult[] | null): Promise<LlmToolTurn>;
+}
+
+/** A model that can call tools. It only ever sees tool OUTPUT; the tools themselves run in our process. */
+export interface ToolLlm {
+  open(request: {
+    readonly system: string;
+    readonly prompt: string;
+    readonly tools: readonly LlmToolSpec[];
+    /** Aborts the model call in flight. */
+    readonly signal?: AbortSignal;
+  }): ToolChat;
+}
+
 /* ------------------------------ data ------------------------------ */
 
 export interface SnapshotProvider {

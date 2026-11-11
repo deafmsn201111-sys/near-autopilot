@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { resolveBalancedLpAmounts, resolveIntentAmount, toRawUnits } from '../src/wallet/amounts';
+import {
+  exactAmount,
+  resolveBalancedLpAmounts,
+  resolveIntentAmount,
+  toRawUnits,
+} from '../src/wallet/amounts';
 
 describe('toRawUnits', () => {
   it('scales by decimals and floors (never rounds up)', () => {
@@ -79,5 +84,21 @@ describe('resolveBalancedLpAmounts', () => {
     expect(() => resolveBalancedLpAmounts({ ...base, budgetUsd: 100, price1Usd: 0 })).toThrow(
       RangeError,
     );
+  });
+});
+
+describe('exactAmount', () => {
+  it('uses the agent-sized amount as is when the wallet holds it', () => {
+    expect(exactAmount(1_500_000n, 2_000_000n, 6)).toEqual({
+      rawAmount: 1_500_000n,
+      humanAmount: 1.5,
+    });
+  });
+
+  it('never spends more than the wallet holds', () => {
+    expect(exactAmount(5_000_000n, 2_000_000n, 6)).toEqual({
+      rawAmount: 2_000_000n,
+      humanAmount: 2,
+    });
   });
 });
