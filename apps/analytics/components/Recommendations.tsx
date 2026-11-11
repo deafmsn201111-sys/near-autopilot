@@ -24,7 +24,10 @@ export function Recommendations({
   const [error, setError] = useState<string | null>(null);
   const recommendations = analysis?.recommendations ?? initial;
 
-  useEffect(() => setAnalysis(null), [initial]);
+  // The page re-reads every 20 s with a new array; drop the AI result only when the cards themselves change (ids and
+  // headline numbers, e.g. after a signed transaction), not on every refresh.
+  const signature = initial.map((r) => `${r.id}:${r.title}`).join('|');
+  useEffect(() => setAnalysis(null), [signature]);
 
   async function analyse() {
     setRunning(true);
