@@ -440,6 +440,7 @@ export async function analyseAccount(
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return early(hit.analysis);
   if (!(await affordable(worstCall))) return early(fallback('cap'));
+  if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));
 
   // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per

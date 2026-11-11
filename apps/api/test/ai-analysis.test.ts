@@ -611,6 +611,21 @@ describe('analyseAccount', () => {
       expect(l.rows).toHaveLength(1);
     });
 
+    it('does not take a slot for a run the deadline ends before the model', async () => {
+      const memo = analysisMemo(1);
+      const slow = ledger();
+      const deps = {
+        ...ai(fake([() => final([])]).llm, {
+          ...slow,
+          remainingTodayMicro: () => new Promise<bigint>((r) => setTimeout(() => r(10n ** 9n), 40)),
+        }),
+        memo,
+      };
+      const out = await analyseAccount(deps, { ...ctx, heuristics: [heuristic] }, () => {}, 20);
+      expect(out.fallback).toBe('deadline');
+      expect(memo.runs).toEqual([]);
+    });
+
     it('counts only runs that reach the model against the global limit', async () => {
       const memo = analysisMemo(2);
       const deps = { ...ai(ranked().llm), memo };

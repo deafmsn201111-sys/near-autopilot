@@ -156,7 +156,9 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
 - AI results are cached in the analytics API for 10 minutes, at most 200 entries (`BoundedMap`, in memory): key =
   sha256 of the observation the agents get (dates dropped, maps sorted), the rule-based list and the strategy preset
   (`default` until #25). Only `source: 'llm'` results are cached; a hit makes no model call and writes no `llm_calls`
-  row, and is only served after the ownership check. A hit still costs the snapshot read.
+  row, and is only served after the ownership check. A hit still costs the snapshot read. Amounts, prices and rates
+  count by their 4 leading digits, so interest accrued between two clicks still hits; a cached repay amount can then
+  be up to ~0.1% short of the debt (a little dust left), accepted.
 - Only the proven owner (D12) gets a model call: without a valid `x-ownership-proof` the endpoint returns the rule-based list with "Verify ownership…". `ANTHROPIC_API_KEY` stays off the public server until #21 (spend cap) is merged.
   **Consequences:** An analysis costs one snapshot read (about 2 RPC calls per Burrow token) plus up to 6 model calls (`MAX_TURNS`).
   With the key unset the route is free and returns the rule-based list.
