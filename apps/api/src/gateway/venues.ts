@@ -1,4 +1,9 @@
-import { errorMessage, type AccountId, type ContractViewer } from '@near-autopilot/core';
+import {
+  errorMessage,
+  type AccountId,
+  type ContractViewer,
+  type Logger,
+} from '@near-autopilot/core';
 import {
   DEFAULT_SWAP_GAS,
   RheaSwapQuoter,
@@ -7,6 +12,7 @@ import {
 } from '@near-autopilot/rhea-adapter';
 import { z } from 'zod';
 import type { RouteRequest, VenueId, VenueQuote } from './best-execution';
+import { failureKind } from '../public-text';
 import type { OneClickClient } from './one-click';
 
 /** What every venue is asked: the trade, the account it is for, the slippage tolerance and the gas price to cost it. */
@@ -38,6 +44,7 @@ export class RheaVenue implements Venue {
   constructor(
     private readonly viewer: ContractViewer,
     private readonly o: { readonly contractId: AccountId; readonly pools: PoolRegistry },
+    private readonly logger?: Logger,
   ) {}
 
   async quote(r: VenueRequest): Promise<VenueQuote> {
@@ -81,11 +88,12 @@ export class RheaVenue implements Venue {
         detail: 'get_return view at final; pool fee included',
       };
     } catch (e) {
+      this.logger?.warn('venue quote failed', { venue: this.id, error: errorMessage(e) });
       return {
         venue: this.id,
         ok: false,
         quotedAt: r.now(),
-        reason: `quote failed: ${errorMessage(e)}`,
+        reason: `quote failed: ${failureKind(e)}`,
       };
     }
   }
@@ -94,7 +102,10 @@ export class RheaVenue implements Venue {
 /** NEAR Intents via 1Click, dry quotes only (see one-click.ts). */
 export class OneClickVenue implements Venue {
   readonly id = 'near-intents-1click' as const;
-  constructor(private readonly client: OneClickClient) {}
+  constructor(
+    private readonly client: OneClickClient,
+    private readonly logger?: Logger,
+  ) {}
 
   async quote(r: VenueRequest): Promise<VenueQuote> {
     try {
@@ -119,11 +130,12 @@ export class OneClickVenue implements Venue {
         detail: `dry quote, no deposit address; app fee ${q.appFeeBps} bps included; est. ${q.timeEstimateSeconds}s to settle`,
       };
     } catch (e) {
+      this.logger?.warn('venue quote failed', { venue: this.id, error: errorMessage(e) });
       return {
         venue: this.id,
         ok: false,
         quotedAt: r.now(),
-        reason: `quote failed: ${errorMessage(e)}`,
+        reason: `quote failed: ${failureKind(e)}`,
       };
     }
   }

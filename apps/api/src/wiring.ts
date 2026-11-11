@@ -209,10 +209,14 @@ export async function wire(
   // quotes the venues and records the best execution. The server never signs: there is no signer on any path.
   const quotesMainnet = mainnetViewer !== null;
   const venues: Venue[] = [
-    new RheaVenue(mainnetViewer ?? viewer, {
-      contractId: env.RHEA_CONTRACT_ID,
-      pools: new StaticPoolRegistry(config.rhea.pools),
-    }),
+    new RheaVenue(
+      mainnetViewer ?? viewer,
+      {
+        contractId: env.RHEA_CONTRACT_ID,
+        pools: new StaticPoolRegistry(config.rhea.pools),
+      },
+      logger,
+    ),
   ];
   // 1Click knows mainnet tokens only: quoted when the trade is priced on mainnet market data (shadow).
   if (quotesMainnet && env.MARKET_DATA === 'mainnet-live' && env.ONE_CLICK_URL !== '')
@@ -227,6 +231,7 @@ export async function wire(
           }),
           baseUrl: env.ONE_CLICK_URL,
         }),
+        logger,
       ),
     );
   const gasRpc = mainnetRead ?? shared?.rpc ?? rpc;

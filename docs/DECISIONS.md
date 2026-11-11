@@ -107,7 +107,9 @@ limit in about 7 minutes, because the 15 s auto-refresh re-read the account on e
 `img-src` allow any `https:` because wallets in HOT Connector's iframe inherit the policy and call their own backends.
 Errors: invalid input (zod, Fastify's own 4xx) is a 400 with its reason; a prepare our code refuses (`RangeError`,
 `MissingPriceError`, `PreconditionError`, `UnsupportedIntentError`) is a 422 with its reason; everything else is a
-bare 500/502, details only in the log.
+bare 500/502, details only in the log. Stored reasons are fixed phrases too: collector, route and price failures are
+written as `<kind>` (`RpcError` / `MarketHttpError` kind, HTTP status, else `unknown error`) and served through
+`apps/api/src/public-text.ts`, which also cleans rows written before (#48).
 **Consequences:** Every page renders dynamically (nonce). A new inline script needs the nonce from `headers()`.
 
 ## D12 — NEP-413 ownership proof gates the LLM analysis
