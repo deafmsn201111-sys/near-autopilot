@@ -454,6 +454,7 @@ export function registerAccountView(
   });
   const dcl = deps.dclId ? new RheaDclClient(viewer, { contractId: deps.dclId }) : null;
   const poolReader = new RheaPoolReader(viewer, deps.rheaId);
+  const allowedPools: ReadonlySet<number> = new Set(deps.pools.map((p) => p.poolId));
   const clock = { now: () => new Date() };
   // Burrow transactions are only built from proofs this verifier mints (chain id, deployed code, oracle, listing).
   const burrowVerifier = new BurrowVerifier(
@@ -922,7 +923,6 @@ export function registerAccountView(
     // add_liquidity — balanced ("50/50") deposit into a Rhea v1 SIMPLE_POOL. Handled on its own: it sizes two
     // tokens at the pool's reserve ratio, so nothing is stranded, and assembles register? -> deposit x2 -> add.
     if (intent.action === 'add_liquidity') {
-      const allowedPools = new Set(deps.pools.map((p) => p.poolId));
       if (!allowedPools.has(intent.poolId))
         return reply.code(409).send({ error: `pool ${intent.poolId} is not allowlisted` });
       const token0 = intent.token;
