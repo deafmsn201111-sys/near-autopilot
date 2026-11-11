@@ -66,7 +66,7 @@ table · #33 admin funnel + LLM quality
 
 ### Day 4 — 14 Nov: finish
 
-#34 admin 1Click · #35 README pass · #36 judge check · #37 video **by 18:00 UTC** · #38 post + submit **by 21:00 UTC**
+#34 admin 1Click · #35 README pass · #36 judge check · #45 secrets audit of history, then make repo public · #37 video **by 18:00 UTC** · #38 post + submit **by 21:00 UTC**
 
 ## Admin screens
 
