@@ -42,7 +42,7 @@ replaced).
 
   ```bash
   ufw default deny incoming && ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable
-  ufw status numbered        # delete any other rule a hoster added, e.g. ufw delete allow 1500/tcp
+  ufw status numbered        # delete any other rule a hoster added, e.g. ufw delete allow ispmanager (1500,1501)
   ```
 
   Docker-published ports bypass ufw, so the compose file publishes nothing else: the dashboard is on
