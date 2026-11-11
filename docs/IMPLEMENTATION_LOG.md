@@ -204,3 +204,11 @@ no longer said what comes first.
   (venues, Pyth/DefiLlama/exchange observations, collector source and cycle, route probe); full text goes to the log.
 - Read side: `publicCycle`, `publicRoute`, `publicObservation` on overview, collector, system, activity, routes,
   prices and price history, so rows stored before the fix are cleaned (marker rewrite + URL/HTML/stack net).
+
+## 2026-11-12 — AI result cache and global AI limit in the API (#22)
+
+- `analysisKey` (`apps/api/src/analytics/analysis-key.ts`): sha256 of the observation without dates, the rule-based
+  list and the preset. `analyseAccount` reads the wallet first, then serves a cached `llm` result (10 min, 200
+  entries) without a model call or `llm_calls` row.
+- Global limit moved from the Next route to the API: 60 model runs per 10 minutes, fallback `busy`; the route keeps
+  5 per visitor.

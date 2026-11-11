@@ -1,5 +1,5 @@
 import type { LlmModel } from '@near-autopilot/config';
-import type { AccountId, TokenId } from '@near-autopilot/core';
+import { BoundedMap, type AccountId, type TokenId } from '@near-autopilot/core';
 import { assessLendingPosition, tokenValueUsd } from '@near-autopilot/financial-engine';
 import {
   afterRepay,
@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
+import { analysisKey } from './analysis-key';
 
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
 export const MAX_TURNS = 6;
@@ -35,14 +36,15 @@ export type FallbackCode =
   | 'off'
   | 'not_owner'
   | 'cap'
+  | 'busy'
   | 'model_error'
   | 'invalid_output'
   | 'empty'
   | 'deadline'
   | 'loop_limit';
 
-/** A run that reached the model ends in one of these; `off` and `not_owner` never reach it. */
-export type CallOutcome = 'ok' | Exclude<FallbackCode, 'off' | 'not_owner'>;
+/** A run that reached the model ends in one of these; `off`, `not_owner` and `busy` never reach it. */
+export type CallOutcome = 'ok' | Exclude<FallbackCode, 'off' | 'not_owner' | 'busy'>;
 
 /** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
 export interface LlmCallRecord {
@@ -69,6 +71,34 @@ export interface ToolLlmDeps {
   /** The reply cap the model runs with: bounds one call's output. */
   readonly maxTokens: number;
   readonly ledger: LlmLedger;
+  readonly memo: AnalysisMemo;
+}
+
+const CACHE_MAX = 200;
+const CACHE_TTL_MS = 10 * 60_000;
+const RUN_WINDOW_MS = 10 * 60_000;
+const MAX_RUNS_PER_WINDOW = 60;
+const DEFAULT_PRESET = 'default';
+
+/** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
+export interface AnalysisMemo {
+  readonly results: BoundedMap<string, { readonly at: number; readonly analysis: Analysis }>;
+  /** Start times of the runs that reached the model in the last window. */
+  readonly runs: number[];
+  readonly maxRuns: number;
+}
+
+export const analysisMemo = (maxRuns = MAX_RUNS_PER_WINDOW): AnalysisMemo => ({
+  results: new BoundedMap(CACHE_MAX),
+  runs: [],
+  maxRuns,
+});
+
+function admit(memo: AnalysisMemo, now = Date.now()): boolean {
+  while (memo.runs.length && now - memo.runs[0]! >= RUN_WINDOW_MS) memo.runs.shift();
+  if (memo.runs.length >= memo.maxRuns) return false;
+  memo.runs.push(now);
+  return true;
 }
 
 // ponytail: a fixed input bound, well above what 6 turns of these tools replay; derive it from the request size if prompts grow.
@@ -100,6 +130,7 @@ export interface AnalysisContext {
   readonly checks: readonly PortfolioRecommendation[];
   /** A NEP-413 proof from a full-access key of this account (D12): only its owner may spend a model call. */
   readonly ownerVerified: boolean;
+  readonly preset?: string;
 }
 
 export interface Analysis {
@@ -333,6 +364,7 @@ const NOTES: Record<FallbackCode, string> = {
   not_owner:
     'Verify ownership of this account to get the AI analysis; showing the rule-based list.',
   cap: 'Paused: daily AI budget reached; showing the rule-based list.',
+  busy: 'AI analysis is busy right now; showing the rule-based list. Try again in a few minutes.',
   model_error: 'AI analysis failed; showing the rule-based list.',
   invalid_output: 'AI analysis failed; showing the rule-based list.',
   empty: 'The AI ranked nothing; showing the rule-based list.',
@@ -354,7 +386,8 @@ const parseJson = (text: string): unknown => {
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
  * out. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
- * rule-based list, labelled.
+ * rule-based list, labelled. An AI result is reused for 10 minutes while the wallet state is unchanged; only runs that
+ * reach the model count against the global limit.
  */
 export async function analyseAccount(
   ai: ToolLlmDeps | null,
@@ -389,7 +422,30 @@ export async function analyseAccount(
       return false;
     }
   };
-  if (!(await affordable(worstCall))) return fallback('cap');
+
+  const abort = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      reject(new Error(`no answer within ${deadlineMs} ms`));
+    }, deadlineMs);
+  });
+  const early = (out: Analysis) => (clearTimeout(timer), out);
+
+  let obs: AgentObservation;
+  try {
+    obs = await Promise.race([ctx.observe(), deadline]);
+  } catch (e) {
+    onError(e);
+    return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
+  }
+  const key = analysisKey(obs, ctx.heuristics, ctx.preset ?? DEFAULT_PRESET);
+  const hit = ai.memo.results.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return early(hit.analysis);
+  if (!(await affordable(worstCall))) return early(fallback('cap'));
+  if (abort.signal.aborted) return early(fallback('deadline'));
+  if (!admit(ai.memo)) return early(fallback('busy'));
 
   // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
   // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
@@ -471,10 +527,8 @@ export async function analyseAccount(
     return fallback(code);
   };
 
-  const abort = new AbortController();
   const found = new Map<string, PortfolioRecommendation>();
   const run = async () => {
-    const obs = await ctx.observe();
     const tools = [
       guardianTool(obs, found),
       allocatorTool(obs, found),
@@ -503,14 +557,6 @@ export async function analyseAccount(
       signal: abort.signal,
     });
   };
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      abort.abort();
-      reject(new Error(`no answer within ${deadlineMs} ms`));
-    }, deadlineMs);
-  });
-
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
     reply = await Promise.race([run(), deadline]).finally(() => {
@@ -554,11 +600,13 @@ export async function analyseAccount(
   );
   recommendations.unshift(...missing);
   await record('ok');
-  return {
+  const analysis: Analysis = {
     source: 'llm',
     fallback: null,
     note: null,
     recommendations,
     calledTools: [...new Set(trace.map((t) => t.tool))],
   };
+  ai.memo.results.set(key, { at: Date.now(), analysis });
+  return analysis;
 }

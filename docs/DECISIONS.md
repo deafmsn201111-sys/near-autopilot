@@ -151,7 +151,16 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   wallet balance. Cascade caps and `validateCascade` are unchanged.
 - The test that banned LLM code from `apps/api/src/analytics` now allows the provider only in `analytics/main.ts`
   (wiring); the collector stays LLM-free, and the no-signing/no-sending ban is unchanged.
-- The Next route allows 5 analyses per visitor and 60 overall per 10 minutes.
+- The Next route allows 5 analyses per visitor per 10 minutes (it alone knows the visitor) and 600 overall, the
+  account-read guard for the RPC reads. The global AI limit lives in
+  the analytics API (#22): at most 60 runs that reach the model per 10 minutes for everyone; over it the owner gets the
+  rule-based list with fallback `busy`. Rule-based answers (no proof, LLM off, cap) and cache hits never count.
+- AI results are cached in the analytics API for 10 minutes, at most 200 entries (`BoundedMap`, in memory): key =
+  sha256 of the observation the agents get (dates dropped, maps sorted), the rule-based list and the strategy preset
+  (`default` until #25). Only `source: 'llm'` results are cached; a hit makes no model call and writes no `llm_calls`
+  row, and is only served after the ownership check. A hit still costs the snapshot read. Amounts, prices and rates
+  count by their 4 leading digits, so interest accrued between two clicks still hits; a cached repay amount can then
+  be up to ~0.1% short of the debt (a little dust left), accepted.
 - Only the proven owner (D12) gets a model call: without a valid `x-ownership-proof` the endpoint returns the rule-based list with "Verify ownership…". `ANTHROPIC_API_KEY` stays off the public server until #21 (spend cap) is merged.
   **Consequences:** An analysis costs one snapshot read (about 2 RPC calls per Burrow token) plus up to 6 model calls (`MAX_TURNS`).
   With the key unset the route is free and returns the rule-based list.

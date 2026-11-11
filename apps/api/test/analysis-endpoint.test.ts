@@ -1,4 +1,5 @@
 import { KeyPairEd25519 } from '@near-js/crypto';
+import { analysisMemo } from '../src/analytics/ai-analysis';
 import { describe, expect, it } from 'vitest';
 import {
   BURROW_REQUIRED_EXPORTS,
@@ -144,6 +145,7 @@ function server(
         model: 'claude-haiku-5-5',
         maxTokens: 4096,
         ledger: { remainingTodayMicro: async () => 10n ** 9n, record: async () => {} },
+        memo: analysisMemo(),
       },
     } as never,
   });

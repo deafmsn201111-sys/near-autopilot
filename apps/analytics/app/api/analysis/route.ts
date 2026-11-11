@@ -3,7 +3,7 @@ import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { apiPost } from '../../../lib/api';
-import { consume } from '../../../lib/rate-limit';
+import { ACCOUNT_LIMIT, consume } from '../../../lib/rate-limit';
 
 /**
  * Server proxy for `POST /v1/analytics/account/:id/analysis`: the API re-ranks the account's recommendations (with the
@@ -11,7 +11,9 @@ import { consume } from '../../../lib/rate-limit';
  */
 export const dynamic = 'force-dynamic';
 
-const LIMIT = { perVisitor: 5, overall: 60, windowMs: 10 * 60_000 };
+// The global AI limit lives in the API and counts only model runs. The overall count here only guards the RPC reads,
+// like an account read, far above the AI limit so rule-based answers cannot block an owner's AI.
+const LIMIT = { ...ACCOUNT_LIMIT, perVisitor: 5 };
 const LLM_TIMEOUT_MS = 60_000;
 
 function isJson(req: Request): boolean {
