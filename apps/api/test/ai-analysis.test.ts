@@ -176,7 +176,7 @@ describe('analyseAccount', () => {
     const intent = repay?.intent as { amount: string; approxUsd: number };
     expect(BigInt(intent.amount)).toBeGreaterThan(0n);
     expect(BigInt(intent.amount)).toBeLessThanOrEqual(usdt(100));
-    expect(intent.approxUsd).toBeCloseTo(Number(intent.amount) / 1e6, 2);
+    expect(intent.approxUsd).toBeCloseTo(Number(intent.amount) / 1e6, 1);
   });
 
   it('keeps the code explanation when the model writes a number no tool returned', async () => {
@@ -188,7 +188,7 @@ describe('analyseAccount', () => {
       observe: async () => observation(),
       heuristics: [heuristic],
     });
-    expect(out.recommendations[0]?.why).toBe(heuristic.why);
+    expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
   });
 
   it('turns the allocator idle-supply proposal into a supply recommendation with an exact amount', async () => {
@@ -197,7 +197,7 @@ describe('analyseAccount', () => {
       () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
     ]);
     const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
-    expect(out.recommendations[0]).toMatchObject({
+    expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')).toMatchObject({
       kind: 'put_idle_to_work',
       agent: 'Capital Allocator',
       intent: { action: 'supply', token: USDT },
@@ -217,5 +217,85 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('heuristic');
     expect(out.recommendations).toEqual([heuristic]);
     expect(out.note).toMatch(/AI/);
+  });
+
+  it('falls back when the model does not answer before the deadline', async () => {
+    const { llm } = fake([() => new Promise<LlmToolTurn>(() => {})]);
+    const out = await analyseAccount(
+      llm,
+      { observe: async () => observation(), heuristics: [heuristic] },
+      () => {},
+      20,
+    );
+    expect(out.source).toBe('heuristic');
+  });
+
+  it('never leaves out a loan warning the model skipped', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'reduce-concentration', why: 'Diversify.' }]),
+    ]);
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [heuristic],
+    });
+    expect(out.recommendations.map((r) => r.kind)).toEqual([
+      'improve_loan_safety',
+      'reduce_concentration',
+    ]);
+  });
+
+  it('falls back when the model ranks nothing', async () => {
+    const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
+    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    expect(out.source).toBe('heuristic');
+  });
+
+  it('states the health factor the repayment actually reaches', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'liquidation-guardian:repay:usdt.tether-token.near', why: 'Repay.' }]),
+    ]);
+    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    const repay = out.recommendations[0];
+    expect(repay?.title).toBe("Your loan's health factor is 1.37");
+    expect(repay?.why).toBe('Repay.');
+    const code = (
+      await analyseAccount(
+        fake([() => callAll, () => final([{ id: repay!.id, why: '$999' }])]).llm,
+        { observe: async () => observation(), heuristics: [] },
+      )
+    ).recommendations[0];
+    expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
+  });
+
+  it('does not let digits of a raw amount vouch for a number in the why', async () => {
+    let raw = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        const guardian = JSON.parse(results?.[0]?.content ?? '{}') as {
+          candidates: { intent: { amount: string } }[];
+        };
+        raw = guardian.candidates[0]?.intent.amount ?? '';
+        return final([
+          { id: 'liquidation-guardian:repay:usdt.tether-token.near', why: `Repay ${raw} now.` },
+        ]);
+      },
+    ]);
+    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    expect(raw).not.toBe('');
+    expect(out.recommendations[0]?.why).not.toContain(raw);
+  });
+
+  it('counts reading the wallet against the deadline', async () => {
+    const { llm } = fake([() => callAll]);
+    const out = await analyseAccount(
+      llm,
+      { observe: () => new Promise(() => {}), heuristics: [heuristic] },
+      () => {},
+      20,
+    );
+    expect(out.source).toBe('heuristic');
   });
 });

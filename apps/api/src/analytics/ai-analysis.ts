@@ -1,6 +1,8 @@
 import type { TokenId } from '@near-autopilot/core';
-import { tokenValueUsd } from '@near-autopilot/financial-engine';
+import { assessLendingPosition, tokenValueUsd } from '@near-autopilot/financial-engine';
 import {
+  afterRepay,
+  buildLendingModel,
   CapitalAllocatorAgent,
   LiquidationGuardianAgent,
   MarketIntelligenceAgent,
@@ -17,7 +19,12 @@ import {
 import { z } from 'zod';
 import type { PortfolioRecommendation } from './account-view';
 
-export const MAX_TURNS = 4;
+/** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
+export const MAX_TURNS = 6;
+/** Agent-sized actions worth less than this are not offered. */
+const MIN_ACTION_USD = 1;
+/** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
+export const DEADLINE_MS = 45_000;
 
 export interface AnalysisContext {
   /** Reads the wallet for the agents; called only when a model is configured. */
@@ -64,6 +71,10 @@ const noInputSchema = { type: 'object', properties: {}, additionalProperties: fa
 const usd = (micro: bigint) => Number(micro) / 1e6;
 const money = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const hfText = (wad: bigint | null) =>
+  wad === null ? null : (Number(wad / 10n ** 14n) / 1e4).toFixed(2);
+/** prepare takes at most $1M as the approximate size; the exact amount carries the real size. */
+const approxUsdOf = (n: number) => Math.min(Math.round(n * 100) / 100, 1_000_000);
 const human = (raw: bigint, decimals: number) =>
   (Number(raw) / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
@@ -80,8 +91,12 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
   const info = obs.snapshot.tokens.get(token);
   if (!info || !obs.snapshot.prices.has(token)) return null;
   const approxUsd = usd(tokenValueUsd(obs.snapshot.prices, token, amount));
-  if (!(approxUsd > 0)) return null;
-  return { symbol: info.symbol, amount: human(amount, info.decimals), approxUsd };
+  if (!(approxUsd >= MIN_ACTION_USD)) return null;
+  return {
+    symbol: info.symbol,
+    amount: human(amount, info.decimals),
+    approxUsd: approxUsdOf(approxUsd),
+  };
 }
 
 function guardianTool(
@@ -98,21 +113,23 @@ function guardianTool(
     input: noInput,
     run: async () => {
       const proposals = await propose(new LiquidationGuardianAgent(), obs);
-      const hfWad = obs.risk.healthFactorWad;
-      const hf = hfWad === null ? null : (Number(hfWad / 10n ** 14n) / 1e4).toFixed(2);
-      const target = obs.config.risk.targetHealthFactorBps / 10_000;
+      const hf = hfText(obs.risk.healthFactorWad);
+      const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
       for (const p of proposals) {
-        if (p.kind !== 'lending.repay') continue;
+        if (p.kind !== 'lending.repay' || !model.ok) continue;
         const view = tokenView(obs, p.token, p.amount);
-        if (!view) continue;
+        const after = hfText(
+          assessLendingPosition(afterRepay(model.model, p.token, p.amount)).healthFactorWad,
+        );
+        if (!view || !after) continue;
         candidates.push({
           id: `liquidation-guardian:repay:${p.token}`,
           kind: 'improve_loan_safety',
           agent: 'Liquidation Guardian',
           severity: 'warning',
           title: `Your loan's health factor is ${hf}`,
-          why: `Repaying ${view.amount} ${view.symbol} (about ${money(view.approxUsd)}) from your wallet brings the health factor back to the ${target} target, away from the 1.0 liquidation line.`,
+          why: `Repaying ${view.amount} ${view.symbol} (about ${money(view.approxUsd)}) from your wallet raises the health factor from ${hf} to ${after}, further from the 1.0 liquidation line.`,
           intent: {
             action: 'repay',
             token: p.token,
@@ -217,16 +234,28 @@ function walletTool(
 const numbersIn = (text: string) =>
   (text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => String(Number(n.replace(/,/g, ''))));
 
+/** Fields a person reads. Ids, token ids and raw amounts are left out, so their digits cannot vouch for a number. */
+const DISPLAY_FIELDS = new Set(['title', 'why', 'healthFactor', 'notes', 'detail']);
+function displayNumbers(value: unknown, key = ''): string[] {
+  if (typeof value === 'string') return DISPLAY_FIELDS.has(key) ? numbersIn(value) : [];
+  if (Array.isArray(value)) return value.flatMap((v) => displayNumbers(v, key));
+  if (value && typeof value === 'object')
+    return Object.entries(value).flatMap(([k, v]) => displayNumbers(v, k));
+  return [];
+}
+
 /**
  * Architecture C: the central LLM calls the orchestrator agents and two wallet checks as tools, then only orders the
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
- * dropped, and a "why" with a number no tool returned is replaced by the code's own text. No model, or any failure
- * (model error, bad JSON, too many turns), returns the rule-based list, labelled.
+ * dropped, and a "why" with a number no tool showed is replaced by the code's own text. A loan warning is never left
+ * out. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
+ * rule-based list, labelled.
  */
 export async function analyseAccount(
   llm: ToolLlm | null,
   ctx: AnalysisContext,
   onError: (e: unknown) => void = () => {},
+  deadlineMs: number = DEADLINE_MS,
 ): Promise<Analysis> {
   const fallback = (note: string): Analysis => ({
     source: 'heuristic',
@@ -236,9 +265,10 @@ export async function analyseAccount(
   });
   if (!llm) return fallback('AI analysis is off on this server; showing the rule-based list.');
 
-  try {
+  const abort = new AbortController();
+  const found = new Map<string, PortfolioRecommendation>();
+  const run = async () => {
     const obs = await ctx.observe();
-    const found = new Map<string, PortfolioRecommendation>();
     const tools = [
       guardianTool(obs, found),
       allocatorTool(obs, found),
@@ -258,24 +288,41 @@ export async function analyseAccount(
         found,
       ),
     ];
-    const { text, trace } = await runToolLoop({
+    return runToolLoop({
       llm,
       system: SYSTEM,
       prompt: `Analyse the connected wallet ${obs.accountId}.`,
       tools,
       maxTurns: MAX_TURNS,
+      signal: abort.signal,
     });
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      abort.abort();
+      reject(new Error(`no answer within ${deadlineMs} ms`));
+    }, deadlineMs);
+  });
+
+  try {
+    const { text, trace } = await Promise.race([run(), deadline]).finally(() =>
+      clearTimeout(timer),
+    );
     const { picks } = picksSchema.parse(JSON.parse(stripFence(text)));
-    const allowed = new Set(trace.flatMap((t) => numbersIn(JSON.stringify(t.output))));
-    const seen = new Set<string>();
+    const allowed = new Set(trace.flatMap((t) => displayNumbers(t.output)));
     const recommendations: PortfolioRecommendation[] = [];
     for (const pick of picks) {
       const candidate = found.get(pick.id);
-      if (!candidate || seen.has(pick.id)) continue;
-      seen.add(pick.id);
+      if (!candidate || recommendations.some((r) => r.id === pick.id)) continue;
       const honest = numbersIn(pick.why).every((n) => allowed.has(n));
       recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
     }
+    if (recommendations.length === 0)
+      return fallback('The AI ranked nothing; showing the rule-based list.');
+    const warning = [...found.values(), ...ctx.heuristics].find((r) => r.severity === 'warning');
+    if (warning && !recommendations.some((r) => r.kind === warning.kind))
+      recommendations.unshift(warning);
     return {
       source: 'llm',
       note: null,

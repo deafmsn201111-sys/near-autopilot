@@ -61,13 +61,16 @@ export class AnthropicToolLlm implements ToolLlm {
               is_error: r.isError,
             })),
           });
-        const reply = await this.sdk.messages.create({
-          model: this.config.model,
-          max_tokens: this.config.maxTokens,
-          system: request.system,
-          tools,
-          messages: [...messages],
-        });
+        const reply = await this.sdk.messages.create(
+          {
+            model: this.config.model,
+            max_tokens: this.config.maxTokens,
+            system: request.system,
+            tools,
+            messages: [...messages],
+          },
+          request.signal ? { signal: request.signal } : undefined,
+        );
         if (reply.stop_reason === 'tool_use') {
           messages.push({ role: 'assistant', content: reply.content });
           const calls = reply.content.flatMap((b) =>

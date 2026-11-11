@@ -36,7 +36,7 @@ import {
   type AgentObservation,
   type ToolLlm,
 } from '@near-autopilot/orchestrator';
-import type { UnitPrice } from '@near-autopilot/core';
+import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
 import { toWad } from '../yield/math';
@@ -272,6 +272,8 @@ async function readDclPositions(
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
+/** `valueAccount` lists native NEAR under this pseudo token; the snapshot reads it as `nativeBalance`. */
+const NATIVE_HOLDING = 'near';
 
 const ORCH = orchestratorConfigSchema.parse({});
 const GAS = ORCH.swap.estimatedGasUsd;
@@ -449,6 +451,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
 /** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
 interface AccountBody {
   readonly recommendations: readonly PortfolioRecommendation[];
+  readonly holdings: readonly { readonly token: string }[];
   readonly [field: string]: unknown;
 }
 
@@ -494,7 +497,7 @@ export function registerAccountView(
   const cache = new BoundedMap<string, { at: number; body: AccountBody }>(ACCOUNT_CACHE_MAX);
   const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrowOptions);
-  const oracle = new BurrowPriceOracle(viewer, burrowOptions);
+  const burrowOracle = new BurrowPriceOracle(viewer, burrowOptions);
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
@@ -914,53 +917,70 @@ export function registerAccountView(
   });
 
   /**
-   * What the orchestrator agents see for this wallet: a fresh Burrow snapshot priced by Burrow's own oracle, today's
-   * Burrow supply rates as the yield estimates, and the collector's confirmed prices as the second price source.
+   * What the orchestrator agents see for this wallet: a fresh Burrow snapshot priced with the same confirmed collector
+   * prices as the account view (so the agents' numbers match the portfolio table), today's Burrow supply rates as the
+   * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
+   * recent price). The context is as old as the collector snapshot it was priced from.
    */
-  const observe = async (id: AccountId): Promise<AgentObservation> => {
-    const [assets, markets, meta, prices] = await Promise.all([
-      burrow.listAssets(),
+  const observe = async (id: AccountId, held: readonly TokenId[]): Promise<AgentObservation> => {
+    const [markets, meta, prices, collected] = await Promise.all([
       store.markets(),
       store.tokenMetadata(),
       latestPrices(),
+      store.latestSnapshot(),
     ]);
+    const decimalsOf = (t: string) => meta.find((x) => x.token === t)?.decimals;
+    const unitPrice = (usd: number | undefined, decimals: number | undefined) => {
+      const d = usd !== undefined ? parseDecimal(String(usd)) : null;
+      return d && d.mantissa > 0n && decimals !== undefined ? toUnitPrice(d, decimals) : null;
+    };
+    const pricedAt = collected?.takenAt ?? clock.now();
+    const collectorOracle: PriceOracle = {
+      getPrices: async (wanted) => {
+        const out = new Map<TokenId, UnitPrice>();
+        for (const t of wanted) {
+          const p = unitPrice(prices.get(t), decimalsOf(t));
+          if (p) out.set(t, p);
+        }
+        return { prices: out, asOf: pricedAt };
+      },
+    };
     const snapshot = await new SnapshotService({
       accountId: id,
-      trackedTokens: assets.map((a) => a.tokenId),
+      trackedTokens: held,
       native,
       tokens: {
         getBalance: (t, a) => tokens.getBalance(t, a).catch(() => 0n),
-        getMetadata: (t) => tokens.getMetadata(t),
+        getMetadata: async (t) => {
+          const m = meta.find((x) => x.token === t);
+          return m ? { id: t, symbol: m.symbol, decimals: m.decimals } : tokens.getMetadata(t);
+        },
         isStorageRegistered: (t, a) => tokens.isStorageRegistered(t, a),
       },
       lending,
-      oracle,
+      oracle: collectorOracle,
       clock,
     }).take();
     const priced = [...snapshot.prices.keys()];
     const config = walletAgentConfig(priced);
     const estimatedYieldWad = new Map<TokenId, bigint>();
-    const referencePrices = new Map<TokenId, UnitPrice>();
     for (const token of priced) {
       const m = markets.find((x) => x.token === token)?.latest as
         (LoopMarket & { status?: string }) | undefined;
       const apr = m?.status === 'OK' ? parseDecimal(m.netSupplyApr ?? m.supplyApr ?? '') : null;
       if (apr && apr.mantissa > 0n) estimatedYieldWad.set(token, toWad(apr));
-      const usd = prices.get(token);
-      const decimals = meta.find((x) => x.token === token)?.decimals;
-      const d = usd !== undefined ? parseDecimal(String(usd)) : null;
-      if (d && d.mantissa > 0n && decimals !== undefined)
-        referencePrices.set(token, toUnitPrice(d, decimals));
     }
-    const now = clock.now();
+    const reference = await burrowOracle
+      .getPrices(priced)
+      .catch(() => ({ prices: new Map<TokenId, UnitPrice>() }));
     return {
-      now,
+      now: clock.now(),
       accountId: id,
       snapshot,
       market: {
-        asOf: now,
+        asOf: pricedAt,
         estimatedYieldWad,
-        referencePrices,
+        referencePrices: reference.prices,
         volatility24hBps: new Map(),
         lpPositions: [],
       },
@@ -977,7 +997,17 @@ export function registerAccountView(
     if (view.status !== 200) return reply.code(view.status).send(view.body);
     return analyseAccount(
       deps.llm ?? null,
-      { observe: () => observe(parsed.data), heuristics: view.body.recommendations },
+      {
+        observe: () =>
+          observe(parsed.data, [
+            ...new Set(
+              view.body.holdings
+                .filter((h) => h.token !== NATIVE_HOLDING)
+                .map((h) => accountIdSchema.parse(h.token)),
+            ),
+          ]),
+        heuristics: view.body.recommendations,
+      },
       (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
     );
   });

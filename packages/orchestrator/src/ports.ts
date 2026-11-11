@@ -62,6 +62,8 @@ export interface ToolLlm {
     readonly system: string;
     readonly prompt: string;
     readonly tools: readonly LlmToolSpec[];
+    /** Aborts the model call in flight. */
+    readonly signal?: AbortSignal;
   }): ToolChat;
 }
 

@@ -98,4 +98,36 @@ describe('runToolLoop', () => {
       runToolLoop({ llm, system: 's', prompt: 'p', tools: [echo], maxTurns: 3 }),
     ).rejects.toBeInstanceOf(ToolLoopError);
   });
+
+  it('makes no further model call once the caller aborts', async () => {
+    const abort = new AbortController();
+    const { llm, sent } = scripted([
+      { kind: 'tool_calls', calls: [{ id: 'a', name: 'echo', input: {} }] },
+      { kind: 'final', text: 'late' },
+    ]);
+    const tool = { ...echo, run: async () => (abort.abort(), { ok: 1 }) };
+    await expect(
+      runToolLoop({
+        llm,
+        system: 's',
+        prompt: 'p',
+        tools: [tool],
+        maxTurns: 4,
+        signal: abort.signal,
+      }),
+    ).rejects.toBeInstanceOf(ToolLoopError);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('refuses a turn with more tool calls than any answer needs', async () => {
+    const calls = Array.from({ length: 11 }, (_, i) => ({
+      id: String(i),
+      name: 'echo',
+      input: {},
+    }));
+    const { llm } = scripted([{ kind: 'tool_calls', calls }]);
+    await expect(
+      runToolLoop({ llm, system: 's', prompt: 'p', tools: [echo], maxTurns: 4 }),
+    ).rejects.toBeInstanceOf(ToolLoopError);
+  });
 });

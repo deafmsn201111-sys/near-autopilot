@@ -294,9 +294,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </div>
       </section>
 
-      {isAccount && recs && recs.recommendations.length > 0 && (
+      {isAccount && recs && (
         <section className="block">
           <Recommendations
+            key={accountParam}
             account={accountParam}
             recommendations={recs.recommendations}
             signingEnabled={signingEnabled}

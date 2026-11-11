@@ -122,4 +122,12 @@ describe('AnthropicToolLlm', () => {
       );
     },
   );
+
+  it('passes the abort signal to the SDK call', async () => {
+    const create = vi.fn().mockResolvedValue({ stop_reason: 'end_turn', content: [text('{}')] });
+    const llm = new AnthropicToolLlm({ messages: { create } } as unknown as Anthropic, config);
+    const signal = new AbortController().signal;
+    await llm.open({ system: 's', prompt: 'p', tools: [], signal }).send(null);
+    expect(create.mock.calls[0]?.[1]).toEqual({ signal });
+  });
 });

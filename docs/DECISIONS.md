@@ -117,14 +117,20 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
 **Decision:**
 
 - Tools: `LiquidationGuardianAgent`, `CapitalAllocatorAgent` (`supplyIdle`, every Burrow token with an oracle price)
-  and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the wallet (`SnapshotService`, Burrow's oracle);
-  yields are today's Burrow supply rates, the second price source is the collector's confirmed prices. Plus two
+  and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the tokens the wallet holds (`SnapshotService`),
+  priced with the collector's confirmed prices, the same ones the portfolio table uses. `priceoracle.near` returned no
+  recent price on 11 Nov 2026, so it is only Market Intelligence's second source (empty when it has none). Yields
+  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus two
   wallet checks: concentration and DCL out of range. The LP Optimizer waits for a 24 h volume source (separate issue).
-- Only `lending.repay` (guardian) and `lending.supply` (allocator) become recommendations. Allocator swaps (they would
+- Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
+  repay text states the health factor the repayment actually reaches. Allocator swaps (they would
   move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
   dropped.
 - The LLM returns only `{picks: [{id, why}]}` (zod). Unknown ids are dropped; a "why" with a number that no tool
-  returned is replaced by the code's text. At most 4 model turns. Any failure returns the rule-based list, labelled.
+  showed in a readable field (title, why, health factor, notes; not ids or raw amounts) is replaced by the code's
+  text. A loan warning the model left out is put back first. At most 6 model turns (one per tool if it does not call
+  them in parallel), at most 10 tool calls per turn, 45 s for the whole analysis including the wallet read; on the
+  deadline the model call in flight is aborted. An empty ranking or any failure returns the rule-based list, labelled.
 - `POST /v1/wallet/prepare` accepts an optional exact `amount` (base units) for repay and supply, capped at the
   wallet balance. Cascade caps and `validateCascade` are unchanged.
 - The test that banned LLM code from `apps/api/src/analytics` now allows the provider only in `analytics/main.ts`
