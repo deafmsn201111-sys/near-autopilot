@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { KeyPairEd25519 } from '@near-js/crypto';
+import { baseEncode } from '@near-js/utils';
 import { serialize } from 'borsh';
 import { describe, expect, it } from 'vitest';
 import {
@@ -58,6 +59,13 @@ const deps = {
 describe('NEP-413 ownership proof', () => {
   it('accepts a fresh signature by a full-access key of the account', async () => {
     expect(await verifyOwnership(await sign(), owner, deps)).toBe(true);
+  });
+
+  it('also reads a signature encoded as ed25519:<base58>', async () => {
+    const proof = await sign();
+    const bytes = Buffer.from(proof.signature, 'base64');
+    const signature = `ed25519:${baseEncode(bytes)}`;
+    expect(await verifyOwnership({ ...proof, signature }, owner, deps)).toBe(true);
   });
 
   it('rejects a proof for another account than the one requested', async () => {

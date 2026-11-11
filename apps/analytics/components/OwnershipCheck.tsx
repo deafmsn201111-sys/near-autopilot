@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
+import { saveOwnershipProof } from '../app/account-actions';
 import { watchAccount } from '../lib/wallet';
 import { signOwnership } from '../lib/wallet-sign';
 
@@ -19,8 +19,8 @@ export function OwnershipCheck({ account, verified }: { account: string; verifie
   if (verified)
     return (
       <div className="callout" style={{ marginBottom: 16 }}>
-        <b>Ownership verified.</b> You signed the ownership message for {account}: AI analysis is
-        unlocked for this account.
+        <b>Ownership verified.</b> You signed the ownership message for {account}, so this account
+        can get AI analysis.
       </div>
     );
 
@@ -38,9 +38,9 @@ export function OwnershipCheck({ account, verified }: { account: string; verifie
             disabled={state === 'signing'}
             onClick={() => {
               setState('signing');
-              void signOwnership(account).then((proof) => {
+              void signOwnership(account).then(async (proof) => {
                 if (!proof) return setState('declined');
-                document.cookie = `${OWNERSHIP_COOKIE}=${proof}; path=/; samesite=lax${location.protocol === 'https:' ? '; secure' : ''}`;
+                await saveOwnershipProof(proof);
                 setState('idle');
                 router.refresh();
               });

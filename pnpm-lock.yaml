@@ -139,6 +139,9 @@ importers:
       '@near-js/crypto':
         specifier: 2.5.1
         version: 2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1))
+      '@near-js/utils':
+        specifier: 2.5.1
+        version: 2.5.1(@near-js/types@2.5.1)
       borsh:
         specifier: 1.0.0
         version: 1.0.0

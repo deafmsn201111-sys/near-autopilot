@@ -117,8 +117,8 @@ site only learns an account name).
 **Decision:** The wallet signs a fixed NEP-413 message (`packages/core/src/ownership.ts`, recipient
 `near-autopilot.tech`). The nonce holds the signing time; the server accepts it for 24 h (5 min clock skew), with no
 challenge and no stored state. The signing key must be a **full-access** key of the account (`view_access_key`):
-function-call keys are often held by dApps, so they do not count. The proof lives in a session cookie (`np_owner`),
+function-call keys are often held by dApps, so they do not count. The proof lives in an HttpOnly cookie (`np_owner`, 24 h),
 the UI server forwards it as `x-ownership-proof`, and `GET /v1/analytics/account/:id` returns `ownerVerified`,
-verified per request outside the account cache. Any failure, including a failed RPC read, means false (heuristics).
+verified per request outside the account cache (a positive result is kept 10 min). Any failure, including a failed RPC read, means false (heuristics).
 **Consequences:** A stolen proof can be replayed for 24 h, but only for the same account under the same rate limits.
 The LLM path (#18) runs only when `ownerVerified` is true. A shorter TTL or a server challenge needs a new entry here.

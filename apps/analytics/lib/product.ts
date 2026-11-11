@@ -187,12 +187,11 @@ const accountReads = new Map<string, { at: number; read: Promise<AccountResult> 
 
 const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
-const readKey = async (id: string) =>
-  `${await visitor()}:${id.trim().toLowerCase()}:${(await ownershipProof()).slice(-16)}`;
+const readKey = async (id: string, proof: string) =>
+  `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
 
-const fetchAccount = async (id: string): Promise<AccountResult> => {
+const fetchAccount = async (id: string, proof: string): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
-  const proof = await ownershipProof();
   return tryApi<AccountRead>(
     `/v1/analytics/account/${encodeURIComponent(id)}`,
     proof ? { 'x-ownership-proof': proof } : {},
@@ -200,13 +199,14 @@ const fetchAccount = async (id: string): Promise<AccountResult> => {
 };
 
 const readAccount = async (id: string): Promise<AccountResult> => {
-  const key = await readKey(id);
+  const proof = await ownershipProof();
+  const key = await readKey(id, proof);
   const now = Date.now();
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
   if (cached) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id) };
+  const entry = { at: Infinity, read: fetchAccount(id, proof) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
@@ -216,7 +216,7 @@ const readAccount = async (id: string): Promise<AccountResult> => {
 };
 
 export const forgetAccount = async (id: string) => {
-  accountReads.delete(await readKey(id));
+  accountReads.delete(await readKey(id, await ownershipProof()));
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

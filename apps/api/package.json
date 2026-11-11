@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@near-js/crypto": "2.5.1",
+    "@near-js/utils": "2.5.1",
     "borsh": "1.0.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

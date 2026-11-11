@@ -15,7 +15,7 @@ const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const proofSchema = z.object({
   accountId: z.string().min(2).max(64),
   publicKey: z.string().regex(/^ed25519:[1-9A-HJ-NP-Za-km-z]{32,44}$/),
-  signature: z.string().base64(),
+  signature: z.string().max(128),
   nonce: z.string().base64(),
 });
 
@@ -24,11 +24,25 @@ export interface OwnershipDeps {
   isFullAccessKey(accountId: string, publicKey: string): Promise<boolean>;
 }
 
-function base58Key(s: string): Buffer {
+/** Fixed-size base58 (keys, signatures); a value that does not fit in `bytes` decodes to an empty buffer. */
+function base58(s: string, bytes: number): Buffer {
   let n = 0n;
-  for (const c of s) n = n * 58n + BigInt(BASE58.indexOf(c));
-  return Buffer.from(n.toString(16).padStart(64, '0'), 'hex');
+  for (const c of s) {
+    const digit = BASE58.indexOf(c);
+    if (digit < 0) return Buffer.alloc(0);
+    n = n * 58n + BigInt(digit);
+  }
+  if (n >> BigInt(bytes * 8)) return Buffer.alloc(0);
+  return Buffer.from(n.toString(16).padStart(bytes * 2, '0'), 'hex');
 }
+
+/** NEP-413 says base64; some wallets return `ed25519:<base58>`, so both are read. */
+const signatureBytes = (s: string) =>
+  s.startsWith('ed25519:')
+    ? base58(s.slice('ed25519:'.length), 64)
+    : z.string().base64().safeParse(s).success
+      ? Buffer.from(s, 'base64')
+      : Buffer.alloc(0);
 
 const borshString = (s: string) => {
   const bytes = Buffer.from(s, 'utf8');
@@ -48,7 +62,7 @@ function nep413Hash(message: string, nonce: Buffer, recipient: string): Buffer {
     .digest();
 }
 
-/** The proof travels as base64url JSON in this header (the UI keeps it in a session cookie). */
+/** The proof travels as base64url JSON in this header (the UI keeps it in an HttpOnly cookie). */
 export const OWNERSHIP_HEADER = 'x-ownership-proof';
 
 export function proofFromHeader(header: string | string[] | undefined): unknown {
@@ -78,8 +92,8 @@ async function check(raw: unknown, accountId: string, deps: OwnershipDeps): Prom
   if (!parsed.success || parsed.data.accountId !== accountId) return false;
   const { publicKey, signature, nonce: nonceB64 } = parsed.data;
   const nonce = Buffer.from(nonceB64, 'base64');
-  const key = base58Key(publicKey.slice('ed25519:'.length));
-  const sig = Buffer.from(signature, 'base64');
+  const key = base58(publicKey.slice('ed25519:'.length), 32);
+  const sig = signatureBytes(signature);
   if (nonce.length !== 32 || key.length !== 32 || sig.length !== 64) return false;
 
   const signedAt = nonceTimeMs(nonce);

@@ -430,6 +430,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
 
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
+const OWNER_CACHE_TTL_MS = 10 * 60_000;
 
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
@@ -475,6 +476,18 @@ export function registerAccountView(
       (await accessKeys.getContext(accountIdSchema.parse(account), publicKey)).permission.kind ===
       'full_access',
   };
+  // Positive results only, so junk proofs cost no memory; a re-render then needs no RPC round trip.
+  const owners = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
+  const isOwner = async (header: unknown, id: string) => {
+    if (typeof header !== 'string') return false;
+    const key = `${id}:${header}`;
+    const at = owners.get(key);
+    if (at !== undefined && Date.now() - at < OWNER_CACHE_TTL_MS) return true;
+    const ok = await verifyOwnership(proofFromHeader(header), id, ownership);
+    if (ok) owners.set(key, Date.now());
+    else owners.delete(key);
+    return ok;
+  };
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
@@ -500,11 +513,7 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const id = parsed.data;
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
-    const ownerVerified = verifyOwnership(
-      proofFromHeader(req.headers[OWNERSHIP_HEADER]),
-      id,
-      ownership,
-    );
+    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], id);
     const hit = cache.get(id);
     if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS)
       return { ...hit.body, ownerVerified: await ownerVerified };

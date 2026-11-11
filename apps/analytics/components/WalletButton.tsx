@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
+import { clearOwnershipProof } from '../app/account-actions';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
 
 const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
@@ -47,10 +47,9 @@ export function WalletButton() {
           onClick={() => {
             // Back to the starting state: the demo portfolio in Demo mode, with a full page load.
             setState('opening');
-            void disconnect().finally(() => {
+            void Promise.allSettled([disconnect(), clearOwnershipProof()]).finally(() => {
               setAccount(null);
               document.cookie = 'autopilot-mode=demo; path=/; max-age=31536000; samesite=lax';
-              document.cookie = `${OWNERSHIP_COOKIE}=; path=/; max-age=0; samesite=lax`;
               window.location.assign('/');
             });
           }}
