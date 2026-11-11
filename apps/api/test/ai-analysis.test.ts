@@ -153,6 +153,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -166,6 +167,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: false,
     });
     expect(tools).toEqual([]);
@@ -174,12 +176,35 @@ describe('analyseAccount', () => {
     expect(out.note).toMatch(/Verify ownership/);
   });
 
+  it('gives the model the labelled checks and falls back to the list the user sees', async () => {
+    const shown = { ...heuristic, title: 'shown to the user' };
+    const labelled = { ...heuristic, title: 'labelled for the model' };
+    const sent: string[] = [];
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        sent.push(JSON.stringify(results));
+        return final([{ id: heuristic.id, why: 'Worth a look.' }]);
+      },
+    ]);
+    const lists = { ...ctx, heuristics: [shown], checks: [labelled] };
+    const analysed = await analyseAccount(ai(llm), lists);
+    expect(sent.join()).toContain('labelled for the model');
+    expect(sent.join()).not.toContain('shown to the user');
+    expect(analysed.recommendations.find((r) => r.id === heuristic.id)?.title).toBe(
+      'labelled for the model',
+    );
+    const off = await analyseAccount(null, lists);
+    expect(off.recommendations).toEqual([shown]);
+  });
+
   it('offers the three orchestrator agents and the two wallet checks as tools', async () => {
     const { llm, tools } = fake([() => final([])]);
     await analyseAccount(ai(llm), {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(tools[0]).toEqual([
@@ -205,6 +230,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('llm');
@@ -238,6 +264,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
@@ -249,6 +276,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     return out.recommendations.find((r) => r.id === id)?.why;
@@ -283,6 +311,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')).toMatchObject({
@@ -302,6 +331,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -317,6 +347,7 @@ describe('analyseAccount', () => {
         accountId: ALICE,
         observe: async () => observation(),
         heuristics: [heuristic],
+        checks: [heuristic],
         ownerVerified: true,
       },
       () => {},
@@ -334,6 +365,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.recommendations.map((r) => r.kind)).toEqual([
@@ -361,6 +393,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [concentrated, outOfRange],
+      checks: [concentrated, outOfRange],
       ownerVerified: true,
     });
     expect(out.recommendations.map((r) => r.kind).sort()).toEqual([
@@ -383,6 +416,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.recommendations.filter((r) => r.id === heuristic.id)).toHaveLength(1);
@@ -395,6 +429,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(turns).toBe(6);
@@ -415,6 +450,7 @@ describe('analyseAccount', () => {
         accountId: ALICE,
         observe: async () => observation(),
         heuristics: [heuristic],
+        checks: [heuristic],
         ownerVerified: true,
       },
       () => {},
@@ -443,6 +479,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => ({ ...dust, snapshot }),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(candidates).toEqual([]);
@@ -454,6 +491,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -468,6 +506,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     const repay = out.recommendations[0];
@@ -480,6 +519,7 @@ describe('analyseAccount', () => {
           accountId: ALICE,
           observe: async () => observation(),
           heuristics: [],
+          checks: [],
           ownerVerified: true,
         },
       )
@@ -505,6 +545,7 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
+      checks: [],
       ownerVerified: true,
     });
     expect(raw).not.toBe('');
@@ -515,7 +556,12 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll]);
     const out = await analyseAccount(
       ai(llm),
-      { ...ctx, observe: () => new Promise(() => {}), heuristics: [heuristic] },
+      {
+        ...ctx,
+        observe: () => new Promise(() => {}),
+        heuristics: [heuristic],
+        checks: [heuristic],
+      },
       () => {},
       20,
     );
@@ -524,24 +570,40 @@ describe('analyseAccount', () => {
 
   describe('spend', () => {
     it('labels each fallback with its code', async () => {
-      expect((await analyseAccount(null, { ...ctx, heuristics: [heuristic] })).fallback).toBe(
-        'off',
-      );
+      expect(
+        (await analyseAccount(null, { ...ctx, heuristics: [heuristic], checks: [heuristic] }))
+          .fallback,
+      ).toBe('off');
       const { llm } = fake([() => final([])]);
       expect(
-        (await analyseAccount(ai(llm), { ...ctx, heuristics: [heuristic], ownerVerified: false }))
-          .fallback,
+        (
+          await analyseAccount(ai(llm), {
+            ...ctx,
+            heuristics: [heuristic],
+            checks: [heuristic],
+            ownerVerified: false,
+          })
+        ).fallback,
       ).toBe('not_owner');
       expect(
-        (await analyseAccount(ai(fake([() => final([])]).llm), { ...ctx, heuristics: [heuristic] }))
-          .fallback,
+        (
+          await analyseAccount(ai(fake([() => final([])]).llm), {
+            ...ctx,
+            heuristics: [heuristic],
+            checks: [heuristic],
+          })
+        ).fallback,
       ).toBe('empty');
     });
 
     it('makes no model call once the day’s budget is reached', async () => {
       const { llm, tools } = fake([() => final([])]);
       const l = ledger(WORST_CALL_MICRO - 1n);
-      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(ai(llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(tools).toEqual([]);
       expect(out.source).toBe('heuristic');
       expect(out.fallback).toBe('cap');
@@ -553,7 +615,11 @@ describe('analyseAccount', () => {
       let turns = 0;
       const { llm } = fake([() => (turns++, callAll), () => (turns++, final([]))]);
       const l = ledger(WORST_CALL_MICRO + 100n);
-      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(ai(llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(turns).toBe(1);
       expect(out.fallback).toBe('cap');
       expect(l.rows).toMatchObject([{ outcome: 'cap', inputTokens: 1000, outputTokens: 100 }]);
@@ -566,9 +632,17 @@ describe('analyseAccount', () => {
       ]);
       const second = fake([() => final([])]);
       const l = ledger(WORST_CALL_MICRO + 100n);
-      const first = analyseAccount(ai(slow.llm, l), { ...ctx, heuristics: [heuristic] });
+      const first = analyseAccount(ai(slow.llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       await new Promise((r) => setTimeout(r, 10));
-      const out = await analyseAccount(ai(second.llm, l), { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(ai(second.llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(out.fallback).toBe('cap');
       expect(second.tools).toEqual([]);
       release();
@@ -580,8 +654,8 @@ describe('analyseAccount', () => {
       const b = fake([() => final([])]);
       const l = ledger(WORST_CALL_MICRO + 100n);
       const outs = await Promise.all([
-        analyseAccount(ai(a.llm, l), { ...ctx, heuristics: [heuristic] }),
-        analyseAccount(ai(b.llm, l), { ...ctx, heuristics: [heuristic] }),
+        analyseAccount(ai(a.llm, l), { ...ctx, heuristics: [heuristic], checks: [heuristic] }),
+        analyseAccount(ai(b.llm, l), { ...ctx, heuristics: [heuristic], checks: [heuristic] }),
       ]);
       expect(outs.map((o) => o.fallback)).toContain('cap');
       expect(l.rows.length).toBeLessThanOrEqual(1);
@@ -599,12 +673,14 @@ describe('analyseAccount', () => {
       const first = analyseAccount(ai(fake([() => final([])]).llm, slowLedger), {
         ...ctx,
         heuristics: [heuristic],
+        checks: [heuristic],
       });
       await new Promise((r) => setTimeout(r, 10));
       const second = fake([() => final([])]);
       const out = await analyseAccount(ai(second.llm, slowLedger), {
         ...ctx,
         heuristics: [heuristic],
+        checks: [heuristic],
       });
       expect(out.fallback).toBe('cap');
       expect(second.tools).toEqual([]);
@@ -625,6 +701,7 @@ describe('analyseAccount', () => {
       const out = await analyseAccount(ai(fake([() => callAll, () => final([])]).llm, flaky), {
         ...ctx,
         heuristics: [heuristic],
+        checks: [heuristic],
       });
       expect(out.fallback).toBe('cap');
       expect(l.rows).toMatchObject([{ outcome: 'cap' }]);
@@ -636,7 +713,11 @@ describe('analyseAccount', () => {
         () => final([{ id: 'reduce-concentration', why: 'Diversify.' }]),
       ]);
       const l = ledger();
-      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(ai(llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(out.fallback).toBeNull();
       expect(l.rows).toHaveLength(1);
       const row = l.rows[0]!;
@@ -677,7 +758,11 @@ describe('analyseAccount', () => {
         },
       ]);
       const l = ledger();
-      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(ai(llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(out.fallback).toBe('model_error');
       expect(l.rows).toMatchObject([
         { outcome: 'model_error', inputTokens: 2000, outputTokens: 200 },
@@ -692,6 +777,7 @@ describe('analyseAccount', () => {
       const out = await analyseAccount(ai(fake([() => turn]).llm, l), {
         ...ctx,
         heuristics: [heuristic],
+        checks: [heuristic],
       });
       expect(out.fallback).toBe('invalid_output');
       expect(l.rows).toMatchObject([{ outcome: 'invalid_output' }]);
@@ -701,7 +787,7 @@ describe('analyseAccount', () => {
       const l = ledger();
       const out = await analyseAccount(
         ai(fake([() => callAll, () => new Promise<LlmToolTurn>(() => {})]).llm, l),
-        { ...ctx, heuristics: [heuristic] },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
         () => {},
         50,
       );
@@ -713,7 +799,7 @@ describe('analyseAccount', () => {
       const l = ledger();
       const out = await analyseAccount(
         ai(fake(Array.from({ length: 20 }, () => () => callAll)).llm, l),
-        { ...ctx, heuristics: [heuristic] },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
       );
       expect(out.fallback).toBe('loop_limit');
       expect(l.rows).toMatchObject([{ outcome: 'loop_limit', inputTokens: 6000 }]);
@@ -727,7 +813,11 @@ describe('analyseAccount', () => {
           throw new Error('db down');
         },
       };
-      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      const out = await analyseAccount(ai(llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(tools).toEqual([]);
       expect(out.fallback).toBe('cap');
     });
@@ -746,7 +836,7 @@ describe('analyseAccount', () => {
             .llm,
           l,
         ),
-        { ...ctx, heuristics: [heuristic] },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
         (e) => errors.push(e),
       );
       expect(out.source).toBe('llm');
@@ -759,6 +849,7 @@ describe('analyseAccount', () => {
       const out = await analyseAccount(ai(llm, ledger(WORST_CALL_MICRO + 200n)), {
         ...ctx,
         heuristics: [heuristic],
+        checks: [heuristic],
       });
       expect(out.fallback).toBe('cap');
       expect(tools).toEqual([]);

@@ -172,6 +172,20 @@ no longer said what comes first.
   worst case; usage via `ToolLlm.open({ onUsage })`, SDK retries off; `ANTHROPIC_MODEL` allowlist with a price table.
 - Fallback codes on the analysis result and in `llm_calls.outcome` (D14).
 
+## 2026-11-12 — LLM input: token names from our own list only (#19)
+
+**Why:** anyone can deploy a token whose `ft_metadata` symbol is an instruction; that text reached the model's prompt.
+
+- Agent tool candidates (guardian, allocator) name tokens with `modelTokenLabel` (`apps/api/src/thesis/labels.ts`: the
+  same list as the thesis `tokenLabel`, else the contract id, shortened past 20 chars), not the snapshot symbol.
+- The account view builds a second rule-based list for the model (`forModel`, kept off the HTTP body) with labelled
+  symbols and DCL pair names; the wallet-check tools return it. The user-facing fallback and portfolio table keep the
+  metadata symbol. The prompt no longer carries the account id.
+- Residual: token ids, DCL pool/LP ids and agent notes still reach the model as contract ids (`accountIdSchema`
+  charset, ≤ 64 chars); candidate ids need them.
+- Test: `analysis-endpoint.test.ts` "what the model is sent" — hostile symbols on a wallet token and both DCL pool
+  tokens appear nowhere in what the fake model receives.
+
 ## 2026-11-12 — Secrets audit before the repo goes public (#45)
 
 - gitleaks over all refs (222 commits): 376 findings, all public NEAR token ids or a test key except the known
