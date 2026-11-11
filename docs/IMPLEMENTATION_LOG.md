@@ -65,9 +65,10 @@ Not run here: `./scripts/quickstart.sh` (no Docker on the build machine).
 
 The layout refreshes every page every 15 s; on "Your account" each refresh re-read the account and took one of the
 30 lookups per visitor per 10 min, so an idle tab hit "Too many requests" in about 7 minutes. The account read is now
-cached for 30 s (`lib/product.ts`), shared by `accountView` and `accountRecommendations` (which used to read it a
+cached per visitor for 60 s (`lib/product.ts`), shared by `accountView` and `accountRecommendations` (which used to read it a
 second time, outside the limit); only a real read spends the limit. After a new transaction from the wallet
-(`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops the cached read first, so the page shows
+(`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops that visitor's cached read first (another
+visitor cannot drop it), so the page shows
 the new state at once. Limit unchanged.
 
 **Tests run:** `pnpm verify` (green), `next build`; new `account-cache.test.ts`.

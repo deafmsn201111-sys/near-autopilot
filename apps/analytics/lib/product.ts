@@ -1,4 +1,4 @@
-import { ACCOUNT_LIMIT, consume, RATE_LIMITED } from './rate-limit';
+import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
 import type { RecommendationIntent } from './recommendation-intent';
@@ -176,28 +176,37 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecis
   recommendations: AccountRecommendation[];
 };
 
-// The page re-renders every 15 s: within this window a re-render reuses the read instead of spending the rate limit.
-const ACCOUNT_TTL_MS = 30_000;
-const accountReads = new Map<
-  string,
-  { at: number; read: Promise<{ data: AccountRead | null; error: string | null }> }
->();
+type AccountResult = { data: AccountRead | null; error: string | null };
 
-const readAccount = async (id: string) => {
-  const now = Date.now();
-  for (const [key, entry] of accountReads)
-    if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(key);
-  const cached = accountReads.get(id);
-  if (cached) return cached.read;
+const ACCOUNT_TTL_MS = 60_000;
+const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
+
+const readKey = async (id: string) => `${await visitor()}:${id.trim().toLowerCase()}`;
+
+const fetchAccount = async (id: string): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
-  const read = tryApi<AccountRead>(`/v1/analytics/account/${encodeURIComponent(id)}`);
-  accountReads.set(id, { at: now, read });
-  const r = await read;
-  if (r.error) accountReads.delete(id);
+  return tryApi<AccountRead>(`/v1/analytics/account/${encodeURIComponent(id)}`);
+};
+
+const readAccount = async (id: string): Promise<AccountResult> => {
+  const key = await readKey(id);
+  const now = Date.now();
+  for (const [k, entry] of accountReads)
+    if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
+  const cached = accountReads.get(key);
+  if (cached) return cached.read;
+  const entry = { at: Infinity, read: fetchAccount(id) };
+  accountReads.set(key, entry);
+  const r = await entry.read;
+  if (accountReads.get(key) !== entry) return r;
+  if (r.error) accountReads.delete(key);
+  else entry.at = Date.now();
   return r;
 };
 
-export const forgetAccount = (id: string) => accountReads.delete(id);
+export const forgetAccount = async (id: string) => {
+  accountReads.delete(await readKey(id));
+};
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
 export const accountView = async (id: string) => {

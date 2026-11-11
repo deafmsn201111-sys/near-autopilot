@@ -59,7 +59,9 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
       void maxNonce(account).then((n) => {
         if (!alive || n === null) return;
         if (last.current !== null && n > last.current)
-          void refreshAccount(account).then(() => router.refresh());
+          void refreshAccount(account)
+            .catch(() => undefined)
+            .then(() => router.refresh());
         last.current = n;
       });
     }, seconds * 1000);
