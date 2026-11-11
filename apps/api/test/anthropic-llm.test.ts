@@ -51,7 +51,11 @@ describe('AnthropicLlmClient', () => {
 });
 
 describe('anthropicLlmFromEnv', () => {
-  const env = { ANTHROPIC_MODEL: 'claude-haiku-5-5', ANTHROPIC_MAX_TOKENS: 4096 };
+  const env = {
+    ANTHROPIC_MODEL: 'claude-haiku-5-5' as const,
+    ANTHROPIC_MAX_TOKENS: 4096,
+    LLM_DAILY_CAP_USD: 5,
+  };
 
   it('is null without a key (LLM off)', () => {
     expect(anthropicLlmFromEnv({ ...env, ANTHROPIC_API_KEY: undefined })).toBeNull();
@@ -122,6 +126,35 @@ describe('AnthropicToolLlm', () => {
       );
     },
   );
+
+  it('reports the usage of every reply, also one that then fails closed', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [use('t1')],
+        usage: { input_tokens: 1200, output_tokens: 80 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'max_tokens',
+        content: [text('{"pi')],
+        usage: { input_tokens: 1500, output_tokens: 4096 },
+      });
+    const llm = new AnthropicToolLlm({ messages: { create } } as unknown as Anthropic, config);
+    const usage: unknown[] = [];
+    const chat = llm.open({
+      system: 's',
+      prompt: 'p',
+      tools: [tool],
+      onUsage: (u) => usage.push(u),
+    });
+    await chat.send(null);
+    await expect(chat.send([{ id: 't1', content: '{}', isError: false }])).rejects.toThrow();
+    expect(usage).toEqual([
+      { inputTokens: 1200, outputTokens: 80 },
+      { inputTokens: 1500, outputTokens: 4096 },
+    ]);
+  });
 
   it('passes the abort signal to the SDK call', async () => {
     const create = vi.fn().mockResolvedValue({ stop_reason: 'end_turn', content: [text('{}')] });

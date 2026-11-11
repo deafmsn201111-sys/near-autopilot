@@ -117,7 +117,19 @@ describe('llmEnvSchema', () => {
       ANTHROPIC_API_KEY: undefined,
       ANTHROPIC_MODEL: 'claude-haiku-5-5',
       ANTHROPIC_MAX_TOKENS: 4096,
+      LLM_DAILY_CAP_USD: 5,
     });
+  });
+
+  it('accepts only the allowlisted models', () => {
+    const bad = llmEnvSchema.safeParse({ ANTHROPIC_MODEL: 'claude-made-up' });
+    expect(bad.success).toBe(false);
+    expect(bad.error?.issues[0]?.message).toMatch(/claude-haiku-5-5.*claude-sonnet-5-5/);
+  });
+
+  it('takes a daily cap in USD and rejects a negative one', () => {
+    expect(llmEnvSchema.parse({ LLM_DAILY_CAP_USD: '0.01' }).LLM_DAILY_CAP_USD).toBe(0.01);
+    expect(llmEnvSchema.safeParse({ LLM_DAILY_CAP_USD: '-1' }).success).toBe(false);
   });
 
   it('honours overrides and rejects a zero cap', () => {
@@ -131,6 +143,7 @@ describe('llmEnvSchema', () => {
       ANTHROPIC_API_KEY: 'sk-test-key',
       ANTHROPIC_MODEL: 'claude-sonnet-5-5',
       ANTHROPIC_MAX_TOKENS: 2000,
+      LLM_DAILY_CAP_USD: 5,
     });
     expect(llmEnvSchema.safeParse({ ANTHROPIC_MAX_TOKENS: '0' }).success).toBe(false);
   });

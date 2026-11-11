@@ -196,6 +196,15 @@ turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 
+**Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
+start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
+`LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
+page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `not_owner`,
+`cap`, `model_error`, `invalid_output`, `empty`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
+analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
+called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
+days are deleted (on start, then hourly).
+
 ## Repository layout
 
 ```

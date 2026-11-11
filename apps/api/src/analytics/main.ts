@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
 import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
+import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
 
 /**
@@ -31,10 +32,17 @@ const env = z
     MARKET_CONFIG_FILE: z.string().optional(),
   })
   .parse(process.env);
+// Parsed on every start, so a model outside the allowlist stops the API even when the wallet path is off.
+const llmEnv = llmEnvSchema.parse(process.env);
 
 const database = createDatabase(env.DATABASE_URL, { max: 4 });
 // The only process that migrates: the collector waits for this API to be healthy before it starts.
 await runMigrations(database.db);
+const llmLedger = new DrizzleLlmLedger(
+  database.db,
+  BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6)),
+);
+const toolLlm = anthropicToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const pools = env.MARKET_CONFIG_FILE
   ? ((
@@ -61,7 +69,14 @@ const mainnet = env.MAINNET_READ_RPC_URL
         tokenA: accountId(p.tokenA),
         tokenB: accountId(p.tokenB),
       })),
-      llm: anthropicToolLlmFromEnv(llmEnvSchema.parse(process.env)),
+      ai: toolLlm
+        ? {
+            llm: toolLlm,
+            model: llmEnv.ANTHROPIC_MODEL,
+            maxTokens: llmEnv.ANTHROPIC_MAX_TOKENS,
+            ledger: llmLedger,
+          }
+        : null,
     }
   : undefined;
 const app = buildAnalyticsServer(
@@ -82,7 +97,12 @@ const app = buildAnalyticsServer(
   },
   { logger: true },
 );
+const purge = () =>
+  llmLedger.purge().catch((err: unknown) => app.log.warn({ err }, 'llm_calls purge failed'));
+await purge();
+const purgeTimer = setInterval(() => void purge(), 60 * 60 * 1000);
 const stop = async () => {
+  clearInterval(purgeTimer);
   await app.close();
   await database.close();
   process.exit(0);

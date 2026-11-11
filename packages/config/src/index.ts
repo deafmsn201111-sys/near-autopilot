@@ -262,15 +262,26 @@ export function loadDashboardEnv(source: EnvSource = process.env): DashboardEnv 
 /** Unset and empty both mean "not provided". */
 const unsetIfEmpty = (v: unknown) => (v === '' ? undefined : v);
 
+/** The models the server may call; each has a price in apps/api/src/llm/pricing.ts. */
+export const LLM_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
+export type LlmModel = (typeof LLM_MODELS)[number];
+
 /** Server LLM (Anthropic). No key = LLM off, heuristics only. The key is read from the local .env only; never logged. */
 export const llmEnvSchema = z.object({
   ANTHROPIC_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(8).optional()),
-  ANTHROPIC_MODEL: z.preprocess(unsetIfEmpty, z.string().min(1).default('claude-haiku-5-5')),
+  ANTHROPIC_MODEL: z.preprocess(
+    unsetIfEmpty,
+    z
+      .enum(LLM_MODELS, { message: `must be one of ${LLM_MODELS.join(', ')}` })
+      .default('claude-haiku-5-5'),
+  ),
   /** Hard cap on one reply; also bounds the spend of a single call. */
   ANTHROPIC_MAX_TOKENS: z.preprocess(
     unsetIfEmpty,
     z.coerce.number().int().min(1).max(16_000).default(4096),
   ),
+  /** Spend per UTC day; a DB setting overrides it. Once reached, everyone gets the rule-based list. */
+  LLM_DAILY_CAP_USD: z.preprocess(unsetIfEmpty, z.coerce.number().min(0).max(1_000).default(5)),
 });
 export type LlmEnv = z.output<typeof llmEnvSchema>;
 
