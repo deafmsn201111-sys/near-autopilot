@@ -10,13 +10,15 @@ import { z } from 'zod';
 const NEP413_TAG = 2 ** 31 + 413;
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+/** Padded or not, standard or url-safe: Node's base64 decoder reads all four. */
+const BASE64 = /^[A-Za-z0-9+/_-]+={0,2}$/;
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
 const proofSchema = z.object({
   accountId: z.string().min(2).max(64),
   publicKey: z.string().regex(/^ed25519:[1-9A-HJ-NP-Za-km-z]{32,44}$/),
   signature: z.string().max(128),
-  nonce: z.string().base64(),
+  nonce: z.string().regex(BASE64),
 });
 
 export interface OwnershipDeps {
@@ -40,7 +42,7 @@ function base58(s: string, bytes: number): Buffer {
 const signatureBytes = (s: string) =>
   s.startsWith('ed25519:')
     ? base58(s.slice('ed25519:'.length), 64)
-    : z.string().base64().safeParse(s).success
+    : BASE64.test(s)
       ? Buffer.from(s, 'base64')
       : Buffer.alloc(0);
 

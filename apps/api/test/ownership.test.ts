@@ -68,6 +68,12 @@ describe('NEP-413 ownership proof', () => {
     expect(await verifyOwnership({ ...proof, signature }, owner, deps)).toBe(true);
   });
 
+  it('also reads an unpadded base64url signature', async () => {
+    const proof = await sign();
+    const signature = Buffer.from(proof.signature, 'base64').toString('base64url');
+    expect(await verifyOwnership({ ...proof, signature }, owner, deps)).toBe(true);
+  });
+
   it('rejects a proof for another account than the one requested', async () => {
     expect(await verifyOwnership(await sign(), 'bob.near', deps)).toBe(false);
   });

@@ -40,9 +40,13 @@ export function OwnershipCheck({ account, verified }: { account: string; verifie
               setState('signing');
               void signOwnership(account).then(async (proof) => {
                 if (!proof) return setState('declined');
-                await saveOwnershipProof(proof);
-                setState('idle');
-                router.refresh();
+                try {
+                  await saveOwnershipProof(proof);
+                  setState('idle');
+                  router.refresh();
+                } catch {
+                  setState('declined');
+                }
               });
             }}
           >
