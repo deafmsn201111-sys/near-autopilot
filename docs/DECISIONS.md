@@ -79,5 +79,7 @@ holds no key. Raising a cap needs a new entry here.
 **Context:** Security item 6 (`HACKATHON_PLAN.md`): strict CSP, generic error messages.
 **Decision:** Scripts run only with the per-response nonce (`'strict-dynamic'`); `connect-src`, `frame-src` and
 `img-src` allow any `https:` because wallets in HOT Connector's iframe inherit the policy and call their own backends.
-Errors: our own 4xx texts and `RangeError`s are shown; upstream text and 5xx details only go to the log.
+Errors: invalid input (zod, Fastify's own 4xx) is a 400 with its reason; a prepare our code refuses (`RangeError`,
+`MissingPriceError`, `PreconditionError`, `UnsupportedIntentError`) is a 422 with its reason; everything else is a
+bare 500/502, details only in the log.
 **Consequences:** Every page renders dynamically (nonce). A new inline script needs the nonce from `headers()`.

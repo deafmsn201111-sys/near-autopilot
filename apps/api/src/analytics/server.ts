@@ -36,6 +36,20 @@ export interface AnalyticsDeps {
 const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
+/** Only input problems are explained (bad query, body); anything else is a bare 500, details go to the log. */
+function publicError(err: unknown): { status: number; error: string } {
+  if (err instanceof z.ZodError)
+    return {
+      status: 400,
+      error: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    };
+  const e = err as { code?: unknown; statusCode?: number; message?: string };
+  const fastifyClientError =
+    typeof e.code === 'string' && e.code.startsWith('FST_') && (e.statusCode ?? 500) < 500;
+  if (fastifyClientError) return { status: e.statusCode ?? 400, error: e.message ?? 'bad request' };
+  return { status: 500, error: 'internal error' };
+}
+
 export function buildAnalyticsServer(
   deps: AnalyticsDeps,
   opts: { logger?: boolean } = {},
@@ -43,10 +57,10 @@ export function buildAnalyticsServer(
   const app = Fastify({ logger: opts.logger ?? false });
   const now = deps.now ?? (() => new Date());
   const expected = digest(deps.apiToken);
-  app.setErrorHandler((err: { statusCode?: number; message: string }, req, reply) => {
-    const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
+  app.setErrorHandler((err, req, reply) => {
+    const { status, error } = publicError(err);
     if (status === 500) req.log.error({ err }, 'unhandled error');
-    return reply.code(status).send({ error: status === 500 ? 'internal error' : err.message });
+    return reply.code(status).send({ error });
   });
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/v1/')) return;

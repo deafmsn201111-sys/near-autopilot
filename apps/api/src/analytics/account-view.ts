@@ -1,5 +1,8 @@
 import {
   accountIdSchema,
+  MissingPriceError,
+  PreconditionError,
+  UnsupportedIntentError,
   type AccountId,
   type FunctionCallAction,
   type TokenId,
@@ -55,13 +58,6 @@ import { consensus } from './series';
  * view_account, ft_balance_of, Burrow get_account / get_assets, Rhea get_return. Nothing is signed or sent, and the
  * account is not stored: the answer is computed per request (cached for 60 s).
  */
-/** Upstream (RPC, contract) text stays in the log; our own RangeErrors are request problems, safe to show. */
-function upstreamFailure(req: FastifyRequest, reply: FastifyReply, e: unknown) {
-  if (e instanceof RangeError) return reply.code(502).send({ error: e.message });
-  req.log.error({ err: e }, 'prepare failed');
-  return reply.code(502).send({ error: 'could not prepare the transaction right now' });
-}
-
 export interface MainnetReadDeps {
   readonly rpc: NearRpcClient;
   readonly burrowId: AccountId;
@@ -427,6 +423,16 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
   }
 
   return recs;
+}
+
+const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
+
+/** Why this request cannot be built is shown (422); upstream (RPC, contract) text stays in the log (502). */
+export function prepareFailure(req: FastifyRequest, reply: FastifyReply, e: unknown) {
+  if (REQUEST_PROBLEMS.some((kind) => e instanceof kind))
+    return reply.code(422).send({ error: (e as Error).message });
+  req.log.error({ err: e }, 'prepare failed');
+  return reply.code(502).send({ error: 'could not prepare the transaction right now' });
 }
 
 export function registerAccountView(
@@ -1038,7 +1044,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return upstreamFailure(req, reply, e);
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1134,7 +1140,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return upstreamFailure(req, reply, e);
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1193,7 +1199,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return upstreamFailure(req, reply, e);
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1280,7 +1286,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return upstreamFailure(req, reply, e);
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1520,7 +1526,7 @@ export function registerAccountView(
         note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
       };
     } catch (e) {
-      return upstreamFailure(req, reply, e);
+      return prepareFailure(req, reply, e);
     }
   });
 }

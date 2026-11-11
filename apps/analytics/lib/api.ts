@@ -3,7 +3,7 @@ import { getEnv } from './env';
 
 const UNREACHABLE = 'the analytics service is unreachable';
 
-class ApiError extends Error {
+class ApiRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -27,7 +27,7 @@ export async function api<T>(path: string): Promise<T> {
     });
   } catch (e) {
     console.error(`analytics API ${path} unreachable`, e);
-    throw new ApiError(UNREACHABLE, 0);
+    throw new ApiRequestError(UNREACHABLE, 0);
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: unknown };
@@ -35,7 +35,7 @@ export async function api<T>(path: string): Promise<T> {
       typeof body.error === 'string'
         ? body.error
         : `the analytics service failed (HTTP ${res.status})`;
-    throw new ApiError(message, res.status);
+    throw new ApiRequestError(message, res.status);
   }
   return (await res.json()) as T;
 }
@@ -46,7 +46,7 @@ export async function tryApi<T>(
   try {
     return { data: await api<T>(path), error: null, status: null };
   } catch (e) {
-    if (e instanceof ApiError) return { data: null, error: e.message, status: e.status };
+    if (e instanceof ApiRequestError) return { data: null, error: e.message, status: e.status };
     console.error(`analytics API ${path} failed`, e);
     return { data: null, error: 'the analytics service failed', status: null };
   }

@@ -1,5 +1,9 @@
+import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { MissingPriceError, PreconditionError, RpcError } from '@near-autopilot/core';
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
+import { prepareFailure } from '../src/analytics/account-view';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
 
@@ -60,6 +64,26 @@ describe('public error messages', () => {
     expect(res.json()).toEqual({ error: 'could not prepare the transaction right now' });
   });
 
+  it.each([
+    [new PreconditionError('register storage first'), 'register storage first'],
+    [new MissingPriceError('xyz.near'), 'No oracle price for token xyz.near'],
+    [new RangeError('amount must be positive'), 'amount must be positive'],
+  ])('a request problem (%s) keeps its own reason as 422', async (error, message) => {
+    const app = Fastify();
+    app.get('/x', (req, reply) => prepareFailure(req, reply, error));
+    const res = await app.inject({ url: '/x' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({ error: message });
+  });
+
+  it('an RPC failure inside prepare stays generic', async () => {
+    const app = Fastify();
+    app.get('/x', (req, reply) => prepareFailure(req, reply, new RpcError(UPSTREAM, true)));
+    const res = await app.inject({ url: '/x' });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'could not prepare the transaction right now' });
+  });
+
   it('a failed database check reports it is down, not the driver text', async () => {
     const db = {
       execute: async () => {
@@ -88,6 +112,25 @@ describe('public error messages', () => {
     const res = await app.inject({ url: '/v1/boom', headers: auth });
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: 'internal error' });
+  });
+
+  it('a foreign error with a 4xx status stays generic', async () => {
+    const app = server(UPSTREAM);
+    app.get('/v1/foreign', async () => {
+      throw Object.assign(new Error(UPSTREAM), { statusCode: 429 });
+    });
+    const res = await app.inject({ url: '/v1/foreign', headers: auth });
+    expect(res.json()).toEqual({ error: 'internal error' });
+  });
+
+  it('a rejected query is a 400 naming the bad field', async () => {
+    const app = server(UPSTREAM);
+    app.get('/v1/limited', async (req) =>
+      z.object({ limit: z.coerce.number().max(10) }).parse(req.query),
+    );
+    const res = await app.inject({ url: '/v1/limited?limit=9999', headers: auth });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ error: string }>().error).toMatch(/^limit: /);
   });
 
   it('a client error keeps its own message', async () => {
