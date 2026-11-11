@@ -20,6 +20,7 @@ import {
   type MarketReport,
   type PriceObservation,
 } from '../market-data/model';
+import { failureKind } from '../public-text';
 import type { AutopilotRepository } from '../repository';
 import { demoAssets, type DemoPortfolioId } from '../simulation/demo-portfolios';
 import { wire } from '../wiring';
@@ -176,7 +177,7 @@ export class ShadowCollector {
         sources.push({
           source,
           health: 'unavailable',
-          detail: errorMessage(e),
+          detail: `failed: ${failureKind(e)}`,
           records: 0,
           durationMs: Date.now() - t0,
         });
@@ -410,8 +411,8 @@ export class ShadowCollector {
           return { value: null, records: this.d.portfolios.length };
         });
     } catch (e) {
-      error = errorMessage(e);
-      this.d.logger.error('collector cycle failed', { error });
+      error = `cycle failed: ${failureKind(e)}`;
+      this.d.logger.error('collector cycle failed', { error: errorMessage(e) });
     }
     const finishedAt = this.d.now();
     const status = error

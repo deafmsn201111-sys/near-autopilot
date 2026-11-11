@@ -6,6 +6,7 @@ import { toJsonSafe } from '@near-autopilot/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { EvidenceStore } from '../evidence/store';
+import { publicRoute } from '../public-text';
 import { ROOT } from '../thesis/paths';
 import { computeThesis, type ThesisData } from '../thesis/rebuild';
 import { RULES, thesisSummary } from '../thesis/report';
@@ -124,7 +125,7 @@ export function registerEvidence(
       q.origin ? { limit: q.limit, origin: q.origin } : { limit: q.limit },
     );
     return {
-      routes: rows.map((r) => ({ ...r, environment: env(r), executed: false })),
+      routes: rows.map((r) => ({ ...publicRoute(r), environment: env(r), executed: false })),
     };
   });
 

@@ -15,6 +15,7 @@ import { estimateDcl, type DclEstimate } from './dcl';
 import { rankOpportunities, type SimulationInput } from './opportunities';
 import { MAINNET_ASSETS } from '../market-data/assets';
 import { deviationBps, parseDecimal } from '../market-data/decimal';
+import { publicCycle, publicObservation } from '../public-text';
 
 /**
  * READ-ONLY analytics API over what the collector stored. It never reads the chain or a price API, never starts a
@@ -100,7 +101,7 @@ export function buildAnalyticsServer(
 
   app.get('/v1/analytics/overview', async () => {
     const [cycles, snapshot, pools, markets] = await Promise.all([
-      deps.store.recentCycles(200),
+      deps.store.recentCycles(200).then((cs) => cs.map(publicCycle)),
       deps.store.latestSnapshot(),
       deps.store.pools(),
       deps.store.markets(),
@@ -180,13 +181,13 @@ export function buildAnalyticsServer(
     const q = z
       .object({ limit: z.coerce.number().int().min(1).max(500).default(50) })
       .parse(req.query);
-    return { cycles: await deps.store.recentCycles(q.limit) };
+    return { cycles: (await deps.store.recentCycles(q.limit)).map(publicCycle) };
   });
 
   app.get('/v1/analytics/prices', async () => {
     const snapshot = await deps.store.latestSnapshot();
     if (!snapshot) return { snapshot: null, assets: [] };
-    const obs = await deps.store.pricesForSnapshot(snapshot.id);
+    const obs = (await deps.store.pricesForSnapshot(snapshot.id)).map(publicObservation);
     const curated = MAINNET_ASSETS.map((a) => a.token);
     const assets = [...new Set(obs.map((o) => o.asset))]
       .sort(
@@ -252,7 +253,9 @@ export function buildAnalyticsServer(
     const { asset } = z.object({ asset: z.string().min(1).max(200) }).parse(req.params);
     return {
       asset,
-      history: await deps.store.priceHistory(asset, new Date(now().getTime() - 30 * 86_400_000)),
+      history: (
+        await deps.store.priceHistory(asset, new Date(now().getTime() - 30 * 86_400_000))
+      ).map(publicObservation),
     };
   });
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ExchangeMarket, ReferenceAsset } from './assets';
 import { parseDecimal, type Decimal } from './decimal';
+import { failureKind } from '../public-text';
 import { MarketHttpError, type HttpJsonClient } from './http';
 import type {
   ExchangeName,
@@ -146,7 +147,7 @@ export class ExchangeSource implements PriceSource {
           fetchedAt: now,
           ageMs: null,
           status: 'unavailable',
-          reason: e instanceof MarketHttpError ? `${e.kind}: ${e.message}` : 'request failed',
+          reason: e instanceof MarketHttpError ? failureKind(e) : 'request failed',
         };
       }
       if (obs.status !== 'valid') bad += 1;

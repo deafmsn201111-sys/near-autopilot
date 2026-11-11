@@ -323,7 +323,7 @@ describe('PythSource', () => {
     expect(r.status.health).toBe('degraded');
     const near = r.observations.get(NEAR.token)?.[0];
     expect(near?.status).toBe('not_entitled'); // 403: not on this plan (reported apart from outages)
-    expect(near?.reason).toContain('not entitled');
+    expect(near?.reason).toBe('unauthorized (HTTP 403)');
     expect(r.observations.get(USDT.token)?.[0]?.status).toBe('valid');
     expect(
       JSON.stringify([...r.observations.values()], (_k: string, v: unknown) =>

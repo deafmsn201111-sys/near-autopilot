@@ -12,6 +12,7 @@ import type { MarketConfig } from '../market-config';
 import { ReferencePriceOracle } from '../market-data/adapters';
 import { HttpJsonClient } from '../market-data/http';
 import type { MarketReport } from '../market-data/model';
+import { failureKind } from '../public-text';
 import type { AutopilotRepository } from '../repository';
 import { OneClickClient } from './one-click';
 import { routeSwap, type RouteDeps } from './shadow-gateway';
@@ -58,7 +59,8 @@ export async function probeRoutes(
       if (route.chosenVenue) routed += 1;
       parts.push(`$${usd}: ${route.chosenVenue ?? 'none'}`);
     } catch (e) {
-      parts.push(`$${usd}: failed (${errorMessage(e)})`);
+      d.logger.warn('route probe size failed', { usd, error: errorMessage(e) });
+      parts.push(`$${usd}: failed (${failureKind(e)})`);
     }
   }
   return { records: stored, detail: parts.join('; '), degraded: routed < d.sizesUsd.length };
@@ -95,6 +97,7 @@ export function collectorRouteProbe(o: {
             }),
             baseUrl: o.env.ONE_CLICK_URL,
           }),
+          o.logger,
         );
   return async (
     market: MarketReport,
@@ -103,10 +106,14 @@ export function collectorRouteProbe(o: {
   ) => {
     if (!pool) throw new Error('no Rhea pool configured (config.rhea.pools)');
     const venues: Venue[] = [
-      new RheaVenue(viewer, {
-        contractId: o.env.RHEA_CONTRACT_ID,
-        pools: new StaticPoolRegistry(o.config.rhea.pools),
-      }),
+      new RheaVenue(
+        viewer,
+        {
+          contractId: o.env.RHEA_CONTRACT_ID,
+          pools: new StaticPoolRegistry(o.config.rhea.pools),
+        },
+        o.logger,
+      ),
       ...(oneClick ? [oneClick] : []),
     ];
     return probeRoutes({
