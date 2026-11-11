@@ -18,7 +18,7 @@ export function OwnershipCheck({ account, verified }: { account: string; verifie
 
   if (verified)
     return (
-      <div className="callout" style={{ marginBottom: 16 }}>
+      <div className="callout" style={{ margin: '16px 0' }}>
         <b>Ownership verified.</b> You signed the ownership message for {account}, so this account
         can get AI analysis.
       </div>
@@ -26,7 +26,7 @@ export function OwnershipCheck({ account, verified }: { account: string; verifie
 
   const isOwnerWallet = connected === account;
   return (
-    <div className="callout" style={{ marginBottom: 16 }}>
+    <div className="callout" style={{ margin: '16px 0' }}>
       <b>Heuristic analysis.</b>{' '}
       {isOwnerWallet ? (
         <>
