@@ -430,7 +430,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
 
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
-const OWNER_CACHE_TTL_MS = 10 * 60_000;
+const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
 
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
@@ -476,7 +476,8 @@ export function registerAccountView(
       (await accessKeys.getContext(accountIdSchema.parse(account), publicKey)).permission.kind ===
       'full_access',
   };
-  // Positive results only, so junk proofs cost no memory; a re-render then needs no RPC round trip.
+  // Positive results only (junk proofs cost no memory), for 60 s: a revoked key or expired proof is honoured at most
+  // that long.
   const owners = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
   const isOwner = async (header: unknown, id: string) => {
     if (typeof header !== 'string') return false;
