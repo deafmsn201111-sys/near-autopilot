@@ -196,6 +196,15 @@ no longer said what comes first.
   untracked (no upstream licence).
 - Repo description and homepage: owner step (needs admin rights).
 
+## 2026-11-12 — Security 6b: no raw upstream text in stored reasons (#48)
+
+**Why:** the collector stored raw upstream error text (RPC, price providers, 1Click) and the public pages showed it.
+
+- `apps/api/src/public-text.ts`: `failureKind` (error kind + HTTP status, else `unknown error`) for every write site
+  (venues, Pyth/DefiLlama/exchange observations, collector source and cycle, route probe); full text goes to the log.
+- Read side: `publicCycle`, `publicRoute`, `publicObservation` on overview, collector, system, activity, routes,
+  prices and price history, so rows stored before the fix are cleaned (marker rewrite + URL/HTML/stack net).
+
 ## 2026-11-12 — AI result cache and global AI limit in the API (#22)
 
 - `analysisKey` (`apps/api/src/analytics/analysis-key.ts`): sha256 of the observation without dates, the rule-based

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ReferenceAsset } from './assets';
 import { compareDecimal, decimalFromJsonNumber, type Decimal } from './decimal';
+import { failureKind } from '../public-text';
 import { MarketHttpError, type HttpJsonClient } from './http';
 import type { ObservationStatus, PriceObservation, PriceSource, SourceResult } from './model';
 
@@ -16,7 +17,7 @@ const statusOf = (e: unknown): ObservationStatus =>
   e instanceof MarketHttpError && e.kind === 'unauthorized' ? 'not_entitled' : 'unavailable';
 
 const errorText = (e: unknown): string =>
-  e instanceof MarketHttpError ? `${e.kind}: ${e.message}` : 'request failed';
+  e instanceof MarketHttpError ? failureKind(e) : 'request failed';
 
 function judge(
   price: Decimal | null,
