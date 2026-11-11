@@ -56,12 +56,12 @@ on the [board](https://github.com/users/derevyanko/projects/1). Bugs from the ev
 
 ### Day 2 — 12 Nov: LLM core
 
-#18 tool-use loop · #19 security 3 · #20 NEP-413 · #21, #22 security 2 · #23 pool allowlist · #24 demo portfolio cache
+#18 tool-use loop · #19 security 3 · #20 NEP-413 · #21, #22 security 2 · #59 limiter sweep fix · #23 pool allowlist · #24 demo portfolio cache
 · #25 strategies · #26 reasoning trace
 
 ### Day 3 — 13 Nov: 1Click + end-to-end
 
-#27, #28, #29 1Click deposit (security 4, 5) · #30 end-to-end signing · #31 admin spend + kill switch · #32 `events`
+#27, #28, #29 1Click deposit (security 4, 5) · #60 account page refresh after 30 min · #30 end-to-end signing · #31 admin spend + kill switch · #32 `events`
 table · #33 admin funnel + LLM quality
 
 ### Day 4 — 14 Nov: finish
