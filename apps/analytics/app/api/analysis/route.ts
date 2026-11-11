@@ -12,7 +12,7 @@ import { consume } from '../../../lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
 // The API holds the global AI limit, counting only runs that reach the model; free rule-based answers never use it.
-const LIMIT = { perVisitor: 5, overall: Infinity, windowMs: 10 * 60_000 };
+const LIMIT = { perVisitor: 5, windowMs: 10 * 60_000 };
 const LLM_TIMEOUT_MS = 60_000;
 
 function isJson(req: Request): boolean {

@@ -63,7 +63,8 @@ export async function visitor(): Promise<string> {
 
 export interface Limit {
   perVisitor: number;
-  overall: number;
+  /** Absent: no count for all visitors here. */
+  overall?: number;
   windowMs: number;
 }
 
@@ -71,7 +72,7 @@ export interface Limit {
 export async function consume(kind: string, l: Limit, now = Date.now()): Promise<boolean> {
   sweep(now, l.windowMs);
   if (!take(visitors, `${kind}:${await visitor()}`, l.perVisitor, l.windowMs, now)) return false;
-  return take(overall, kind, l.overall, l.windowMs, now);
+  return l.overall === undefined || take(overall, kind, l.overall, l.windowMs, now);
 }
 
 // "Your account" reads a mainnet account through our RPC key: limited for every visitor of the public site.
