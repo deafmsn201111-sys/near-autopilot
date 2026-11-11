@@ -14,6 +14,7 @@ const USDT = accountId('usdt.tether-token.near');
 const ctx = {
   signerId: ALICE,
   allowedReceivers: new Set<string>([EX, WNEAR, USDT]),
+  allowedPools: new Set([3879]),
 };
 
 /** A well-formed add_liquidity-style cascade. */
@@ -77,6 +78,20 @@ function patchAction(
 describe('validateCascade', () => {
   it('accepts a well-formed cascade', () => {
     expect(validateCascade(goodCascade(), ctx)).toEqual({ ok: true });
+  });
+
+  it('rejects add_liquidity into a pool that is not allowlisted', () => {
+    const c = goodCascade();
+    patchAction(c, 2, { args: { pool_id: 5515, amounts: ['1', '1'] } });
+    const r = validateCascade(c, ctx);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reasons.join()).toMatch(/pool 5515 is not allowlisted/);
+  });
+
+  it('rejects add_liquidity when no pool allowlist is given', () => {
+    const r = validateCascade(goodCascade(), { ...ctx, allowedPools: undefined });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reasons.join()).toMatch(/pool 3879 is not allowlisted/);
   });
 
   it('rejects an empty cascade', () => {

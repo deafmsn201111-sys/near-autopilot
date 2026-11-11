@@ -43,6 +43,8 @@ export interface CascadeValidationContext {
   readonly signerId: string;
   /** Receivers this cascade is allowed to touch: the protocol contract(s) and the specific token(s) in play. */
   readonly allowedReceivers: ReadonlySet<string>;
+  /** Rhea v1 pools `add_liquidity` may target (config `rhea.pools`). Absent means no pool is allowed. */
+  readonly allowedPools?: ReadonlySet<number> | undefined;
 }
 
 export type CascadeValidation =
@@ -80,6 +82,11 @@ function checkAction(
     if (typeof to !== 'string' || !ctx.allowedReceivers.has(to))
       reasons.push(`${where}: transfers to an unexpected receiver ${String(to)}`);
     if (typeof a.args['msg'] !== 'string') reasons.push(`${where}: msg must be a string`);
+  }
+  if (a.methodName === 'add_liquidity') {
+    const pool = a.args['pool_id'];
+    if (typeof pool !== 'number' || !ctx.allowedPools?.has(pool))
+      reasons.push(`${where}: pool ${String(pool)} is not allowlisted`);
   }
   // A wrapping deposit is the user's own NEAR moving into their wNEAR balance; don't count it toward the cascade cap.
   return isWrap ? 0n : a.deposit;
