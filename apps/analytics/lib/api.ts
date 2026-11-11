@@ -1,23 +1,54 @@
 import 'server-only';
 import { getEnv } from './env';
 
-/** Server-side only: the API token never reaches the browser. Every call is a read of stored data. */
+const UNREACHABLE = 'the analytics service is unreachable';
+
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Server-side only: the API token never reaches the browser. Every call is a read of stored data. A failure carries
+ * the API's own short message (it never includes upstream text), never the internal address.
+ */
 export async function api<T>(path: string): Promise<T> {
   const env = getEnv();
-  const res = await fetch(`${env.API_BASE_URL}${path}`, {
-    cache: 'no-store',
-    headers: { authorization: `Bearer ${env.API_TOKEN}` },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`analytics API ${path}: HTTP ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${env.API_BASE_URL}${path}`, {
+      cache: 'no-store',
+      headers: { authorization: `Bearer ${env.API_TOKEN}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (e) {
+    console.error(`analytics API ${path} unreachable`, e);
+    throw new ApiError(UNREACHABLE, 0);
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+    const message =
+      typeof body.error === 'string'
+        ? body.error
+        : `the analytics service failed (HTTP ${res.status})`;
+    throw new ApiError(message, res.status);
+  }
   return (await res.json()) as T;
 }
 
-export async function tryApi<T>(path: string): Promise<{ data: T | null; error: string | null }> {
+export async function tryApi<T>(
+  path: string,
+): Promise<{ data: T | null; error: string | null; status: number | null }> {
   try {
-    return { data: await api<T>(path), error: null };
+    return { data: await api<T>(path), error: null, status: null };
   } catch (e) {
-    return { data: null, error: e instanceof Error ? e.message : String(e) };
+    if (e instanceof ApiError) return { data: null, error: e.message, status: e.status };
+    console.error(`analytics API ${path} failed`, e);
+    return { data: null, error: 'the analytics service failed', status: null };
   }
 }
 
@@ -41,6 +72,7 @@ export async function apiPost(
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { status: res.status, body: json };
   } catch (e) {
-    return { status: 0, body: { error: e instanceof Error ? e.message : String(e) } };
+    console.error(`analytics API ${path} unreachable`, e);
+    return { status: 0, body: { error: UNREACHABLE } };
   }
 }

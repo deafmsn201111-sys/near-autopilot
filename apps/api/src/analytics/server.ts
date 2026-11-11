@@ -43,6 +43,11 @@ export function buildAnalyticsServer(
   const app = Fastify({ logger: opts.logger ?? false });
   const now = deps.now ?? (() => new Date());
   const expected = digest(deps.apiToken);
+  app.setErrorHandler((err: { statusCode?: number; message: string }, req, reply) => {
+    const status = err.statusCode && err.statusCode < 500 ? err.statusCode : 500;
+    if (status === 500) req.log.error({ err }, 'unhandled error');
+    return reply.code(status).send({ error: status === 500 ? 'internal error' : err.message });
+  });
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/v1/')) return;
     const h = req.headers.authorization ?? '';

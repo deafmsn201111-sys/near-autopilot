@@ -42,7 +42,7 @@ import {
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { valueAccount, type AccountReads, type TokenFacts } from './account';
 import { loopStrategies, type LoopMarket } from './looping';
@@ -55,6 +55,13 @@ import { consensus } from './series';
  * view_account, ft_balance_of, Burrow get_account / get_assets, Rhea get_return. Nothing is signed or sent, and the
  * account is not stored: the answer is computed per request (cached for 60 s).
  */
+/** Upstream (RPC, contract) text stays in the log; our own RangeErrors are request problems, safe to show. */
+function upstreamFailure(req: FastifyRequest, reply: FastifyReply, e: unknown) {
+  if (e instanceof RangeError) return reply.code(502).send({ error: e.message });
+  req.log.error({ err: e }, 'prepare failed');
+  return reply.code(502).send({ error: 'could not prepare the transaction right now' });
+}
+
 export interface MainnetReadDeps {
   readonly rpc: NearRpcClient;
   readonly burrowId: AccountId;
@@ -480,11 +487,10 @@ export function registerAccountView(
       nativeYocto = await native.getNativeBalance(id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return reply.code(/does not exist|UNKNOWN_ACCOUNT/i.test(msg) ? 404 : 502).send({
-        error: /does not exist|UNKNOWN_ACCOUNT/i.test(msg)
-          ? `account ${id} does not exist on NEAR mainnet`
-          : `could not read the account: ${msg}`,
-      });
+      if (/does not exist|UNKNOWN_ACCOUNT/i.test(msg))
+        return reply.code(404).send({ error: `account ${id} does not exist on NEAR mainnet` });
+      req.log.error({ err: e, account: id }, 'account read failed');
+      return reply.code(502).send({ error: 'could not read the account from NEAR right now' });
     }
     const [assets, markets, meta, prices, account] = await Promise.all([
       burrow.listAssets(),
@@ -1032,7 +1038,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return upstreamFailure(req, reply, e);
       }
     }
 
@@ -1128,7 +1134,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return upstreamFailure(req, reply, e);
       }
     }
 
@@ -1187,7 +1193,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return upstreamFailure(req, reply, e);
       }
     }
 
@@ -1274,7 +1280,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return upstreamFailure(req, reply, e);
       }
     }
 
@@ -1514,7 +1520,7 @@ export function registerAccountView(
         note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
       };
     } catch (e) {
-      return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      return upstreamFailure(req, reply, e);
     }
   });
 }

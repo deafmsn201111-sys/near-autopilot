@@ -127,9 +127,9 @@ interface Sim {
 
 export default async function OpportunityPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { data, error } = await opportunity(decodeURIComponent(id));
+  const { data, error, status } = await opportunity(decodeURIComponent(id));
   if (!data) {
-    if (error?.includes('HTTP 404')) notFound();
+    if (status === 404) notFound();
     return <ErrorState what="This opportunity" error={error} />;
   }
   const o = data.opportunity;
