@@ -588,12 +588,16 @@ describe('analyseAccount', () => {
     it('answers a repeat analysis of an unchanged wallet from the cache, with no model call and no row', async () => {
       const l = ledger();
       const deps = ai(ranked().llm, l);
-      const first = await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      const first = await analyseAccount(deps, {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
       expect(first.source).toBe('llm');
       const again = fake([() => callAll]);
       const second = await analyseAccount(
         { ...deps, llm: again.llm },
-        { ...ctx, observe: async () => later(), heuristics: [heuristic] },
+        { ...ctx, observe: async () => later(), heuristics: [heuristic], checks: [heuristic] },
       );
       expect(second).toEqual(first);
       expect(again.tools).toEqual([]);
@@ -604,10 +608,13 @@ describe('analyseAccount', () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       try {
         const deps = ai(ranked().llm);
-        await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+        await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] });
         vi.setSystemTime(Date.now() + 10 * 60_000);
         const again = ranked();
-        await analyseAccount({ ...deps, llm: again.llm }, { ...ctx, heuristics: [heuristic] });
+        await analyseAccount(
+          { ...deps, llm: again.llm },
+          { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+        );
         expect(again.tools).toHaveLength(1);
       } finally {
         vi.useRealTimers();
@@ -616,23 +623,25 @@ describe('analyseAccount', () => {
 
     it('does not cache a fallback', async () => {
       const deps = ai(fake([() => final([])]).llm);
-      expect((await analyseAccount(deps, { ...ctx, heuristics: [heuristic] })).fallback).toBe(
-        'empty',
-      );
+      expect(
+        (await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] }))
+          .fallback,
+      ).toBe('empty');
       const again = ranked();
       const out = await analyseAccount(
         { ...deps, llm: again.llm },
-        { ...ctx, heuristics: [heuristic] },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
       );
       expect(out.source).toBe('llm');
     });
 
     it('never serves a cached result to a visitor who has not proved ownership', async () => {
       const deps = ai(ranked().llm);
-      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] });
       const out = await analyseAccount(deps, {
         ...ctx,
         heuristics: [heuristic],
+        checks: [heuristic],
         ownerVerified: false,
       });
       expect(out.fallback).toBe('not_owner');
@@ -641,11 +650,11 @@ describe('analyseAccount', () => {
     it('over the global limit answers with the rule-based list labelled busy, and no model call', async () => {
       const l = ledger();
       const deps = { ...ai(fake([() => final([])]).llm, l), memo: analysisMemo(1) };
-      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] });
       const again = fake([() => final([])]);
       const out = await analyseAccount(
         { ...deps, llm: again.llm },
-        { ...ctx, heuristics: [heuristic] },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
       );
       expect(out).toMatchObject({
         source: 'heuristic',
@@ -667,7 +676,12 @@ describe('analyseAccount', () => {
         }),
         memo,
       };
-      const out = await analyseAccount(deps, { ...ctx, heuristics: [heuristic] }, () => {}, 20);
+      const out = await analyseAccount(
+        deps,
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+        () => {},
+        20,
+      );
       expect(out.fallback).toBe('deadline');
       expect(memo.runs).toEqual([]);
     });
@@ -675,10 +689,18 @@ describe('analyseAccount', () => {
     it('counts only runs that reach the model against the global limit', async () => {
       const memo = analysisMemo(2);
       const deps = { ...ai(ranked().llm), memo };
-      await analyseAccount(deps, { ...ctx, heuristics: [heuristic], ownerVerified: false });
-      await analyseAccount({ ...deps, ledger: ledger(0n) }, { ...ctx, heuristics: [heuristic] });
-      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
-      await analyseAccount(deps, { ...ctx, heuristics: [heuristic] });
+      await analyseAccount(deps, {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+        ownerVerified: false,
+      });
+      await analyseAccount(
+        { ...deps, ledger: ledger(0n) },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+      );
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] });
+      await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] });
       const bob = accountId('bob.near');
       const other = ranked();
       const out = await analyseAccount(
@@ -688,6 +710,7 @@ describe('analyseAccount', () => {
           accountId: bob,
           observe: async () => ({ ...observation(), accountId: bob }),
           heuristics: [heuristic],
+          checks: [heuristic],
         },
       );
       expect(other.tools).toHaveLength(1);
