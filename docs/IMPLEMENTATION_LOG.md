@@ -164,6 +164,38 @@ no longer said what comes first.
 - `HACKATHON_PLAN.md`: schedule and cut order follow the milestones; decisions updated (model allowlist and cap
   fallback, presets without min APR, 1Click chains / optional JWT / status by deposit address, `ADMIN_API_TOKEN`).
 
+## 2026-11-12 — LLM spend cap and llm_calls (#21)
+
+- `llm_calls` + `llm_settings` (migration 0018), `DrizzleLlmLedger`: one row per analysis that reached the model,
+  numbers only, purged after 7 days by the analytics API.
+- Daily cap per UTC day (`LLM_DAILY_CAP_USD`, default $5, DB override) checked before every model call against the
+  worst case; usage via `ToolLlm.open({ onUsage })`, SDK retries off; `ANTHROPIC_MODEL` allowlist with a price table.
+- Fallback codes on the analysis result and in `llm_calls.outcome` (D14).
+
+## 2026-11-12 — LLM input: token names from our own list only (#19)
+
+**Why:** anyone can deploy a token whose `ft_metadata` symbol is an instruction; that text reached the model's prompt.
+
+- Agent tool candidates (guardian, allocator) name tokens with `modelTokenLabel` (`apps/api/src/thesis/labels.ts`: the
+  same list as the thesis `tokenLabel`, else the contract id, shortened past 20 chars), not the snapshot symbol.
+- The account view builds a second rule-based list for the model (`forModel`, kept off the HTTP body) with labelled
+  symbols and DCL pair names; the wallet-check tools return it. The user-facing fallback and portfolio table keep the
+  metadata symbol. The prompt no longer carries the account id.
+- Residual: token ids, DCL pool/LP ids and agent notes still reach the model as contract ids (`accountIdSchema`
+  charset, ≤ 64 chars); candidate ids need them.
+- Test: `analysis-endpoint.test.ts` "what the model is sent" — hostile symbols on a wallet token and both DCL pool
+  tokens appear nowhere in what the fake model receives.
+
+## 2026-11-12 — Secrets audit before the repo goes public (#45)
+
+- gitleaks over all refs (222 commits): 376 findings, all public NEAR token ids or a test key except the known
+  FastNEAR key from `ed756ee`. Issue and PR bodies and comments (58 issues, 21 PRs): no secrets; the VPS IP in #8 is
+  public through DNS.
+- `.gitleaks.toml`, `.gitleaksignore`, CI job `secrets`; D15 (rotate, no rewrite).
+- `.claude/skills`: MIT licences for `grill-me`/`grilling`, `README.md` with sources; `near-dapp`/`near-intents`
+  untracked (no upstream licence).
+- Repo description and homepage: owner step (needs admin rights).
+
 ## 2026-11-12 — Security 6b: no raw upstream text in stored reasons (#48)
 
 **Why:** the collector stored raw upstream error text (RPC, price providers, 1Click) and the public pages showed it.

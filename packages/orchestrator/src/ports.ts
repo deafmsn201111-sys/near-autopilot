@@ -51,6 +51,11 @@ export type LlmToolTurn =
   | { readonly kind: 'tool_calls'; readonly calls: readonly ToolCall[] }
   | { readonly kind: 'final'; readonly text: string };
 
+export interface LlmUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 /** One conversation. The first `send` passes null; every later one answers the previous turn's tool calls. */
 export interface ToolChat {
   send(results: readonly ToolResult[] | null): Promise<LlmToolTurn>;
@@ -64,6 +69,8 @@ export interface ToolLlm {
     readonly tools: readonly LlmToolSpec[];
     /** Aborts the model call in flight. */
     readonly signal?: AbortSignal;
+    /** Called with the billed tokens of every reply as it arrives, before the reply is checked (so also on a throw). */
+    readonly onUsage?: (usage: LlmUsage) => void;
   }): ToolChat;
 }
 

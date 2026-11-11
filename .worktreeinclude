@@ -3,3 +3,5 @@
 config/*.local.json
 .claude/settings.local.json
 deploy/public/config/
+.claude/skills/near-dapp/
+.claude/skills/near-intents/

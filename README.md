@@ -188,13 +188,24 @@ gives the central LLM five tools:
 | `portfolio_concentration` | Wallet check: share of the portfolio in one token                                                    |
 | `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                        |
 
-The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
+The model sees only numbers and token names from our own list: a token's own `ft_metadata` symbol never reaches it (an
+unknown token appears as its shortened contract id, on the AI-ranked cards too), and the prompt does not carry the
+account id. The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
 transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
 by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
 turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
 **AI-ranked**. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
+
+**Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
+start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
+`LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
+page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `not_owner`,
+`cap`, `model_error`, `invalid_output`, `empty`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
+analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
+called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
+days are deleted (on start, then hourly).
 
 ## Repository layout
 
