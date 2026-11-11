@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { accountId } from '@near-autopilot/core';
-import { llmEnvSchema } from '@near-autopilot/config';
 import { NearRpcClient } from '@near-autopilot/near-adapter';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
 import { z } from 'zod';
@@ -9,8 +8,8 @@ import { EvidenceStore } from '../evidence/store';
 import { buildAnalyticsServer } from './server';
 
 /**
- * Read-only analytics API (Postgres only). Besides the shared API token it takes the read RPC key and the optional
- * LLM key; it keeps serving the last stored data when the collector is down.
+ * Read-only analytics API (Postgres only). It needs no RPC, no price API and no key other than the shared API token;
+ * it keeps serving the last stored data when the collector is down.
  */
 const env = z
   .object({
@@ -29,7 +28,6 @@ const env = z
     MAINNET_READ_RPC_API_KEY: z.string().optional(),
     MARKET_CONFIG_FILE: z.string().optional(),
   })
-  .merge(llmEnvSchema)
   .parse(process.env);
 
 const database = createDatabase(env.DATABASE_URL, { max: 4 });

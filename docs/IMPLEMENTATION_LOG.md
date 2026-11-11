@@ -103,12 +103,12 @@ missing-account page shows the short message, Caddy (local container) sends both
 ## 2026-11-11 — Anthropic `LlmClient` adapter (#15)
 
 - `apps/api/src/llm/anthropic-client.ts`: `AnthropicLlmClient` implements the orchestrator's `LlmClient` port over
-  the official `@anthropic-ai/sdk` (one user message, model and `max_tokens` from config). A reply that stops on
-  `max_tokens` or `refusal`, or has no text, throws, so the caller falls back to heuristics. `anthropicLlmFromEnv`
+  the official `@anthropic-ai/sdk` (one user message, model and `max_tokens` from config). Any reply that does not
+  stop on `end_turn`, or has no text, throws, so the caller falls back to heuristics. 120 s timeout, one retry. `anthropicLlmFromEnv`
   returns null without a key (LLM off). Not wired yet: that is #18.
 - `llmEnvSchema` (`packages/config`): `ANTHROPIC_API_KEY` (optional), `ANTHROPIC_MODEL` (default
-  `claude-haiku-5-5`), `ANTHROPIC_MAX_TOKENS` (default 4096). Merged into the analytics API env; in both compose files
-  only `analytics-api` receives the key.
+  `claude-haiku-5-5`), `ANTHROPIC_MAX_TOKENS` (default 4096, max 16000). In both compose files only `analytics-api` receives
+  the key; its env schema merges `llmEnvSchema` when #18 wires the agent.
 
 **Tests run:** `pnpm verify` (green); new `anthropic-llm.test.ts` (mocked SDK), `llmEnvSchema` cases in
 `env.test.ts`.

@@ -110,8 +110,10 @@ describe('loadDashboardEnv', () => {
 });
 
 describe('llmEnvSchema', () => {
-  it('is off without a key; model and max_tokens default to Haiku and 4096', () => {
-    expect(llmEnvSchema.parse({ ANTHROPIC_API_KEY: '' })).toEqual({
+  it('is off without a key; empty or unset model and max_tokens default to Haiku and 4096', () => {
+    expect(
+      llmEnvSchema.parse({ ANTHROPIC_API_KEY: '', ANTHROPIC_MODEL: '', ANTHROPIC_MAX_TOKENS: '' }),
+    ).toEqual({
       ANTHROPIC_API_KEY: undefined,
       ANTHROPIC_MODEL: 'claude-haiku-5-5',
       ANTHROPIC_MAX_TOKENS: 4096,

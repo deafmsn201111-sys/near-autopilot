@@ -259,12 +259,18 @@ export function loadDashboardEnv(source: EnvSource = process.env): DashboardEnv 
   return parseEnv(dashboardEnvSchema, source);
 }
 
+/** Unset and empty both mean "not provided". */
+const unsetIfEmpty = (v: unknown) => (v === '' ? undefined : v);
+
 /** Server LLM (Anthropic). No key = LLM off, heuristics only. The key is read from the local .env only; never logged. */
 export const llmEnvSchema = z.object({
-  ANTHROPIC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(8).optional()),
-  ANTHROPIC_MODEL: z.string().min(1).default('claude-haiku-5-5'),
+  ANTHROPIC_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(8).optional()),
+  ANTHROPIC_MODEL: z.preprocess(unsetIfEmpty, z.string().min(1).default('claude-haiku-5-5')),
   /** Hard cap on one reply; also bounds the spend of a single call. */
-  ANTHROPIC_MAX_TOKENS: z.coerce.number().int().min(1).max(64_000).default(4096),
+  ANTHROPIC_MAX_TOKENS: z.preprocess(
+    unsetIfEmpty,
+    z.coerce.number().int().min(1).max(16_000).default(4096),
+  ),
 });
 export type LlmEnv = z.output<typeof llmEnvSchema>;
 

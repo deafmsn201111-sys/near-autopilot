@@ -8,8 +8,8 @@ export interface AnthropicLlmConfig {
 }
 
 /**
- * `LlmClient` over the Anthropic Messages API. A truncated, refused or empty reply throws, so the caller falls back
- * to heuristics instead of parsing half an answer.
+ * `LlmClient` over the Anthropic Messages API. Any reply that did not end normally (truncated, refused, paused) or has
+ * no text throws, so the caller falls back to heuristics instead of parsing half an answer.
  */
 export class AnthropicLlmClient implements LlmClient {
   constructor(
@@ -23,7 +23,7 @@ export class AnthropicLlmClient implements LlmClient {
       max_tokens: this.config.maxTokens,
       messages: [{ role: 'user', content: prompt }],
     });
-    if (reply.stop_reason === 'max_tokens' || reply.stop_reason === 'refusal') {
+    if (reply.stop_reason !== 'end_turn') {
       throw new Error(`LLM reply stopped on ${reply.stop_reason}`);
     }
     const text = reply.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
@@ -35,8 +35,11 @@ export class AnthropicLlmClient implements LlmClient {
 /** null when no key is configured: the LLM is off and only heuristics run. */
 export function anthropicLlmFromEnv(env: LlmEnv): LlmClient | null {
   if (!env.ANTHROPIC_API_KEY) return null;
-  return new AnthropicLlmClient(new Anthropic({ apiKey: env.ANTHROPIC_API_KEY }), {
-    model: env.ANTHROPIC_MODEL,
-    maxTokens: env.ANTHROPIC_MAX_TOKENS,
-  });
+  return new AnthropicLlmClient(
+    new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 120_000, maxRetries: 1 }),
+    {
+      model: env.ANTHROPIC_MODEL,
+      maxTokens: env.ANTHROPIC_MAX_TOKENS,
+    },
+  );
 }

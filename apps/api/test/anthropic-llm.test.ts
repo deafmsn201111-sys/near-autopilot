@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
-import { AnthropicLlmClient } from '../src/llm/anthropic-client';
+import { AnthropicLlmClient, anthropicLlmFromEnv } from '../src/llm/anthropic-client';
 
 function fakeSdk(response: Partial<Anthropic.Message>) {
   const create = vi.fn().mockResolvedValue({ stop_reason: 'end_turn', ...response });
@@ -22,7 +22,7 @@ describe('AnthropicLlmClient', () => {
     });
   });
 
-  it.each(['max_tokens', 'refusal'] as const)(
+  it.each(['max_tokens', 'refusal', 'model_context_window_exceeded', 'pause_turn'] as const)(
     'fails closed when the reply stops on %s',
     async (stop_reason) => {
       const { sdk } = fakeSdk({ stop_reason, content: [text('{"partial":')] });
@@ -30,8 +30,32 @@ describe('AnthropicLlmClient', () => {
     },
   );
 
-  it('fails closed on an empty reply', async () => {
-    const { sdk } = fakeSdk({ content: [] });
+  it.each([[[]], [[text('  \n')]]])('fails closed on an empty reply', async (content) => {
+    const { sdk } = fakeSdk({ content });
     await expect(new AnthropicLlmClient(sdk, config).complete('p')).rejects.toThrow('empty');
+  });
+
+  it('returns only the text blocks', async () => {
+    const thinking = {
+      type: 'thinking',
+      thinking: 'secret',
+      signature: 's',
+    } as Anthropic.ThinkingBlock;
+    const { sdk } = fakeSdk({ content: [thinking, text('{}')] });
+    await expect(new AnthropicLlmClient(sdk, config).complete('p')).resolves.toBe('{}');
+  });
+});
+
+describe('anthropicLlmFromEnv', () => {
+  const env = { ANTHROPIC_MODEL: 'claude-haiku-5-5', ANTHROPIC_MAX_TOKENS: 4096 };
+
+  it('is null without a key (LLM off)', () => {
+    expect(anthropicLlmFromEnv({ ...env, ANTHROPIC_API_KEY: undefined })).toBeNull();
+  });
+
+  it('builds a client with the configured model and cap when a key is set', () => {
+    const client = anthropicLlmFromEnv({ ...env, ANTHROPIC_API_KEY: 'sk-test-key' });
+    expect(client).toBeInstanceOf(AnthropicLlmClient);
+    expect(client).toMatchObject({ config: { model: 'claude-haiku-5-5', maxTokens: 4096 } });
   });
 });
