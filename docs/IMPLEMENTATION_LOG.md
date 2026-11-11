@@ -112,3 +112,12 @@ missing-account page shows the short message, Caddy (local container) sends both
 
 **Tests run:** `pnpm verify` (green); new `anthropic-llm.test.ts` (mocked SDK), `llmEnvSchema` cases in
 `env.test.ts`.
+
+## 2026-11-11 — Pool allowlist for `add_liquidity` (#23)
+
+- `POST /v1/wallet/prepare`: an `add_liquidity` intent whose `poolId` is not in `config.rhea.pools` is rejected
+  with 409 `pool <id> is not allowlisted` before any chain read.
+- `validateCascade` takes `allowedPools`; every `add_liquidity` action must carry a numeric `pool_id` in it. With
+  no `allowedPools` given, any `add_liquidity` fails (closed by default).
+
+**Tests run:** `pnpm verify` (green); new `prepare-pool-allowlist.test.ts`, two cases in `validate-cascade.test.ts`.
