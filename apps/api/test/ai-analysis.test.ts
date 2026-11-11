@@ -147,6 +147,28 @@ describe('analyseAccount', () => {
     expect(out.note).toMatch(/Verify ownership/);
   });
 
+  it('gives the model the labelled checks and falls back to the list the user sees', async () => {
+    const shown = { ...heuristic, title: 'shown to the user' };
+    const labelled = { ...heuristic, title: 'labelled for the model' };
+    const sent: string[] = [];
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        sent.push(JSON.stringify(results));
+        return final([{ id: heuristic.id, why: 'Worth a look.' }]);
+      },
+    ]);
+    const ctx = { observe: async () => observation(), heuristics: [shown], checks: [labelled] };
+    const ai = await analyseAccount(llm, { ...ctx, ownerVerified: true });
+    expect(sent.join()).toContain('labelled for the model');
+    expect(sent.join()).not.toContain('shown to the user');
+    expect(ai.recommendations.find((r) => r.id === heuristic.id)?.title).toBe(
+      'labelled for the model',
+    );
+    const off = await analyseAccount(null, { ...ctx, ownerVerified: true });
+    expect(off.recommendations).toEqual([shown]);
+  });
+
   it('offers the three orchestrator agents and the two wallet checks as tools', async () => {
     const { llm, tools } = fake([() => final([])]);
     await analyseAccount(llm, {

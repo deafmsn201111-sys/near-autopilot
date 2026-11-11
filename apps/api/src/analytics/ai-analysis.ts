@@ -17,7 +17,7 @@ import {
   type ToolLlm,
 } from '@near-autopilot/orchestrator';
 import { z } from 'zod';
-import { tokenLabel } from '../thesis/labels';
+import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
 
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
@@ -100,7 +100,7 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
   const approxUsd = usd(tokenValueUsd(obs.snapshot.prices, token, amount));
   if (!(approxUsd >= MIN_ACTION_USD)) return null;
   return {
-    symbol: tokenLabel(token),
+    symbol: modelTokenLabel(token),
     amount: human(amount, info.decimals),
     approxUsd: approxUsdOf(approxUsd),
   };

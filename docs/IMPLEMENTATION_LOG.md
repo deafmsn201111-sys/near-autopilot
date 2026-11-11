@@ -168,8 +168,8 @@ no longer said what comes first.
 
 **Why:** anyone can deploy a token whose `ft_metadata` symbol is an instruction; that text reached the model's prompt.
 
-- Agent tool candidates (guardian, allocator) name tokens with `tokenLabel` (`apps/api/src/thesis/labels.ts`), not the
-  snapshot symbol.
+- Agent tool candidates (guardian, allocator) name tokens with `modelTokenLabel` (`apps/api/src/thesis/labels.ts`: the
+  same list as the thesis `tokenLabel`, else the contract id, shortened past 20 chars), not the snapshot symbol.
 - The account view builds a second rule-based list for the model (`forModel`, kept off the HTTP body) with labelled
   symbols and DCL pair names; the wallet-check tools return it. The user-facing fallback and portfolio table keep the
   metadata symbol. The prompt no longer carries the account id.

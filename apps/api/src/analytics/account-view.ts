@@ -66,7 +66,7 @@ import { valueAccount, type AccountReads, type TokenFacts } from './account';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { consensus } from './series';
-import { tokenLabel } from '../thesis/labels';
+import { modelTokenLabel } from '../thesis/labels';
 
 /**
  * YOUR ACCOUNT, read-only: any mainnet account id -> what it holds, how safe its Burrow loan is, and what could be done
@@ -879,7 +879,10 @@ export function registerAccountView(
       dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
     });
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
-    const labelled = <T extends { token: string }>(x: T) => ({ ...x, symbol: tokenLabel(x.token) });
+    const labelled = <T extends { token: string }>(x: T) => ({
+      ...x,
+      symbol: modelTokenLabel(x.token),
+    });
     const forModel = portfolioRecommendations({
       metrics: {
         ...metrics,
@@ -888,7 +891,7 @@ export function registerAccountView(
       loan,
       idleEarn: idleEarn.map(labelled),
       largestDebt: largestDebt && labelled(largestDebt),
-      dclOutOfRange: outOfRange((d) => `${tokenLabel(d.tokenX)}/${tokenLabel(d.tokenY)}`),
+      dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     });
 
     const body = {
