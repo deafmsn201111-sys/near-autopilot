@@ -111,6 +111,71 @@ HTTP 429 under load.
 Market history starts empty on a new server. Pages that need several days of observations, such as the DCL range
 backtest, show "not enough history yet" until they have them.
 
+## Backup and restore
+
+A systemd timer runs [`backup.sh`](backup.sh) every night at 03:15: a `pg_dump` of the whole database to
+`/opt/near-autopilot/backups/<date>.dump`, the 7 newest kept. The folder is outside the deploy folders, so a new
+deploy keeps it. The dump runs inside the Postgres container, so it needs no password. Dumps hold `llm_calls`
+(account ids, no IPs) and are gone after 7 days, the same as the LLM retention. There is no off-site copy.
+
+Install once, as root, from the unpacked bundle:
+
+```bash
+install -m 700 backup.sh /opt/near-autopilot/backup.sh
+cat > /etc/systemd/system/near-autopilot-backup.service <<'EOF'
+[Service]
+Type=oneshot
+ExecStart=/opt/near-autopilot/backup.sh
+EOF
+cat > /etc/systemd/system/near-autopilot-backup.timer <<'EOF'
+[Timer]
+OnCalendar=*-*-* 03:15
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload && systemctl enable --now near-autopilot-backup.timer
+systemctl start near-autopilot-backup.service      # first dump now
+```
+
+| Task             | Command                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| Last dump        | `ls -lh /opt/near-autopilot/backups`                                                    |
+| Last run, errors | `systemctl status near-autopilot-backup.service`, `journalctl -u near-autopilot-backup` |
+| Next run         | `systemctl list-timers near-autopilot-backup.timer`                                     |
+
+Restore one, from the deploy folder (stop the writers first, then start them again):
+
+```bash
+docker compose stop analytics-api shadow-collector
+docker compose exec -T postgres pg_restore -U autopilot -d autopilot --clean --if-exists \
+  < /opt/near-autopilot/backups/<date>.dump
+docker compose start analytics-api shadow-collector
+```
+
+To check a dump without touching the live data, restore it into a scratch database and drop it:
+
+```bash
+docker compose exec -T postgres createdb -U autopilot scratch
+docker compose exec -T postgres pg_restore -U autopilot -d scratch < /opt/near-autopilot/backups/<date>.dump
+docker compose exec -T postgres psql -U autopilot -d scratch -c 'select count(*) from audit_events'
+docker compose exec -T postgres dropdb -U autopilot scratch
+```
+
+## Uptime monitor
+
+An outside service emails the owner when the site or the collector stops. On a free
+[UptimeRobot](https://uptimerobot.com) account, 5-minute interval, alert by email:
+
+| Monitor        | Type    | URL                                   | Alert when                        |
+| -------------- | ------- | ------------------------------------- | --------------------------------- |
+| Site           | HTTP(s) | `https://near-autopilot.tech/`        | not 2xx                           |
+| Liveness       | HTTP(s) | `https://near-autopilot.tech/healthz` | not 2xx                           |
+| API, collector | Keyword | `https://near-autopilot.tech/system`  | the page does not contain `Fresh` |
+
+The home page and `/healthz` answer 200 even when the analytics API is down (the page shows the error inside). `/system`
+shows `Fresh` only when the API answers and the collector's data is fresh, so the keyword monitor covers both.
+
 ## Update or stop
 
 - **Update:** build a new bundle, unpack it next to the old one, copy `.env` and `checkpoints/` across, then run

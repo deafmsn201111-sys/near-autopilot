@@ -105,5 +105,5 @@ The adapters validate responses strictly, so a wrong assumption fails closed, bu
 
 - Keep `maxActionUsd`, `dailyLimitUsd` and `approvalThresholdUsd` small until you trust the system.
 - `policy.enabled: false` is the kill switch; restart the API after editing the config file.
-- Run Postgres with backups; `audit_events` is the forensic record.
+- Run Postgres with backups; `audit_events` is the forensic record. The public server: [deploy/public/README.md](../deploy/public/README.md#backup-and-restore).
 - Put the API behind a private network; compose binds ports to `127.0.0.1` by default.
