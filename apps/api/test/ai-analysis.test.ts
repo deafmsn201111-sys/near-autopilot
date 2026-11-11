@@ -125,15 +125,33 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(null, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
     expect(out.recommendations).toEqual([heuristic]);
     expect(out.calledTools).toEqual([]);
   });
 
+  it('does not call the model for a visitor who has not proved ownership', async () => {
+    const { llm, tools } = fake([() => final([])]);
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      ownerVerified: false,
+    });
+    expect(tools).toEqual([]);
+    expect(out.source).toBe('heuristic');
+    expect(out.recommendations).toEqual([heuristic]);
+    expect(out.note).toMatch(/Verify ownership/);
+  });
+
   it('offers the three orchestrator agents and the two wallet checks as tools', async () => {
     const { llm, tools } = fake([() => final([])]);
-    await analyseAccount(llm, { observe: async () => observation(), heuristics: [heuristic] });
+    await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      ownerVerified: true,
+    });
     expect(tools[0]).toEqual([
       'liquidation_guardian',
       'capital_allocator',
@@ -156,6 +174,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      ownerVerified: true,
     });
     expect(out.source).toBe('llm');
     expect(out.calledTools).toEqual([
@@ -187,6 +206,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      ownerVerified: true,
     });
     expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
   });
@@ -196,7 +216,11 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
     ]);
-    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [],
+      ownerVerified: true,
+    });
     expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')).toMatchObject({
       kind: 'put_idle_to_work',
       agent: 'Capital Allocator',
@@ -213,6 +237,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
     expect(out.recommendations).toEqual([heuristic]);
@@ -223,7 +248,7 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => new Promise<LlmToolTurn>(() => {})]);
     const out = await analyseAccount(
       llm,
-      { observe: async () => observation(), heuristics: [heuristic] },
+      { observe: async () => observation(), heuristics: [heuristic], ownerVerified: true },
       () => {},
       20,
     );
@@ -238,6 +263,7 @@ describe('analyseAccount', () => {
     const out = await analyseAccount(llm, {
       observe: async () => observation(),
       heuristics: [heuristic],
+      ownerVerified: true,
     });
     expect(out.recommendations.map((r) => r.kind)).toEqual([
       'improve_loan_safety',
@@ -247,7 +273,11 @@ describe('analyseAccount', () => {
 
   it('falls back when the model ranks nothing', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
-    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [],
+      ownerVerified: true,
+    });
     expect(out.source).toBe('heuristic');
   });
 
@@ -256,14 +286,18 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'liquidation-guardian:repay:usdt.tether-token.near', why: 'Repay.' }]),
     ]);
-    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [],
+      ownerVerified: true,
+    });
     const repay = out.recommendations[0];
     expect(repay?.title).toBe("Your loan's health factor is 1.37");
     expect(repay?.why).toBe('Repay.');
     const code = (
       await analyseAccount(
         fake([() => callAll, () => final([{ id: repay!.id, why: '$999' }])]).llm,
-        { observe: async () => observation(), heuristics: [] },
+        { observe: async () => observation(), heuristics: [], ownerVerified: true },
       )
     ).recommendations[0];
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
@@ -283,7 +317,11 @@ describe('analyseAccount', () => {
         ]);
       },
     ]);
-    const out = await analyseAccount(llm, { observe: async () => observation(), heuristics: [] });
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [],
+      ownerVerified: true,
+    });
     expect(raw).not.toBe('');
     expect(out.recommendations[0]?.why).not.toContain(raw);
   });
@@ -292,7 +330,7 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll]);
     const out = await analyseAccount(
       llm,
-      { observe: () => new Promise(() => {}), heuristics: [heuristic] },
+      { observe: () => new Promise(() => {}), heuristics: [heuristic], ownerVerified: true },
       () => {},
       20,
     );

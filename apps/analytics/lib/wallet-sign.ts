@@ -1,6 +1,12 @@
 'use client';
 import { connectedWallet, currentAccount } from './wallet';
 import type { PreparedTransaction } from './prepare-types';
+import {
+  OWNERSHIP_RECIPIENT,
+  ownershipMessage,
+  ownershipNonce,
+  type OwnershipProof,
+} from '@near-autopilot/core/ownership';
 
 /**
  * THE ONLY PLACE THE DASHBOARD ASKS A WALLET TO SIGN (test/signing-lock.test.ts enforces it). It signs exactly the
@@ -72,5 +78,33 @@ export async function signCascade(
     return { ok: true, hashes };
   } catch (e) {
     return { ok: false, hashes, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * NEP-413 ownership proof: the wallet signs a fixed text off-chain (no transaction, no gas, nothing sent to NEAR).
+ * Returns the proof as base64url JSON for the session cookie, or null when the wallet declined or can't sign messages.
+ */
+export async function signOwnership(accountId: string): Promise<string | null> {
+  try {
+    if ((await currentAccount()) !== accountId) return null;
+    const wallet = await connectedWallet();
+    const nonce = ownershipNonce(Date.now(), crypto.getRandomValues(new Uint8Array(24)));
+    const signed = await wallet.signMessage({
+      message: ownershipMessage(accountId),
+      recipient: OWNERSHIP_RECIPIENT,
+      nonce,
+      network: 'mainnet',
+    });
+    if (signed?.accountId !== accountId || !signed.publicKey || !signed.signature) return null;
+    const proof: OwnershipProof = {
+      accountId,
+      publicKey: signed.publicKey,
+      signature: signed.signature,
+      nonce: btoa(String.fromCharCode(...nonce)),
+    };
+    return btoa(JSON.stringify(proof)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch {
+    return null;
   }
 }

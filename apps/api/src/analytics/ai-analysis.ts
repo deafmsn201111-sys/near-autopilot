@@ -31,6 +31,8 @@ export interface AnalysisContext {
   readonly observe: () => Promise<AgentObservation>;
   /** The account view's rule-based list: the fallback, and what the two wallet tools return. */
   readonly heuristics: readonly PortfolioRecommendation[];
+  /** A NEP-413 proof from a full-access key of this account (D12): only its owner may spend a model call. */
+  readonly ownerVerified: boolean;
 }
 
 export interface Analysis {
@@ -264,6 +266,10 @@ export async function analyseAccount(
     calledTools: [],
   });
   if (!llm) return fallback('AI analysis is off on this server; showing the rule-based list.');
+  if (!ctx.ownerVerified)
+    return fallback(
+      'Verify ownership of this account to get the AI analysis; showing the rule-based list.',
+    );
 
   const abort = new AbortController();
   const found = new Map<string, PortfolioRecommendation>();

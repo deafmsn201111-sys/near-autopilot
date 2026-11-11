@@ -1,6 +1,8 @@
 import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
+import { cookies } from 'next/headers';
+import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import type { RecommendationIntent } from './recommendation-intent';
 
 /** Shapes of the product endpoints (opportunities, activity, system). */
@@ -174,6 +176,8 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
 type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
   accountId: string;
   recommendations: AccountRecommendation[];
+  /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
+  ownerVerified: boolean;
 };
 
 type AccountResult = { data: AccountRead | null; error: string | null };
@@ -181,21 +185,28 @@ type AccountResult = { data: AccountRead | null; error: string | null };
 const ACCOUNT_TTL_MS = 60_000;
 const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
 
-const readKey = async (id: string) => `${await visitor()}:${id.trim().toLowerCase()}`;
+const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
-const fetchAccount = async (id: string): Promise<AccountResult> => {
+const readKey = async (id: string, proof: string) =>
+  `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
+
+const fetchAccount = async (id: string, proof: string): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
-  return tryApi<AccountRead>(`/v1/analytics/account/${encodeURIComponent(id)}`);
+  return tryApi<AccountRead>(
+    `/v1/analytics/account/${encodeURIComponent(id)}`,
+    proof ? { 'x-ownership-proof': proof } : {},
+  );
 };
 
 const readAccount = async (id: string): Promise<AccountResult> => {
-  const key = await readKey(id);
+  const proof = await ownershipProof();
+  const key = await readKey(id, proof);
   const now = Date.now();
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
   if (cached) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id) };
+  const entry = { at: Infinity, read: fetchAccount(id, proof) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
@@ -205,7 +216,7 @@ const readAccount = async (id: string): Promise<AccountResult> => {
 };
 
 export const forgetAccount = async (id: string) => {
-  accountReads.delete(await readKey(id));
+  accountReads.delete(await readKey(id, await ownershipProof()));
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

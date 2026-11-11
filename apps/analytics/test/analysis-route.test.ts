@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
+let proof: string | undefined;
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', '203.0.113.1']]),
+  cookies: async () => ({ get: () => (proof === undefined ? undefined : { value: proof }) }),
 }));
 const apiPost = vi.fn(async () => ({
   status: 200,
@@ -22,13 +24,19 @@ describe('POST /api/analysis', () => {
   beforeEach(() => {
     vi.resetModules();
     apiPost.mockClear();
+    proof = undefined;
   });
 
   it('forwards a valid account to the analysis endpoint', async () => {
     const { POST } = await import('../app/api/analysis/route');
     const res = await POST(request({ account: 'Alice.near ' }));
     expect(res.status).toBe(200);
-    expect(apiPost).toHaveBeenCalledWith('/v1/analytics/account/alice.near/analysis', {}, 60_000);
+    expect(apiPost).toHaveBeenCalledWith(
+      '/v1/analytics/account/alice.near/analysis',
+      {},
+      60_000,
+      {},
+    );
   });
 
   it.each([{}, { account: 'not a/near id' }, { account: 42 }])(
@@ -39,6 +47,15 @@ describe('POST /api/analysis', () => {
       expect(apiPost).not.toHaveBeenCalled();
     },
   );
+
+  it('forwards the ownership proof cookie so the API can unlock the LLM for the owner', async () => {
+    proof = 'signed-proof';
+    const { POST } = await import('../app/api/analysis/route');
+    await POST(request({ account: 'alice.near' }));
+    expect(apiPost).toHaveBeenCalledWith('/v1/analytics/account/alice.near/analysis', {}, 60_000, {
+      'x-ownership-proof': 'signed-proof',
+    });
+  });
 
   it('answers 429 once a visitor has used up the tight per-visitor limit', async () => {
     const { POST } = await import('../app/api/analysis/route');

@@ -1,4 +1,6 @@
 import { accountIdSchema } from '@near-autopilot/core';
+import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
+import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { apiPost } from '../../../lib/api';
 import { consume } from '../../../lib/rate-limit';
@@ -43,10 +45,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 429, headers: { 'retry-after': String(LIMIT.windowMs / 1000) } },
     );
   }
+  // The API calls the model only for the account's proven owner (D12); everyone else gets the rule-based list.
+  const proof = (await cookies()).get(OWNERSHIP_COOKIE)?.value;
   const { status, body: out } = await apiPost(
     `/v1/analytics/account/${encodeURIComponent(account.data)}/analysis`,
     {},
     LLM_TIMEOUT_MS,
+    proof ? { 'x-ownership-proof': proof } : {},
   );
   return NextResponse.json(out, { status: status || 502 });
 }

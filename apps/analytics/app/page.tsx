@@ -52,6 +52,7 @@ import { Recommendations } from '../components/Recommendations';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { AccountForm } from '../components/AccountForm';
+import { OwnershipCheck } from '../components/OwnershipCheck';
 
 export const dynamic = 'force-dynamic';
 
@@ -293,6 +294,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       </section>
+
+      {isAccount && recs && (
+        <OwnershipCheck account={accountParam} verified={recs.ownerVerified === true} />
+      )}
 
       {isAccount && recs && (
         <section className="block">

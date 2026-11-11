@@ -122,6 +122,18 @@ missing-account page shows the short message, Caddy (local container) sends both
 
 **Tests run:** `pnpm verify` (green); new `prepare-pool-allowlist.test.ts`, two cases in `validate-cascade.test.ts`.
 
+## 2026-11-11 — NEP-413 ownership check for LLM analysis (#20)
+
+- `apps/api/src/wallet/ownership.ts`: `verifyOwnership` rebuilds the NEP-413 payload (borsh, tag 2^31+413, SHA-256),
+  checks the ed25519 signature with `node:crypto`, the 24 h nonce window and that the key is a full-access key of the
+  account. Fails closed. Message, recipient and nonce layout are shared with the UI from `@near-autopilot/core/ownership`.
+- The account endpoint returns `ownerVerified` (D12). The UI shows "Ownership verified" or "Heuristic analysis" on the
+  account page, with a **Verify ownership** button when the connected wallet is that account (`signOwnership` in
+  `lib/wallet-sign.ts`). Disconnect clears the proof cookie. The LLM itself is wired behind this flag in #18.
+
+**Tests run:** `pnpm verify` (green); new `ownership.test.ts` (signatures made with `@near-js/crypto` + `borsh`, not
+our code), a proof-forwarding case in `account-cache.test.ts`.
+
 ## 2026-11-11 — Tool-use loop: orchestrator agents as LLM tools (#18)
 
 - `packages/orchestrator/src/tool-loop.ts`: `runToolLoop` with a `maxTurns` bound; unknown tools and invalid inputs
@@ -133,7 +145,7 @@ missing-account page shows the short message, Caddy (local container) sends both
   `account-view.ts`; the account read is now a reusable `readAccount`.
 - `prepare`: optional exact `amount` for repay/supply (`exactAmount` in `wallet/amounts.ts`).
 - UI: **Run AI analysis** button, source badge, `/api/analysis` route (rate limited), `amount` passed to prepare.
-- Decision D12.
+- Decision D13.
 
 **Tests run:** `pnpm verify` (green); new `tool-loop.test.ts`, `ai-analysis.test.ts` (scripted fake LLM),
 `analysis-endpoint.test.ts`, `analysis-route.test.ts`, `AnthropicToolLlm` and `exactAmount` cases.

@@ -285,7 +285,14 @@ $5,000) are simulated and labelled as such.
 
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
-  **Run AI analysis** re-ranks and explains them with the central LLM (5 runs per visitor per 10 minutes).
+  **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
+- **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
+  site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs
+  money per run) is only for a visitor who signs a short NEP-413 message in the wallet. It is not a transaction:
+  nothing is sent and no gas is paid. The server rebuilds the exact text, checks the signature, checks that the
+  signing key is a full-access key of that account on mainnet (a key only the owner holds, not a key a dApp was
+  given), and accepts the proof for 24 hours. Anyone else, or a visitor who declines to sign, gets the heuristic
+  analysis.
 
 **Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 

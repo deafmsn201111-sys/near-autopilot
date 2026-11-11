@@ -110,7 +110,20 @@ Errors: invalid input (zod, Fastify's own 4xx) is a 400 with its reason; a prepa
 bare 500/502, details only in the log.
 **Consequences:** Every page renders dynamically (nonce). A new inline script needs the nonce from `headers()`.
 
-## D12 — Central LLM on the wallet path (architecture C)
+## D12 — NEP-413 ownership proof gates the LLM analysis
+
+**Context:** Security item 2 (`HACKATHON_PLAN.md`): LLM runs cost money, and connecting a wallet proves nothing (the
+site only learns an account name).
+**Decision:** The wallet signs a fixed NEP-413 message (`packages/core/src/ownership.ts`, recipient
+`near-autopilot.tech`). The nonce holds the signing time; the server accepts it for 24 h (5 min clock skew), with no
+challenge and no stored state. The signing key must be a **full-access** key of the account (`view_access_key`):
+function-call keys are often held by dApps, so they do not count. The proof lives in an HttpOnly cookie (`np_owner`, 24 h),
+the UI server forwards it as `x-ownership-proof`, and `GET /v1/analytics/account/:id` returns `ownerVerified`,
+verified per request outside the account cache (a positive result is kept 60 s). Any failure, including a failed RPC read, means false (heuristics).
+**Consequences:** A stolen proof can be replayed for 24 h, but only for the same account under the same rate limits.
+The LLM path (#18) runs only when `ownerVerified` is true. A shorter TTL or a server challenge needs a new entry here.
+
+## D13 — Central LLM on the wallet path (architecture C)
 
 **Context:** #18. The plan has the central LLM call the existing orchestrator agents as tools. On a wallet, the Capital
 Allocator and LP Optimizer had no inputs, and the concentration and DCL checks exist only in the wallet code.
@@ -136,6 +149,6 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
 - The test that banned LLM code from `apps/api/src/analytics` now allows the provider only in `analytics/main.ts`
   (wiring); the collector stays LLM-free, and the no-signing/no-sending ban is unchanged.
 - The Next route allows 5 analyses per visitor and 60 overall per 10 minutes.
-- `ANTHROPIC_API_KEY` stays off the public server until #20 (NEP-413) and #21 (spend cap) are merged.
+- Only the proven owner (D12) gets a model call: without a valid `x-ownership-proof` the endpoint returns the rule-based list with "Verify ownership…". `ANTHROPIC_API_KEY` stays off the public server until #21 (spend cap) is merged.
   **Consequences:** An analysis costs one snapshot read (about 2 RPC calls per Burrow token) plus up to 4 model calls.
   With the key unset the route is free and returns the rule-based list.
