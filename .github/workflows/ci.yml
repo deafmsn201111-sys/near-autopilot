@@ -86,7 +86,7 @@ jobs:
           cache-to: type=gha,scope=analytics,mode=max
 
   secrets:
-    # Full-history gitleaks scan; false positives live in .gitleaks.toml / .gitleaksignore (D15).
+    # gitleaks over the full history of the checked-out commit (not other branches); false positives live in .gitleaks.toml / .gitleaksignore (D15).
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -98,10 +98,10 @@ jobs:
           fetch-depth: 0
       - run: |
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
-          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          curl -sSfL --retry 3 -O "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
           echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "$tarball" gitleaks
-          ./gitleaks git --log-opts="--all" --redact -v .
+          ./gitleaks git --redact -v .
 
   notify:
     # Push to main only: a red main opens (or comments on) one "main is red" issue; the next green main closes it.

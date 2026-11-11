@@ -188,7 +188,7 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - Rotate every real leak at its provider; no history rewrite. Once public, forks, clones and GitHub's
   `refs/pull/*` keep old commits anyway, so a rewrite does not unpublish anything, and it breaks every open
   branch and worktree four days before the deadline. A rotated key is worthless whatever history shows.
-- CI job `secrets` runs gitleaks 8.30.1 (pinned, checksum-checked binary) over the full history on every push and PR.
+- CI job `secrets` runs gitleaks 8.30.1 (pinned, checksum-checked binary) over the full history of the checked-out commit on every PR and every push to `main`.
   False positives go to `.gitleaks.toml` (public NEAR token ids, a test key) with a reason; a rotated leak goes to
   `.gitleaksignore` by fingerprint.
 - `near-dapp` and `near-intents` (from `near/agent-skills`, no licence) are no longer committed; `.claude/skills/README.md`
