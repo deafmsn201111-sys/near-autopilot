@@ -271,6 +271,103 @@ describe('analyseAccount', () => {
     ]);
   });
 
+  it('keeps the loan warning when another card is a warning too', async () => {
+    const concentrated = { ...heuristic, severity: 'warning' as const };
+    const outOfRange: PortfolioRecommendation = {
+      id: 'reposition-dcl-7',
+      kind: 'reposition_dcl_position',
+      agent: 'Liquidity Optimizer',
+      severity: 'warning',
+      title: 'Your wNEAR/USDt liquidity is out of range',
+      why: 'It earns no fees.',
+      intent: { action: 'reposition_dcl', lptId: '7', poolId: 'pool' },
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'reduce-concentration', why: 'Diversify.' }]),
+    ]);
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [concentrated, outOfRange],
+      ownerVerified: true,
+    });
+    expect(out.recommendations.map((r) => r.kind).sort()).toEqual([
+      'improve_loan_safety',
+      'reduce_concentration',
+      'reposition_dcl_position',
+    ]);
+  });
+
+  it('lists a candidate the model picked twice only once', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () =>
+        final([
+          { id: 'reduce-concentration', why: 'Diversify.' },
+          { id: 'reduce-concentration', why: 'Again.' },
+        ]),
+    ]);
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      ownerVerified: true,
+    });
+    expect(out.recommendations.filter((r) => r.id === heuristic.id)).toHaveLength(1);
+  });
+
+  it('gives up after 6 model turns', async () => {
+    let turns = 0;
+    const { llm } = fake(Array.from({ length: 20 }, () => () => (turns++, callAll)));
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      ownerVerified: true,
+    });
+    expect(turns).toBe(6);
+    expect(out.source).toBe('heuristic');
+  });
+
+  it('aborts the model call in flight on the deadline', async () => {
+    let signal: AbortSignal | undefined;
+    const llm: ToolLlm = {
+      open(req) {
+        signal = req.signal;
+        return { send: () => new Promise<LlmToolTurn>(() => {}) };
+      },
+    };
+    await analyseAccount(
+      llm,
+      { observe: async () => observation(), heuristics: [heuristic], ownerVerified: true },
+      () => {},
+      20,
+    );
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('does not offer agent actions worth less than $1', async () => {
+    const dust = observation();
+    const snapshot = {
+      ...dust.snapshot,
+      walletBalances: [{ token: USDT, raw: usdt(0.5) }],
+    };
+    let candidates: unknown[] = [];
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        candidates = (results ?? []).flatMap(
+          (r) => (JSON.parse(r.content) as { candidates?: unknown[] }).candidates ?? [],
+        );
+        return final([]);
+      },
+    ]);
+    await analyseAccount(llm, {
+      observe: async () => ({ ...dust, snapshot }),
+      heuristics: [],
+      ownerVerified: true,
+    });
+    expect(candidates).toEqual([]);
+  });
+
   it('falls back when the model ranks nothing', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
     const out = await analyseAccount(llm, {

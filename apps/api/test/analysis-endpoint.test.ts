@@ -1,9 +1,24 @@
+import { KeyPairEd25519 } from '@near-js/crypto';
 import { describe, expect, it } from 'vitest';
+import {
+  BURROW_REQUIRED_EXPORTS,
+  ORACLE_REQUIRED_EXPORTS,
+  TOKEN_REQUIRED_EXPORTS,
+} from '@near-autopilot/burrow-adapter';
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
+import type { ToolLlm } from '@near-autopilot/orchestrator';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
+import { signOwnership } from './support/nep413';
 
 const TOKEN = 'analysis-token-analysis-token-analysis-tok1';
+const BURROW = 'contract.main.burrow.near';
+const ORACLE = 'priceoracle.near';
+const USDT = 'usdt.tether-token.near';
+const WALLET_USDT = 100_000_000n;
+const headers = { authorization: `Bearer ${TOKEN}` };
+const key = KeyPairEd25519.fromRandom();
+
 const unreachable = new Proxy(
   {},
   {
@@ -13,53 +28,231 @@ const unreachable = new Proxy(
   },
 );
 
-const app = buildAnalyticsServer({
-  apiToken: TOKEN,
-  store: unreachable as CollectorStore,
-  intervalSeconds: 900,
-  mainnet: {
-    rpc: unreachable as NearRpcClient,
-    burrowId: 'contract.main.burrow.near',
-    rheaId: 'v2.ref-finance.near',
-    pools: [],
-  } as never,
-});
-const headers = { authorization: `Bearer ${TOKEN}` };
+function leb(n: number): number[] {
+  const out: number[] = [];
+  let v = n;
+  do {
+    const byte = v & 0x7f;
+    v >>>= 7;
+    out.push(v === 0 ? byte : byte | 0x80);
+  } while (v !== 0);
+  return out;
+}
+
+/** A minimal WASM module whose export section lists exactly these functions. */
+function wasm(names: readonly string[]): string {
+  const entries = names.flatMap((name, i) => {
+    const bytes = [...Buffer.from(name)];
+    return [...leb(bytes.length), ...bytes, 0, ...leb(i)];
+  });
+  const body = [...leb(names.length), ...entries];
+  return Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 7, ...leb(body.length), ...body]).toString(
+    'base64',
+  );
+}
+
+const usdtAsset = {
+  token_id: USDT,
+  supplied: { shares: '1000', balance: '1000' },
+  borrowed: { shares: '10', balance: '10' },
+  reserved: '0',
+  config: {
+    reserve_ratio: 2500,
+    target_utilization: 8000,
+    volatility_ratio: 9000,
+    extra_decimals: 12,
+    can_deposit: true,
+    can_withdraw: true,
+    can_use_as_collateral: true,
+    can_borrow: true,
+  },
+};
+
+const views: Record<string, (args: Record<string, unknown>) => unknown> = {
+  [`${BURROW}#get_assets_paged_detailed`]: () => [],
+  [`${BURROW}#get_config`]: () => ({ oracle_account_id: ORACLE }),
+  [`${BURROW}#get_asset`]: (args) => (args['token_id'] === USDT ? usdtAsset : null),
+  [`${BURROW}#storage_balance_of`]: () => ({ total: '100000000000000000000000', available: '0' }),
+  [`${USDT}#ft_balance_of`]: () => WALLET_USDT.toString(),
+};
+const code: Record<string, readonly string[]> = {
+  [BURROW]: BURROW_REQUIRED_EXPORTS,
+  [ORACLE]: ORACLE_REQUIRED_EXPORTS,
+  [USDT]: TOKEN_REQUIRED_EXPORTS,
+};
+
+/** A mainnet node with an empty Burrow account for alice, 100 USDt in her wallet and one full-access key. */
+const chain = {
+  call: async (method: string, params: Record<string, unknown>) => {
+    if (method === 'status') return { chain_id: 'mainnet' };
+    const account = String(params['account_id']);
+    switch (params['request_type']) {
+      case 'view_account':
+        return { amount: (5n * 10n ** 24n).toString(), locked: '0', storage_usage: 100 };
+      case 'view_access_key':
+        if (account !== 'alice.near' || params['public_key'] !== key.getPublicKey().toString())
+          throw new Error('unknown access key');
+        return { nonce: 1, block_hash: '1'.repeat(44), permission: 'FullAccess' };
+      case 'view_code':
+        if (!code[account]) throw new Error(`no code at ${account}`);
+        return { code_base64: wasm(code[account]), hash: `hash-${account}` };
+      case 'call_function': {
+        const view = views[`${account}#${String(params['method_name'])}`];
+        const args = JSON.parse(
+          Buffer.from(String(params['args_base64']), 'base64').toString(),
+        ) as Record<string, unknown>;
+        return { result: view ? [...Buffer.from(JSON.stringify(view(args)))] : [] };
+      }
+    }
+    throw new Error(`unexpected rpc ${method}`);
+  },
+} as unknown as NearRpcClient;
+
+const store = {
+  latestSnapshot: async () => ({
+    id: 'snap-1',
+    takenAt: new Date(),
+    summary: { prices: [{ token: USDT, usd: '1', quality: 'OK' }] },
+  }),
+  pricesForSnapshot: async () => [],
+  tokenMetadata: async () => [{ token: USDT, symbol: 'USDt', decimals: 6 }],
+  markets: async () => [],
+} as unknown as CollectorStore;
+
+function server(rpc: NearRpcClient, collector: CollectorStore, llm: ToolLlm | null = null) {
+  return buildAnalyticsServer({
+    apiToken: TOKEN,
+    store: collector,
+    intervalSeconds: 900,
+    mainnet: { rpc, burrowId: BURROW, rheaId: 'v2.ref-finance.near', pools: [], llm } as never,
+  });
+}
+
+/** Counts model conversations; the model ranks nothing, so the answer is the labelled fallback. */
+function countingLlm() {
+  const llm = {
+    opened: 0,
+    open() {
+      llm.opened++;
+      return { send: async () => ({ kind: 'final' as const, text: '{"picks":[]}' }) };
+    },
+  };
+  return llm;
+}
+
+const proofHeader = async (account: string, signer = key) =>
+  Buffer.from(JSON.stringify(await signOwnership({ account, signer, at: Date.now() }))).toString(
+    'base64url',
+  );
 
 describe('POST /v1/analytics/account/:id/analysis', () => {
-  it('rejects an invalid account id', async () => {
-    const res = await app.inject({
+  const down = server(unreachable as NearRpcClient, unreachable as CollectorStore);
+  const analyse = (app: ReturnType<typeof server>, account: string, proof?: string) =>
+    app.inject({
       method: 'POST',
-      url: '/v1/analytics/account/NOT%20VALID/analysis',
-      headers,
+      url: `/v1/analytics/account/${account}/analysis`,
+      headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
       payload: {},
     });
-    expect(res.statusCode).toBe(400);
+
+  it('rejects an invalid account id', async () => {
+    expect((await analyse(down, 'NOT%20VALID')).statusCode).toBe(400);
   });
 
   it('answers a chain read failure with a generic 502', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/analytics/account/alice.near/analysis',
-      headers,
-      payload: {},
-    });
+    const res = await analyse(down, 'alice.near');
     expect(res.statusCode).toBe(502);
     expect(res.body).not.toContain('secret-detail');
+  });
+
+  it('does not call the model without an ownership proof', async () => {
+    const llm = countingLlm();
+    const res = await analyse(server(chain, store, llm), 'alice.near');
+    expect(res.statusCode).toBe(200);
+    expect(llm.opened).toBe(0);
+    expect(res.json()).toMatchObject({ source: 'heuristic', note: /Verify ownership/ });
+  });
+
+  it('calls the model for the owner of the account', async () => {
+    const llm = countingLlm();
+    const res = await analyse(
+      server(chain, store, llm),
+      'alice.near',
+      await proofHeader('alice.near'),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(llm.opened).toBe(1);
+  });
+
+  it('does not accept a proof made for another account', async () => {
+    const llm = countingLlm();
+    const res = await analyse(
+      server(chain, store, llm),
+      'bob.near',
+      await proofHeader('alice.near'),
+    );
+    expect(llm.opened).toBe(0);
+    expect(res.json()).toMatchObject({ note: /Verify ownership/ });
+  });
+
+  it('does not accept a proof signed by a key the account does not hold', async () => {
+    const llm = countingLlm();
+    const stranger = KeyPairEd25519.fromRandom();
+    await analyse(
+      server(chain, store, llm),
+      'alice.near',
+      await proofHeader('alice.near', stranger),
+    );
+    expect(llm.opened).toBe(0);
   });
 });
 
 describe('prepare exact amount', () => {
-  it.each(['0', '-5', '1.5', '0x10', 'abc'])('rejects amount %s', async (amount) => {
-    const res = await app.inject({
+  const app = server(chain, store);
+  const prepare = (intent: Record<string, unknown>) =>
+    app.inject({
       method: 'POST',
       url: '/v1/wallet/prepare',
       headers,
-      payload: {
-        account: 'alice.near',
-        intent: { action: 'repay', token: 'wrap.near', approxUsd: 10, amount },
-      },
+      payload: { account: 'alice.near', intent },
     });
+  interface Prepared {
+    readonly intent: { readonly amount?: string };
+    readonly amount: { readonly raw: string };
+    readonly signed: boolean;
+    readonly transactions: readonly {
+      readonly actions: readonly { readonly args: { readonly amount?: string } }[];
+    }[];
+  }
+  const transferred = (body: Prepared) =>
+    body.transactions.flatMap((t) => t.actions).find((a) => a.args.amount)?.args.amount;
+
+  it.each(['0', '-5', '1.5', '0x10', 'abc'])('rejects amount %s', async (amount) => {
+    const res = await prepare({ action: 'repay', token: 'wrap.near', approxUsd: 10, amount });
     expect(res.statusCode).toBe(400);
+  });
+
+  it.each(['repay', 'supply'])(
+    '%s sends exactly the agent-sized amount and echoes it',
+    async (action) => {
+      const res = await prepare({ action, token: USDT, approxUsd: 10, amount: '33125000' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json<Prepared>();
+      expect(body.intent.amount).toBe('33125000');
+      expect(body.amount.raw).toBe('33125000');
+      expect(transferred(body)).toBe('33125000');
+      expect(body.signed).toBe(false);
+    },
+  );
+
+  it('caps an exact amount above the wallet balance at the balance', async () => {
+    const res = await prepare({ action: 'repay', token: USDT, approxUsd: 10, amount: '500000000' });
+    expect(res.statusCode).toBe(200);
+    expect(transferred(res.json<Prepared>())).toBe(WALLET_USDT.toString());
+  });
+
+  it('sizes from approxUsd when no exact amount is given', async () => {
+    const res = await prepare({ action: 'repay', token: USDT, approxUsd: 10 });
+    expect(transferred(res.json<Prepared>())).toBe('10000000');
   });
 });

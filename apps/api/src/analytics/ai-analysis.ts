@@ -327,9 +327,13 @@ export async function analyseAccount(
     }
     if (recommendations.length === 0)
       return fallback('The AI ranked nothing; showing the rule-based list.');
-    const warning = [...found.values(), ...ctx.heuristics].find((r) => r.severity === 'warning');
-    if (warning && !recommendations.some((r) => r.kind === warning.kind))
-      recommendations.unshift(warning);
+    const warnings = [...found.values(), ...ctx.heuristics].filter((r) => r.severity === 'warning');
+    const missing = warnings.filter(
+      (w, i) =>
+        !recommendations.some((r) => r.kind === w.kind) &&
+        warnings.findIndex((o) => o.kind === w.kind) === i,
+    );
+    recommendations.unshift(...missing);
     return {
       source: 'llm',
       note: null,
