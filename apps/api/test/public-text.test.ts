@@ -12,7 +12,13 @@ import { OneClickVenue, RheaVenue, type VenueRequest } from '../src/gateway/venu
 import { ExchangeSource } from '../src/market-data/exchanges';
 import { HttpJsonClient, MarketHttpError } from '../src/market-data/http';
 import { DefiLlamaSource, PythSource } from '../src/market-data/sources';
-import { failureKind, publicFailure, publicText } from '../src/public-text';
+import {
+  failureKind,
+  publicCycle,
+  publicFailure,
+  publicRoute,
+  publicText,
+} from '../src/public-text';
 
 const UPSTREAM =
   'boom https://internal-rpc.example:3030/x <html><body>bad</body></html>\n    at Foo.bar (/app/x.js:1:2)';
@@ -85,9 +91,37 @@ describe('publicText / publicFailure (rows stored before the fix)', () => {
     expect(publicText('see <b>here</b>')).toBe('failed');
     expect(publicText('DefiLlama confidence 0.5 < 0.9')).toBe('DefiLlama confidence 0.5 < 0.9');
     expect(publicText('x'.repeat(600))).toBe(`${'x'.repeat(500)}…`);
+    expect(publicText(`${'a'.repeat(496)} see https://x.example`)).toBe('failed');
+    expect(publicText('Server error: &lt;html&gt; host')).toBe('failed');
+  });
+  it('drops everything after a raw failure marker, even past `;` and `)`', () => {
+    expect(publicText('http_error: HTTP 400: secret) tail; pyth:ok')).toBe('http_error');
     expect(publicText('pyth:unavailable (unavailable: HTTP 503); defillama:ok')).toBe(
-      'pyth:unavailable (unavailable); defillama:ok',
+      'pyth:unavailable (unavailable',
     );
+    expect(publicText('feed metadata: unauthorized: HTTP 403 (x); defillama:ok')).toBe(
+      'feed metadata: unauthorized',
+    );
+    expect(publicText('$10: failed (RPC failed: a; secret tail); $100: rhea')).toBe(
+      '$10: failed (unknown error)',
+    );
+    expect(publicText('rhea: quote failed: timeout; 1click: quote failed: RPC a; secret')).toBe(
+      'rhea: quote failed: timeout; 1click: quote failed: unknown error',
+    );
+    expect(
+      publicText('1click: input, output or NEAR price unavailable: cannot value the route'),
+    ).toBe('1click: input, output or NEAR price unavailable: cannot value the route');
+  });
+  it('unexpected stored shapes never throw', () => {
+    expect(publicText(5)).toBeNull();
+    const c = publicCycle({ error: null, sources: [null, 'x', { health: 'ok' }, { detail: 5 }] });
+    expect(c.sources).toEqual([{ health: 'ok', detail: null }, { detail: null }]);
+    expect(publicCycle({ error: null, sources: {} }).sources).toEqual([]);
+    const r = publicRoute({
+      reason: 'x',
+      quotes: { scored: [null, { excluded: 5, quote: { reason: 7 } }] },
+    });
+    expect(r.quotes).toEqual({ scored: [{ excluded: null, quote: { reason: 'failed' } }] });
   });
   it('a failure field keeps only the fixed phrases', () => {
     expect(publicFailure('failed: rate_limit')).toBe('failed: rate_limit');

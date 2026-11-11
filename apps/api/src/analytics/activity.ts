@@ -2,7 +2,7 @@ import { auditEvents, desc, inArray, sql, type Database } from '@near-autopilot/
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { CollectorStore } from '../collector/store';
-import { publicCycle } from '../public-text';
+import { publicCycle, publicText } from '../public-text';
 
 /**
  * READ-ONLY activity feed and system health for the dashboard. The feed is a plain-language VIEW of what is stored:
@@ -174,12 +174,16 @@ export function registerActivity(
       store.recentCycles(Math.min(limit, 30)).then((cs) => cs.map(publicCycle)),
     ]);
     const items: ActivityItem[] = [
-      ...events.map((e) => ({
-        at: e.at.toISOString(),
-        environment: e.chain ? (ENV[e.chain] ?? e.chain) : null,
-        ref: e.chain ? `${e.chain} #${e.seq}` : 'unchained',
-        ...describeEvent(e.type, (e.payload ?? {}) as P),
-      })),
+      ...events.map((e) => {
+        const d = describeEvent(e.type, (e.payload ?? {}) as P);
+        return {
+          at: e.at.toISOString(),
+          environment: e.chain ? (ENV[e.chain] ?? e.chain) : null,
+          ref: e.chain ? `${e.chain} #${e.seq}` : 'unchained',
+          ...d,
+          explanation: publicText(d.explanation) ?? '',
+        };
+      }),
       ...cycles.map((c) => ({
         at: (c.finishedAt ?? c.startedAt).toISOString(),
         kind: 'snapshot' as const,
