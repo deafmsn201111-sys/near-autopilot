@@ -60,3 +60,16 @@ _Append-only log of what was actually inspected/changed each session (brief §23
 
 **Tests run:** `pnpm verify` (green); new `market-config.test.ts`, `rate-limit.test.ts`, `/v1/control` 404 test.
 Not run here: `./scripts/quickstart.sh` (no Docker on the build machine).
+
+## 2026-11-11 — Security 6: strict CSP and generic error messages (#10)
+
+- `apps/analytics/middleware.ts` sets a per-response nonce CSP (`lib/csp.ts`): `script-src 'nonce-…' 'strict-dynamic'`,
+  `object-src 'none'`, `base-uri`, `form-action`, `frame-ancestors 'none'`. The theme script and HOT Connector's
+  sandboxed wallet iframe get the nonce (`cspNonce`). Caddy adds a second baseline policy next to it (`+` header).
+- API: Fastify error handler returns `internal error` for 5xx and logs the details; account and prepare routes keep
+  their own 4xx / `RangeError` texts and replace upstream (RPC) text with a short message. The UI shows the API's own
+  message, never the internal URL or a `fetch failed` cause.
+
+**Tests run:** `pnpm verify` (green); new `public-errors.test.ts`, `api-errors.test.ts`, `csp.test.ts`. Local run:
+every script on 14 pages carries the nonce, an injected inline handler is blocked, HOT's iframe renders its QR, the
+missing-account page shows the short message, Caddy (local container) sends both policies.

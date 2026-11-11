@@ -73,3 +73,11 @@ cascade caps in `apps/api/src/wallet/validate-cascade.ts` stay as they are: 0.15
 cascade, plus the signer, receiver and method allowlists and the gas cap.
 **Consequences:** A visitor can sign a validated cascade for their own account in their own wallet. The server still
 holds no key. Raising a cap needs a new entry here.
+
+## D10 — Nonce CSP and public error texts
+
+**Context:** Security item 6 (`HACKATHON_PLAN.md`): strict CSP, generic error messages.
+**Decision:** Scripts run only with the per-response nonce (`'strict-dynamic'`); `connect-src`, `frame-src` and
+`img-src` allow any `https:` because wallets in HOT Connector's iframe inherit the policy and call their own backends.
+Errors: our own 4xx texts and `RangeError`s are shown; upstream text and 5xx details only go to the log.
+**Consequences:** Every page renders dynamically (nonce). A new inline script needs the nonce from `headers()`.
