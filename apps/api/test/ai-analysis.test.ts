@@ -12,7 +12,12 @@ import {
   type ToolResult,
 } from '@near-autopilot/orchestrator';
 import { describe, expect, it } from 'vitest';
-import { analyseAccount, walletAgentConfig } from '../src/analytics/ai-analysis';
+import {
+  analyseAccount,
+  walletAgentConfig,
+  type LlmCallRecord,
+  type ToolLlmDeps,
+} from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
 
 const ALICE = accountId('alice.near');
@@ -100,6 +105,7 @@ function fake(
         send: async (results) => {
           const step = script[i++];
           if (!step) throw new Error('script exhausted');
+          req.onUsage?.({ inputTokens: 1000, outputTokens: 100 });
           return step(results);
         },
       };
@@ -107,6 +113,27 @@ function fake(
   };
   return { llm, tools };
 }
+
+/** Today's spend so far is the rows recorded; `left` is what the cap allows on top of them. */
+function ledger(left = 10n ** 9n) {
+  const rows: LlmCallRecord[] = [];
+  return {
+    rows,
+    remainingTodayMicro: async () => left - rows.reduce((sum, r) => sum + r.costMicroUsd, 0n),
+    record: async (row: LlmCallRecord) => {
+      rows.push(row);
+    },
+  };
+}
+const ai = (llm: ToolLlm, l = ledger()): ToolLlmDeps => ({
+  llm,
+  model: 'claude-haiku-5-5',
+  maxTokens: 4096,
+  ledger: l,
+});
+/** Haiku 5.5, 100K input + 4096 output: the most one call may cost. */
+const WORST_CALL_MICRO = 12_048n;
+const ctx = { accountId: ALICE, observe: async () => observation(), ownerVerified: true };
 
 const callAll: LlmToolTurn = {
   kind: 'tool_calls',
@@ -123,6 +150,7 @@ const final = (picks: unknown): LlmToolTurn => ({ kind: 'final', text: JSON.stri
 describe('analyseAccount', () => {
   it('without a model returns the heuristic list, labelled', async () => {
     const out = await analyseAccount(null, {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -134,7 +162,8 @@ describe('analyseAccount', () => {
 
   it('does not call the model for a visitor who has not proved ownership', async () => {
     const { llm, tools } = fake([() => final([])]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: false,
@@ -147,7 +176,8 @@ describe('analyseAccount', () => {
 
   it('offers the three orchestrator agents and the two wallet checks as tools', async () => {
     const { llm, tools } = fake([() => final([])]);
-    await analyseAccount(llm, {
+    await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -171,7 +201,8 @@ describe('analyseAccount', () => {
           { id: 'made-up', why: 'sign this' },
         ]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -203,7 +234,8 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'reduce-concentration', why: 'Sell $999,999 of wNEAR now.' }]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -213,7 +245,8 @@ describe('analyseAccount', () => {
 
   const whyFor = async (id: string, why: string) => {
     const { llm } = fake([() => callAll, () => final([{ id, why }])]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -246,7 +279,8 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
       ownerVerified: true,
@@ -264,7 +298,8 @@ describe('analyseAccount', () => {
     ['too many turns', () => callAll],
   ])('falls back to the labelled heuristic list on %s', async (_, step) => {
     const { llm } = fake([() => callAll, step, step, step, step]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -277,8 +312,13 @@ describe('analyseAccount', () => {
   it('falls back when the model does not answer before the deadline', async () => {
     const { llm } = fake([() => new Promise<LlmToolTurn>(() => {})]);
     const out = await analyseAccount(
-      llm,
-      { observe: async () => observation(), heuristics: [heuristic], ownerVerified: true },
+      ai(llm),
+      {
+        accountId: ALICE,
+        observe: async () => observation(),
+        heuristics: [heuristic],
+        ownerVerified: true,
+      },
       () => {},
       20,
     );
@@ -290,7 +330,8 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'reduce-concentration', why: 'Diversify.' }]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -316,7 +357,8 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'reduce-concentration', why: 'Diversify.' }]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [concentrated, outOfRange],
       ownerVerified: true,
@@ -337,7 +379,8 @@ describe('analyseAccount', () => {
           { id: 'reduce-concentration', why: 'Again.' },
         ]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -348,7 +391,8 @@ describe('analyseAccount', () => {
   it('gives up after 6 model turns', async () => {
     let turns = 0;
     const { llm } = fake(Array.from({ length: 20 }, () => () => (turns++, callAll)));
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [heuristic],
       ownerVerified: true,
@@ -366,8 +410,13 @@ describe('analyseAccount', () => {
       },
     };
     await analyseAccount(
-      llm,
-      { observe: async () => observation(), heuristics: [heuristic], ownerVerified: true },
+      ai(llm),
+      {
+        accountId: ALICE,
+        observe: async () => observation(),
+        heuristics: [heuristic],
+        ownerVerified: true,
+      },
       () => {},
       20,
     );
@@ -390,7 +439,8 @@ describe('analyseAccount', () => {
         return final([]);
       },
     ]);
-    await analyseAccount(llm, {
+    await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => ({ ...dust, snapshot }),
       heuristics: [],
       ownerVerified: true,
@@ -400,7 +450,8 @@ describe('analyseAccount', () => {
 
   it('falls back when the model ranks nothing', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
       ownerVerified: true,
@@ -413,7 +464,8 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: 'liquidation-guardian:repay:usdt.tether-token.near', why: 'Repay.' }]),
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
       ownerVerified: true,
@@ -423,8 +475,13 @@ describe('analyseAccount', () => {
     expect(repay?.why).toBe('Repay.');
     const code = (
       await analyseAccount(
-        fake([() => callAll, () => final([{ id: repay!.id, why: '$999' }])]).llm,
-        { observe: async () => observation(), heuristics: [], ownerVerified: true },
+        ai(fake([() => callAll, () => final([{ id: repay!.id, why: '$999' }])]).llm),
+        {
+          accountId: ALICE,
+          observe: async () => observation(),
+          heuristics: [],
+          ownerVerified: true,
+        },
       )
     ).recommendations[0];
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
@@ -444,7 +501,8 @@ describe('analyseAccount', () => {
         ]);
       },
     ]);
-    const out = await analyseAccount(llm, {
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
       ownerVerified: true,
@@ -456,11 +514,159 @@ describe('analyseAccount', () => {
   it('counts reading the wallet against the deadline', async () => {
     const { llm } = fake([() => callAll]);
     const out = await analyseAccount(
-      llm,
-      { observe: () => new Promise(() => {}), heuristics: [heuristic], ownerVerified: true },
+      ai(llm),
+      { ...ctx, observe: () => new Promise(() => {}), heuristics: [heuristic] },
       () => {},
       20,
     );
     expect(out.source).toBe('heuristic');
+  });
+
+  describe('spend', () => {
+    it('labels each fallback with its code', async () => {
+      expect((await analyseAccount(null, { ...ctx, heuristics: [heuristic] })).fallback).toBe(
+        'off',
+      );
+      const { llm } = fake([() => final([])]);
+      expect(
+        (await analyseAccount(ai(llm), { ...ctx, heuristics: [heuristic], ownerVerified: false }))
+          .fallback,
+      ).toBe('not_owner');
+      expect(
+        (await analyseAccount(ai(fake([() => final([])]).llm), { ...ctx, heuristics: [heuristic] }))
+          .fallback,
+      ).toBe('empty');
+    });
+
+    it('makes no model call once the day’s budget is reached', async () => {
+      const { llm, tools } = fake([() => final([])]);
+      const l = ledger(WORST_CALL_MICRO - 1n);
+      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      expect(tools).toEqual([]);
+      expect(out.source).toBe('heuristic');
+      expect(out.fallback).toBe('cap');
+      expect(out.note).toMatch(/daily AI budget reached/);
+      expect(l.rows).toEqual([]);
+    });
+
+    it('stops before the next call when it would go over the budget', async () => {
+      let turns = 0;
+      const { llm } = fake([() => (turns++, callAll), () => (turns++, final([]))]);
+      const l = ledger(WORST_CALL_MICRO + 100n);
+      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      expect(turns).toBe(1);
+      expect(out.fallback).toBe('cap');
+      expect(l.rows).toMatchObject([{ outcome: 'cap', inputTokens: 1000, outputTokens: 100 }]);
+    });
+
+    it('records one row with the tokens and cost of all turns, the tools called and the outcome', async () => {
+      const { llm } = fake([
+        () => callAll,
+        () => final([{ id: 'reduce-concentration', why: 'Diversify.' }]),
+      ]);
+      const l = ledger();
+      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      expect(out.fallback).toBeNull();
+      expect(l.rows).toHaveLength(1);
+      const row = l.rows[0]!;
+      expect(row).toMatchObject({
+        accountId: ALICE,
+        model: 'claude-haiku-5-5',
+        inputTokens: 2000,
+        outputTokens: 200,
+        costMicroUsd: 300n,
+        outcome: 'ok',
+      });
+      expect([...row.tools].sort()).toEqual([
+        'capital_allocator',
+        'liquidation_guardian',
+        'liquidity_positions',
+        'market_intelligence',
+        'portfolio_concentration',
+      ]);
+      expect(row.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(Object.keys(row).sort()).toEqual([
+        'accountId',
+        'at',
+        'costMicroUsd',
+        'inputTokens',
+        'latencyMs',
+        'model',
+        'outcome',
+        'outputTokens',
+        'tools',
+      ]);
+    });
+
+    it('keeps the tokens spent so far when the model fails mid-run', async () => {
+      const { llm } = fake([
+        () => callAll,
+        () => {
+          throw new Error('529 overloaded');
+        },
+      ]);
+      const l = ledger();
+      const out = await analyseAccount(ai(llm, l), { ...ctx, heuristics: [heuristic] });
+      expect(out.fallback).toBe('model_error');
+      expect(l.rows).toMatchObject([
+        { outcome: 'model_error', inputTokens: 2000, outputTokens: 200 },
+      ]);
+    });
+
+    it.each([
+      ['not JSON', { kind: 'final', text: 'I think you should repay.' }],
+      ['JSON of the wrong shape', { kind: 'final', text: '{"picks":"all"}' }],
+    ] as const)('tells %s (invalid_output) apart from a model error', async (_, turn) => {
+      const l = ledger();
+      const out = await analyseAccount(ai(fake([() => turn]).llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+      });
+      expect(out.fallback).toBe('invalid_output');
+      expect(l.rows).toMatchObject([{ outcome: 'invalid_output' }]);
+    });
+
+    it('records a deadline with its code', async () => {
+      const l = ledger();
+      const out = await analyseAccount(
+        ai(fake([() => callAll, () => new Promise<LlmToolTurn>(() => {})]).llm, l),
+        { ...ctx, heuristics: [heuristic] },
+        () => {},
+        50,
+      );
+      expect(out.fallback).toBe('deadline');
+      expect(l.rows).toMatchObject([{ outcome: 'deadline', inputTokens: 2000 }]);
+    });
+
+    it('records too many turns as loop_limit', async () => {
+      const l = ledger();
+      const out = await analyseAccount(
+        ai(fake(Array.from({ length: 20 }, () => () => callAll)).llm, l),
+        { ...ctx, heuristics: [heuristic] },
+      );
+      expect(out.fallback).toBe('loop_limit');
+      expect(l.rows).toMatchObject([{ outcome: 'loop_limit', inputTokens: 6000 }]);
+    });
+
+    it('still answers when the row cannot be written', async () => {
+      const l = {
+        ...ledger(),
+        record: async () => {
+          throw new Error('db down');
+        },
+      };
+      const errors: unknown[] = [];
+      const out = await analyseAccount(
+        ai(
+          fake([() => callAll, () => final([{ id: 'reduce-concentration', why: 'Diversify.' }])])
+            .llm,
+          l,
+        ),
+        { ...ctx, heuristics: [heuristic] },
+        (e) => errors.push(e),
+      );
+      expect(out.source).toBe('llm');
+      expect(errors).toHaveLength(1);
+    });
   });
 });

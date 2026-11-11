@@ -151,5 +151,26 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   (wiring); the collector stays LLM-free, and the no-signing/no-sending ban is unchanged.
 - The Next route allows 5 analyses per visitor and 60 overall per 10 minutes.
 - Only the proven owner (D12) gets a model call: without a valid `x-ownership-proof` the endpoint returns the rule-based list with "Verify ownership…". `ANTHROPIC_API_KEY` stays off the public server until #21 (spend cap) is merged.
-  **Consequences:** An analysis costs one snapshot read (about 2 RPC calls per Burrow token) plus up to 4 model calls.
+  **Consequences:** An analysis costs one snapshot read (about 2 RPC calls per Burrow token) plus up to 6 model calls (`MAX_TURNS`).
   With the key unset the route is free and returns the rule-based list.
+
+## D14 — LLM spend cap, model allowlist, 7-day call log
+
+**Context:** #21. The Anthropic key may go on the public server only once spend is recorded and capped. D13's tool loop
+makes up to 6 model calls per analysis (`MAX_TURNS`).
+**Decision:**
+
+- `ANTHROPIC_MODEL` is an allowlist: `claude-haiku-5-5` or `claude-sonnet-5-5`, each with a list price in
+  `apps/api/src/llm/pricing.ts` (Haiku $0.10/$0.50 per MTok, $0.50/$2.50 above a 100K-token prompt; Sonnet $2/$10).
+  Anything else fails the analytics API at start.
+- Daily cap per UTC day: the `llm_settings` row (#31's admin field) when set, else `LLM_DAILY_CAP_USD`, default $5.
+  Before each model call: spent today + this run so far + one worst-case call (100K input, `ANTHROPIC_MAX_TOKENS`
+  output) must fit, else no call and fallback code `cap`.
+- Usage comes from every reply through `ToolLlm.open({ onUsage })`, before the reply is checked, so a billed
+  `max_tokens` or `refusal` reply is counted. SDK `maxRetries: 0`, so no billed retry goes unseen. A call aborted on
+  the deadline returns no usage and is not counted (the worst-case check covers it).
+- `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
+  micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
+  analytics API (on start, then hourly).
+- Fallback codes: `off`, `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+  `deadline`, `loop_limit` (too many turns or tool calls).

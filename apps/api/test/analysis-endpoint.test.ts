@@ -124,7 +124,18 @@ function server(rpc: NearRpcClient, collector: CollectorStore, llm: ToolLlm | nu
     apiToken: TOKEN,
     store: collector,
     intervalSeconds: 900,
-    mainnet: { rpc, burrowId: BURROW, rheaId: 'v2.ref-finance.near', pools: [], llm } as never,
+    mainnet: {
+      rpc,
+      burrowId: BURROW,
+      rheaId: 'v2.ref-finance.near',
+      pools: [],
+      ai: llm && {
+        llm,
+        model: 'claude-haiku-5-5',
+        maxTokens: 4096,
+        ledger: { remainingTodayMicro: async () => 10n ** 9n, record: async () => {} },
+      },
+    } as never,
   });
 }
 

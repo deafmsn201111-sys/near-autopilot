@@ -71,6 +71,10 @@ export class AnthropicToolLlm implements ToolLlm {
           },
           request.signal ? { signal: request.signal } : undefined,
         );
+        request.onUsage?.({
+          inputTokens: reply.usage.input_tokens,
+          outputTokens: reply.usage.output_tokens,
+        });
         if (reply.stop_reason === 'tool_use') {
           messages.push({ role: 'assistant', content: reply.content });
           const calls = reply.content.flatMap((b) =>
@@ -88,7 +92,8 @@ export class AnthropicToolLlm implements ToolLlm {
   }
 }
 
-const sdkFromEnv = (key: string) => new Anthropic({ apiKey: key, timeout: 120_000, maxRetries: 1 });
+/** No SDK retry: a retried request is billed, but only the last reply's usage would be seen. */
+const sdkFromEnv = (key: string) => new Anthropic({ apiKey: key, timeout: 120_000, maxRetries: 0 });
 const configFromEnv = (env: LlmEnv): AnthropicLlmConfig => ({
   model: env.ANTHROPIC_MODEL,
   maxTokens: env.ANTHROPIC_MAX_TOKENS,

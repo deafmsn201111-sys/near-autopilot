@@ -1,4 +1,5 @@
-import type { TokenId } from '@near-autopilot/core';
+import type { LlmModel } from '@near-autopilot/config';
+import type { AccountId, TokenId } from '@near-autopilot/core';
 import { assessLendingPosition, tokenValueUsd } from '@near-autopilot/financial-engine';
 import {
   afterRepay,
@@ -10,6 +11,7 @@ import {
   parseAgentOutput,
   runToolLoop,
   stripFence,
+  ToolLoopError,
   type AgentObservation,
   type LoopTool,
   type OrchestratorConfig,
@@ -17,6 +19,7 @@ import {
   type ToolLlm,
 } from '@near-autopilot/orchestrator';
 import { z } from 'zod';
+import { costMicroUsd } from '../llm/pricing';
 import type { PortfolioRecommendation } from './account-view';
 
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
@@ -26,7 +29,53 @@ const MIN_ACTION_USD = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
 
+/** Why the rule-based list was shown instead of the AI ranking. */
+export type FallbackCode =
+  | 'off'
+  | 'not_owner'
+  | 'cap'
+  | 'model_error'
+  | 'invalid_output'
+  | 'empty'
+  | 'deadline'
+  | 'loop_limit';
+
+/** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
+export interface LlmCallRecord {
+  readonly at: Date;
+  readonly accountId: AccountId;
+  readonly model: LlmModel;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly costMicroUsd: bigint;
+  readonly latencyMs: number;
+  readonly tools: readonly string[];
+  readonly outcome: 'ok' | FallbackCode;
+}
+
+export interface LlmLedger {
+  /** Micro-USD the daily cap still allows today (UTC day); negative once over it. */
+  remainingTodayMicro(): Promise<bigint>;
+  record(call: LlmCallRecord): Promise<void>;
+}
+
+export interface ToolLlmDeps {
+  readonly llm: ToolLlm;
+  readonly model: LlmModel;
+  /** The reply cap the model runs with: bounds one call's output. */
+  readonly maxTokens: number;
+  readonly ledger: LlmLedger;
+}
+
+// ponytail: a fixed input bound, well above what 6 turns of these tools replay; derive it from the request size if prompts grow.
+const WORST_CASE_INPUT_TOKENS = 100_000;
+
+class BudgetReached extends Error {
+  override readonly name = 'BudgetReached';
+}
+
 export interface AnalysisContext {
+  readonly accountId: AccountId;
   /** Reads the wallet for the agents; called only when a model is configured. */
   readonly observe: () => Promise<AgentObservation>;
   /** The account view's rule-based list: the fallback, and what the two wallet tools return. */
@@ -37,6 +86,7 @@ export interface AnalysisContext {
 
 export interface Analysis {
   readonly source: 'llm' | 'heuristic';
+  readonly fallback: FallbackCode | null;
   readonly note: string | null;
   readonly recommendations: readonly PortfolioRecommendation[];
   readonly calledTools: readonly string[];
@@ -259,6 +309,26 @@ function displayNumbers(value: unknown, key = ''): string[] {
   return [];
 }
 
+const NOTES: Record<FallbackCode, string> = {
+  off: 'AI analysis is off on this server; showing the rule-based list.',
+  not_owner:
+    'Verify ownership of this account to get the AI analysis; showing the rule-based list.',
+  cap: 'Paused: daily AI budget reached; showing the rule-based list.',
+  model_error: 'AI analysis failed; showing the rule-based list.',
+  invalid_output: 'AI analysis failed; showing the rule-based list.',
+  empty: 'The AI ranked nothing; showing the rule-based list.',
+  deadline: 'AI analysis took too long; showing the rule-based list.',
+  loop_limit: 'AI analysis failed; showing the rule-based list.',
+};
+
+const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * Architecture C: the central LLM calls the orchestrator agents and two wallet checks as tools, then only orders the
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
@@ -268,22 +338,77 @@ function displayNumbers(value: unknown, key = ''): string[] {
  * rule-based list, labelled.
  */
 export async function analyseAccount(
-  llm: ToolLlm | null,
+  ai: ToolLlmDeps | null,
   ctx: AnalysisContext,
   onError: (e: unknown) => void = () => {},
   deadlineMs: number = DEADLINE_MS,
 ): Promise<Analysis> {
-  const fallback = (note: string): Analysis => ({
+  const fallback = (code: FallbackCode): Analysis => ({
     source: 'heuristic',
-    note,
+    fallback: code,
+    note: NOTES[code],
     recommendations: ctx.heuristics,
     calledTools: [],
   });
-  if (!llm) return fallback('AI analysis is off on this server; showing the rule-based list.');
-  if (!ctx.ownerVerified)
-    return fallback(
-      'Verify ownership of this account to get the AI analysis; showing the rule-based list.',
-    );
+  if (!ai) return fallback('off');
+  if (!ctx.ownerVerified) return fallback('not_owner');
+
+  const startedAt = new Date();
+  const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };
+  const worstCall = costMicroUsd(ai.model, {
+    inputTokens: WORST_CASE_INPUT_TOKENS,
+    outputTokens: ai.maxTokens,
+  });
+  // ponytail: runs still in flight are not in the ledger yet; a global limit (#22) bounds how many overlap.
+  const affordable = async () =>
+    (await ai.ledger.remainingTodayMicro()) >= usage.costMicroUsd + worstCall;
+  if (!(await affordable())) return fallback('cap');
+
+  const metered: ToolLlm = {
+    open: (request) => {
+      const chat = ai.llm.open({
+        ...request,
+        onUsage: (u) => {
+          usage.inputTokens += u.inputTokens;
+          usage.outputTokens += u.outputTokens;
+          usage.costMicroUsd += costMicroUsd(ai.model, u);
+        },
+      });
+      return {
+        send: async (results) => {
+          if (!(await affordable())) throw new BudgetReached();
+          usage.calls++;
+          return chat.send(results);
+        },
+      };
+    },
+  };
+  const calledTools = new Set<string>();
+  const counted = (tool: LoopTool): LoopTool => ({
+    ...tool,
+    run: (input) => (calledTools.add(tool.spec.name), tool.run(input)),
+  });
+  // ponytail: an aborted call in flight returns no usage and is not counted; the worst-case check covers it.
+  const record = async (outcome: 'ok' | FallbackCode) => {
+    if (usage.calls === 0) return;
+    await ai.ledger
+      .record({
+        at: startedAt,
+        accountId: ctx.accountId,
+        model: ai.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        costMicroUsd: usage.costMicroUsd,
+        latencyMs: Date.now() - startedAt.getTime(),
+        tools: [...calledTools],
+        outcome,
+      })
+      .catch(onError);
+  };
+  const failed = async (code: FallbackCode) => {
+    await record(code);
+    return fallback(code);
+  };
 
   const abort = new AbortController();
   const found = new Map<string, PortfolioRecommendation>();
@@ -307,9 +432,9 @@ export async function analyseAccount(
         ctx.heuristics,
         found,
       ),
-    ];
+    ].map(counted);
     return runToolLoop({
-      llm,
+      llm: metered,
       system: SYSTEM,
       prompt: `Analyse the connected wallet ${obs.accountId}.`,
       tools,
@@ -325,44 +450,51 @@ export async function analyseAccount(
     }, deadlineMs);
   });
 
+  let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
-    const { text, trace } = await Promise.race([run(), deadline]).finally(() =>
-      clearTimeout(timer),
-    );
-    const { picks } = picksSchema.parse(JSON.parse(stripFence(text)));
-    // A "why" may quote its own card and the tools' shared context (health factor, notes, signals), never another card.
-    const context = new Set(
-      trace.flatMap((t) =>
-        t.output && typeof t.output === 'object'
-          ? displayNumbers({ ...t.output, candidates: [] })
-          : [],
-      ),
-    );
-    const recommendations: PortfolioRecommendation[] = [];
-    for (const pick of picks) {
-      const candidate = found.get(pick.id);
-      if (!candidate || recommendations.some((r) => r.id === pick.id)) continue;
-      const own = new Set(displayNumbers(candidate));
-      const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
-      recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
-    }
-    if (recommendations.length === 0)
-      return fallback('The AI ranked nothing; showing the rule-based list.');
-    const warnings = [...found.values(), ...ctx.heuristics].filter((r) => r.severity === 'warning');
-    const missing = warnings.filter(
-      (w, i) =>
-        !recommendations.some((r) => r.kind === w.kind) &&
-        warnings.findIndex((o) => o.kind === w.kind) === i,
-    );
-    recommendations.unshift(...missing);
-    return {
-      source: 'llm',
-      note: null,
-      recommendations,
-      calledTools: [...new Set(trace.map((t) => t.tool))],
-    };
+    reply = await Promise.race([run(), deadline]).finally(() => clearTimeout(timer));
   } catch (e) {
     onError(e);
-    return fallback('AI analysis failed; showing the rule-based list.');
+    if (e instanceof BudgetReached) return failed('cap');
+    if (abort.signal.aborted) return failed('deadline');
+    return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
   }
+  const { text, trace } = reply;
+  const parsed = picksSchema.safeParse(parseJson(stripFence(text)));
+  if (!parsed.success) {
+    onError(parsed.error);
+    return failed('invalid_output');
+  }
+  // A "why" may quote its own card and the tools' shared context (health factor, notes, signals), never another card.
+  const context = new Set(
+    trace.flatMap((t) =>
+      t.output && typeof t.output === 'object'
+        ? displayNumbers({ ...t.output, candidates: [] })
+        : [],
+    ),
+  );
+  const recommendations: PortfolioRecommendation[] = [];
+  for (const pick of parsed.data.picks) {
+    const candidate = found.get(pick.id);
+    if (!candidate || recommendations.some((r) => r.id === pick.id)) continue;
+    const own = new Set(displayNumbers(candidate));
+    const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
+    recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
+  }
+  if (recommendations.length === 0) return failed('empty');
+  const warnings = [...found.values(), ...ctx.heuristics].filter((r) => r.severity === 'warning');
+  const missing = warnings.filter(
+    (w, i) =>
+      !recommendations.some((r) => r.kind === w.kind) &&
+      warnings.findIndex((o) => o.kind === w.kind) === i,
+  );
+  recommendations.unshift(...missing);
+  await record('ok');
+  return {
+    source: 'llm',
+    fallback: null,
+    note: null,
+    recommendations,
+    calledTools: [...new Set(trace.map((t) => t.tool))],
+  };
 }

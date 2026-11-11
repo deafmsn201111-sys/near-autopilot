@@ -73,6 +73,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
+      LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'

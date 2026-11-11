@@ -625,3 +625,40 @@ export const demoLedger = pgTable(
   },
   (t) => [index('demo_ledger_portfolio_idx').on(t.portfolio, t.id)],
 );
+
+/** One analysis that reached the model, kept 7 days (migration 0018). Numbers only: no IP, no visitor key, no text. */
+export const llmCalls = pgTable(
+  'llm_calls',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    at: ts('at').notNull(),
+    accountId: text('account_id').notNull(),
+    model: text('model').notNull(),
+    inputTokens: integer('input_tokens').notNull(),
+    outputTokens: integer('output_tokens').notNull(),
+    costMicroUsd: bigint('cost_micro_usd', { mode: 'bigint' }).notNull(),
+    latencyMs: integer('latency_ms').notNull(),
+    tools: jsonb('tools').$type<string[]>().notNull(),
+    outcome: text('outcome', {
+      enum: [
+        'ok',
+        'off',
+        'not_owner',
+        'cap',
+        'model_error',
+        'invalid_output',
+        'empty',
+        'deadline',
+        'loop_limit',
+      ],
+    }).notNull(),
+  },
+  (t) => [index('llm_calls_at_idx').on(t.at)],
+);
+
+/** Single-row LLM settings (migration 0018). A null cap means LLM_DAILY_CAP_USD applies. */
+export const llmSettings = pgTable('llm_settings', {
+  id: integer('id').primaryKey(),
+  dailyCapMicroUsd: bigint('daily_cap_micro_usd', { mode: 'bigint' }),
+  updatedAt: ts('updated_at').notNull(),
+});
