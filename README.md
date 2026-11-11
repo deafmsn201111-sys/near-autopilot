@@ -188,7 +188,9 @@ gives the central LLM five tools:
 | `portfolio_concentration` | Wallet check: share of the portfolio in one token                                                    |
 | `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                        |
 
-The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
+The model sees only numbers and token names from our own list: a token's own `ft_metadata` symbol never reaches it (an
+unknown token appears as its shortened contract id, on the AI-ranked cards too), and the prompt does not carry the
+account id. The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
 transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
 by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
 turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled

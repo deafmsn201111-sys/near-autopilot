@@ -187,3 +187,20 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   analytics API (on start, then hourly).
 - Fallback codes (`off` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
   `deadline`, `loop_limit` (too many turns or tool calls).
+
+## D15 — Leaked secrets are rotated, history is not rewritten
+
+**Context:** #45. The repo goes public for the judges. A real FastNEAR key was committed to `.env.example` in
+`ed756ee` and blanked in #47.
+**Decision:**
+
+- Rotate every real leak at its provider; no history rewrite. Once public, forks, clones and GitHub's
+  `refs/pull/*` keep old commits anyway, so a rewrite does not unpublish anything, and it breaks every open
+  branch and worktree four days before the deadline. A rotated key is worthless whatever history shows.
+- CI job `secrets` runs gitleaks 8.30.1 (pinned, checksum-checked binary) over the full history of the checked-out commit on every PR and every push to `main`.
+  False positives go to `.gitleaks.toml` (public NEAR token ids, a test key) with a reason; a rotated leak goes to
+  `.gitleaksignore` by fingerprint.
+- `near-dapp` and `near-intents` (from `near/agent-skills`, no licence) are no longer committed; `.claude/skills/README.md`
+  says how to install them. The other third-party skills keep their licences next to them.
+  **Consequences:** The old FastNEAR key stays readable in history and must be dead before the repo goes public
+  (owner step on #45). A new real finding turns CI red until it is rotated and listed.

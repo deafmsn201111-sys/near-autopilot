@@ -20,6 +20,7 @@ import {
 } from '@near-autopilot/orchestrator';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
+import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
 import { analysisKey } from './analysis-key';
 
@@ -123,8 +124,10 @@ export interface AnalysisContext {
   readonly accountId: AccountId;
   /** Reads the wallet for the agents; called only when a model is configured. */
   readonly observe: () => Promise<AgentObservation>;
-  /** The account view's rule-based list: the fallback, and what the two wallet tools return. */
+  /** The account view's rule-based list, as the user sees it: the fallback. */
   readonly heuristics: readonly PortfolioRecommendation[];
+  /** The same list with token names from our own labels only: what the two wallet tools return to the model. */
+  readonly checks: readonly PortfolioRecommendation[];
   /** A NEP-413 proof from a full-access key of this account (D12): only its owner may spend a model call. */
   readonly ownerVerified: boolean;
   readonly preset?: string;
@@ -186,13 +189,14 @@ async function propose(agent: ProposalAgent, obs: AgentObservation) {
 const rationales = (proposals: readonly { kind: string; rationale: string }[]) =>
   proposals.filter((p) => p.kind === 'no_action').map((p) => p.rationale);
 
+/** Token names come from our own labels, never the token's ft_metadata (untrusted text a deployer chooses). */
 function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
   const info = obs.snapshot.tokens.get(token);
   if (!info || !obs.snapshot.prices.has(token)) return null;
   const approxUsd = usd(tokenValueUsd(obs.snapshot.prices, token, amount));
   if (!(approxUsd >= MIN_ACTION_USD)) return null;
   return {
-    symbol: info.symbol,
+    symbol: modelTokenLabel(token),
     amount: human(amount, info.decimals),
     approxUsd: approxUsdOf(approxUsd),
   };
@@ -533,21 +537,21 @@ export async function analyseAccount(
         'portfolio_concentration',
         'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
         'reduce_concentration',
-        ctx.heuristics,
+        ctx.checks,
         found,
       ),
       walletTool(
         'liquidity_positions',
         'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
         'reposition_dcl_position',
-        ctx.heuristics,
+        ctx.checks,
         found,
       ),
     ].map(counted);
     return runToolLoop({
       llm: metered,
       system: SYSTEM,
-      prompt: `Analyse the connected wallet ${obs.accountId}.`,
+      prompt: 'Analyse the connected wallet.',
       tools,
       maxTurns: MAX_TURNS,
       signal: abort.signal,
@@ -588,7 +592,7 @@ export async function analyseAccount(
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
   if (recommendations.length === 0) return failed('empty');
-  const warnings = [...found.values(), ...ctx.heuristics].filter((r) => r.severity === 'warning');
+  const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>
       !recommendations.some((r) => r.kind === w.kind) &&
