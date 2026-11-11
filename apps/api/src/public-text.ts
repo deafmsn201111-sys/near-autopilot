@@ -28,17 +28,21 @@ export function failureKind(e: unknown): string {
 
 const QUOTE_FAILED = new RegExp(`quote failed: (?!${KIND}(?:;|$))[^;]*`, 'g');
 const FAILED_PAREN = new RegExp(`failed \\((?!${KIND}\\))[^;]*\\)`, 'g');
-const KIND_MESSAGE = new RegExp(`\\b(${KINDS}): [^;]*`, 'g');
-const UNSAFE = /:\/\/|[<>\n\r]|\bat \S+ \(|^[\s\S]{501}/;
-const FAILURE = new RegExp(`^(?:cycle )?failed: ${KIND}$`);
+const KIND_MESSAGE = new RegExp(`\\b(${KINDS}): [^;)]*`, 'g');
+const MAX_LENGTH = 500;
+const UNSAFE = /:\/\/|<[a-z/!]|[\n\r]|\bat \S+ \(/i;
+const FAILURE = new RegExp(
+  `^(?:(?:cycle )?failed: ${KIND}|collector stopped before the cycle finished)$`,
+);
 
 /**
  * A stored reason or summary as served. Rows written before the fixed phrases may still hold raw upstream text after
  * a failure marker: that part is replaced, and anything still looking like a URL, HTML or a stack becomes `failed`.
+ * Cut to MAX_LENGTH first, which also bounds the regex backtracking.
  */
 export function publicText(s: string | null): string | null {
   if (s === null) return null;
-  const out = s
+  const out = (s.length > MAX_LENGTH ? `${s.slice(0, MAX_LENGTH)}…` : s)
     .replace(QUOTE_FAILED, 'quote failed: unknown error')
     .replace(FAILED_PAREN, 'failed (unknown error)')
     .replace(KIND_MESSAGE, '$1');

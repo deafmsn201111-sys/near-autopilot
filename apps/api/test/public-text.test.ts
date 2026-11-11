@@ -80,14 +80,21 @@ describe('publicText / publicFailure (rows stored before the fix)', () => {
     expect(publicText('3 feed(s) not valid')).toBe('3 feed(s) not valid');
     expect(publicText(null)).toBeNull();
   });
-  it('anything with a URL, HTML, a stack line or too long becomes a fixed phrase', () => {
+  it('anything with a URL, HTML or a stack line becomes a fixed phrase; long text is cut', () => {
     expect(publicText(UPSTREAM)).toBe('failed');
     expect(publicText('see <b>here</b>')).toBe('failed');
-    expect(publicText('x'.repeat(501))).toBe('failed');
+    expect(publicText('DefiLlama confidence 0.5 < 0.9')).toBe('DefiLlama confidence 0.5 < 0.9');
+    expect(publicText('x'.repeat(600))).toBe(`${'x'.repeat(500)}…`);
+    expect(publicText('pyth:unavailable (unavailable: HTTP 503); defillama:ok')).toBe(
+      'pyth:unavailable (unavailable); defillama:ok',
+    );
   });
   it('a failure field keeps only the fixed phrases', () => {
     expect(publicFailure('failed: rate_limit')).toBe('failed: rate_limit');
     expect(publicFailure('cycle failed: unknown error')).toBe('cycle failed: unknown error');
+    expect(publicFailure('collector stopped before the cycle finished')).toBe(
+      'collector stopped before the cycle finished',
+    );
     expect(publicFailure('HTTP 503 Service Unavailable')).toBe('failed: unknown error');
   });
 });
