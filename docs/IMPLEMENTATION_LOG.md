@@ -185,3 +185,13 @@ no longer said what comes first.
   charset, ≤ 64 chars); candidate ids need them.
 - Test: `analysis-endpoint.test.ts` "what the model is sent" — hostile symbols on a wallet token and both DCL pool
   tokens appear nowhere in what the fake model receives.
+
+## 2026-11-12 — Secrets audit before the repo goes public (#45)
+
+- gitleaks over all refs (222 commits): 376 findings, all public NEAR token ids or a test key except the known
+  FastNEAR key from `ed756ee`. Issue and PR bodies and comments (58 issues, 21 PRs): no secrets; the VPS IP in #8 is
+  public through DNS.
+- `.gitleaks.toml`, `.gitleaksignore`, CI job `secrets`; D15 (rotate, no rewrite).
+- `.claude/skills`: MIT licences for `grill-me`/`grilling`, `README.md` with sources; `near-dapp`/`near-intents`
+  untracked (no upstream licence).
+- Repo description and homepage: owner step (needs admin rights).
