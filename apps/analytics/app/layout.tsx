@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Suspense, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
 import { SubNav, TopNav } from '../components/Nav';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -58,9 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SubNav />
           {children}
         </main>
-        <Suspense fallback={null}>
-          <AutoRefresh seconds={15} />
-        </Suspense>
+        <AutoRefresh seconds={15} />
       </body>
     </html>
   );

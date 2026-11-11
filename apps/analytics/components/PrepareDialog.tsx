@@ -1,6 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { refreshAccount } from '../app/account-actions';
 import { prepareIntent } from '../lib/prepare-client';
 import {
   gasToTgas,
@@ -67,6 +68,7 @@ export function PrepareDialog({
       setState('updating');
       await new Promise((res) => setTimeout(res, 4000));
       setCascade(null); // collapse the (now spent) preview; the user can prepare a fresh one if still suggested
+      await refreshAccount(request.account);
       router.refresh();
       setState('idle');
     } else {
