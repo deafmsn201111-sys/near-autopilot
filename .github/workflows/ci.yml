@@ -85,10 +85,28 @@ jobs:
           cache-from: type=gha,scope=analytics
           cache-to: type=gha,scope=analytics,mode=max
 
+  secrets:
+    # Full-history gitleaks scan; false positives live in .gitleaks.toml / .gitleaksignore (D15).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          ./gitleaks git --log-opts="--all" --redact -v .
+
   notify:
     # Push to main only: a red main opens (or comments on) one "main is red" issue; the next green main closes it.
     if: always() && github.event_name == 'push'
-    needs: [verify, db, docker]
+    needs: [verify, db, docker, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

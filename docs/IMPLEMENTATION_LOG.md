@@ -171,3 +171,13 @@ no longer said what comes first.
 - Daily cap per UTC day (`LLM_DAILY_CAP_USD`, default $5, DB override) checked before every model call against the
   worst case; usage via `ToolLlm.open({ onUsage })`, SDK retries off; `ANTHROPIC_MODEL` allowlist with a price table.
 - Fallback codes on the analysis result and in `llm_calls.outcome` (D14).
+
+## 2026-11-12 — Secrets audit before the repo goes public (#45)
+
+- gitleaks over all refs (222 commits): 376 findings, all public NEAR token ids or a test key except the known
+  FastNEAR key from `ed756ee`. Issue and PR bodies and comments (58 issues, 21 PRs): no secrets; the VPS IP in #8 is
+  public through DNS.
+- `.gitleaks.toml`, `.gitleaksignore`, CI job `secrets`; D15 (rotate, no rewrite).
+- `.claude/skills`: MIT licences for `grill-me`/`grilling`, `README.md` with sources; `near-dapp`/`near-intents`
+  untracked (no upstream licence).
+- Repo description and homepage: owner step (needs admin rights).

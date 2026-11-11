@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public NEAR token and pool ids (USDC implicit account, NearX, Burrow shadow pool) and a test-only RPC key"
+regexes = [
+  '''^17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1$''',
+  '''^v2-nearx\.stader-labs\.near$''',
+  '''^shadow_ref_v1-\d+$''',
+  '''^k-test-\d+$''',
+]
