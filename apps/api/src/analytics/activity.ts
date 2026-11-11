@@ -207,7 +207,7 @@ export function registerActivity(
   });
 
   /** What the System Health page shows. Every check is a read; a failing check is reported, never hidden. */
-  app.get('/v1/analytics/system', async () => {
+  app.get('/v1/analytics/system', async (req) => {
     const t0 = Date.now();
     const db = await (async () => {
       try {
@@ -221,11 +221,12 @@ export function registerActivity(
           error: null,
         };
       } catch (e) {
+        req.log.error({ err: e }, 'database check failed');
         return {
           ok: false,
           latencyMs: null,
           migrations: null,
-          error: e instanceof Error ? e.message : String(e),
+          error: 'the database is unreachable',
         };
       }
     })();

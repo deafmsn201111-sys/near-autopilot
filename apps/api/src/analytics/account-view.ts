@@ -1,5 +1,8 @@
 import {
   accountIdSchema,
+  MissingPriceError,
+  PreconditionError,
+  UnsupportedIntentError,
   type AccountId,
   type FunctionCallAction,
   type TokenId,
@@ -42,7 +45,7 @@ import {
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { valueAccount, type AccountReads, type TokenFacts } from './account';
 import { loopStrategies, type LoopMarket } from './looping';
@@ -422,6 +425,16 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
   return recs;
 }
 
+const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
+
+/** Why this request cannot be built is shown (422); upstream (RPC, contract) text stays in the log (502). */
+export function prepareFailure(req: FastifyRequest, reply: FastifyReply, e: unknown) {
+  if (REQUEST_PROBLEMS.some((kind) => e instanceof kind))
+    return reply.code(422).send({ error: (e as Error).message });
+  req.log.error({ err: e }, 'prepare failed');
+  return reply.code(502).send({ error: 'could not prepare the transaction right now' });
+}
+
 export function registerAccountView(
   app: FastifyInstance,
   store: CollectorStore,
@@ -480,11 +493,10 @@ export function registerAccountView(
       nativeYocto = await native.getNativeBalance(id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return reply.code(/does not exist|UNKNOWN_ACCOUNT/i.test(msg) ? 404 : 502).send({
-        error: /does not exist|UNKNOWN_ACCOUNT/i.test(msg)
-          ? `account ${id} does not exist on NEAR mainnet`
-          : `could not read the account: ${msg}`,
-      });
+      if (/does not exist|UNKNOWN_ACCOUNT/i.test(msg))
+        return reply.code(404).send({ error: `account ${id} does not exist on NEAR mainnet` });
+      req.log.error({ err: e, account: id }, 'account read failed');
+      return reply.code(502).send({ error: 'could not read the account from NEAR right now' });
     }
     const [assets, markets, meta, prices, account] = await Promise.all([
       burrow.listAssets(),
@@ -1032,7 +1044,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1128,7 +1140,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1187,7 +1199,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1274,7 +1286,7 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
-        return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+        return prepareFailure(req, reply, e);
       }
     }
 
@@ -1514,7 +1526,7 @@ export function registerAccountView(
         note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
       };
     } catch (e) {
-      return reply.code(502).send({ error: e instanceof Error ? e.message : String(e) });
+      return prepareFailure(req, reply, e);
     }
   });
 }

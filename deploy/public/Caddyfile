@@ -8,7 +8,11 @@
 		header_up X-Real-IP {remote_host}
 	}
 
+	# A baseline policy added next to the app's nonce policy (apps/analytics/lib/csp.ts); browsers enforce both, so
+	# these hold even if the app's header is lost. `+` adds a header line, it never replaces the app's.
 	header {
+		defer
+		+Content-Security-Policy "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin

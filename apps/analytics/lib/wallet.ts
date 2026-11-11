@@ -26,6 +26,7 @@ function get(): NearConnector {
       network: 'mainnet',
       autoConnect: true,
       features: { signInWithoutAddKey: true },
+      cspNonce: document.querySelector<HTMLScriptElement>('script[nonce]')?.nonce || undefined,
     });
     connector.on('wallet:signIn', (t) => emit(t.accounts[0]?.accountId ?? null));
     connector.on('wallet:signOut', () => emit(null));
