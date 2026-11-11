@@ -182,3 +182,7 @@ shows `Fresh` only when the API answers and the collector's data is fresh, so th
   `./setup.sh`. The database volume is kept.
 - **Stop:** `docker compose down`. This keeps the data.
 - **Delete everything:** `docker compose down -v`. This erases the database and the certificates.
+- **Demo portfolio stuck in read-only:** the orchestrator switches a demo scope to `read_only` on its own (a crash
+  mid-run, 3 rejected dry runs in a row, an audit write failure) and nothing switches it back. Find the scope on
+  `/activity`, then:
+  `docker compose exec postgres psql -U autopilot -d autopilot -c "UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';"`

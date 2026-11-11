@@ -81,8 +81,9 @@ whether to roll back. Always list for the owner: "connect a wallet with HOT on `
 
 ## 7. Live Testing steps
 
-- Find closed issues with unticked live steps: `gh issue list --state closed --limit 50 --json number,body` and keep
-  those whose body has `- [ ] [live`.
+- Find closed issues with unticked live steps in the body or a comment:
+  `gh issue list --state closed --limit 50 --json number,body,comments --jq '.[] | select(([.body] + [.comments[].body]) | any(test("- \\[ \\] \\[live"))) | .number'`.
+  A step found in a comment is ticked by editing that comment (`gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id> -f body=…`).
 - Run each `[live]` step on `$SITE` with `claude-in-chrome`, screenshot the result, tick it with
   `gh issue edit`. A failing step becomes a new `bug` issue linked to the original.
 - `[live, owner]` steps: list them for the owner by issue.
