@@ -73,3 +73,29 @@ cascade caps in `apps/api/src/wallet/validate-cascade.ts` stay as they are: 0.15
 cascade, plus the signer, receiver and method allowlists and the gas cap.
 **Consequences:** A visitor can sign a validated cascade for their own account in their own wallet. The server still
 holds no key. Raising a cap needs a new entry here.
+
+## D10 — Rate limits on the public site and the account read cache
+
+**Context:** The public site reads any mainnet account a visitor types ("Your account") and builds unsigned cascades
+(`/api/prepare`) without sign-in. Each account read is dozens of RPC calls through our FastNEAR key, which the
+collector shares. Without a limit one script can use up the key's quota (the demo portfolios then go stale too), load
+the small server, or get the server's IP blocked by the RPC provider. An idle "Your account" tab used to hit its own
+limit in about 7 minutes, because the 15 s auto-refresh re-read the account on every tick (#52).
+**Decision:**
+
+- Limits (`apps/analytics/lib/rate-limit.ts`, sliding 10-minute window, in memory): account reads 30 per visitor and
+  600 for all visitors; `/api/prepare` the same, plus `content-type: application/json` only. The visitor is the client
+  IP that Caddy sets in `X-Forwarded-For` (`deploy/public/Caddyfile`), never a header the client sends.
+- An account read is cached per visitor (IP + account id) for 60 s from when the data arrives
+  (`apps/analytics/lib/product.ts`). Re-renders and the auto-refresh reuse it; only a real read spends the limit.
+  Concurrent renders share one read; failed reads are not cached.
+- After a new transaction from the wallet (`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops
+  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it.
+- The 15 s auto-refresh stays on every page, so prices and the health factor keep updating (at most once a minute
+  on the account view).
+- `MAINNET_READ_RPC_URL` must be the FastNEAR URL whenever `MAINNET_READ_RPC_API_KEY` is set; the public NEAR RPC
+  ignores the key and answers 429 under load.
+  **Consequences:** An open account tab spends about 10 of its 30 reads per 10 minutes. Changes made without a
+  transaction from the wallet (prices, incoming transfers) show within about 75 s. Limits and the cache live in one
+  Next.js process: a restart resets them, and several instances would need a shared store. Raising a limit or the TTL
+  needs a new entry here.
