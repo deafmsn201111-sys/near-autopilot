@@ -233,9 +233,21 @@ function walletTool(
   };
 }
 
-/** Every number written in `text`, normalised ("1,200.50" -> "1200.5", "84%" -> "84"). */
-const numbersIn = (text: string) =>
-  (text.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => String(Number(n.replace(/,/g, ''))));
+// ponytail: magnitude words only; a spelled-out small number ("seven") still passes, add a word list if models do that.
+const NUMBER_WORDS =
+  /\b(?:hundred|thousand|million|billion|trillion|half|quarter|double|triple|twice|percent)\b/gi;
+
+/**
+ * Every number written in `text`, normalised ("1,200.50" -> "1200.5", "84%" -> "84", "−8" -> "-8"), plus magnitude
+ * words and any non-ASCII numeral ("１", "٣", "½") as is, so those too must appear in what the tools showed.
+ */
+const numbersIn = (text: string) => [
+  ...(text.match(/(?:(?<![\w.])[-−])?\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) =>
+    String(Number(n.replace('−', '-').replace(/,/g, ''))),
+  ),
+  ...(text.match(NUMBER_WORDS) ?? []).map((w) => w.toLowerCase()),
+  ...(text.match(/(?![0-9])\p{N}/gu) ?? []),
+];
 
 /** Fields a person reads. Ids, token ids and raw amounts are left out, so their digits cannot vouch for a number. */
 const DISPLAY_FIELDS = new Set(['title', 'why', 'healthFactor', 'notes', 'detail']);
@@ -250,7 +262,8 @@ function displayNumbers(value: unknown, key = ''): string[] {
 /**
  * Architecture C: the central LLM calls the orchestrator agents and two wallet checks as tools, then only orders the
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
- * dropped, and a "why" with a number no tool showed is replaced by the code's own text. A loan warning is never left
+ * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
+ * text. A loan warning is never left
  * out. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
  * rule-based list, labelled.
  */
@@ -317,12 +330,20 @@ export async function analyseAccount(
       clearTimeout(timer),
     );
     const { picks } = picksSchema.parse(JSON.parse(stripFence(text)));
-    const allowed = new Set(trace.flatMap((t) => displayNumbers(t.output)));
+    // A "why" may quote its own card and the tools' shared context (health factor, notes, signals), never another card.
+    const context = new Set(
+      trace.flatMap((t) =>
+        t.output && typeof t.output === 'object'
+          ? displayNumbers({ ...t.output, candidates: [] })
+          : [],
+      ),
+    );
     const recommendations: PortfolioRecommendation[] = [];
     for (const pick of picks) {
       const candidate = found.get(pick.id);
       if (!candidate || recommendations.some((r) => r.id === pick.id)) continue;
-      const honest = numbersIn(pick.why).every((n) => allowed.has(n));
+      const own = new Set(displayNumbers(candidate));
+      const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
       recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
     }
     if (recommendations.length === 0)

@@ -139,11 +139,12 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   repay text states the health factor the repayment actually reaches. Allocator swaps (they would
   move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
   dropped.
-- The LLM returns only `{picks: [{id, why}]}` (zod). Unknown ids are dropped; a "why" with a number that no tool
-  showed in a readable field (title, why, health factor, notes; not ids or raw amounts) is replaced by the code's
-  text. A loan warning the model left out is put back first. At most 6 model turns (one per tool if it does not call
-  them in parallel), at most 10 tool calls per turn, 45 s for the whole analysis including the wallet read; on the
-  deadline the model call in flight is aborted. An empty ranking or any failure returns the rule-based list, labelled.
+- The LLM returns only `{picks: [{id, why}]}` (zod). Unknown ids are dropped; a "why" with a number that neither its own
+  card nor the tools' shared context (health factor, notes, signals) shows in a readable field (not ids or raw
+  amounts) is replaced by the code's text. Non-ASCII numerals ("１", "½"), magnitude words ("thousand") and a sign
+  count as numbers too. Every warning kind the model left out (a loan warning above all) is put back first. At most
+  6 model turns (one per tool if it does not call them in parallel), at most 10 tool calls per turn, 45 s for the
+  whole analysis including the wallet read; on the deadline the model call in flight is aborted. An empty ranking or any failure returns the rule-based list, labelled.
 - `POST /v1/wallet/prepare` accepts an optional exact `amount` (base units) for repay and supply, capped at the
   wallet balance. Cascade caps and `validateCascade` are unchanged.
 - The test that banned LLM code from `apps/api/src/analytics` now allows the provider only in `analytics/main.ts`

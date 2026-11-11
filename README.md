@@ -189,8 +189,8 @@ gives the central LLM five tools:
 | `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                        |
 
 The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
-transaction amount: an id no tool returned is dropped, and a "why" that contains a number no tool returned is replaced
-by the code's own text, and a loan warning the model left out is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
+transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
+by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
 turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
 **AI-ranked**. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it

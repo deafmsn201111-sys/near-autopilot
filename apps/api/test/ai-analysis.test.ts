@@ -211,6 +211,36 @@ describe('analyseAccount', () => {
     expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
   });
 
+  const whyFor = async (id: string, why: string) => {
+    const { llm } = fake([() => callAll, () => final([{ id, why }])]);
+    const out = await analyseAccount(llm, {
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      ownerVerified: true,
+    });
+    return out.recommendations.find((r) => r.id === id)?.why;
+  };
+  const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
+
+  it.each([
+    ['full-width digits', 'Repay １００ USDt now.'],
+    ['Arabic-Indic digits', 'Repay ٣٠٠ USDt now.'],
+    ['a vulgar fraction', 'Repay ½ of the loan.'],
+    ['a magnitude word', 'Repay a thousand USDt now.'],
+    ['a sign the tools never showed', 'Your loan is -1.37 from safety.'],
+    ['a number from another card', 'Repay 8 USDt now.'],
+  ])('keeps the code explanation for %s', async (_, why) => {
+    expect(await whyFor(REPAY, why)).not.toBe(why);
+  });
+
+  it.each([
+    'Repaying 33.125 USDt lifts the health factor from 1.37 to 1.60.',
+    'Your health factor is 1.37; repay about $33.13.',
+    'Repay now: the 1.0 line is liquidation.',
+  ])('keeps a why that quotes only its own card and the shared context: %s', async (why) => {
+    expect(await whyFor(REPAY, why)).toBe(why);
+  });
+
   it('turns the allocator idle-supply proposal into a supply recommendation with an exact amount', async () => {
     const { llm } = fake([
       () => callAll,
