@@ -911,12 +911,19 @@ describe('analysisKey', () => {
         ...obs,
         snapshot: {
           ...obs.snapshot,
-          prices: new Map([...obs.snapshot.prices, [WNEAR, { multiplier: 50_001n, decimals: 28 }]]),
+          prices: new Map([...obs.snapshot.prices, [WNEAR, { multiplier: 50_100n, decimals: 28 }]]),
         },
       },
     ].map((o) => key(o));
     variants.push(analysisKey(obs, [], 'default'), key(obs, 'conservative'));
     expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
+  });
+
+  it('ignores interest accrued past the leading digits of a debt', () => {
+    const obs = observation();
+    const lending = obs.snapshot.lending!;
+    const accrued = { ...lending, borrowed: [{ token: USDT, raw: usdt(230) + 37n }] };
+    expect(key({ ...obs, snapshot: { ...obs.snapshot, lending: accrued } })).toBe(base);
   });
 
   it('does not depend on map insertion order', () => {

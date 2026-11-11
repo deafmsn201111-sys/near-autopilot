@@ -77,7 +77,6 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 10 * 60_000;
 const RUN_WINDOW_MS = 10 * 60_000;
 const MAX_RUNS_PER_WINDOW = 60;
-/** Placeholder until the strategy preset exists (#25). */
 const DEFAULT_PRESET = 'default';
 
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
