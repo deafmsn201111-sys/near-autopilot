@@ -76,7 +76,7 @@ whether to roll back. Always list for the owner: "connect a wallet with HOT on `
 
 - Find closed issues with unticked live steps: `gh issue list --state closed --limit 50 --json number,body` and keep
   those whose body has `- [ ] [live`.
-- Run each `[live]` step on https://near-autopilot.tech with `claude-in-chrome`, screenshot the result, tick it with
+- Run each `[live]` step on `$SITE` with `claude-in-chrome`, screenshot the result, tick it with
   `gh issue edit`. A failing step becomes a new `bug` issue linked to the original.
 - `[live, owner]` steps: list them for the owner by issue.
 
