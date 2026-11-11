@@ -98,6 +98,10 @@ services:
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+      # Server LLM: only this service gets the key. Empty = LLM off, heuristics only.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
+      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     volumes:
       - ./checkpoints:/checkpoints:ro

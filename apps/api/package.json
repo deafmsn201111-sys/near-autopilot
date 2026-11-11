@@ -19,6 +19,7 @@
     "thesis:rebuild": "node --import tsx src/thesis/rebuild.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@near-autopilot/agents": "workspace:*",
     "@near-autopilot/burrow-adapter": "workspace:*",
     "@near-autopilot/config": "workspace:*",
