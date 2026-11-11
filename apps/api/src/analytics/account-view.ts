@@ -1,5 +1,6 @@
 import {
   accountIdSchema,
+  BoundedMap,
   MissingPriceError,
   PreconditionError,
   UnsupportedIntentError,
@@ -425,6 +426,9 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
   return recs;
 }
 
+const ACCOUNT_CACHE_MAX = 500;
+const ACCOUNT_CACHE_TTL_MS = 60_000;
+
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
 /** Why this request cannot be built is shown (422); upstream (RPC, contract) text stays in the log (502). */
@@ -460,7 +464,7 @@ export function registerAccountView(
       expectedOracleId: accountIdSchema.parse('priceoracle.near'),
     },
   );
-  const cache = new Map<string, { at: number; body: unknown }>();
+  const cache = new BoundedMap<string, { at: number; body: unknown }>(ACCOUNT_CACHE_MAX);
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
@@ -486,7 +490,8 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const id = parsed.data;
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < 60_000) return hit.body;
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return hit.body;
+    cache.delete(id);
 
     let nativeYocto: bigint;
     try {

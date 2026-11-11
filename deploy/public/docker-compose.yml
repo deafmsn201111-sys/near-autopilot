@@ -6,6 +6,7 @@
 # UNSIGNED transaction cascade for a connected wallet (validateCascade caps: 0.15 NEAR per action, 0.3 per cascade).
 # What it cannot do: sign or send anything. The server holds no key; NEAR_NETWORK / DATA_SOURCE / EXECUTION_MODE /
 # MAINNET_WALLET_SIGNING are fixed here, not read from .env.
+# Secrets: each one goes only to the services that use it; never add a new secret to x-common-env.
 name: near-autopilot-public
 
 x-common-env: &common-env

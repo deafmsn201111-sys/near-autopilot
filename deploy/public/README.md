@@ -38,6 +38,19 @@ replaced).
 - 2 vCPU, 4 GB RAM, about 10 GB of disk.
 - Inbound SSH; for Caddy also ports 80 and 443. With 1 GB of RAM add 2 GB of swap: the five services use about
   330 MB at rest.
+- A firewall that lets in only SSH and, for Caddy, 80 and 443. As root, with your SSH port if it is not 22:
+
+  ```bash
+  ufw default deny incoming && ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable
+  ufw status numbered        # delete any other rule a hoster added, e.g. ufw delete allow 1500/tcp
+  ```
+
+  Docker-published ports bypass ufw, so the compose file publishes nothing else: the dashboard is on
+  `127.0.0.1:3000`, Postgres and the API have no published port. Never publish one on `0.0.0.0`.
+
+- Docker starts on boot (`systemctl enable docker`); every service has `restart: unless-stopped`, so the site comes
+  back after a reboot. `setup.sh` keeps `.env` at `chmod 600`.
+- A new secret goes into the `environment:` of only the services that use it, never into `x-common-env`.
 
 ## 1. Build the bundle (developer machine)
 

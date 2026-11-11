@@ -34,6 +34,7 @@ if [[ ! -f .env ]]; then
   exit 0
 fi
 
+chmod 600 .env
 mkdir -p checkpoints
 # the containers run as the unprivileged `node` user (uid 1000)
 chown 1000:1000 checkpoints 2>/dev/null || chmod 777 checkpoints

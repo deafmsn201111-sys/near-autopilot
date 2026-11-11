@@ -85,3 +85,17 @@ the new state at once. Limit unchanged.
 **Tests run:** `pnpm verify` (green); new `public-errors.test.ts`, `api-errors.test.ts`, `csp.test.ts`. Local run:
 every script on 14 pages carries the nonce, an injected inline handler is blocked, HOT's iframe renders its QR, the
 missing-account page shows the short message, Caddy (local container) sends both policies.
+
+## 2026-11-11 — Security 7: bounded caches, polling limits, VPS hardening (#11)
+
+- `BoundedMap` (`packages/core`): a Map capped at N keys, dropping the least recently set. The API account cache
+  (`account-view.ts`, 500 entries, stale entries deleted on read) and the per-visitor rate-limit counts
+  (`lib/rate-limit.ts`, 10,000 keys, expired keys swept first) use it. The overall per-kind counts live in their own
+  map, so a flood of new visitors on one route cannot evict another route's overall cap.
+- `AutoRefresh` and `AccountWatcher` poll through `lib/polling.ts`: no ticks while the tab is hidden, and they stop
+  after 30 minutes (a reload starts them again). 1Click status polling limits are in #29.
+- `setup.sh` keeps `.env` at `chmod 600` on every run. The server README has the ufw rules (SSH, 80, 443 only), notes
+  that Docker-published ports bypass ufw, and that a new secret goes only to the services that use it.
+
+**Tests run:** `pnpm verify` (green); new `bounded-map.test.ts`, `polling.test.ts`, more cases in
+`rate-limit.test.ts`.
