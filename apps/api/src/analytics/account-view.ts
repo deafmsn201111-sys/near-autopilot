@@ -1051,8 +1051,7 @@ export function registerAccountView(
     const amount = z
       .string()
       .regex(/^[1-9]\d{0,38}$/)
-      .transform((v) => BigInt(v))
-      .optional();
+      .optional(); // kept a string: the intent is echoed in the JSON reply
     const parsed = z
       .object({
         account: accountIdSchema,
@@ -1490,7 +1489,7 @@ export function registerAccountView(
       const exact = 'amount' in intent ? intent.amount : undefined;
       const { rawAmount, humanAmount } =
         exact !== undefined
-          ? exactAmount(exact, walletRaw, decimals)
+          ? exactAmount(BigInt(exact), walletRaw, decimals)
           : resolveIntentAmount(intent.approxUsd, price, decimals, walletHuman);
       if (rawAmount <= 0n && !isWrapSwap)
         return reply.code(409).send({ error: 'the resolved amount is zero' });
