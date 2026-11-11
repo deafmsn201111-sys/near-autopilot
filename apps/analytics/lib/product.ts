@@ -1,4 +1,4 @@
-import { ACCOUNT_LIMIT, consume, RATE_LIMITED } from './rate-limit';
+import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
 import type { RecommendationIntent } from './recommendation-intent';
@@ -171,12 +171,46 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
   return `${v < 0 && Number(s.replace(/,/g, '')) !== 0 ? '−' : ''}$${s}`;
 };
 
+type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
+  accountId: string;
+  recommendations: AccountRecommendation[];
+};
+
+type AccountResult = { data: AccountRead | null; error: string | null };
+
+const ACCOUNT_TTL_MS = 60_000;
+const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
+
+const readKey = async (id: string) => `${await visitor()}:${id.trim().toLowerCase()}`;
+
+const fetchAccount = async (id: string): Promise<AccountResult> => {
+  if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
+  return tryApi<AccountRead>(`/v1/analytics/account/${encodeURIComponent(id)}`);
+};
+
+const readAccount = async (id: string): Promise<AccountResult> => {
+  const key = await readKey(id);
+  const now = Date.now();
+  for (const [k, entry] of accountReads)
+    if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
+  const cached = accountReads.get(key);
+  if (cached) return cached.read;
+  const entry = { at: Infinity, read: fetchAccount(id) };
+  accountReads.set(key, entry);
+  const r = await entry.read;
+  if (accountReads.get(key) !== entry) return r;
+  if (r.error) accountReads.delete(key);
+  else entry.at = Date.now();
+  return r;
+};
+
+export const forgetAccount = async (id: string) => {
+  accountReads.delete(await readKey(id));
+};
+
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
 export const accountView = async (id: string) => {
-  if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
-  const r = await tryApi<
-    Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & { accountId: string }
-  >(`/v1/analytics/account/${encodeURIComponent(id)}`);
+  const r = await readAccount(id);
   return {
     error: r.error,
     data: r.data
@@ -196,7 +230,4 @@ export const accountView = async (id: string) => {
  * Shares the endpoint with `accountView`; here we keep the recommendation list (what the agents suggest, with a
  * one-click intent) rather than the portfolio shape.
  */
-export const accountRecommendations = (id: string) =>
-  tryApi<{ accountId: string; recommendations: AccountRecommendation[] }>(
-    `/v1/analytics/account/${encodeURIComponent(id)}`,
-  );
+export const accountRecommendations = readAccount;

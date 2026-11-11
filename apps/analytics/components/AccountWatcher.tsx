@@ -1,6 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef } from 'react';
+import { refreshAccount } from '../app/account-actions';
 
 /**
  * The on-chain watcher: for the connected account it polls the access-key nonces on NEAR mainnet and, the moment a new
@@ -57,7 +58,10 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
     const id = setInterval(() => {
       void maxNonce(account).then((n) => {
         if (!alive || n === null) return;
-        if (last.current !== null && n > last.current) router.refresh(); // a new tx from this wallet → re-form quietly
+        if (last.current !== null && n > last.current)
+          void refreshAccount(account)
+            .catch(() => undefined)
+            .then(() => router.refresh());
         last.current = n;
       });
     }, seconds * 1000);
