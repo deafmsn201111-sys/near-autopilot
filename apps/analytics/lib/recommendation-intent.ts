@@ -5,8 +5,12 @@ import type { PrepareRequest, PrepareRequestIntent } from './prepare-types';
  * Mirrors `RecommendationIntent` in the API: the agents say what/why, and this is the concrete, parameterised action.
  */
 export type RecommendationIntent =
-  | { readonly action: 'repay'; readonly token: string; readonly approxUsd: number }
-  | { readonly action: 'supply'; readonly token: string; readonly approxUsd: number }
+  | {
+      readonly action: 'repay' | 'supply';
+      readonly token: string;
+      readonly approxUsd: number;
+      readonly amount?: string;
+    }
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
 
@@ -48,7 +52,12 @@ export function recommendationToPrepare(
   switch (intent.action) {
     case 'repay':
     case 'supply':
-      mapped = { action: intent.action, token: intent.token, approxUsd: intent.approxUsd };
+      mapped = {
+        action: intent.action,
+        token: intent.token,
+        approxUsd: intent.approxUsd,
+        ...(intent.amount ? { amount: intent.amount } : {}),
+      };
       break;
     case 'swap': {
       const from = normalizeFrom(intent.fromToken);

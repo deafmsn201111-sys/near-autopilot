@@ -27,6 +27,23 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('forwards the exact base-unit amount for repay / supply only when present', () => {
+    const repay: RecommendationIntent = {
+      action: 'repay',
+      token: 'wrap.near',
+      approxUsd: 50,
+      amount: '1000000000000000000000000',
+    };
+    expect(recommendationToPrepare(repay, ACC)?.intent).toEqual({
+      action: 'repay',
+      token: 'wrap.near',
+      approxUsd: 50,
+      amount: '1000000000000000000000000',
+    });
+    const supply: RecommendationIntent = { action: 'supply', token: 'x', approxUsd: 5 };
+    expect(recommendationToPrepare(supply, ACC)?.intent).not.toHaveProperty('amount');
+  });
+
   it('normalises native "near" to wrapped NEAR and targets the pool stablecoin', () => {
     const swap: RecommendationIntent = { action: 'swap', fromToken: 'near', approxUsd: 1160 };
     expect(recommendationToPrepare(swap, ACC)).toEqual({

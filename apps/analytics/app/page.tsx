@@ -296,13 +296,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
 
       {isAccount && recs && recs.recommendations.length > 0 && (
         <section className="block">
-          <div className="block-head">
-            <h2>What the agents suggest</h2>
-            <span className="muted-note">
-              {recs.recommendations.length}{' '}
-              {recs.recommendations.length === 1 ? 'action' : 'actions'} worth your attention
-            </span>
-          </div>
           <Recommendations
             account={accountParam}
             recommendations={recs.recommendations}
