@@ -21,9 +21,11 @@ import { resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts
 import { buildUnwrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
+import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
   NearAccountReader,
+  NearChainContextProvider,
   NearContractViewer,
   NearTokenReader,
   type NearRpcClient,
@@ -428,6 +430,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
 
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
+const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
 
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
@@ -465,7 +468,27 @@ export function registerAccountView(
       expectedOracleId: accountIdSchema.parse('priceoracle.near'),
     },
   );
-  const cache = new BoundedMap<string, { at: number; body: unknown }>(ACCOUNT_CACHE_MAX);
+  const cache = new BoundedMap<string, { at: number; body: object }>(ACCOUNT_CACHE_MAX);
+  const accessKeys = new NearChainContextProvider(deps.rpc);
+  const ownership = {
+    now: () => Date.now(),
+    isFullAccessKey: async (account: string, publicKey: string) =>
+      (await accessKeys.getContext(accountIdSchema.parse(account), publicKey)).permission.kind ===
+      'full_access',
+  };
+  // Positive results only (junk proofs cost no memory), for 60 s: a revoked key or expired proof is honoured at most
+  // that long.
+  const owners = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
+  const isOwner = async (header: unknown, id: string) => {
+    if (typeof header !== 'string') return false;
+    const key = `${id}:${header}`;
+    const at = owners.get(key);
+    if (at !== undefined && Date.now() - at < OWNER_CACHE_TTL_MS) return true;
+    const ok = await verifyOwnership(proofFromHeader(header), id, ownership);
+    if (ok) owners.set(key, Date.now());
+    else owners.delete(key);
+    return ok;
+  };
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
   const latestPrices = async () => {
@@ -490,8 +513,11 @@ export function registerAccountView(
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const id = parsed.data;
+    // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
+    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], id);
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return hit.body;
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS)
+      return { ...hit.body, ownerVerified: await ownerVerified };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -872,7 +898,7 @@ export function registerAccountView(
       actions,
     };
     cache.set(id, { at: Date.now(), body });
-    return body;
+    return { ...body, ownerVerified: await ownerVerified };
   });
 
   /**

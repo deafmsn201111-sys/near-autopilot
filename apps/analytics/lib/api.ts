@@ -16,13 +16,13 @@ class ApiRequestError extends Error {
  * Server-side only: the API token never reaches the browser. Every call is a read of stored data. A failure carries
  * the API's own short message (it never includes upstream text), never the internal address.
  */
-export async function api<T>(path: string): Promise<T> {
+export async function api<T>(path: string, headers: Record<string, string> = {}): Promise<T> {
   const env = getEnv();
   let res: Response;
   try {
     res = await fetch(`${env.API_BASE_URL}${path}`, {
       cache: 'no-store',
-      headers: { authorization: `Bearer ${env.API_TOKEN}` },
+      headers: { ...headers, authorization: `Bearer ${env.API_TOKEN}` },
       signal: AbortSignal.timeout(20_000),
     });
   } catch (e) {
@@ -42,9 +42,10 @@ export async function api<T>(path: string): Promise<T> {
 
 export async function tryApi<T>(
   path: string,
+  headers?: Record<string, string>,
 ): Promise<{ data: T | null; error: string | null; status: number | null }> {
   try {
-    return { data: await api<T>(path), error: null, status: null };
+    return { data: await api<T>(path, headers), error: null, status: null };
   } catch (e) {
     if (e instanceof ApiRequestError) return { data: null, error: e.message, status: e.status };
     console.error(`analytics API ${path} failed`, e);

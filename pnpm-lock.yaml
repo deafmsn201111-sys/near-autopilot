@@ -136,6 +136,15 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@near-js/crypto':
+        specifier: 2.5.1
+        version: 2.5.1(@near-js/types@2.5.1)(@near-js/utils@2.5.1(@near-js/types@2.5.1))
+      '@near-js/utils':
+        specifier: 2.5.1
+        version: 2.5.1(@near-js/types@2.5.1)
+      borsh:
+        specifier: 1.0.0
+        version: 1.0.0
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
