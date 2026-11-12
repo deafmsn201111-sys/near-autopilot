@@ -978,6 +978,24 @@ describe('analyseAccount', () => {
       expect(next.tools).toEqual([]);
     });
 
+    it('counts a call that failed without reporting usage (a dropped connection) at its worst case', async () => {
+      const dropped: ToolLlm = {
+        open: () => ({
+          send: async () => {
+            throw new Error('ECONNRESET');
+          },
+        }),
+      };
+      const l = ledger();
+      const out = await analyseAccount(ai(dropped, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(out.fallback).toBe('model_error');
+      expect(l.rows).toMatchObject([{ outcome: 'model_error', costMicroUsd: WORST_CALL_MICRO }]);
+    });
+
     it('does not count a call twice when its reply came back before the deadline', async () => {
       const l = ledger();
       const out = await analyseAccount(

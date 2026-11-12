@@ -106,10 +106,9 @@ function admit(memo: AnalysisMemo, now = Date.now()): boolean {
  * request that could go over it is never sent, so one worst-case call (this input + the reply cap) bounds any call.
  */
 const WORST_CASE_INPUT_TOKENS = 100_000;
-/** Tokens the API adds around a request (tool-use system prompt, message and tool_result framing). */
-// ponytail: a generous fixed margin; measure with count_tokens if requests ever run close to the bound.
+// ponytail: a generous margin for the API's tool-use framing; measure with count_tokens if requests near the bound.
 const REQUEST_OVERHEAD_TOKENS = 2_000;
-/** A token is at least one byte of its text, so UTF-8 bytes bound the tokens of new text from above. */
+/** A token is at least one byte, so UTF-8 bytes bound the tokens from above. */
 const tokenBound = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
 /**
@@ -459,7 +458,7 @@ export async function analyseAccount(
   // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
   let inFlight = 0n;
   let ended = false;
-  /** A call was sent and its reply has not reported usage: if the deadline cuts it off, it may still be billed. */
+  /** A sent call whose usage never came back (deadline, dropped connection) may still be billed: its worst case counts. */
   let unreported = false;
   const hold = (micro: bigint) => {
     if (ended) return;
@@ -473,7 +472,6 @@ export async function analyseAccount(
   const release = () => {
     heldMicro -= inFlight;
     inFlight = 0n;
-    // Its late usage is never seen, so it counts as the worst case, which bounds what it can be billed.
     if (unreported) charge(worstCall);
     ended = true;
   };
@@ -494,7 +492,6 @@ export async function analyseAccount(
       });
       return {
         send: async (results) => {
-          // The request replays the last one and its reply, plus these results.
           if (results) nextInput += tokenBound(results);
           if (nextInput > WORST_CASE_INPUT_TOKENS)
             throw new ToolLoopError(
@@ -508,9 +505,6 @@ export async function analyseAccount(
             usage.calls++;
             unreported = true;
             return await chat.send(results);
-          } catch (e) {
-            if (!abort.signal.aborted) unreported = false;
-            throw e;
           } finally {
             hold(-worstCall);
           }

@@ -185,7 +185,8 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   for that UTC day. An unreadable budget counts as spent (`cap`). The row is stamped with the time the run ends.
 - Usage comes from every reply through `ToolLlm.open({ onUsage })`, before the reply is checked, so a billed
   `max_tokens` or `refusal` reply is counted. SDK `maxRetries: 0`, so no billed retry goes unseen. A call aborted on
-  the deadline may still be billed but returns no usage, so it is recorded at one worst-case call (#85).
+  the deadline or cut by a dropped connection may still be billed but returns no usage, so it is recorded at one
+  worst-case call (#85).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).

@@ -215,7 +215,7 @@ no longer said what comes first.
 
 ## 2026-11-12 — Aborted and long-context LLM calls count toward the daily cap (#85)
 
-- A model call cut off by the deadline before its reply reported usage is recorded at one worst-case call
+- A model call cut off (deadline, dropped connection) before its reply reported usage is recorded at one worst-case call
   (100K input + `ANTHROPIC_MAX_TOKENS` output), so the next run sees it against the cap.
 - No request is sent whose input could pass 100K tokens (Haiku's 5x long-context rate): the bound is the last
   reply's input + output tokens + UTF-8 bytes of the new tool results + 2K overhead; over it, fallback `loop_limit`.
