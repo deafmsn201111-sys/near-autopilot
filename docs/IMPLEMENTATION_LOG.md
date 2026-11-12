@@ -213,6 +213,27 @@ no longer said what comes first.
 - Global limit moved from the Next route to the API: 60 model runs per 10 minutes, fallback `busy`; the route keeps
   5 per visitor.
 
+## 2026-11-12 — Aborted and long-context LLM calls count toward the daily cap (#85)
+
+- A model call cut off (deadline, dropped connection) before its reply reported usage is recorded at one worst-case call
+  (100K input + `ANTHROPIC_MAX_TOKENS` output), so the next run sees it against the cap.
+- No request is sent whose input could pass 100K tokens (Haiku's 5x long-context rate): the bound is the last
+  reply's input + output tokens + UTF-8 bytes of the new tool results + 2K overhead; over it, fallback `loop_limit`.
+
+## 2026-11-12 — Fixed phrases for yield sources and orchestrator escalations (#82)
+
+- `apps/api/src/yield/service.ts`: a failed source (final block, Burrow, Rhea v1, DCL) stores `failed: <kind>`
+  (`failureKind`); the full error goes to `onError` (the logger). The agents' market notes inherit the clean detail.
+- `packages/orchestrator`: `CYCLE_ABORTED` / `AUDIT_UNAVAILABLE`, `IN_DOUBT_EXECUTION` and `EXECUTION_FAILED`
+  escalation messages and the aborted cycle detail (served as `portfolios[].outcome`) no longer carry the thrown or
+  executor error; it is logged instead.
+
+## 2026-11-12 — Rate limiter: no shared sweep (#59)
+
+- `apps/analytics/lib/rate-limit.ts`: removed `sweep`, which dropped every visitor entry older than the window of the
+  kind being consumed and scanned all 10,000 keys per call once full. Visitors now live in one `BoundedMap` per kind
+  (10,000 each), so LRU eviction alone bounds memory and never drops a live entry of one kind for another.
+
 ## 2026-11-12 — Admin: Spend screen and kill switch (#31)
 
 - API: `/v1/admin/spend` and `/v1/admin/settings` behind `ADMIN_API_TOKEN` (D16); `spendSummary` gives today vs cap,

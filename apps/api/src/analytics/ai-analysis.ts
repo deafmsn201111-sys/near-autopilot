@@ -105,8 +105,15 @@ function admit(memo: AnalysisMemo, now = Date.now()): boolean {
   return true;
 }
 
-// ponytail: a fixed input bound, well above what 6 turns of these tools replay; derive it from the request size if prompts grow.
+/**
+ * The most input one model call may send: the last token at the base rate (Haiku bills a prompt above 100K at 5x). A
+ * request that could go over it is never sent, so one worst-case call (this input + the reply cap) bounds any call.
+ */
 const WORST_CASE_INPUT_TOKENS = 100_000;
+// ponytail: a generous margin for the API's tool-use framing; measure with count_tokens if requests near the bound.
+const REQUEST_OVERHEAD_TOKENS = 2_000;
+/** A token is at least one byte, so UTF-8 bytes bound the tokens from above. */
+const tokenBound = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
 /**
  * Budget held in this process on top of the ledger: one worst-case call per model call in flight, and the cost of a
@@ -459,39 +466,52 @@ export async function analyseAccount(
   // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
   let inFlight = 0n;
   let ended = false;
+  /** A sent call whose usage never came back (deadline, dropped connection) may still be billed: its worst case counts. */
+  let unreported = false;
   const hold = (micro: bigint) => {
     if (ended) return;
     inFlight += micro;
     heldMicro += micro;
   };
+  const charge = (micro: bigint) => {
+    usage.costMicroUsd += micro;
+    heldMicro += micro;
+  };
   const release = () => {
     heldMicro -= inFlight;
     inFlight = 0n;
+    if (unreported) charge(worstCall);
     ended = true;
   };
   const metered: ToolLlm = {
     open: (request) => {
+      let nextInput =
+        REQUEST_OVERHEAD_TOKENS + tokenBound([request.system, request.prompt, request.tools]);
       const chat = ai.llm.open({
         ...request,
         onUsage: (u) => {
           if (ended) return;
-          const cost = costMicroUsd(ai.model, u);
+          unreported = false;
+          nextInput = u.inputTokens + u.outputTokens + REQUEST_OVERHEAD_TOKENS;
           usage.inputTokens += u.inputTokens;
           usage.outputTokens += u.outputTokens;
-          usage.costMicroUsd += cost;
-          heldMicro += cost;
+          charge(costMicroUsd(ai.model, u));
         },
       });
       return {
         send: async (results) => {
+          if (results) nextInput += tokenBound(results);
+          if (nextInput > WORST_CASE_INPUT_TOKENS)
+            throw new ToolLoopError(
+              `next request may exceed ${WORST_CASE_INPUT_TOKENS} input tokens`,
+            );
           // Held before the check, so two runs checking at once both see each other.
           hold(worstCall);
-          if (!(await affordable(0n))) {
-            hold(-worstCall);
-            throw new BudgetReached();
-          }
-          usage.calls++;
           try {
+            if (!(await affordable(0n))) throw new BudgetReached();
+            if (abort.signal.aborted) throw new Error('aborted');
+            usage.calls++;
+            unreported = true;
             return await chat.send(results);
           } finally {
             hold(-worstCall);
@@ -505,7 +525,6 @@ export async function analyseAccount(
     ...tool,
     run: (input) => (calledTools.add(tool.spec.name), tool.run(input)),
   });
-  // ponytail: an aborted call in flight returns no usage and is not counted; the worst-case check covers it.
   const record = async (outcome: CallOutcome) => {
     if (usage.calls === 0) return;
     const cost = usage.costMicroUsd;

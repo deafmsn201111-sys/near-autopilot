@@ -236,7 +236,7 @@ export class Orchestrator {
       await this.escalate(
         'page',
         failedClosed ? 'AUDIT_UNAVAILABLE' : 'CYCLE_ABORTED',
-        `cycle ${cycleKey} aborted: ${errorMessage(error)}`,
+        `cycle ${cycleKey} aborted`,
         cycleKey,
         null,
         escalations,
@@ -246,10 +246,10 @@ export class Orchestrator {
           outcome: 'aborted',
           decisionId: null,
           executed: false,
-          detail: errorMessage(error),
+          detail: 'cycle aborted',
         }),
       );
-      return { ...this.bare(cycleKey, 'aborted', errorMessage(error)), escalations };
+      return { ...this.bare(cycleKey, 'aborted', 'cycle aborted'), escalations };
     } finally {
       this.running = false;
     }
@@ -772,6 +772,7 @@ export class Orchestrator {
         result = await this.executor.execute(approved);
       } catch (error) {
         thrown = errorMessage(error);
+        d.logger.error('execution threw', { cycleKey, error: thrown });
       }
 
       // Explicitly unknown, or a live failure without a transaction hash: it may or may not have reached the network.
@@ -797,7 +798,7 @@ export class Orchestrator {
         await this.escalate(
           'page',
           'IN_DOUBT_EXECUTION',
-          `execution result unknown (${thrown ?? result?.error ?? 'no error'}); automation frozen until reconciled`,
+          'execution result unknown; automation frozen until reconciled',
           cycleKey,
           decision.decisionId,
           escalations,
@@ -852,10 +853,11 @@ export class Orchestrator {
       }
       const counters = await this.mode.recordExecution(ok);
       if (!ok) {
+        d.logger.error('execution failed', { cycleKey, error: result?.error ?? null });
         await this.escalate(
           'warn',
           'EXECUTION_FAILED',
-          `execution ${result?.status}: ${result?.error ?? 'unknown error'}`,
+          `execution ${result?.status}`,
           cycleKey,
           decision.decisionId,
           escalations,
