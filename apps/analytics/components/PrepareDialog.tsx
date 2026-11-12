@@ -72,6 +72,9 @@ export function PrepareDialog({
       router.refresh();
       setState('idle');
     } else {
+      // Some wallets can submit earlier transactions before a later step fails. Never leave the original
+      // cascade available for resubmission after any transaction hash was returned.
+      if (r.hashes.length > 0) setCascade(null);
       setState('idle');
     }
   }
@@ -231,7 +234,8 @@ export function PrepareDialog({
             <b>{state === 'updating' ? 'Signed. Updating portfolio…' : 'Signed and sent.'}</b>
           ) : (
             <>
-              <b>Stopped:</b> {signed.reason}
+              <b>{signed.hashes.length > 0 ? 'Partially submitted:' : 'Stopped:'}</b>{' '}
+              {signed.reason}
             </>
           )}
           {signed.hashes.length > 0 && (

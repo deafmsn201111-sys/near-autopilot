@@ -35,7 +35,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         />
       </head>
       <body>
-        <header className="topbar">
+        <aside className="topbar">
           <div className="topbar-inner">
             <Link href="/" className="logo">
               <span className="logo-mark" aria-hidden="true">
@@ -55,7 +55,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <ThemeToggle />
             <WalletButton />
           </div>
-        </header>
+        </aside>
         <main className="page">
           <SubNav />
           {children}

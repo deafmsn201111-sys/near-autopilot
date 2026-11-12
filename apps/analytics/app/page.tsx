@@ -35,8 +35,8 @@ const TOKEN_KIND: Record<string, string> = {
   USDT: 'Stablecoin',
 };
 
-/** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
-const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
+/** Muted natural tones shared by the hero allocation bar and its legend. */
+const ALLOC_COLORS = ['#81947a', '#c1ad91', '#75847b', '#b27769', '#596a56'] as const;
 import Link from 'next/link';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
@@ -154,6 +154,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const urlAccount = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const cookieAccount = (await cookies()).get('np_account')?.value?.trim().toLowerCase() ?? '';
   const accountParam = urlAccount || (isAccount ? cookieAccount : '');
+  const accountMode = accountParam && accountParam === cookieAccount ? 'connected' : 'lookup';
   const id = portfolioOf(sp.p);
   if (isAccount && !accountParam)
     return (
@@ -174,6 +175,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             path="/"
             withAccount
             account={accountParam}
+            accountMode={accountMode}
           />
         </div>
         {isAccount && <AccountForm value={accountParam} />}
@@ -218,7 +220,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       <header className="portfolio-intro">
         <div>
           <p className="portfolio-context">
-            {isAccount ? 'Connected account' : 'Explore the demo'}
+            {isAccount
+              ? accountMode === 'connected'
+                ? 'Connected wallet'
+                : 'Read-only mainnet lookup'
+              : 'Explore the demo'}
           </p>
           <h1>{isAccount ? 'Your NEAR portfolio' : 'See how a decision is made'}</h1>
           <p className="portfolio-lead">
@@ -228,7 +234,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </p>
         </div>
         <span className="portfolio-mode">
-          {isAccount ? 'Mainnet account' : 'Simulated portfolio'}
+          {isAccount
+            ? accountMode === 'connected'
+              ? 'Connected wallet'
+              : 'Read-only account'
+            : 'Simulated portfolio'}
         </span>
       </header>
       <div className="hero-head">
@@ -237,11 +247,12 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           path="/"
           withAccount
           account={accountParam}
+          accountMode={accountMode}
         />
         <span className="sync-note">
           <span className="dot" aria-hidden="true" />
           {isAccount
-            ? 'Synced from mainnet · just now'
+            ? `Mainnet · ${accountMode === 'connected' ? 'wallet connected' : 'read only'} · just now`
             : `Demo portfolio · updated ${ago(data.asOf)}`}
         </span>
       </div>
@@ -262,7 +273,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             <div className="hero-value num">{money(t.netWorthUsd, false)}</div>
             <span className={`hero-live ${isAccount ? 'is-live' : ''}`}>
               <span className="dot" aria-hidden="true" />
-              {isAccount ? 'Live' : 'Simulated'}
+              {isAccount
+                ? accountMode === 'connected'
+                  ? 'Wallet linked'
+                  : 'Read only'
+                : 'Simulated'}
             </span>
           </div>
           <span className="muted-note">

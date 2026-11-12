@@ -5,26 +5,26 @@
   --font: 'IBM Plex Sans', system-ui, sans-serif;
   --num-font: 'IBM Plex Sans', system-ui, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
-  --page: #f3f6f4;
+  --page: #f4f5f0;
   --surface: #ffffff;
-  --surface-2: #e9efed;
-  --ink: #172321;
-  --ink-2: #4d615d;
-  --muted: #647772;
-  --grid: #d5e0dc;
-  --line: #d5e0dc;
-  --axis: #c4d2cd;
-  --accent: #087a5f;
-  --accent-strong: #06664f;
-  --accent-wash: rgba(8, 122, 95, 0.1);
-  --good-text: #06664f;
-  --warning: #965c12;
-  --critical: #b9444b;
+  --surface-2: #eef0e9;
+  --ink: #202520;
+  --ink-2: #586158;
+  --muted: #647064;
+  --grid: #d9ddd3;
+  --line: #d9ddd3;
+  --axis: #c4cabe;
+  --accent: #263a29;
+  --accent-strong: #263a29;
+  --accent-wash: rgba(38, 58, 41, 0.09);
+  --good-text: #2c6845;
+  --warning: #8a5a20;
+  --critical: #9b3c35;
   --panel-grad: var(--surface);
   --hero-radial: none;
   --rec-radial: none;
-  --cascade-bg: #f5f8f6;
-  --ht-head-bg: #edf2f0;
+  --cascade-bg: #f4f5f0;
+  --ht-head-bg: #eef0e9;
   --shadow: none;
   --shadow-md: none;
   --mint-glow: none;
@@ -33,26 +33,26 @@
 }
 
 :root[data-theme='dark'] {
-  --page: #0b1116;
-  --surface: #17232a;
-  --surface-2: #223139;
-  --ink: #ecf2ef;
-  --ink-2: #b8c8c2;
-  --muted: #a6b6b1;
-  --grid: #34454b;
-  --line: #34454b;
-  --axis: #43575c;
-  --accent: #76ceb2;
-  --accent-strong: #8bdfc1;
-  --accent-wash: rgba(118, 206, 178, 0.12);
-  --good-text: #8bdfc1;
-  --warning: #e7b56d;
-  --critical: #ed8f93;
+  --page: #111411;
+  --surface: #191e19;
+  --surface-2: #222922;
+  --ink: #edf1e9;
+  --ink-2: #a0ada0;
+  --muted: #879487;
+  --grid: #303930;
+  --line: #303930;
+  --axis: #414c40;
+  --accent: #dce7d6;
+  --accent-strong: #dce7d6;
+  --accent-wash: rgba(220, 231, 214, 0.1);
+  --good-text: #b9d6b5;
+  --warning: #dac0a4;
+  --critical: #dfafa4;
   --panel-grad: var(--surface);
   --hero-radial: none;
   --rec-radial: none;
-  --cascade-bg: #111b20;
-  --ht-head-bg: #1a292f;
+  --cascade-bg: #141914;
+  --ht-head-bg: #191e19;
   --shadow: none;
   --shadow-md: none;
   --mint-glow: none;
@@ -83,19 +83,40 @@ code,
 }
 
 .topbar {
-  background: color-mix(in srgb, var(--page) 94%, transparent);
-  backdrop-filter: blur(16px);
-  border-bottom-color: var(--grid);
+  position: fixed;
+  z-index: 40;
+  inset: 0 auto 0 0;
+  width: 232px;
+  height: 100vh;
+  background: var(--page);
+  border-right: 1px solid var(--grid);
 }
 
 .topbar-inner {
-  max-width: 1360px;
-  height: 68px;
+  max-width: none;
+  height: 100%;
+  padding: 24px 16px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+}
+
+.topnav {
+  flex-direction: column;
+  overflow: visible;
+}
+
+.theme-toggle {
+  margin-top: auto;
 }
 
 main.page {
-  max-width: 1360px;
-  padding-top: 36px;
+  width: calc(100% - 232px);
+  max-width: none;
+  margin-left: 232px;
+  padding-top: 42px;
+  padding-right: 40px;
+  padding-left: 40px;
 }
 
 .logo {
@@ -113,16 +134,21 @@ main.page {
 }
 
 .topnav a {
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-  padding: 10px 11px 8px;
+  border-radius: 7px;
+  border-bottom: 0;
+  padding: 11px 12px;
 }
 
 .topnav a[aria-current='page'] {
   background: transparent;
   color: var(--ink);
-  border-bottom-color: var(--accent);
+  border-bottom-color: transparent;
+  background: var(--surface-2);
   box-shadow: none;
+}
+
+.wallet-chip {
+  align-self: stretch;
 }
 
 .reviewer-nav {
@@ -411,6 +437,62 @@ main.page {
   padding-bottom: 0;
 }
 
+.recs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 16px;
+  padding: 2px 2px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--axis) transparent;
+}
+
+.recs > .rec {
+  flex: 0 0 clamp(340px, 58%, 560px);
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.recs:has(> .rec:only-child) > .rec {
+  flex: 0 0 min(100%, 760px);
+}
+
+.recommendation-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recommendation-controls button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--grid);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.recommendation-controls button:disabled {
+  color: var(--muted);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.recommendation-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .rec,
 .rec.sev-warning,
 .action {
@@ -529,6 +611,17 @@ main.page {
 }
 
 @media (max-width: 760px) {
+  .topnav {
+    flex-direction: row;
+  }
+
+  .theme-toggle {
+    margin-top: 0;
+  }
+
+  .recs > .rec {
+    flex-basis: min(88vw, 420px);
+  }
   .reviewer-directory-group {
     grid-template-columns: 1fr;
     gap: 18px;
@@ -562,12 +655,60 @@ main.page {
     gap: 12px;
   }
 
-  main.page {
-    padding: 24px 16px 64px;
+  .portfolio-intro > div {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .portfolio-intro h1 {
+    font-size: clamp(30px, 8vw, 36px);
+    width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    white-space: normal !important;
+    word-break: break-word;
+  }
+
+  .topbar {
+    position: sticky;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--grid);
   }
 
   .topbar-inner {
-    padding: 0 16px;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 16px;
+  }
+
+  .topnav {
+    flex-direction: row;
+    order: 3;
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+
+  .topnav a {
+    flex-direction: row;
+    flex: 1 1 0;
+    min-height: 40px;
+    padding: 8px 4px;
+    justify-content: center;
+    font-size: 11px;
+  }
+
+  .topnav .reviewers-link {
+    margin-left: 0;
+  }
+
+  main.page {
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    padding: 24px 16px 64px;
   }
 
   .hero-main,
@@ -575,6 +716,24 @@ main.page {
   .rec,
   .action {
     padding: 20px;
+  }
+
+  .hero,
+  .hero-main,
+  .hero-side {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .hero {
+    width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .hero-main,
+  .hero-side {
+    max-width: 100%;
   }
 }
 

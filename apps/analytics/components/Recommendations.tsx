@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { runAnalysis, type Analysis } from '../lib/analysis-client';
 import type { AccountRecommendation } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
@@ -22,7 +22,62 @@ export function Recommendations({
   const [running, setRunning] = useState(false);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState(0);
+  const [canMoveBack, setCanMoveBack] = useState(false);
+  const [canMoveForward, setCanMoveForward] = useState(false);
   const recommendations = analysis?.recommendations ?? initial;
+
+  const measureRail = useCallback(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const first = rail.firstElementChild as HTMLElement | null;
+    const step = first ? first.getBoundingClientRect().width + 16 : 1;
+    setPosition(Math.min(recommendations.length, Math.floor((rail.scrollLeft + 1) / step) + 1));
+    setCanMoveBack(rail.scrollLeft > 1);
+    setCanMoveForward(rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 1);
+  }, [recommendations.length]);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    measureRail();
+    rail.addEventListener('scroll', measureRail, { passive: true });
+    const resize = new ResizeObserver(measureRail);
+    resize.observe(rail);
+    return () => {
+      rail.removeEventListener('scroll', measureRail);
+      resize.disconnect();
+    };
+  }, [measureRail]);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const wheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rail.clientWidth : 1;
+      const delta = event.deltaY * scale;
+      const max = rail.scrollWidth - rail.clientWidth;
+      const atStart = rail.scrollLeft <= 1;
+      const atEnd = rail.scrollLeft >= max - 1;
+      if (max <= 1 || (delta < 0 && atStart) || (delta > 0 && atEnd)) return;
+      event.preventDefault();
+      rail.scrollLeft = Math.max(0, Math.min(max, rail.scrollLeft + delta));
+    };
+    rail.addEventListener('wheel', wheel, { passive: false });
+    return () => rail.removeEventListener('wheel', wheel);
+  }, [recommendations.length]);
+
+  const moveRail = (direction: -1 | 1) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const first = rail.firstElementChild as HTMLElement | null;
+    rail.scrollBy({
+      left: direction * ((first?.getBoundingClientRect().width ?? 360) + 16),
+      behavior: 'smooth',
+    });
+  };
 
   // The page re-reads every 20 s with a new array; drop the AI result only when the cards themselves change (ids and
   // headline numbers, e.g. after a signed transaction), not on every refresh.
@@ -74,34 +129,87 @@ export function Recommendations({
           Nothing to improve right now — the portfolio looks balanced at current prices.
         </p>
       ) : (
-        <div className="recs">
-          {recommendations.map((r) => {
-            const request = recommendationToPrepare(r.intent, account);
-            return (
-              <article className={`rec sev-${r.severity}`} key={r.id}>
-                <span className="rec-agent">
-                  <span className="rec-agent-dot" aria-hidden="true" />
-                  {r.agent}
-                </span>
-                <div className="rec-head">
-                  <h3>{r.title}</h3>
-                </div>
-                <p className="rec-why">{r.why}</p>
-                {request ? (
-                  <PrepareDialog
-                    request={request}
-                    label={actionLabel(r.intent)}
-                    signingEnabled={signingEnabled}
-                  />
-                ) : (
-                  <span className="muted-note">
-                    Advisory — no one-click action for this one yet.
+        <>
+          <div className="recommendation-controls" aria-label="Recommendation navigation">
+            <span aria-live="polite">
+              {position} / {recommendations.length}
+            </span>
+            <button
+              type="button"
+              aria-label="Previous recommendation"
+              disabled={!canMoveBack}
+              onClick={() => moveRail(-1)}
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              aria-label="Next recommendation"
+              disabled={!canMoveForward}
+              onClick={() => moveRail(1)}
+            >
+              →
+            </button>
+          </div>
+          <div
+            className="recs"
+            ref={railRef}
+            tabIndex={0}
+            role="region"
+            aria-label="Recommendations. Use arrow keys to browse."
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                moveRail(1);
+              }
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                moveRail(-1);
+              }
+              if (event.key === 'Home') {
+                event.preventDefault();
+                railRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
+              }
+              if (event.key === 'End') {
+                event.preventDefault();
+                railRef.current?.scrollTo({
+                  left: railRef.current.scrollWidth,
+                  behavior: 'smooth',
+                });
+              }
+            }}
+          >
+            {recommendations.map((r) => {
+              const request = recommendationToPrepare(r.intent, account);
+              return (
+                <article className={`rec sev-${r.severity}`} key={r.id}>
+                  <span className="rec-agent">
+                    <span className="rec-agent-dot" aria-hidden="true" />
+                    {r.agent}
                   </span>
-                )}
-              </article>
-            );
-          })}
-        </div>
+                  <div className="rec-head">
+                    <h3>{r.title}</h3>
+                  </div>
+                  <p className="rec-why">{r.why}</p>
+                  {request ? (
+                    <PrepareDialog
+                      request={request}
+                      label={actionLabel(r.intent)}
+                      signingEnabled={signingEnabled}
+                    />
+                  ) : (
+                    <span className="muted-note">
+                      Advisory — no one-click action for this one yet.
+                    </span>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+          <p className="recommendation-hint">
+            Scroll with your mouse wheel or use arrows. Nothing executes automatically.
+          </p>
+        </>
       )}
     </>
   );

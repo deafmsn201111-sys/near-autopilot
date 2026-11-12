@@ -14,12 +14,14 @@ export function PortfolioSwitch({
   path,
   withAccount = false,
   account = '',
+  accountMode = 'lookup',
 }: {
   current: PortfolioId | 'account';
   path: string;
   withAccount?: boolean;
   /** The connected account id, so the "Your account" tab keeps working after navigating away. */
   account?: string;
+  accountMode?: 'lookup' | 'connected';
 }) {
   return (
     <nav className="segmented" aria-label="Portfolio">
@@ -37,8 +39,12 @@ export function PortfolioSwitch({
           href={`${path}?p=account${account ? `&account=${encodeURIComponent(account)}` : ''}`}
           aria-current={current === 'account' ? 'true' : undefined}
         >
-          Your account
-          {current === 'account' && <span className="seg-live">LIVE</span>}
+          {accountMode === 'connected' ? 'Connected wallet' : 'Mainnet lookup'}
+          {current === 'account' && (
+            <span className="seg-live">
+              {accountMode === 'connected' ? 'CONNECTED' : 'READ ONLY'}
+            </span>
+          )}
         </Link>
       )}
     </nav>
