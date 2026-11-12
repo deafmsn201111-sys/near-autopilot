@@ -2,18 +2,13 @@ import 'server-only';
 import { BoundedMap } from '@near-autopilot/core';
 import { headers } from 'next/headers';
 
-// Expired visitors are swept first; only a flood of live visitors past the cap drops the least recent one (its count
-// resets). The overall counts, one per kind, live apart so no flood can evict them.
+// Past the cap the least recently hit visitor is dropped (its count resets); that is almost always an expired one, so
+// no sweep is needed and each kind keeps its own window. The overall counts, one per kind, live apart so no flood can
+// evict them.
 export const MAX_TRACKED_KEYS = 10_000;
 const visitors = new BoundedMap<string, number[]>(MAX_TRACKED_KEYS);
 const overall = new Map<string, number[]>();
 export const trackedKeys = () => visitors.size;
-
-function sweep(now: number, windowMs: number) {
-  if (visitors.size < MAX_TRACKED_KEYS) return;
-  for (const [key, times] of visitors)
-    if (times.every((t) => now - t >= windowMs)) visitors.delete(key);
-}
 
 function take(
   hits: Map<string, number[]>,
@@ -69,7 +64,6 @@ export interface Limit {
 
 // Per visitor first, so one visitor over the limit does not use up the overall allowance.
 export async function consume(kind: string, l: Limit, now = Date.now()): Promise<boolean> {
-  sweep(now, l.windowMs);
   if (!take(visitors, `${kind}:${await visitor()}`, l.perVisitor, l.windowMs, now)) return false;
   return take(overall, kind, l.overall, l.windowMs, now);
 }

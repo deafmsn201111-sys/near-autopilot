@@ -96,3 +96,51 @@ describe('overall cap', () => {
     expect(await consume('prepare', limit, now)).toBe(false);
   });
 });
+
+describe('limiter kinds with different windows', () => {
+  beforeEach(() => vi.resetModules());
+
+  const fill = async (
+    consume: (
+      kind: string,
+      l: { perVisitor: number; overall: number; windowMs: number },
+      now: number,
+    ) => Promise<boolean>,
+    count: number,
+    now: number,
+  ) => {
+    const short = { perVisitor: 1, overall: 1_000_000, windowMs: 60_000 };
+    for (let i = 0; i < count; i++) {
+      forwardedFor = `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`;
+      await consume('short', short, now);
+    }
+  };
+
+  it('never drops an entry of one kind by another kind window', async () => {
+    const { consume, MAX_TRACKED_KEYS } = await import('../lib/rate-limit');
+    const long = { perVisitor: 1, overall: 1_000_000, windowMs: 10 * 60_000 };
+    const now = 1_000_000;
+    await fill(consume, MAX_TRACKED_KEYS - 1, now);
+    forwardedFor = '192.0.2.1';
+    expect(await consume('long', long, now)).toBe(true);
+    forwardedFor = '192.0.2.2';
+    await consume(
+      'short',
+      { perVisitor: 1, overall: 1_000_000, windowMs: 60_000 },
+      now + 2 * 60_000,
+    );
+    forwardedFor = '192.0.2.1';
+    expect(await consume('long', long, now + 2 * 60_000)).toBe(false);
+  });
+
+  it('does not scan the whole map on each call when it is full', async () => {
+    const { consume, MAX_TRACKED_KEYS } = await import('../lib/rate-limit');
+    const now = 1_000_000;
+    await fill(consume, MAX_TRACKED_KEYS, now);
+    const scans = vi.spyOn(Map.prototype, Symbol.iterator);
+    forwardedFor = '192.0.2.1';
+    await consume('short', { perVisitor: 1, overall: 1_000_000, windowMs: 60_000 }, now);
+    expect(scans).not.toHaveBeenCalled();
+    scans.mockRestore();
+  });
+});
