@@ -176,14 +176,16 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   Anything else fails the analytics API at start.
 - Daily cap per UTC day: the `llm_settings` row (#31's admin field) when set, else `LLM_DAILY_CAP_USD`, default $5.
   Before each model call: spent today + this run so far + one worst-case call (100K input, `ANTHROPIC_MAX_TOKENS`
-  output) must fit, else no call and fallback code `cap`.
+  output) must fit, else no call and fallback code `cap`. A request whose input could go over 100K tokens (Haiku's
+  long-context rate) is never sent: the bound is the last reply's input + output tokens + the UTF-8 bytes of the new
+  tool results + 2K overhead; over it, fallback `loop_limit` (#85).
 - In the analytics API's memory (one process), each model call in flight holds one worst-case call, taken before the
   budget is read, and a run holds its actual spend until its row is written; parallel analyses therefore cannot all
   pass the same check (near the cap both may stop: fail closed). A run whose row fails to write keeps its cost held
   for that UTC day. An unreadable budget counts as spent (`cap`). The row is stamped with the time the run ends.
 - Usage comes from every reply through `ToolLlm.open({ onUsage })`, before the reply is checked, so a billed
   `max_tokens` or `refusal` reply is counted. SDK `maxRetries: 0`, so no billed retry goes unseen. A call aborted on
-  the deadline returns no usage and is not counted (the worst-case check covers it).
+  the deadline may still be billed but returns no usage, so it is recorded at one worst-case call (#85).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
