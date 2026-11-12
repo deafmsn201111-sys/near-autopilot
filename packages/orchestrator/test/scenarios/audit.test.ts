@@ -86,6 +86,7 @@ describe('scenario: decision audit log', () => {
       w.audit.failAppends = true;
       const r = await w.orchestrator.runCycle('down');
       expect(r.status).toBe('aborted');
+      expect(r.detail).toBe('cycle aborted');
       expect(w.spies).toMatchObject({
         plans: 0,
         evaluate: 0,

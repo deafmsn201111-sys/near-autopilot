@@ -225,4 +225,5 @@ no longer said what comes first.
 - `apps/api/src/yield/service.ts`: a failed source (final block, Burrow, Rhea v1, DCL) stores `failed: <kind>`
   (`failureKind`); the full error goes to `onError` (the logger). The agents' market notes inherit the clean detail.
 - `packages/orchestrator`: `CYCLE_ABORTED` / `AUDIT_UNAVAILABLE`, `IN_DOUBT_EXECUTION` and `EXECUTION_FAILED`
-  escalation messages no longer carry the thrown or executor error; it is logged instead.
+  escalation messages and the aborted cycle detail (served as `portfolios[].outcome`) no longer carry the thrown or
+  executor error; it is logged instead.

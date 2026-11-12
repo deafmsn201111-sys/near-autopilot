@@ -246,10 +246,10 @@ export class Orchestrator {
           outcome: 'aborted',
           decisionId: null,
           executed: false,
-          detail: errorMessage(error),
+          detail: 'cycle aborted',
         }),
       );
-      return { ...this.bare(cycleKey, 'aborted', errorMessage(error)), escalations };
+      return { ...this.bare(cycleKey, 'aborted', 'cycle aborted'), escalations };
     } finally {
       this.running = false;
     }
