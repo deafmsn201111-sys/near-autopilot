@@ -227,3 +227,9 @@ no longer said what comes first.
 - `packages/orchestrator`: `CYCLE_ABORTED` / `AUDIT_UNAVAILABLE`, `IN_DOUBT_EXECUTION` and `EXECUTION_FAILED`
   escalation messages and the aborted cycle detail (served as `portfolios[].outcome`) no longer carry the thrown or
   executor error; it is logged instead.
+
+## 2026-11-12 — Rate limiter: no shared sweep (#59)
+
+- `apps/analytics/lib/rate-limit.ts`: removed `sweep`, which dropped every visitor entry older than the window of the
+  kind being consumed and scanned all 10,000 keys per call once full. Visitors now live in one `BoundedMap` per kind
+  (10,000 each), so LRU eviction alone bounds memory and never drops a live entry of one kind for another.
