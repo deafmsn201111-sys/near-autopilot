@@ -179,14 +179,24 @@ export function Recommendations({
               }
             }}
           >
-            {recommendations.map((r) => {
+            {recommendations.map((r, index) => {
               const request = recommendationToPrepare(r.intent, account);
               return (
-                <article className={`rec sev-${r.severity}`} key={r.id}>
-                  <span className="rec-agent">
-                    <span className="rec-agent-dot" aria-hidden="true" />
-                    {r.agent}
-                  </span>
+                <article
+                  className={`rec decision-card sev-${r.severity}${index === 0 ? ' decision-priority' : ''}`}
+                  key={r.id}
+                >
+                  <div className="decision-card-meta">
+                    <span className="rec-agent">
+                      <span className="rec-agent-dot" aria-hidden="true" />
+                      {r.agent}
+                    </span>
+                    <span
+                      className={`decision-badge ${r.severity === 'warning' ? 'is-warning' : 'is-neutral'}`}
+                    >
+                      {r.severity === 'warning' ? 'Priority · Risk' : 'Review'}
+                    </span>
+                  </div>
                   <div className="rec-head">
                     <h3>{r.title}</h3>
                   </div>
@@ -199,9 +209,12 @@ export function Recommendations({
                     />
                   ) : (
                     <span className="muted-note">
-                      Advisory — no one-click action for this one yet.
+                      Read analysis · No prepared action is available for this recommendation.
                     </span>
                   )}
+                  <p className="decision-disclaimer">
+                    Opens a transaction review. Nothing is signed or sent yet.
+                  </p>
                 </article>
               );
             })}

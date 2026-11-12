@@ -40,15 +40,9 @@ const ALLOC_COLORS = ['#81947a', '#c1ad91', '#75847b', '#b27769', '#596a56'] as 
 import Link from 'next/link';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
-import {
-  accountRecommendations,
-  accountView,
-  ago,
-  money,
-  portfolioView,
-  type PortfolioAction,
-} from '../lib/product';
+import { accountRecommendations, accountView, ago, money, portfolioView } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
+import { ActionRail } from '../components/ActionRail';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { AccountForm } from '../components/AccountForm';
@@ -64,87 +58,6 @@ const WHERE = {
   deposited: 'Deposited on Burrow',
   borrowed: 'Borrowed from Burrow',
 } as const;
-
-const VERDICT = {
-  worth_it: { cls: 'good', icon: '✓' },
-  not_worth_it: { cls: 'warning', icon: '–' },
-  not_allowed: { cls: 'neutral', icon: 'i' },
-  no_data: { cls: 'neutral', icon: '?' },
-} as const;
-
-function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
-  const v = VERDICT[a.autopilot.verdict];
-  const net = a.netUsd;
-  return (
-    <article className={`action${best ? ' best' : ''}`}>
-      <div className="action-main">
-        <div>
-          {best && <span className="tag">Best result after costs</span>}
-          <h3>{a.title}</h3>
-          <p>{a.summary}</p>
-        </div>
-        <div className="action-result-num">
-          <span className={`big ${net !== null && net < 0 ? 'neg' : 'pos'}`}>
-            {net === null ? '—' : `${net >= 0 ? '+' : ''}${money(net, true)}`}
-          </span>
-          <span className="small">
-            per {a.horizonDays} days after costs
-            {a.netAprOnCapital !== null && ` · ${(a.netAprOnCapital * 100).toFixed(1)}% a year`}
-          </span>
-        </div>
-      </div>
-      <p className={`verdict ${v.cls}`}>
-        <i aria-hidden="true">{v.icon}</i>
-        {a.autopilot.sentence}
-      </p>
-      <details className="plan">
-        <summary>See the plan, the costs and the risks</summary>
-        <div className="plan-grid">
-          <div>
-            <h4>What would happen</h4>
-            <ol>
-              {a.steps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-          </div>
-          <div>
-            <h4>
-              The numbers, {a.horizonDays} days on {money(a.capitalUsd)}
-            </h4>
-            <table className="mini">
-              <tbody>
-                <tr>
-                  <td>Earned</td>
-                  <td className="num">{money(a.grossUsd, true)}</td>
-                </tr>
-                {a.costs.map((c) => (
-                  <tr key={c.label}>
-                    <td>{c.label}</td>
-                    <td className="num">−{money(c.usd, true)}</td>
-                  </tr>
-                ))}
-                <tr className="total">
-                  <td>You keep</td>
-                  <td className="num">{money(a.netUsd, true)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div>
-            <h4>Risks</h4>
-            <ul>
-              {a.risks.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <p className="fine">{a.basis}</p>
-      </details>
-    </article>
-  );
-}
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
@@ -191,7 +104,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </>
     );
   const t = data.totals;
-  const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
 
   // Holdings for the premium table (non-dust, highest value first) and the hero allocation bar (assets only,
   // aggregated by symbol). All derived from the real balances — nothing invented.
@@ -226,11 +138,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                 : 'Read-only mainnet lookup'
               : 'Explore the demo'}
           </p>
-          <h1>{isAccount ? 'Your NEAR portfolio' : 'See how a decision is made'}</h1>
+          <h1>{isAccount ? 'Your NEAR portfolio' : 'Portfolio'}</h1>
           <p className="portfolio-lead">
             {isAccount
-              ? 'Your mainnet balances, explained recommendations, and actions you choose to sign.'
-              : 'Simulated balances, live market prices, and an honest view of what each move could return.'}
+              ? 'Your positions, liabilities and loan resilience. Review every action before signing.'
+              : 'Your simulated positions, liabilities and loan resilience. No hidden balances.'}
           </p>
         </div>
         <span className="portfolio-mode">
@@ -265,7 +177,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </div>
       )}
       <section className="hero">
-        <div className="hero-main">
+        <div className="hero-main summary-primary">
           <span className="eyebrow">
             Net worth · {isAccount ? 'Your account' : 'Demo portfolio'}
           </span>
@@ -283,46 +195,25 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           <span className="muted-note">
             {money(t.assetsUsd, false)} in assets − {money(t.debtUsd, false)} borrowed
           </span>
-          {allocSegs.length > 0 && (
-            <>
-              <div className="alloc-bar" aria-hidden="true">
-                {allocSegs.map((s) => (
-                  <i key={s.label} style={{ width: `${s.pct * 100}%`, background: s.color }} />
-                ))}
-              </div>
-              <div className="alloc-legend">
-                {allocSegs.map((s) => (
-                  <span key={s.label}>
-                    <span className="sw" style={{ background: s.color }} />
-                    <b>{s.label}</b> {(s.pct * 100).toFixed(1)}%
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
         </div>
-        <div className="hero-side">
-          <div className="hero-stat">
-            <span className="eyebrow">Monthly result now</span>
-            <div
-              className={`hero-num num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}
-            >
-              {data.earnings.monthlyNetUsd === null
-                ? '—'
-                : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
-            </div>
-            <span className="muted-note">{data.earnings.sentence}</span>
+        <div className="hero-stat summary-stat">
+          <span className="eyebrow">Monthly result now</span>
+          <div className={`hero-num num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}>
+            {data.earnings.monthlyNetUsd === null
+              ? '—'
+              : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
           </div>
-          <div className="hero-stat">
-            <span className="eyebrow">Loan safety</span>
-            <div className="hero-safe">
-              <span className={`safe-chip health-${data.health.level}`}>
-                <span className="dot" aria-hidden="true" />
-                {data.health.label}
-              </span>
-            </div>
-            <span className="muted-note">{data.health.sentence}</span>
+          <span className="muted-note">{data.earnings.sentence}</span>
+        </div>
+        <div className="hero-stat summary-stat">
+          <span className="eyebrow">Loan safety</span>
+          <div className="hero-safe">
+            <span className={`safe-chip health-${data.health.level}`}>
+              <span className="dot" aria-hidden="true" />
+              {data.health.label}
+            </span>
           </div>
+          <span className="muted-note">{data.health.sentence}</span>
         </div>
       </section>
 
@@ -341,14 +232,55 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </section>
       )}
 
+      {!isAccount && (
+        <section className="block recommendation-block">
+          <div className="block-head">
+            <div>
+              <span className="eyebrow">Decisions / Autopilot</span>
+              <h2>What you could do with {money(t.idleUsd, false)}</h2>
+            </div>
+            <span className="muted-note">
+              {data.actions.length} {data.actions.length === 1 ? 'option' : 'options'} · Updated{' '}
+              {ago(data.asOf)}
+            </span>
+          </div>
+          {data.actions.length === 0 ? (
+            <p className="muted-note">
+              {t.idleUsd < SMALL_IDLE_USD
+                ? `${money(t.idleUsd, false)} is too small to put to work: network fees would cost more than it can earn. Doing nothing is the right call here.`
+                : 'No option could be computed from the latest data.'}
+            </p>
+          ) : (
+            <ActionRail actions={data.actions} />
+          )}
+        </section>
+      )}
+
       <section className="block">
         <div className="block-head">
-          <h2>What you hold</h2>
+          <h2>Holdings and liabilities</h2>
           <span className="muted-note">
             {rows.length} {rows.length === 1 ? 'asset' : 'assets'} ·{' '}
             {isAccount ? 'read just now' : `updated ${ago(data.asOf)}`}
           </span>
         </div>
+        {allocSegs.length > 0 && (
+          <div className="holdings-allocation" aria-label="Asset allocation">
+            <div className="alloc-bar" aria-hidden="true">
+              {allocSegs.map((s) => (
+                <i key={s.label} style={{ width: `${s.pct * 100}%`, background: s.color }} />
+              ))}
+            </div>
+            <div className="alloc-legend">
+              {allocSegs.map((s) => (
+                <span key={s.label}>
+                  <span className="sw" style={{ background: s.color }} />
+                  <b>{s.label}</b> {(s.pct * 100).toFixed(1)}%
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="holdings-table">
           <div className="ht-head">
             <span>Asset</span>
@@ -404,29 +336,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </span>
         </div>
       </section>
-
-      {/* The connected wallet gets live, one-click recommendations above; this cost-ranked idle-cash analysis is
-          shown for the illustrative demo portfolios. */}
-      {!isAccount && (
-        <section className="block">
-          <div className="block-head">
-            <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
-          </div>
-          {data.actions.length === 0 ? (
-            <p className="muted-note">
-              {t.idleUsd < SMALL_IDLE_USD
-                ? `${money(t.idleUsd, false)} is too small to put to work: the network fees of any move would cost more than it can earn in a month. Doing nothing is the right call here.`
-                : 'No option could be computed from the latest data.'}
-            </p>
-          ) : (
-            <div className="actions-list">
-              {data.actions.map((a) => (
-                <ActionCard key={a.id} a={a} best={a === best} />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
 
       {!isAccount && data.lastDecision && (
         <section className="block">

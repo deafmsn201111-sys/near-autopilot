@@ -6,6 +6,7 @@ import { AutoRefresh } from '../components/AutoRefresh';
 import { SubNav, TopNav } from '../components/Nav';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { WalletButton } from '../components/WalletButton';
+import { SectionBar } from '../components/SectionBar';
 import './globals.css';
 import './terminal.css';
 
@@ -30,7 +31,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700&display=swap"
           rel="stylesheet"
         />
       </head>
@@ -52,14 +53,21 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               NEAR Autopilot
             </Link>
             <TopNav />
-            <ThemeToggle />
-            <WalletButton />
           </div>
         </aside>
-        <main className="page">
-          <SubNav />
-          {children}
-        </main>
+        <div className="app-content">
+          <header className="terminal-header">
+            <SectionBar />
+            <div className="terminal-header-actions">
+              <ThemeToggle />
+              <WalletButton />
+            </div>
+          </header>
+          <main className="page">
+            <SubNav />
+            {children}
+          </main>
+        </div>
         <AutoRefresh seconds={15} />
       </body>
     </html>
