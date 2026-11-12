@@ -945,6 +945,91 @@ describe('analyseAccount', () => {
       expect(l.rows).toMatchObject([{ outcome: 'deadline', inputTokens: 2000 }]);
     });
 
+    it('counts a call cut off by the deadline at its worst case, so the next run sees the budget reached', async () => {
+      const l = ledger(150n + 2n * WORST_CALL_MICRO - 1n);
+      let turn = 0;
+      const hung: ToolLlm = {
+        open: (req) => ({
+          send: () => {
+            if (turn++ > 0) return new Promise<LlmToolTurn>(() => {});
+            req.onUsage?.({ inputTokens: 1000, outputTokens: 100 });
+            return Promise.resolve(callAll);
+          },
+        }),
+      };
+      const out = await analyseAccount(
+        ai(hung, l),
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+        () => {},
+        50,
+      );
+      expect(out.fallback).toBe('deadline');
+      expect(l.rows).toMatchObject([
+        { outcome: 'deadline', costMicroUsd: 150n + WORST_CALL_MICRO },
+      ]);
+
+      const next = fake([() => final([])]);
+      const again = await analyseAccount(ai(next.llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(again.fallback).toBe('cap');
+      expect(next.tools).toEqual([]);
+    });
+
+    it('counts a call that failed without reporting usage (a dropped connection) at its worst case', async () => {
+      const dropped: ToolLlm = {
+        open: () => ({
+          send: async () => {
+            throw new Error('ECONNRESET');
+          },
+        }),
+      };
+      const l = ledger();
+      const out = await analyseAccount(ai(dropped, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(out.fallback).toBe('model_error');
+      expect(l.rows).toMatchObject([{ outcome: 'model_error', costMicroUsd: WORST_CALL_MICRO }]);
+    });
+
+    it('does not count a call twice when its reply came back before the deadline', async () => {
+      const l = ledger();
+      const out = await analyseAccount(
+        ai(fake([() => callAll, () => new Promise<LlmToolTurn>(() => {})]).llm, l),
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+        () => {},
+        50,
+      );
+      expect(out.fallback).toBe('deadline');
+      expect(l.rows).toMatchObject([{ costMicroUsd: 300n }]);
+    });
+
+    it('never sends a request that could go over 100K input tokens (the long-context rate)', async () => {
+      let sends = 0;
+      const big: ToolLlm = {
+        open: (req) => ({
+          send: async () => {
+            sends++;
+            req.onUsage?.({ inputTokens: 99_000, outputTokens: 500 });
+            return callAll;
+          },
+        }),
+      };
+      const l = ledger();
+      const out = await analyseAccount(ai(big, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(sends).toBe(1);
+      expect(out.fallback).toBe('loop_limit');
+      expect(l.rows).toMatchObject([{ outcome: 'loop_limit', inputTokens: 99_000 }]);
+    });
+
     it('records too many turns as loop_limit', async () => {
       const l = ledger();
       const out = await analyseAccount(
