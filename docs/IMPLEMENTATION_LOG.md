@@ -233,3 +233,13 @@ no longer said what comes first.
 - `apps/analytics/lib/rate-limit.ts`: removed `sweep`, which dropped every visitor entry older than the window of the
   kind being consumed and scanned all 10,000 keys per call once full. Visitors now live in one `BoundedMap` per kind
   (10,000 each), so LRU eviction alone bounds memory and never drops a live entry of one kind for another.
+
+## 2026-11-12 — One priced-leg list for the account's totals, bar and concentration (#66)
+
+- `apps/api/src/analytics/account-view.ts`: `accountPortfolio` builds the legs (wallet, Burrow, Rhea v1 + DCL split
+  into tokens, liquid staking only when the wallet list does not already hold the token) and returns `metrics` and
+  `totals` from them. Net worth now includes LP; stNEAR is counted once; the concentration % and its rebalance amount
+  use the same total as the hero.
+- `apps/analytics/app/page.tsx`: a real account's allocation bar reads `metrics.byToken`; the holdings table adds one
+  row per LP position (and any staking token not in the wallet list), so it sums to "$X in assets". Demo portfolios
+  are unchanged.

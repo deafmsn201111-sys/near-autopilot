@@ -136,6 +136,7 @@ export interface PortfolioView {
   asOf: string | null;
   holdings: {
     where: 'wallet' | 'collateral' | 'deposited' | 'borrowed';
+    token?: string;
     symbol: string;
     amount: number;
     usd: number | null;
@@ -146,6 +147,14 @@ export interface PortfolioView {
   actions: PortfolioAction[];
   lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
   simulatedChanges?: { count: number; since: string | null } | null;
+  metrics?: { byToken: { symbol: string; usd: number; pct: number }[] };
+  positions?: {
+    key: string;
+    label: string;
+    sub: string;
+    amount: number | null;
+    usd: number | null;
+  }[];
 }
 export interface AgentEntry {
   from: string;
