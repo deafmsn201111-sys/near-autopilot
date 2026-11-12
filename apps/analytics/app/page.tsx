@@ -15,15 +15,15 @@ const amountText = (n: number) =>
 
 /** Token coin chip: a deterministic gradient + readable foreground per known symbol, neutral otherwise. */
 const TOKEN_COLORS: Record<string, readonly [string, string]> = {
-  NEAR: ['linear-gradient(135deg,#00ec97,#00935f)', '#03140c'],
-  WNEAR: ['linear-gradient(135deg,#00b876,#064e3b)', '#eafff6'],
-  STNEAR: ['linear-gradient(135deg,#2bffb0,#00b57a)', '#03140c'],
-  USDC: ['linear-gradient(135deg,#3b82f6,#1d5fd1)', '#ffffff'],
-  'USDC.E': ['linear-gradient(135deg,#5b7fb8,#2d4a73)', '#ffffff'],
-  USDT: ['linear-gradient(135deg,#26a17b,#13795b)', '#ffffff'],
+  NEAR: ['linear-gradient(135deg,#8e9f84,#6c7d62)', '#111411'],
+  WNEAR: ['linear-gradient(135deg,#70846d,#53664e)', '#f1f3ed'],
+  STNEAR: ['linear-gradient(135deg,#a2b196,#7a8a70)', '#111411'],
+  USDC: ['linear-gradient(135deg,#8596a7,#627688)', '#ffffff'],
+  'USDC.E': ['linear-gradient(135deg,#74869b,#53677d)', '#ffffff'],
+  USDT: ['linear-gradient(135deg,#91a391,#6d816e)', '#111411'],
 } as const;
 const tokenVisual = (s: string): readonly [string, string] =>
-  TOKEN_COLORS[s.toUpperCase()] ?? ['linear-gradient(135deg,#6f857b,#334039)', '#ffffff'];
+  TOKEN_COLORS[s.toUpperCase()] ?? ['linear-gradient(135deg,#788575,#596653)', '#ffffff'];
 
 /** A short "what kind of token" subtitle for the holdings table. */
 const TOKEN_KIND: Record<string, string> = {

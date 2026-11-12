@@ -20,6 +20,15 @@
   --good-text: #2c6845;
   --warning: #8a5a20;
   --critical: #9b3c35;
+  --c1: #5f7856;
+  --c2: #977956;
+  --c3: #667d87;
+  --good: #4f7252;
+  --serious: #a07758;
+  --meter-track: #e6e9df;
+  --meter-fill: #637b5a;
+  --tip-bg: #202520;
+  --tip-ink: #edf1e9;
   --panel-grad: var(--surface);
   --hero-radial: none;
   --rec-radial: none;
@@ -48,6 +57,15 @@
   --good-text: #b9d6b5;
   --warning: #dac0a4;
   --critical: #dfafa4;
+  --c1: #91a484;
+  --c2: #c1ad91;
+  --c3: #8295a0;
+  --good: #58715b;
+  --serious: #b38b68;
+  --meter-track: #303930;
+  --meter-fill: #81947a;
+  --tip-bg: #222922;
+  --tip-ink: #edf1e9;
   --panel-grad: var(--surface);
   --hero-radial: none;
   --rec-radial: none;
@@ -422,6 +440,34 @@ main.page {
 .rec-agent-dot {
   box-shadow: none;
   animation: none;
+}
+
+.badge.good i,
+.verdict.good i {
+  background: color-mix(in srgb, var(--good) 20%, var(--surface));
+  color: var(--good-text);
+  border: 1px solid color-mix(in srgb, var(--good) 36%, var(--grid));
+}
+
+.badge.warning i,
+.badge.serious i,
+.badge.critical i,
+.verdict.warning i {
+  background: color-mix(in srgb, currentColor 16%, var(--surface));
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, currentColor 30%, var(--grid));
+}
+
+.badge.serious i {
+  color: var(--serious);
+}
+
+.badge.critical i {
+  color: var(--critical);
+}
+
+.health-medium {
+  color: var(--warning);
 }
 
 .block h2,
