@@ -95,6 +95,8 @@ limit in about 7 minutes, because the 15 s auto-refresh re-read the account on e
   on the account view).
 - `MAINNET_READ_RPC_URL` must be the FastNEAR URL whenever `MAINNET_READ_RPC_API_KEY` is set; the public NEAR RPC
   ignores the key and answers 429 under load.
+- The live demo uses FastNEAR's free key, not a paid plan (owner, 12 Nov, #41): the limits above and the 60 s cache
+  keep our load small; a paid plan is the fallback if the live 429 check fails.
   **Consequences:** An open account tab spends about 10 of its 30 reads per 10 minutes. Changes made without a
   transaction from the wallet (prices, incoming transfers) show within about 75 s. Limits and the cache live in one
   Next.js process: a restart resets them, and several instances would need a shared store. Raising a limit or the TTL
