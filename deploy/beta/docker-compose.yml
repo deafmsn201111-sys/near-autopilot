@@ -96,7 +96,7 @@ services:
       - ./checkpoints:/checkpoints:ro
       - ./config/market.json:/etc/near-autopilot/market.json:ro
 
-  analytics:
+  analytics-beta:
     image: near-autopilot-analytics:beta
     pull_policy: never
     restart: unless-stopped
