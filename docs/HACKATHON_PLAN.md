@@ -86,3 +86,9 @@ Never cut (`never-cut`): security items, LLM core with fallback, spend tracking 
 
 1Click execution through an EVM wallet connect, a backup LLM provider (e.g. Gemini) for Anthropic outages, LLM-backed
 specialist agents, admin alerts.
+
+From the teammate's review on 12 Nov (issues filed without a milestone): positive-carry looping as a signable
+recommendation (#88), the NEAR / CONTROL design handoff (#89), swapping unverified wallet tokens into stablecoins with
+the real swap loss and a rule-based wider token allowlist (#90). In M2 from the same review: loan cards show the loan
+cost against what the position earns and repay only to the safe health factor (#86), a mode label on the Portfolio
+page (#87), verified / unverified split and top rows first in the full portfolio (#73 comment).
