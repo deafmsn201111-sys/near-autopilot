@@ -60,10 +60,25 @@ describe('accountPortfolio', () => {
       { where: 'borrowed', token: USDC, symbol: 'USDC', amount: 20, usd: 20 },
       { where: 'wallet', token: 'unpriced.near', symbol: 'X', amount: 5, usd: null },
     ],
-    staking: [{ token: 'meta-pool.near', symbol: 'stNEAR', usd: 4 }],
-    v1Positions: [{ tokens: [USDC, 'wrap.near'], symbols: ['USDC', 'wNEAR'], usdPerToken: [8, 8] }],
+    staking: [{ token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 }],
+    v1Positions: [
+      {
+        poolId: 4512,
+        tokens: [USDC, 'wrap.near'],
+        symbols: ['USDC', 'wNEAR'],
+        usdPerToken: [8, 8],
+      },
+    ],
     dclPositions: [
-      { tokenX: USDC, tokenY: 'wrap.near', symbolX: 'USDC', symbolY: 'wNEAR', usdX: 2, usdY: null },
+      {
+        lptId: 'lpt-1',
+        tokenX: USDC,
+        tokenY: 'wrap.near',
+        symbolX: 'USDC',
+        symbolY: 'wNEAR',
+        usdX: 2,
+        usdY: null,
+      },
     ],
   });
 
@@ -73,18 +88,58 @@ describe('accountPortfolio', () => {
     expect(p.metrics.byToken.find((t) => t.symbol === 'stNEAR')?.usd).toBe(4);
   });
 
+  it('lists each LP position once at its priced value, so the rows add up to the total', () => {
+    expect(p.positions).toEqual([
+      { key: 'v1-4512', label: 'USDC/wNEAR', sub: 'Rhea liquidity', amount: null, usd: 16 },
+      {
+        key: 'dcl-lpt-1',
+        label: 'USDC/wNEAR',
+        sub: 'Rhea concentrated liquidity',
+        amount: null,
+        usd: 2,
+      },
+    ]);
+    const held = [40, 6, 4, 10, 30];
+    const rows = [...held, ...p.positions.map((r) => r.usd ?? 0)];
+    expect(rows.reduce((a, b) => a + b, 0)).toBe(p.totals.assetsUsd);
+  });
+
   it('the concentration % is the top token share of the same total', () => {
     expect(p.metrics.concentration).toEqual({ token: USDC, symbol: 'USDC', pct: (60 / 108) * 100 });
     expect(p.metrics.byToken[0]?.pct).toBe(p.metrics.concentration?.pct);
   });
 
+  it('lists an unpriced or negative leg without counting it', () => {
+    const q = accountPortfolio({
+      holdings: [],
+      staking: [],
+      v1Positions: [
+        { poolId: 1, tokens: ['a', 'b'], symbols: ['A', 'B'], usdPerToken: [null, null] },
+      ],
+      dclPositions: [
+        { lptId: 'x', tokenX: 'a', tokenY: 'b', symbolX: 'A', symbolY: 'B', usdX: 100, usdY: -50 },
+      ],
+    });
+    expect(q.positions.map((r) => r.usd)).toEqual([null, 100]);
+    expect(q.totals.assetsUsd).toBe(100);
+  });
+
   it('counts a staking token the wallet list does not hold', () => {
     const q = accountPortfolio({
       holdings: [],
-      staking: [{ token: 'linear-protocol.near', symbol: 'LiNEAR', usd: 5 }],
+      staking: [{ token: 'linear-protocol.near', symbol: 'LiNEAR', amount: 2, usd: 5 }],
       v1Positions: [],
       dclPositions: [],
     });
     expect(q.totals.assetsUsd).toBe(5);
+    expect(q.positions).toEqual([
+      {
+        key: 'staking-linear-protocol.near',
+        label: 'LiNEAR',
+        sub: 'Liquid staking',
+        amount: 2,
+        usd: 5,
+      },
+    ]);
   });
 });

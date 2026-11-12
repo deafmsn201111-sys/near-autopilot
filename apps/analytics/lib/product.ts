@@ -136,7 +136,6 @@ export interface PortfolioView {
   asOf: string | null;
   holdings: {
     where: 'wallet' | 'collateral' | 'deposited' | 'borrowed';
-    /** Real accounts only. */
     token?: string;
     symbol: string;
     amount: number;
@@ -148,11 +147,14 @@ export interface PortfolioView {
   actions: PortfolioAction[];
   lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
   simulatedChanges?: { count: number; since: string | null } | null;
-  /** Real accounts only: the API's one list of priced legs, LP and staking included. */
   metrics?: { byToken: { symbol: string; usd: number; pct: number }[] };
-  v1Positions?: { poolId: number; symbols: string[]; usd: number | null }[];
-  dclPositions?: { lptId: string; symbolX: string; symbolY: string; usd: number | null }[];
-  staking?: { token: string; symbol: string; amount: number; usd: number | null }[];
+  positions?: {
+    key: string;
+    label: string;
+    sub: string;
+    amount: number | null;
+    usd: number | null;
+  }[];
 }
 export interface AgentEntry {
   from: string;
