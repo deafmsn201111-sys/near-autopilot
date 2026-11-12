@@ -1,6 +1,10 @@
 {$SITE_ADDRESS} {
 	encode gzip
 
+	# The admin is served only by the loopback analytics-admin service; the public site never shows it.
+	respond /admin 404
+	respond /admin/* 404
+
 	# Only the dashboard is exposed. The visitor's address is set by Caddy, never taken from the request:
 	# the rate limits key on it (apps/analytics/lib/rate-limit.ts).
 	reverse_proxy analytics:3000 {

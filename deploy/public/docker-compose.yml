@@ -103,6 +103,8 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
       LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
+      # The only token /v1/admin/* accepts. Held by analytics-admin too, never by the public site.
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; setup.sh adds it)}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     volumes:
       - ./checkpoints:/checkpoints:ro
@@ -123,6 +125,23 @@ services:
     # Loopback only. Exposed by Caddy (profile `caddy`) or by Tailscale Funnel on the host (README).
     ports:
       - '127.0.0.1:3000:3000'
+
+  # The admin (/admin: AI spend, kill switch, cap). Same image; loopback only, no Caddy route: open it through an SSH
+  # tunnel (README). Never publish it on 0.0.0.0: Docker bypasses ufw.
+  analytics-admin:
+    image: ${ANALYTICS_IMAGE:-near-autopilot-analytics:public}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      analytics-api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://analytics-api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; setup.sh adds it)}
+      ADMIN_UI: '1'
+    ports:
+      - '127.0.0.1:3002:3000'
 
   # With profile `caddy` (COMPOSE_PROFILES=caddy in .env): the only service reachable from the internet, ports 80/443,
   # with a Let's Encrypt certificate for SITE_ADDRESS. Needs inbound 80 and 443; behind a NAT use Tailscale Funnel.

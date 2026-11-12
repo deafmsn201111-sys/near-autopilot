@@ -212,3 +212,14 @@ no longer said what comes first.
   entries) without a model call or `llm_calls` row.
 - Global limit moved from the Next route to the API: 60 model runs per 10 minutes, fallback `busy`; the route keeps
   5 per visitor.
+
+## 2026-11-12 — Admin: Spend screen and kill switch (#31)
+
+- API: `/v1/admin/spend` and `/v1/admin/settings` behind `ADMIN_API_TOKEN` (D16); `spendSummary` gives today vs cap,
+  7 UTC days, model split, average per analysis and the deposit run-out estimate. Migration 0019 adds `llm_enabled`,
+  `deposit_micro_usd`, `deposit_set_at` to `llm_settings`.
+- `analyseAccount` reads the kill switch first: off → labelled rule-based list, code `kill_switch`, no model call, no
+  cached AI result.
+- UI: `apps/analytics/app/admin` (404 unless `ADMIN_UI=1`), server actions for the switch, cap and deposit.
+- Deploy: `analytics-admin` service on `127.0.0.1:3002`, Caddy 404 for `/admin*`, `setup.sh` and `quickstart.sh`
+  add `ADMIN_API_TOKEN` to an existing `.env`.

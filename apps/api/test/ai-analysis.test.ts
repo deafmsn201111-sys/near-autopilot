@@ -121,6 +121,10 @@ function ledger(left = 10n ** 9n) {
   const rows: LlmCallRecord[] = [];
   return {
     rows,
+    on: true,
+    async enabled() {
+      return this.on;
+    },
     remainingTodayMicro: async () => left - rows.reduce((sum, r) => sum + r.costMicroUsd, 0n),
     record: async (row: LlmCallRecord) => {
       rows.push(row);
@@ -635,6 +639,46 @@ describe('analyseAccount', () => {
       expect(out.source).toBe('llm');
     });
 
+    it('with the kill switch on makes no model call, serves no cached result, and labels it kill_switch', async () => {
+      const l = ledger();
+      const deps = ai(ranked().llm, l);
+      expect(
+        (await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] }))
+          .source,
+      ).toBe('llm');
+      l.on = false;
+      const again = fake([() => callAll]);
+      const off = await analyseAccount(
+        { ...deps, llm: again.llm },
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+      );
+      expect(again.tools).toEqual([]);
+      expect(off).toMatchObject({
+        source: 'heuristic',
+        fallback: 'kill_switch',
+        recommendations: [heuristic],
+      });
+      l.on = true;
+      const back = await analyseAccount(deps, {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(back.source).toBe('llm');
+    });
+
+    it('treats an unreadable kill switch as on', async () => {
+      const { llm, tools } = fake([() => callAll]);
+      const broken = { ...ledger(), enabled: () => Promise.reject(new Error('db down')) };
+      const out = await analyseAccount(ai(llm, broken), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(tools).toEqual([]);
+      expect(out.fallback).toBe('kill_switch');
+    });
+
     it('never serves a cached result to a visitor who has not proved ownership', async () => {
       const deps = ai(ranked().llm);
       await analyseAccount(deps, { ...ctx, heuristics: [heuristic], checks: [heuristic] });
@@ -815,6 +859,7 @@ describe('analyseAccount', () => {
       let written!: () => void;
       const rows: LlmCallRecord[] = [];
       const slowLedger = {
+        enabled: async () => true,
         remainingTodayMicro: async () =>
           WORST_CALL_MICRO + 100n - rows.reduce((t, r) => t + r.costMicroUsd, 0n),
         record: (row: LlmCallRecord) =>

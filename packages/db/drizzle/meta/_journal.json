@@ -134,6 +134,13 @@
       "when": 1794030000000,
       "tag": "0018_llm_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794040000000,
+      "tag": "0019_llm_admin_settings",
+      "breakpoints": true
     }
   ]
 }

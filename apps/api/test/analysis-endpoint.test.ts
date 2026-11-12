@@ -144,7 +144,11 @@ function server(
         llm,
         model: 'claude-haiku-5-5',
         maxTokens: 4096,
-        ledger: { remainingTodayMicro: async () => 10n ** 9n, record: async () => {} },
+        ledger: {
+          enabled: async () => true,
+          remainingTodayMicro: async () => 10n ** 9n,
+          record: async () => {},
+        },
         memo: analysisMemo(),
       },
     } as never,

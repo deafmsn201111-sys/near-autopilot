@@ -646,9 +646,15 @@ export const llmCalls = pgTable(
   (t) => [index('llm_calls_at_idx').on(t.at)],
 );
 
-/** Single-row LLM settings (migration 0018). A null cap means LLM_DAILY_CAP_USD applies. */
+/**
+ * Single-row LLM settings (migrations 0018, 0019). A null cap means LLM_DAILY_CAP_USD applies; no row means LLM on.
+ * The deposit is what the owner last typed in as the provider balance, for the run-out forecast.
+ */
 export const llmSettings = pgTable('llm_settings', {
   id: integer('id').primaryKey(),
   dailyCapMicroUsd: bigint('daily_cap_micro_usd', { mode: 'bigint' }),
+  llmEnabled: boolean('llm_enabled').notNull().default(true),
+  depositMicroUsd: bigint('deposit_micro_usd', { mode: 'bigint' }),
+  depositSetAt: ts('deposit_set_at'),
   updatedAt: ts('updated_at').notNull(),
 });

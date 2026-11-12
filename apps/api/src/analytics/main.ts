@@ -31,7 +31,10 @@ const env = z
     MAINNET_READ_RPC_URL: z.string().url().optional(),
     MAINNET_READ_RPC_API_KEY: z.string().optional(),
     MARKET_CONFIG_FILE: z.string().optional(),
+    /** Only the loopback admin site holds it; unset or empty = the admin routes answer 401. */
+    ADMIN_API_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
   })
+  .refine((e) => e.ADMIN_API_TOKEN !== e.API_TOKEN, 'ADMIN_API_TOKEN must differ from API_TOKEN')
   .parse(process.env);
 // Parsed on every start, so a model outside the allowlist stops the API even when the wallet path is off.
 const llmEnv = llmEnvSchema.parse(process.env);
@@ -88,6 +91,15 @@ const app = buildAnalyticsServer(
     evidence: new EvidenceStore(database.db),
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
     ...(mainnet ? { mainnet } : {}),
+    ...(env.ADMIN_API_TOKEN
+      ? {
+          admin: {
+            token: env.ADMIN_API_TOKEN,
+            store: llmLedger,
+            defaultCapMicro: BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6)),
+          },
+        }
+      : {}),
     ...(env.AUDIT_CHECKPOINT_PUBLIC_KEY
       ? {
           checkpoints: {

@@ -187,7 +187,7 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
-- Fallback codes (`off` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+- Fallback codes (`off`, `kill_switch` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
   `deadline`, `loop_limit` (too many turns or tool calls).
 
 ## D15 — Leaked secrets are rotated, history is not rewritten
@@ -206,3 +206,25 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   says how to install them. The other third-party skills keep their licences next to them.
   **Consequences:** The old FastNEAR key stays readable in history and must be dead before the repo goes public
   (owner step on #45). A new real finding turns CI red until it is rotated and listed.
+
+## D16 — Admin: own token, loopback-only service, Caddy 404
+
+**Context:** #31. With the LLM key on the public server the owner needs AI spend and a kill switch without a deploy,
+and a break-in to the public site container must not be able to change them.
+**Decision:**
+
+- `/v1/admin/*` (`apps/api/src/analytics/admin.ts`) accepts only `ADMIN_API_TOKEN`; `API_TOKEN` gets 401 there and
+  `ADMIN_API_TOKEN` gets 401 everywhere else. No admin token configured = every admin URL answers 401. The API refuses
+  to start when both tokens are equal.
+- The admin UI is the same Next image as the site with `ADMIN_UI=1` (service `analytics-admin`, `127.0.0.1:3002`,
+  no Caddy route), opened through an SSH tunnel. Without `ADMIN_UI=1`, `/admin` and the admin server actions answer
+  404 and never call the API. The public `analytics` container has no `ADMIN_API_TOKEN`. Caddy answers 404 for
+  `/admin` and `/admin/*` before proxying.
+- Kill switch, daily cap and the deposit balance the owner types in live on the single `llm_settings` row (migration
+  0019). The switch is read before the result cache on every analysis, so off means no model call and no cached AI
+  result (fallback code `kill_switch`); an unreadable switch counts as off. No confirm step: it is reversible.
+- Writes are zod-checked JSON: cap $0.01–$1000 per day, deposit $0.01–$1M.
+- Run-out estimate = (deposit − spend since it was entered) / 7-day daily average. Spend older than 7 days is purged,
+  so the screen asks to re-enter a balance older than 7 days.
+  **Consequences:** anyone with SSH to the server can open the admin; there is no login. Screens 2–4 (#33, #34) reuse
+  the token and service.
