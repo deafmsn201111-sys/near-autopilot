@@ -1430,9 +1430,19 @@ main.page {
     gap: 10px;
   }
   .hero {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr !important;
     row-gap: 0;
     padding-bottom: 22px;
+  }
+  .hero-head .segmented {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .hero-head .segmented a {
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 11px;
+    white-space: nowrap;
   }
   .hero-main {
     grid-column: 1 / -1;
