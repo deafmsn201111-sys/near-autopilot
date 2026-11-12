@@ -4,8 +4,8 @@ import { cookies } from 'next/headers';
 const SMALL_IDLE_USD = 50;
 
 /** Dust: worth under a cent (or, unpriced, under 0.005 tokens). Shown nowhere: it would read as "0 TOKEN". */
-const isDust = (h: { amount: number; usd: number | null }) =>
-  h.usd !== null ? h.usd < 0.01 : h.amount < 0.005;
+const isDust = (h: { amount: number | null; usd: number | null }) =>
+  h.usd !== null ? h.usd < 0.01 : (h.amount ?? 0) < 0.005;
 
 /** Small amounts keep two significant digits (0.0042 BTC is not "0"); others two decimals. */
 const amountText = (n: number) =>
@@ -64,6 +64,15 @@ const WHERE = {
   deposited: 'Deposited on Burrow',
   borrowed: 'Borrowed from Burrow',
 } as const;
+
+interface Row {
+  key: string;
+  where: keyof typeof WHERE | 'liquidity';
+  symbol: string;
+  sub: string | null;
+  amount: number | null;
+  usd: number | null;
+}
 
 const VERDICT = {
   worth_it: { cls: 'good', icon: '✓' },
@@ -191,16 +200,55 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const t = data.totals;
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
 
-  // Holdings for the premium table (non-dust, highest value first) and the hero allocation bar (assets only,
-  // aggregated by symbol). All derived from the real balances — nothing invented.
-  const rows = data.holdings.filter((h) => !isDust(h)).sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+  // Holdings for the premium table (non-dust, highest value first) and the hero allocation bar (assets only, by
+  // symbol). A real account's bar and totals come from the API's one list of priced legs (LP split into its tokens);
+  // its table adds a row per LP position and any staking token the wallet list does not hold, so it sums to the total.
+  const walletTokens = new Set(
+    data.holdings.filter((h) => h.where === 'wallet').map((h) => h.token),
+  );
+  const extraRows: Row[] = [
+    ...(data.v1Positions ?? []).map((p) => ({
+      key: `v1-${p.poolId}`,
+      where: 'liquidity' as const,
+      symbol: p.symbols.join('/'),
+      sub: 'Rhea liquidity',
+      amount: null,
+      usd: p.usd,
+    })),
+    ...(data.dclPositions ?? []).map((d) => ({
+      key: `dcl-${d.lptId}`,
+      where: 'liquidity' as const,
+      symbol: `${d.symbolX}/${d.symbolY}`,
+      sub: 'Rhea concentrated liquidity',
+      amount: null,
+      usd: d.usd,
+    })),
+    ...(data.staking ?? [])
+      .filter((s) => !walletTokens.has(s.token))
+      .map((s) => ({
+        key: `staking-${s.token}`,
+        where: 'liquidity' as const,
+        symbol: s.symbol,
+        sub: 'Liquid staking',
+        amount: s.amount,
+        usd: s.usd,
+      })),
+  ];
+  const rows: Row[] = [
+    ...data.holdings.map((h) => ({ ...h, key: `${h.where}-${h.symbol}`, sub: null })),
+    ...extraRows,
+  ]
+    .filter((h) => !isDust(h))
+    .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
   const assetRows = rows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0);
-  const assetsTotal = assetRows.reduce((s, h) => s + (h.usd ?? 0), 0) || 1;
+  const assetsTotal = t.assetsUsd || 1;
   const bySymbol = new Map<string, number>();
   for (const h of assetRows) bySymbol.set(h.symbol, (bySymbol.get(h.symbol) ?? 0) + (h.usd ?? 0));
-  const alloc = [...bySymbol.entries()]
-    .map(([symbol, usd]) => ({ symbol, pct: usd / assetsTotal }))
-    .sort((a, b) => b.pct - a.pct);
+  const alloc = data.metrics
+    ? data.metrics.byToken.map((b) => ({ symbol: b.symbol, pct: b.pct / 100 }))
+    : [...bySymbol.entries()]
+        .map(([symbol, usd]) => ({ symbol, pct: usd / assetsTotal }))
+        .sort((a, b) => b.pct - a.pct);
   const allocTop = alloc.slice(0, 4);
   const allocOther = alloc.slice(4).reduce((s, a) => s + a.pct, 0);
   const allocSegs = [
@@ -329,12 +377,13 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             const [bg, fg] = tokenVisual(r.symbol);
             const isDebt = r.where === 'borrowed';
             const kind =
-              r.where === 'wallet'
+              r.sub ??
+              (r.where === 'wallet' || r.where === 'liquidity'
                 ? (TOKEN_KIND[r.symbol.toUpperCase()] ?? 'Token')
-                : WHERE[r.where];
+                : WHERE[r.where]);
             const pct = isDebt ? 0 : (r.usd ?? 0) / assetsTotal;
             return (
-              <div className="ht-row" key={`${r.where}-${r.symbol}`}>
+              <div className="ht-row" key={r.key}>
                 <div className="ht-asset">
                   <span className="coin" style={{ background: bg, color: fg }}>
                     {r.symbol.slice(0, 1)}
@@ -344,7 +393,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                     <div className="sub">{kind}</div>
                   </div>
                 </div>
-                <div className="ht-qty num">{amountText(r.amount)}</div>
+                <div className="ht-qty num">{r.amount === null ? '—' : amountText(r.amount)}</div>
                 <div className="ht-alloc">
                   {isDebt ? (
                     <span className="muted-note">Borrowed</span>

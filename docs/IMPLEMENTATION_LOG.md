@@ -227,3 +227,13 @@ no longer said what comes first.
 - `packages/orchestrator`: `CYCLE_ABORTED` / `AUDIT_UNAVAILABLE`, `IN_DOUBT_EXECUTION` and `EXECUTION_FAILED`
   escalation messages and the aborted cycle detail (served as `portfolios[].outcome`) no longer carry the thrown or
   executor error; it is logged instead.
+
+## 2026-11-12 — One priced-leg list for the account's totals, bar and concentration (#66)
+
+- `apps/api/src/analytics/account-view.ts`: `accountPortfolio` builds the legs (wallet, Burrow, Rhea v1 + DCL split
+  into tokens, liquid staking only when the wallet list does not already hold the token) and returns `metrics` and
+  `totals` from them. Net worth now includes LP; stNEAR is counted once; the concentration % and its rebalance amount
+  use the same total as the hero.
+- `apps/analytics/app/page.tsx`: a real account's allocation bar reads `metrics.byToken`; the holdings table adds one
+  row per LP position (and any staking token not in the wallet list), so it sums to "$X in assets". Demo portfolios
+  are unchanged.

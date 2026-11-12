@@ -61,7 +61,7 @@ import {
 } from '@near-autopilot/rhea-dcl-adapter';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
-import { valueAccount, type AccountReads, type TokenFacts } from './account';
+import { valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { consensus } from './series';
@@ -337,6 +337,60 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
     byToken,
     byProtocol,
     concentration: top ? { token: top.token, symbol: top.symbol, pct: top.pct } : null,
+  };
+}
+
+export interface AccountPositions {
+  readonly holdings: readonly Holding[];
+  readonly staking: readonly Pick<StakingView, 'token' | 'symbol' | 'usd'>[];
+  readonly dclPositions: readonly Pick<
+    DclPositionView,
+    'tokenX' | 'tokenY' | 'symbolX' | 'symbolY' | 'usdX' | 'usdY'
+  >[];
+  readonly v1Positions: readonly Pick<V1PositionView, 'tokens' | 'symbols' | 'usdPerToken'>[];
+}
+
+/**
+ * The one list of priced legs behind every total and percentage of the account view: wallet and Burrow holdings, Rhea
+ * v1 + DCL liquidity split into its tokens, and liquid staking. A staking token is a wallet balance, so it counts
+ * once: only when the wallet list does not already hold it.
+ */
+export function accountPortfolio(p: AccountPositions) {
+  const legs: PortfolioLeg[] = [];
+  const add = (token: string, symbol: string, protocol: string, usd: number | null | undefined) => {
+    if (usd !== null && usd !== undefined)
+      legs.push({ token, symbol, protocol, usd, kind: 'asset' });
+  };
+  for (const h of p.holdings) {
+    if (h.usd === null || h.usd <= 0) continue;
+    legs.push({
+      token: h.token,
+      symbol: h.symbol,
+      protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
+      usd: h.usd,
+      kind: h.where === 'borrowed' ? 'debt' : 'asset',
+    });
+  }
+  const inWallet = new Set(p.holdings.filter((h) => h.where === 'wallet').map((h) => h.token));
+  for (const s of p.staking) if (!inWallet.has(s.token)) add(s.token, s.symbol, 'Staking', s.usd);
+  for (const d of p.dclPositions) {
+    add(d.tokenX, d.symbolX, 'Rhea DCL', d.usdX);
+    add(d.tokenY, d.symbolY, 'Rhea DCL', d.usdY);
+  }
+  for (const v of p.v1Positions)
+    v.tokens.forEach((t, i) => add(t, v.symbols[i] ?? t, 'Rhea v1', v.usdPerToken[i]));
+  const metrics = portfolioMetrics(legs);
+  const idleUsd = p.holdings
+    .filter((h) => h.where === 'wallet')
+    .reduce((s, h) => s + (h.usd ?? 0), 0);
+  return {
+    metrics,
+    totals: {
+      assetsUsd: metrics.totalAssetsUsd,
+      debtUsd: metrics.totalDebtUsd,
+      netWorthUsd: metrics.netUsd,
+      idleUsd,
+    },
   };
 }
 
@@ -797,57 +851,12 @@ export function registerAccountView(
       readStaking(tokens, id, symbol, prices),
     ]);
 
-    const legs: PortfolioLeg[] = [];
-    for (const h of v.holdings) {
-      if (h.usd === null || h.usd <= 0) continue;
-      legs.push({
-        token: h.token,
-        symbol: h.symbol,
-        protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
-        usd: h.usd,
-        kind: h.where === 'borrowed' ? 'debt' : 'asset',
-      });
-    }
-    for (const s of staking)
-      if (s.usd !== null)
-        legs.push({
-          token: s.token,
-          symbol: s.symbol,
-          protocol: 'Staking',
-          usd: s.usd,
-          kind: 'asset',
-        });
-    for (const d of dclPositions) {
-      if (d.usdX !== null)
-        legs.push({
-          token: d.tokenX,
-          symbol: d.symbolX,
-          protocol: 'Rhea DCL',
-          usd: d.usdX,
-          kind: 'asset',
-        });
-      if (d.usdY !== null)
-        legs.push({
-          token: d.tokenY,
-          symbol: d.symbolY,
-          protocol: 'Rhea DCL',
-          usd: d.usdY,
-          kind: 'asset',
-        });
-    }
-    for (const p of v1Positions)
-      p.tokens.forEach((t, i) => {
-        const u = p.usdPerToken[i];
-        if (u !== null && u !== undefined)
-          legs.push({
-            token: t,
-            symbol: p.symbols[i] ?? t,
-            protocol: 'Rhea v1',
-            usd: u,
-            kind: 'asset',
-          });
-      });
-    const metrics = portfolioMetrics(legs);
+    const { metrics, totals } = accountPortfolio({
+      holdings: v.holdings,
+      staking,
+      dclPositions,
+      v1Positions,
+    });
     const idleEarn = v.holdings
       .filter((h) => h.where === 'wallet' && h.usd !== null && h.usd >= 10)
       .map((h) => ({
@@ -909,7 +918,7 @@ export function registerAccountView(
       asOf: new Date().toISOString(),
       holdings: v.holdings,
       unpriced: v.unpriced,
-      totals: v.totals,
+      totals,
       dclPositions,
       v1Positions,
       staking,

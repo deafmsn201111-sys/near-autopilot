@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { portfolioMetrics } from '../src/analytics/account-view';
+import { accountPortfolio, portfolioMetrics } from '../src/analytics/account-view';
 
 const leg = (
   token: string,
@@ -45,5 +45,46 @@ describe('portfolioMetrics', () => {
     expect(m.totalAssetsUsd).toBe(0);
     expect(m.concentration).toBeNull();
     expect(m.byToken).toEqual([]);
+  });
+});
+
+describe('accountPortfolio', () => {
+  const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+  const p = accountPortfolio({
+    holdings: [
+      { where: 'wallet', token: USDC, symbol: 'USDC', amount: 40, usd: 40 },
+      { where: 'wallet', token: 'near', symbol: 'NEAR', amount: 2, usd: 6 },
+      { where: 'wallet', token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 },
+      { where: 'deposited', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
+      { where: 'collateral', token: 'wrap.near', symbol: 'wNEAR', amount: 10, usd: 30 },
+      { where: 'borrowed', token: USDC, symbol: 'USDC', amount: 20, usd: 20 },
+      { where: 'wallet', token: 'unpriced.near', symbol: 'X', amount: 5, usd: null },
+    ],
+    staking: [{ token: 'meta-pool.near', symbol: 'stNEAR', usd: 4 }],
+    v1Positions: [{ tokens: [USDC, 'wrap.near'], symbols: ['USDC', 'wNEAR'], usdPerToken: [8, 8] }],
+    dclPositions: [
+      { tokenX: USDC, tokenY: 'wrap.near', symbolX: 'USDC', symbolY: 'wNEAR', usdX: 2, usdY: null },
+    ],
+  });
+
+  it('counts wallet, Burrow and LP once each, and a wallet-held staking token once', () => {
+    expect(p.totals).toEqual({ assetsUsd: 108, debtUsd: 20, netWorthUsd: 88, idleUsd: 50 });
+    expect(p.metrics.totalAssetsUsd).toBe(p.totals.assetsUsd);
+    expect(p.metrics.byToken.find((t) => t.symbol === 'stNEAR')?.usd).toBe(4);
+  });
+
+  it('the concentration % is the top token share of the same total', () => {
+    expect(p.metrics.concentration).toEqual({ token: USDC, symbol: 'USDC', pct: (60 / 108) * 100 });
+    expect(p.metrics.byToken[0]?.pct).toBe(p.metrics.concentration?.pct);
+  });
+
+  it('counts a staking token the wallet list does not hold', () => {
+    const q = accountPortfolio({
+      holdings: [],
+      staking: [{ token: 'linear-protocol.near', symbol: 'LiNEAR', usd: 5 }],
+      v1Positions: [],
+      dclPositions: [],
+    });
+    expect(q.totals.assetsUsd).toBe(5);
   });
 });
