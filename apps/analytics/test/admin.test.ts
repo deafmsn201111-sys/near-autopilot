@@ -37,7 +37,7 @@ describe('admin', () => {
     vi.stubEnv('ADMIN_UI', '');
     const { middleware } = await import('../middleware');
     const { NextRequest } = await import('next/server');
-    for (const path of ['/admin', '/admin/', '/admin/x'])
+    for (const path of ['/admin', '/admin/', '/admin/x', '/%61dmin', '/ADMIN'])
       expect(middleware(new NextRequest(`http://localhost${path}`)).status).toBe(404);
     expect(middleware(new NextRequest('http://localhost/administrator')).status).toBe(200);
     vi.stubEnv('ADMIN_UI', '1');

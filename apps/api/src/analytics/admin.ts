@@ -121,10 +121,12 @@ const settingsBody = z
 export function registerAdmin(app: FastifyInstance, deps: AdminDeps, now: () => Date) {
   const summary = async () => {
     const at = now();
-    const [rows, settings] = await Promise.all([
-      deps.store.recentCalls(windowStart(at)),
-      deps.store.settings(),
-    ]);
+    const settings = await deps.store.settings();
+    const start = windowStart(at);
+    // Back to the deposit entry too, so spend before the 7-day window still counts against it.
+    const since =
+      settings.depositSetAt && settings.depositSetAt < start ? settings.depositSetAt : start;
+    const rows = await deps.store.recentCalls(since);
     return spendSummary(rows, settings, deps.defaultCapMicro, at);
   };
 

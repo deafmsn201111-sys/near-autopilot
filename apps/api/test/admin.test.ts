@@ -125,6 +125,28 @@ const server = (store: AdminStore, adminToken: string | undefined = ADMIN_TOKEN)
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
 
 describe('/v1/admin', () => {
+  it('reads calls back to the deposit entry when it is older than the 7-day window', async () => {
+    const since: Date[] = [];
+    const store: AdminStore = {
+      settings: async () => ({
+        ...DEFAULTS,
+        depositMicroUsd: 10_000_000n,
+        depositSetAt: new Date('2026-11-05T22:00:00Z'),
+      }),
+      recentCalls: async (s) => (
+        since.push(s),
+        [row('2026-11-05T23:00:00Z', 5_000_000n), row('2026-11-12T09:00:00Z', 1_000_000n)]
+      ),
+      saveSettings: async () => {},
+    };
+    const res = await server(store).inject({
+      url: '/v1/admin/spend',
+      headers: bearer(ADMIN_TOKEN),
+    });
+    expect(since).toEqual([new Date('2026-11-05T22:00:00Z')]);
+    expect(res.json()).toMatchObject({ deposit: { spentSinceUsd: 6, leftUsd: 4 }, todayUsd: 1 });
+  });
+
   it('rejects the public API token and accepts only the admin token', async () => {
     const app = server(fakeStore().store);
     const pub = await app.inject({ url: '/v1/admin/spend', headers: bearer(API_TOKEN) });

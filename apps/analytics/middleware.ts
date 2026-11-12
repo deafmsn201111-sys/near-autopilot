@@ -2,7 +2,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { contentSecurityPolicy } from './lib/csp';
 import { LOOPBACK_HOST } from './lib/admin-host';
 
-export const isAdminPath = (path: string) => path === '/admin' || path.startsWith('/admin/');
+function decoded(path: string) {
+  try {
+    return decodeURIComponent(path).toLowerCase();
+  } catch {
+    return path.toLowerCase();
+  }
+}
+export const isAdminPath = (raw: string) => {
+  const path = decoded(raw);
+  return path === '/admin' || path.startsWith('/admin/');
+};
 
 /** A fresh nonce per page response. Next reads it from the request's CSP header and stamps its own scripts. */
 export function middleware(request: NextRequest) {
