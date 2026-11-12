@@ -6,4 +6,6 @@ ALTER TABLE "llm_settings" ADD COLUMN IF NOT EXISTS "deposit_micro_usd" bigint;
 --> statement-breakpoint
 ALTER TABLE "llm_settings" ADD COLUMN IF NOT EXISTS "deposit_set_at" timestamp with time zone;
 --> statement-breakpoint
+ALTER TABLE "llm_settings" DROP CONSTRAINT IF EXISTS "llm_settings_deposit_check";
+--> statement-breakpoint
 ALTER TABLE "llm_settings" ADD CONSTRAINT "llm_settings_deposit_check" CHECK ("deposit_micro_usd" IS NULL OR "deposit_micro_usd" > 0);

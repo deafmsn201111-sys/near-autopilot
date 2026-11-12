@@ -38,7 +38,20 @@ describe('admin', () => {
       expect(middleware(new NextRequest(`http://localhost${path}`)).status).toBe(404);
     expect(middleware(new NextRequest('http://localhost/administrator')).status).toBe(200);
     vi.stubEnv('ADMIN_UI', '1');
-    expect(middleware(new NextRequest('http://localhost/admin')).status).toBe(200);
+    const loopback = { headers: { host: '127.0.0.1:3002' } };
+    expect(middleware(new NextRequest('http://localhost/admin', loopback)).status).toBe(200);
+  });
+
+  it('serves the admin container only on a loopback Host', async () => {
+    vi.stubEnv('ADMIN_UI', '1');
+    const { middleware } = await import('../middleware');
+    const { NextRequest } = await import('next/server');
+    const at = (host: string) =>
+      middleware(new NextRequest('http://127.0.0.1:3002/admin', { headers: { host } })).status;
+    expect(at('127.0.0.1:3002')).toBe(200);
+    expect(at('localhost:3002')).toBe(200);
+    expect(at('evil.example:3002')).toBe(403);
+    expect(at('127.0.0.1.evil.example')).toBe(403);
   });
 
   it('never calls the admin API from the public site, even with a token', async () => {

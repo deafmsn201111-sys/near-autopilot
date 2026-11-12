@@ -68,12 +68,13 @@ export function buildAnalyticsServer(
   });
   const adminExpected = deps.admin?.token ? digest(deps.admin.token) : null;
   app.addHook('onRequest', async (req, reply) => {
-    if (!req.url.startsWith('/v1/')) return;
+    // Decided on the matched route as well as the raw URL: the router decodes "/%761/..." to "/v1/...".
+    const route = req.routeOptions.url ?? '';
+    if (!req.url.startsWith('/v1/') && !route.startsWith('/v1/')) return;
     const h = req.headers.authorization ?? '';
     const token = digest(h.startsWith('Bearer ') ? h.slice(7) : '');
     // Admin routes take ADMIN_API_TOKEN only: the public site holds API_TOKEN and must not reach them.
-    const admin =
-      req.url.startsWith('/v1/admin') || (req.routeOptions.url ?? '').startsWith('/v1/admin');
+    const admin = req.url.startsWith('/v1/admin') || route.startsWith('/v1/admin');
     const ok = admin
       ? adminExpected !== null && timingSafeEqual(token, adminExpected)
       : timingSafeEqual(token, expected);

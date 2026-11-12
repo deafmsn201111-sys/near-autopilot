@@ -131,6 +131,23 @@ describe('/v1/admin', () => {
     expect(ok.json()).toMatchObject({ todayUsd: 0.25, capUsd: 5, llmEnabled: true });
   });
 
+  it.each(['/%761/admin/spend', '/v1/%61dmin/spend', '/v1//admin/spend', '/V1/admin/spend'])(
+    'never serves %s without the admin token',
+    async (url) => {
+      const app = server(fakeStore().store);
+      for (const headers of [{}, bearer(API_TOKEN)]) {
+        const res = await app.inject({ url, headers });
+        expect(res.statusCode === 401 || res.statusCode === 404).toBe(true);
+        expect(res.body).not.toContain('todayUsd');
+      }
+    },
+  );
+
+  it('asks for the API token on an encoded /v1 path', async () => {
+    const res = await server(fakeStore().store).inject({ url: '/%761/analytics/freshness' });
+    expect(res.statusCode).toBe(401);
+  });
+
   it('does not let the admin token into the other routes', async () => {
     const app = server(fakeStore().store);
     const res = await app.inject({ url: '/v1/analytics/freshness', headers: bearer(ADMIN_TOKEN) });
