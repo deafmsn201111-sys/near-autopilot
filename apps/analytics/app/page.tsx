@@ -215,6 +215,22 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   return (
     <>
       {isAccount && accountParam && <AccountWatcher account={accountParam} />}
+      <header className="portfolio-intro">
+        <div>
+          <p className="portfolio-context">
+            {isAccount ? 'Connected account' : 'Explore the demo'}
+          </p>
+          <h1>{isAccount ? 'Your NEAR portfolio' : 'See how a decision is made'}</h1>
+          <p className="portfolio-lead">
+            {isAccount
+              ? 'Your mainnet balances, explained recommendations, and actions you choose to sign.'
+              : 'Simulated balances, live market prices, and an honest view of what each move could return.'}
+          </p>
+        </div>
+        <span className="portfolio-mode">
+          {isAccount ? 'Mainnet account' : 'Simulated portfolio'}
+        </span>
+      </header>
       <div className="hero-head">
         <PortfolioSwitch
           current={isAccount ? 'account' : id}

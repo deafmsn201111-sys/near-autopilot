@@ -1,0 +1,123 @@
+# Isolated beta stack. Run with `docker compose -p near-autopilot-beta`.
+# Uses its own database, volumes, checkpoint file and API token. Caddy is shared
+# with the public stack and routes beta.near-autopilot.tech over a private Docker network.
+name: near-autopilot-beta
+
+x-common-env: &common-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+  DATABASE_URL: postgres://autopilot:${POSTGRES_PASSWORD}@postgres:5432/autopilot
+  NEAR_NETWORK: mainnet
+  DATA_SOURCE: simulation
+  EXECUTION_MODE: dry-run
+  NEAR_RPC_URL: https://rpc.mainnet.near.org
+  AUTOPILOT_ACCOUNT_ID: shadow-demo.near
+  AUTOPILOT_ENGINE: orchestrator
+  MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
+  MARKET_DATA: mainnet-live
+  YIELD_DATA: mainnet-onchain
+  RHEA_DCL_CONTRACT_ID: dclv2.ref-labs.near
+  MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+  MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+  PYTH_API_KEY: ${PYTH_API_KEY:-}
+  PYTH_HERMES_URL: https://hermes.pyth.network
+  DEFILLAMA_URL: https://coins.llama.fi
+  COINBASE_URL: https://api.exchange.coinbase.com
+  KRAKEN_URL: https://api.kraken.com
+  BINANCE_URL: https://data-api.binance.vision
+  ONE_CLICK_URL: https://1click.chaindefuser.com
+  ONE_CLICK_QUOTE_ACCOUNT: near
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: autopilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: autopilot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U autopilot -d autopilot']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  shadow-collector:
+    image: near-autopilot-api:beta
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      analytics-api:
+        condition: service_healthy
+    command: ['node', '--import', 'tsx', 'src/collector/main.ts']
+    environment:
+      <<: *common-env
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      COLLECTOR_REGISTRY_EVERY: 4
+      COLLECTOR_HEALTH_PORT: 4100
+      AUDIT_CHECKPOINT_KEY: ${AUDIT_CHECKPOINT_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
+    volumes:
+      - ./config/market.json:/etc/near-autopilot/market.json:ro
+      - ./checkpoints:/checkpoints
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4100/health']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  analytics-api:
+    image: near-autopilot-api:beta
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['node', '--import', 'tsx', 'src/analytics/main.ts']
+    environment:
+      NODE_ENV: production
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      DATABASE_URL: postgres://autopilot:${POSTGRES_PASSWORD}@postgres:5432/autopilot
+      API_PORT: 4000
+      SHADOW_CYCLE_INTERVAL_SECONDS: ${SHADOW_CYCLE_INTERVAL_SECONDS:-900}
+      AUDIT_CHECKPOINT_PUBLIC_KEY: ${AUDIT_CHECKPOINT_PUBLIC_KEY:-}
+      AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
+      MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
+      MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
+      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
+      LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
+      MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
+    volumes:
+      - ./checkpoints:/checkpoints:ro
+      - ./config/market.json:/etc/near-autopilot/market.json:ro
+
+  analytics:
+    image: near-autopilot-analytics:beta
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      analytics-api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://analytics-api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      MAINNET_WALLET_SIGNING: '1'
+    ports:
+      - '127.0.0.1:3002:3000'
+    networks:
+      default: {}
+      beta-edge:
+        aliases: [beta-analytics]
+
+volumes:
+  pgdata:
+
+networks:
+  beta-edge:
+    name: near-autopilot-beta-edge
+    external: true

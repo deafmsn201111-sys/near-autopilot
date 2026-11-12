@@ -7,15 +7,15 @@ import { SubNav, TopNav } from '../components/Nav';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { WalletButton } from '../components/WalletButton';
 import './globals.css';
+import './terminal.css';
 
-/** Applies the saved theme before first paint, so there is no flash of the wrong theme. Dark is the default
- *  identity (the "Signal Terminal" direction); only an explicit saved choice overrides it. */
+/** Apply the saved theme before first paint. Dark is the default; a saved light choice overrides it. */
 const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
 
 export const metadata: Metadata = {
   title: 'NEAR Autopilot',
   description:
-    'An autopilot for your NEAR DeFi portfolio: it watches Burrow and Rhea, finds what is worth doing, and explains every decision.',
+    'Understand your NEAR DeFi portfolio, review clear recommendations, and sign each transaction in your own wallet.',
   robots: { index: false, follow: false },
 };
 
@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
       </head>

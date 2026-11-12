@@ -95,6 +95,22 @@ export const REVIEWER_TABS = [
   { href: '/collector', label: 'Collector' },
 ] as const;
 
+const REVIEWER_GROUPS = [
+  {
+    label: 'Understand',
+    links: ['/reviewers', '/research', '/thesis', '/strategies', '/lp', '/portfolios'],
+  },
+  { label: 'Explore markets', links: ['/rhea', '/burrow', '/prices', '/routes'] },
+  { label: 'Verify', links: ['/policy', '/audit', '/system', '/collector'] },
+] as const;
+
+const REVIEWER_SHORTCUTS = [
+  { href: '/reviewers', label: 'Overview' },
+  { href: '/research', label: 'Research' },
+  { href: '/rhea', label: 'Markets' },
+  { href: '/policy', label: 'Safety' },
+] as const;
+
 export const isIn = (path: string, match: readonly string[]) =>
   match.some((m) => (m === '/' ? path === '/' : path === m || path.startsWith(`${m}/`)));
 
@@ -131,17 +147,43 @@ export function SubNav() {
   const path = usePathname();
   if (!inReviewers(path)) return null;
   return (
-    <nav className="tabs" aria-label="Technical pages">
-      {REVIEWER_TABS.map((t) => (
-        <Link
-          key={t.href}
-          href={t.href}
-          className="tab"
-          aria-current={isIn(path, [t.href]) ? 'page' : undefined}
-        >
-          {t.label}
-        </Link>
-      ))}
-    </nav>
+    <div className="reviewer-nav">
+      <span className="reviewer-nav-label">Review and evidence</span>
+      <nav className="tabs" aria-label="Reviewer sections">
+        {REVIEWER_SHORTCUTS.map((t) => (
+          <Link
+            key={t.href}
+            href={t.href}
+            className="tab"
+            aria-current={isIn(path, [t.href]) ? 'page' : undefined}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+      <details className="reviewer-menu">
+        <summary>All analysis pages</summary>
+        <div className="reviewer-menu-panel">
+          {REVIEWER_GROUPS.map((group) => (
+            <div key={group.label}>
+              <b>{group.label}</b>
+              {group.links.map((href) => {
+                const page = REVIEWER_TABS.find((t) => t.href === href);
+                if (!page) return null;
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    aria-current={isIn(path, [href]) ? 'page' : undefined}
+                  >
+                    {page.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </details>
+    </div>
   );
 }
