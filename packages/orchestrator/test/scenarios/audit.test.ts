@@ -86,6 +86,7 @@ describe('scenario: decision audit log', () => {
       w.audit.failAppends = true;
       const r = await w.orchestrator.runCycle('down');
       expect(r.status).toBe('aborted');
+      expect(r.detail).toBe('cycle aborted');
       expect(w.spies).toMatchObject({
         plans: 0,
         evaluate: 0,
@@ -94,7 +95,9 @@ describe('scenario: decision audit log', () => {
         broadcasts: 0,
       });
       expect((await w.orchestrator.controlState()).mode).toBe('read_only');
-      expect(w.events.find((e) => e.code === 'AUDIT_UNAVAILABLE')?.severity).toBe('page');
+      expect(w.events.find((e) => e.code === 'AUDIT_UNAVAILABLE')?.message).toBe(
+        'cycle down aborted',
+      );
     });
 
     it('if it fails exactly when the execution is about to be recorded, the transaction is NOT sent', async () => {

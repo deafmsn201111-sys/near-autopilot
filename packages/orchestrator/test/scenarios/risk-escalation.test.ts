@@ -146,7 +146,7 @@ describe('scenario: risk escalation', () => {
     const w = makeWorld({ lending: at(230), executor: 'live', broadcast: 'failure' });
     const r = await w.orchestrator.runCycle(w.nextKey());
     expect(r.status).toBe('execution_failed');
-    expect(w.codes()).toContain('EXECUTION_FAILED');
+    expect(w.events.find((e) => e.code === 'EXECUTION_FAILED')?.message).toBe('execution failed');
     // 'failed' actions are not deduplicated, so the guardian may try again, up to the failure limit.
     await w.orchestrator.runCycle(w.nextKey());
     await w.orchestrator.runCycle(w.nextKey());

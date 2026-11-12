@@ -219,3 +219,11 @@ no longer said what comes first.
   (100K input + `ANTHROPIC_MAX_TOKENS` output), so the next run sees it against the cap.
 - No request is sent whose input could pass 100K tokens (Haiku's 5x long-context rate): the bound is the last
   reply's input + output tokens + UTF-8 bytes of the new tool results + 2K overhead; over it, fallback `loop_limit`.
+
+## 2026-11-12 — Fixed phrases for yield sources and orchestrator escalations (#82)
+
+- `apps/api/src/yield/service.ts`: a failed source (final block, Burrow, Rhea v1, DCL) stores `failed: <kind>`
+  (`failureKind`); the full error goes to `onError` (the logger). The agents' market notes inherit the clean detail.
+- `packages/orchestrator`: `CYCLE_ABORTED` / `AUDIT_UNAVAILABLE`, `IN_DOUBT_EXECUTION` and `EXECUTION_FAILED`
+  escalation messages and the aborted cycle detail (served as `portfolios[].outcome`) no longer carry the thrown or
+  executor error; it is logged instead.

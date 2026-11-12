@@ -90,7 +90,9 @@ describe('scenario: idempotency', () => {
     const r = await w.orchestrator.runCycle('crash');
     expect(r.status).toBe('execution_in_doubt');
     expect((await w.orchestrator.controlState()).mode).toBe('read_only');
-    expect(w.events.find((e) => e.code === 'IN_DOUBT_EXECUTION')?.severity).toBe('page');
+    expect(w.events.find((e) => e.code === 'IN_DOUBT_EXECUTION')?.message).toBe(
+      'execution result unknown; automation frozen until reconciled',
+    );
     expect((await w.orchestrator.runCycle('after')).status).toBe('read_only');
     expect(w.spies.execute).toBe(1);
   });

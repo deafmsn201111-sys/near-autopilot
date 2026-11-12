@@ -432,12 +432,15 @@ describe('exact yield math', () => {
 
 const enc = (v: unknown) => ({ result: [...Buffer.from(JSON.stringify(v), 'utf8')] });
 
-function fakeRpc(opts: { failRhea?: boolean; failBlock?: boolean } = {}) {
+const NASTY =
+  'GET https://rpc.example/x?key=secret failed: <html><body>502</body></html>\n    at fetch (/app/node_modules/x.js:1:1)';
+
+function fakeRpc(opts: { failRhea?: boolean; failBlock?: boolean; failBurrow?: boolean } = {}) {
   const queries: { account: string; method: string; blockId: unknown }[] = [];
   const rpc = {
     async call(method: string, params: unknown): Promise<unknown> {
       if (method === 'block') {
-        if (opts.failBlock) throw new Error('block unavailable');
+        if (opts.failBlock) throw new Error(NASTY);
         return { header: { height: 500, timestamp_nanosec: `${BLOCK.timestamp.getTime()}000000` } };
       }
       const p = params as { account_id: string; method_name: string; block_id?: unknown };
@@ -447,6 +450,7 @@ function fakeRpc(opts: { failRhea?: boolean; failBlock?: boolean } = {}) {
         return enc({ spec: 'ft-1.0.0', name: p.account_id, symbol: 'X', decimals: d ?? 0 });
       }
       if (p.account_id === 'burrow.near' && p.method_name === 'get_assets_paged_detailed') {
+        if (opts.failBurrow) throw new Error(NASTY);
         const args = JSON.parse(
           Buffer.from((params as { args_base64: string }).args_base64, 'base64').toString(),
         ) as { from_index: number };
@@ -474,7 +478,7 @@ function fakeRpc(opts: { failRhea?: boolean; failBlock?: boolean } = {}) {
         ]);
       }
       if (p.account_id === 'ref.near') {
-        if (opts.failRhea) throw new Error('rhea down');
+        if (opts.failRhea) throw new Error(NASTY);
         if (p.method_name === 'metadata')
           return enc({ version: '1.9.19', state: 'Running', admin_fee_bps: 2000 });
         if (p.method_name === 'get_pool')
@@ -574,6 +578,25 @@ describe('YieldService', () => {
     const c = await s.report();
     expect(c.id).not.toBe(a.id);
     expect(recorded).toEqual([a.id, c.id]);
+  });
+
+  it('a failed source stores a fixed phrase; the upstream text goes to the log only, never to the report or notes', async () => {
+    for (const fail of [{ failBlock: true }, { failBurrow: true, failRhea: true }]) {
+      const logged: string[] = [];
+      const r = await service(fakeRpc(fail).rpc, { onError: (m) => logged.push(m) }).report();
+      const unavailable = r.sources.filter((s) => s.health === 'unavailable');
+      expect(unavailable.map((s) => s.detail)).toEqual([
+        'failed: unknown error',
+        'failed: unknown error',
+      ]);
+      const ctx = yieldContext(r, [accountId(USDC)]);
+      const shown = JSON.stringify([r, ctx.lpNote, [...ctx.yieldNotes.values()]]);
+      for (const leak of ['://', '<html', ' at fetch', 'secret']) expect(shown).not.toContain(leak);
+      expect(ctx.yieldNotes.get(accountId(USDC))).toBe(
+        'SOURCE_UNAVAILABLE: burrow failed: unknown error',
+      );
+      expect(logged.join('\n')).toContain('rpc.example');
+    }
   });
 
   it('a rate-limited RPC (HTTP 429) is retried a bounded number of times, then the source is unavailable', async () => {
