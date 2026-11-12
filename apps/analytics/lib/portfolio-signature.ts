@@ -11,7 +11,7 @@ export const portfolioSignature = (
   holdings: readonly Holding[],
 ): string => {
   const ids = cards.map((c) => c.id).sort();
-  // ponytail: 3 significant digits hide loan interest accrual; a rare rounding-boundary crossing drops the result once
-  const amounts = holdings.map((h) => `${h.where}:${h.symbol}:${h.amount.toPrecision(3)}`).sort();
+  // ponytail: 4 significant digits (as the API's analysisKey) hide loan interest accrual; a rare rounding-boundary crossing drops the result once
+  const amounts = holdings.map((h) => `${h.where}:${h.symbol}:${h.amount.toPrecision(4)}`).sort();
   return [...ids, ...amounts].join('|');
 };
