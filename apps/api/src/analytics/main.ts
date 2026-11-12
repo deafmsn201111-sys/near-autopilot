@@ -42,10 +42,8 @@ const llmEnv = llmEnvSchema.parse(process.env);
 const database = createDatabase(env.DATABASE_URL, { max: 4 });
 // The only process that migrates: the collector waits for this API to be healthy before it starts.
 await runMigrations(database.db);
-const llmLedger = new DrizzleLlmLedger(
-  database.db,
-  BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6)),
-);
+const defaultCapMicro = BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6));
+const llmLedger = new DrizzleLlmLedger(database.db, defaultCapMicro);
 const toolLlm = anthropicToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const pools = env.MARKET_CONFIG_FILE
@@ -96,7 +94,7 @@ const app = buildAnalyticsServer(
           admin: {
             token: env.ADMIN_API_TOKEN,
             store: llmLedger,
-            defaultCapMicro: BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6)),
+            defaultCapMicro,
           },
         }
       : {}),

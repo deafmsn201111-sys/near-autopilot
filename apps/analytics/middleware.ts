@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { contentSecurityPolicy } from './lib/csp';
+import { LOOPBACK_HOST } from './lib/admin-host';
 
-const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/;
 export const isAdminPath = (path: string) => path === '/admin' || path.startsWith('/admin/');
 
 /** A fresh nonce per page response. Next reads it from the request's CSP header and stamps its own scripts. */
@@ -24,5 +24,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|healthz).*)'],
+  // /api included: the admin container's loopback Host check must cover its route handlers too.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|healthz).*)'],
 };

@@ -143,7 +143,7 @@ export default async function AdminPage() {
             max="1000000"
             step="0.01"
             required
-            defaultValue={d?.balanceUsd}
+            placeholder={d ? `${d.leftUsd.toFixed(2)} left by our estimate` : undefined}
           />
         </ControlForm>
       </Section>

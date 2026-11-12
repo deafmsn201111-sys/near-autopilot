@@ -1,5 +1,7 @@
 import 'server-only';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
+import { LOOPBACK_HOST } from './admin-host';
 import { getEnv } from './env';
 
 /** The admin exists only in the loopback admin container (ADMIN_UI=1); everywhere else /admin is a 404. */
@@ -29,6 +31,8 @@ export interface Spend {
 export async function adminApi<T>(path: string, body?: unknown): Promise<T> {
   const token = getEnv().ADMIN_API_TOKEN;
   if (!adminEnabled() || !token) notFound();
+  // Checked here as well as in the middleware: a server action can be posted to a path the middleware skips.
+  if (!LOOPBACK_HOST.test((await headers()).get('host') ?? '')) notFound();
   const res = await fetch(`${getEnv().API_BASE_URL}/v1/admin${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     cache: 'no-store',

@@ -408,10 +408,10 @@ export async function analyseAccount(
     calledTools: [],
   });
   if (!ai) return fallback('off');
+  if (!ctx.ownerVerified) return fallback('not_owner');
   // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
   const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
   if (!enabled) return fallback('kill_switch');
-  if (!ctx.ownerVerified) return fallback('not_owner');
 
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };

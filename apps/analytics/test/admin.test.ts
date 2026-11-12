@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
+let host = '127.0.0.1:3002';
+vi.mock('next/headers', () => ({ headers: async () => new Map([['host', host]]) }));
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
@@ -18,6 +20,7 @@ describe('admin', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.stubEnv('API_BASE_URL', 'http://analytics-api:4000');
     vi.stubEnv('API_TOKEN', API_TOKEN);
+    host = '127.0.0.1:3002';
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -67,6 +70,15 @@ describe('admin', () => {
     vi.stubEnv('ADMIN_API_TOKEN', '');
     const { adminApi } = await import('../lib/admin');
     await expect(adminApi('/spend')).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+
+  it('never calls the admin API for a non-loopback Host (a server action posted past the middleware)', async () => {
+    vi.stubEnv('ADMIN_UI', '1');
+    vi.stubEnv('ADMIN_API_TOKEN', ADMIN_TOKEN);
+    host = 'evil.example:3002';
+    const { adminApi } = await import('../lib/admin');
+    await expect(adminApi('/settings', { llmEnabled: false })).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('sends the admin token, not the public one, to /v1/admin', async () => {

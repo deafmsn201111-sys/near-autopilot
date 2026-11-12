@@ -40,7 +40,7 @@ const usd = (micro: bigint) => Number(micro) / 1e6;
 const micro = (usdAmount: number) => BigInt(Math.round(usdAmount * 1e6));
 const sum = (rows: readonly SpendRow[]) => rows.reduce((t, r) => t + r.costMicroUsd, 0n);
 const dayOf = (d: Date) => d.toISOString().slice(0, 10);
-const utcMidnight = (d: Date) =>
+export const utcMidnight = (d: Date) =>
   new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 export const windowStart = (now: Date) =>
@@ -64,7 +64,12 @@ export function spendSummary(
     return { model, analyses: own.length, usd: usd(sum(own)) };
   });
   const total = sum(inWindow);
-  const dailyAvgUsd = usd(total) / WINDOW_DAYS;
+  // Over the days since the first call in the window, so a new server does not report a 7x lower average.
+  const first = inWindow.reduce<Date | null>((m, r) => (m === null || r.at < m ? r.at : m), null);
+  const spanDays = first
+    ? Math.round((utcMidnight(now).getTime() - utcMidnight(first).getTime()) / DAY_MS) + 1
+    : WINDOW_DAYS;
+  const dailyAvgUsd = usd(total) / spanDays;
   const cap = settings.dailyCapMicroUsd ?? defaultCapMicro;
 
   let deposit = null;
@@ -106,8 +111,8 @@ export function spendSummary(
 const settingsBody = z
   .object({
     llmEnabled: z.boolean().optional(),
-    dailyCapUsd: z.number().positive().max(1000).optional(),
-    depositUsd: z.number().positive().max(1_000_000).optional(),
+    dailyCapUsd: z.number().min(0.01).max(1000).optional(),
+    depositUsd: z.number().min(0.01).max(1_000_000).optional(),
   })
   .strict()
   .refine((b) => Object.keys(b).length > 0, 'nothing to change');

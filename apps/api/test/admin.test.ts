@@ -88,6 +88,11 @@ describe('spendSummary', () => {
     expect(spendSummary(rows, DEFAULTS, 5_000_000n, NOW).deposit).toBeNull();
   });
 
+  it('averages over the days since the first call on a new server', () => {
+    const s = spendSummary([row('2026-11-12T09:00:00Z', 2_000_000n)], DEFAULTS, 5_000_000n, NOW);
+    expect(s.dailyAvgUsd).toBe(2);
+  });
+
   it('has no average with no analyses', () => {
     expect(spendSummary([], DEFAULTS, 5_000_000n, NOW).avgPerAnalysisUsd).toBeNull();
   });
@@ -186,6 +191,8 @@ describe('/v1/admin', () => {
     { dailyCapUsd: -1 },
     { dailyCapUsd: 1001 },
     { depositUsd: 0 },
+    { depositUsd: 1e-7 },
+    { dailyCapUsd: 1e-7 },
     { depositUsd: 1_000_001 },
     { llmEnabled: 'no' },
     { extra: 1 },

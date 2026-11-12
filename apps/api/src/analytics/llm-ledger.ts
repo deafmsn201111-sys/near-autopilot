@@ -1,11 +1,14 @@
 import { eq, gte, llmCalls, llmSettings, lt, sql, type Database } from '@near-autopilot/db';
-import type { AdminStore, LlmSettings, SettingsPatch, SpendRow } from './admin';
+import {
+  utcMidnight,
+  type AdminStore,
+  type LlmSettings,
+  type SettingsPatch,
+  type SpendRow,
+} from './admin';
 import type { LlmCallRecord, LlmLedger } from './ai-analysis';
 
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
-
-const utcMidnight = (d: Date) =>
-  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 /** PostgreSQL spend ledger and admin settings of the central LLM (migrations 0018, 0019). */
 export class DrizzleLlmLedger implements LlmLedger, AdminStore {
