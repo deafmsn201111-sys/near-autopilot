@@ -19,6 +19,8 @@ describe('runAnalysis', () => {
         ok: true,
         text: 'Health factor 1.37 → 1.60 after repaying 33.125 USDt',
         provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 1,
       },
       {
         tool: 'capital_allocator',
@@ -26,13 +28,16 @@ describe('runAnalysis', () => {
         ok: false,
         text: 'Failed',
         provenance: null,
+        pick: null,
+        rank: null,
       },
     ];
-    reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace });
+    const run = { model: 'claude-haiku-5-5', turns: 2, toolCalls: 5, ms: 6200 };
+    reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
     const r = await runAnalysis('alice.near');
     expect(r).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace },
+      analysis: { ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run },
     });
   });
 
@@ -40,7 +45,7 @@ describe('runAnalysis', () => {
     reply(base);
     expect(await runAnalysis('alice.near')).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: [], trace: [] },
+      analysis: { ...base, calledTools: [], trace: [], run: null },
     });
   });
 
@@ -51,7 +56,7 @@ describe('runAnalysis', () => {
     });
     const r = await runAnalysis('alice.near');
     expect(r.ok && r.analysis.trace).toEqual([
-      { tool: 'x', agent: 'X', ok: true, text: 'y', provenance: null },
+      { tool: 'x', agent: 'X', ok: true, text: 'y', provenance: null, pick: null, rank: null },
     ]);
   });
 });

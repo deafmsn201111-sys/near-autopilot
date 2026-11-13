@@ -290,3 +290,6 @@ no longer said what comes first.
   `insufficient_data` instead of `healthy`.
 - `apps/analytics`: the analysis schema accepts `trace` and `calledTools` (both optional for older replies); a "How the
   AI got here" block under the badge, with the provenance label per line, or the plain list of called tools.
+- Each trace line also says what became of its card (`pick`: ranked / kept by code / left out, and `rank`); a card
+  the model left out still shows its number, labelled as left out. The guardian line names the debt token missing
+  from the wallet when it cannot size a repayment. `run` summarises the model run (model, turns, tool calls, ms).

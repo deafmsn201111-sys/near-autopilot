@@ -287,6 +287,8 @@ describe('analyseAccount', () => {
         ok: true,
         text: 'Health factor 1.37 → 1.60 after repaying 33.125 USDt',
         provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 1,
       },
       {
         tool: 'capital_allocator',
@@ -294,6 +296,8 @@ describe('analyseAccount', () => {
         ok: true,
         text: 'Supply 100 USDt at about 8.0% a year',
         provenance: 'protocol_reported',
+        pick: 'ranked',
+        rank: 2,
       },
       {
         tool: 'market_intelligence',
@@ -301,6 +305,8 @@ describe('analyseAccount', () => {
         ok: true,
         text: 'Largest gap to a second price source: 0.00% (wNEAR)',
         provenance: 'external_market',
+        pick: null,
+        rank: null,
       },
       {
         tool: 'portfolio_concentration',
@@ -308,6 +314,8 @@ describe('analyseAccount', () => {
         ok: true,
         text: heuristic.title,
         provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 3,
       },
       {
         tool: 'liquidity_positions',
@@ -315,6 +323,8 @@ describe('analyseAccount', () => {
         ok: true,
         text: 'No position out of range; nothing to do',
         provenance: null,
+        pick: null,
+        rank: null,
       },
     ]);
     const card = out.recommendations.find((r) => r.id === REPAY);
@@ -345,6 +355,8 @@ describe('analyseAccount', () => {
         ok: false,
         text: 'Failed',
         provenance: null,
+        pick: null,
+        rank: null,
       },
       {
         tool: 'portfolio_concentration',
@@ -352,6 +364,8 @@ describe('analyseAccount', () => {
         ok: true,
         text: heuristic.title,
         provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 1,
       },
     ]);
   });
@@ -396,11 +410,51 @@ describe('analyseAccount', () => {
       checks: [heuristic],
     });
     expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
-      'Health factor 1.37 is below target; no repayment from the wallet could be sized',
+      'Health factor 1.37 is below target; no USDt in the wallet to repay with',
     );
   });
 
-  it('shows no number for a card the model left out', async () => {
+  it('marks a loan warning the model left out as kept by code', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')).toMatchObject({
+      pick: 'kept',
+      rank: 1,
+    });
+  });
+
+  it('summarises the run: model, turns, tool calls and time', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.run).toEqual({
+      model: 'claude-haiku-5-5',
+      turns: 2,
+      toolCalls: 5,
+      ms: expect.any(Number) as number,
+    });
+    const off = await analyseAccount(null, {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(off.run).toBeNull();
+  });
+
+  it('shows what the model left out, marked as left out', async () => {
     const { llm } = fake([
       () => callAll,
       () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
@@ -411,8 +465,9 @@ describe('analyseAccount', () => {
       checks: [heuristic],
     });
     expect(out.trace.find((t) => t.tool === 'capital_allocator')).toMatchObject({
-      text: 'Suggested an action the AI left out',
-      provenance: null,
+      text: 'Supply 100 USDt at about 8.0% a year',
+      pick: 'left_out',
+      rank: null,
     });
   });
 

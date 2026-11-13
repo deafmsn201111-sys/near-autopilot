@@ -1476,6 +1476,14 @@ main.page {
 .ai-trace .failed {
   color: var(--critical);
 }
+.ai-pick {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--good-text);
+}
+.ai-pick.left_out {
+  color: var(--muted);
+}
 .link {
   color: var(--accent);
   text-decoration: none;

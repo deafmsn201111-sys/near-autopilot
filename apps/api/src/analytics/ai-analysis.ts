@@ -160,6 +160,16 @@ export interface Analysis {
   readonly calledTools: readonly string[];
   /** One line per agent the model called, in call order; empty for the rule-based list. */
   readonly trace: readonly TraceStep[];
+  /** The model run behind an AI ranking; null for the rule-based list. */
+  readonly run: RunSummary | null;
+}
+
+export interface RunSummary {
+  readonly model: LlmModel;
+  /** Model calls. */
+  readonly turns: number;
+  readonly toolCalls: number;
+  readonly ms: number;
 }
 
 /** A called agent's key number as a short line built on the server: raw tool output never reaches the browser. */
@@ -170,9 +180,17 @@ export interface TraceStep {
   readonly text: string;
   /** Null when the line carries no number. */
   readonly provenance: ProvenanceTier | null;
+  /**
+   * What became of the card this line is about: ranked by the model, kept by code (a warning the model left out), or
+   * left out by the model. Null when the agent produced no card.
+   */
+  readonly pick: 'ranked' | 'kept' | 'left_out' | null;
+  /** The card's position in the list the user sees. */
+  readonly rank: number | null;
 }
 
 type StepLine = Pick<TraceStep, 'text' | 'provenance'>;
+const NO_PICK = { pick: null, rank: null } as const;
 /** Per tool: a line for each card it produced (the trace shows the one the model ranked highest), else `none`. */
 type Steps = Map<string, { none: StepLine; byCandidate: Map<string, StepLine> }>;
 
@@ -184,7 +202,6 @@ const AGENTS: Readonly<Record<string, string>> = {
   liquidity_positions: 'Liquidity Optimizer',
 };
 
-const LEFT_OUT: StepLine = { text: 'Suggested an action the AI left out', provenance: null };
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The orchestrator config the agents run with on a wallet: idle supply on, every priced Burrow token allowed. */
@@ -295,8 +312,14 @@ function guardianTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
-      const hasDebt = (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n);
+      const debts = (obs.snapshot.lending?.borrowed ?? []).filter((b) => b.raw > 0n);
+      const hasDebt = debts.length > 0;
       const safe = obs.risk.level === 'healthy' || obs.risk.level === 'none';
+      const inWallet = (token: TokenId) =>
+        obs.snapshot.walletBalances.some((b) => b.token === token && b.raw > 0n);
+      const noRepayWhy = debts.some((d) => inWallet(d.token))
+        ? 'no repayment from the wallet could be sized'
+        : `no ${debts.map((d) => modelTokenLabel(d.token)).join(' or ')} in the wallet to repay with`;
       steps.set('liquidation_guardian', {
         none:
           hf === null
@@ -306,7 +329,7 @@ function guardianTool(
             : {
                 text: safe
                   ? `Health factor ${hf}; nothing to do`
-                  : `Health factor ${hf} is below target; no repayment from the wallet could be sized`,
+                  : `Health factor ${hf} is below target; ${noRepayWhy}`,
                 provenance: 'calculated_estimate',
               },
         byCandidate,
@@ -447,7 +470,8 @@ function walletTool(
     run: async () => {
       const candidates = heuristics.filter((h) => h.kind === kind);
       for (const c of candidates) found.set(c.id, c);
-      steps.set(name, { none: line(candidates), byCandidate: new Map() });
+      const l = line(candidates);
+      steps.set(name, { none: l, byCandidate: new Map(candidates.map((c) => [c.id, l])) });
       return { candidates };
     },
   };
@@ -523,6 +547,7 @@ export async function analyseAccount(
     recommendations: ctx.heuristics,
     calledTools: [],
     trace: [],
+    run: null,
   });
   if (!ai) return fallback('off');
   if (!ctx.ownerVerified) return fallback('not_owner');
@@ -750,6 +775,7 @@ export async function analyseAccount(
       warnings.findIndex((o) => o.kind === w.kind) === i,
   );
   recommendations.unshift(...missing);
+  const kept = new Set(missing.map((m) => m.id));
   await record('ok');
   const analysis: Analysis = {
     source: 'llm',
@@ -757,7 +783,13 @@ export async function analyseAccount(
     note: null,
     recommendations,
     calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
-    trace: traceSteps(trace, steps, recommendations),
+    trace: traceSteps(trace, steps, recommendations, kept),
+    run: {
+      model: ai.model,
+      turns: usage.calls,
+      toolCalls: trace.length,
+      ms: Date.now() - startedAt.getTime(),
+    },
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });
   return analysis;
@@ -767,14 +799,24 @@ export async function analyseAccount(
 function traceSteps(
   trace: readonly ToolTraceEntry[],
   steps: Steps,
-  ranked: readonly PortfolioRecommendation[],
+  shown: readonly PortfolioRecommendation[],
+  kept: ReadonlySet<string>,
 ): TraceStep[] {
   const line = (tool: string) => {
     const entry = steps.get(tool);
     if (!entry || !trace.some((t) => t.tool === tool && t.ok)) return undefined;
-    const top = ranked.find((r) => entry.byCandidate.has(r.id));
-    if (top) return entry.byCandidate.get(top.id);
-    return entry.byCandidate.size > 0 ? LEFT_OUT : entry.none;
+    const rank = shown.findIndex((r) => entry.byCandidate.has(r.id));
+    const card = shown[rank];
+    if (card)
+      return {
+        ...entry.byCandidate.get(card.id)!,
+        pick: kept.has(card.id) ? ('kept' as const) : ('ranked' as const),
+        rank: rank + 1,
+      };
+    const [first] = entry.byCandidate.values();
+    return first
+      ? { ...first, pick: 'left_out' as const, rank: null }
+      : { ...entry.none, ...NO_PICK };
   };
   return [...new Set(trace.map((t) => t.tool))].flatMap((tool) => {
     const agent = AGENTS[tool];
@@ -783,7 +825,7 @@ function traceSteps(
     return [
       step
         ? { tool, agent, ok: true, ...step }
-        : { tool, agent, ok: false, text: 'Failed', provenance: null },
+        : { tool, agent, ok: false, text: 'Failed', provenance: null, ...NO_PICK },
     ];
   });
 }

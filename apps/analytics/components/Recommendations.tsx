@@ -1,7 +1,7 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useState } from 'react';
-import { runAnalysis, type Analysis } from '../lib/analysis-client';
+import { runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
@@ -122,6 +122,12 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
   return (
     <div className="ai-trace">
       <h3>How the AI got here</h3>
+      {analysis.run && (
+        <p className="muted-note">
+          {analysis.run.model} · {analysis.run.toolCalls} agent calls · {analysis.run.turns} model
+          turns · {(analysis.run.ms / 1000).toFixed(1)} s
+        </p>
+      )}
       <ul>
         {analysis.trace.map((step) => {
           const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
@@ -133,10 +139,16 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
                   {info.label}
                 </span>
               )}
+              {step.pick && <span className={`ai-pick ${step.pick}`}>{pickLabel(step)}</span>}
             </li>
           );
         })}
       </ul>
     </div>
   );
+}
+
+function pickLabel({ pick, rank }: TraceStep): string {
+  if (pick === 'left_out') return 'left out by the AI';
+  return pick === 'kept' ? `#${rank} · kept by code` : `#${rank} in the AI ranking`;
 }

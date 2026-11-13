@@ -200,7 +200,9 @@ needs a 24 h volume source), and the allocator's swap proposals and the guardian
 
 Under **AI-ranked**, **How the AI got here** lists each agent the model called, one line each with its key number
 (health factor before and after the repayment, the supply rate, the largest gap between two price sources, the
-concentration share, positions out of range) and that number's provenance label. The line is built on the server
+concentration share, positions out of range) and that number's provenance label, plus what became of its card
+(its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
+summary of the run (model, agent calls, model turns, time). The line is built on the server
 from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
 it says so; it never reports "healthy" without a comparison.
 

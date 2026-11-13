@@ -27,6 +27,15 @@ const traceStepSchema = z.object({
   text: z.string(),
   // A tier this build does not know drops only the label, not the whole analysis.
   provenance: z.enum(PROVENANCE_TIERS).nullable().catch(null),
+  pick: z.enum(['ranked', 'kept', 'left_out']).nullable().catch(null),
+  rank: z.number().int().positive().nullable().catch(null),
+});
+
+const runSchema = z.object({
+  model: z.string(),
+  turns: z.number(),
+  toolCalls: z.number(),
+  ms: z.number(),
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;
@@ -47,6 +56,7 @@ const analysisSchema = z.object({
   ),
   calledTools: z.array(z.string()).default([]),
   trace: z.array(traceStepSchema).default([]),
+  run: runSchema.nullable().catch(null),
 });
 
 export type Analysis = {
@@ -55,6 +65,7 @@ export type Analysis = {
   recommendations: AccountRecommendation[];
   calledTools: string[];
   trace: TraceStep[];
+  run: z.infer<typeof runSchema> | null;
 };
 
 export async function runAnalysis(
