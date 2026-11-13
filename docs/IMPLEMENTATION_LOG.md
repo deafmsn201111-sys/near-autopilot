@@ -383,3 +383,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics`: strategy picker on "Your account" (URL param, then a per-account cookie), the preset in the
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
+
+## 2026-11-13 — Incoming NEAR transfers refresh "Your account" (#117)
+
+- `apps/analytics/lib/account-signal.ts`: the watcher's snapshot is now max access-key nonce + native balance (two
+  parallel `optimistic` RPC queries); `AccountWatcher` refreshes on any change, so a received NEAR transfer shows the
+  "Transaction seen" note and the new balance within one tick (D20 amendment). Incoming tokens stay out of scope.

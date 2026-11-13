@@ -343,6 +343,10 @@ finality, before the new state was readable.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
   one below 4 significant digits) shows the note for the full ~15 s.
+  **Amendment (#117):** the watcher's snapshot is the highest access-key nonce plus the native balance (`view_account`
+  `amount`), two RPC calls per 6 s tick instead of one, so an incoming NEAR transfer triggers the same refresh. An own
+  transaction moves both in one tick and refreshes once. Incoming fungible tokens are not watched (no cheap
+  per-account signal); they show on the next cache expiry.
 
 ## D21 — One-click actions start at $1
 
