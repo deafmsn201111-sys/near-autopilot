@@ -91,6 +91,7 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
       LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; different from API_TOKEN)}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     volumes:
       - ./checkpoints:/checkpoints:ro
@@ -113,6 +114,22 @@ services:
       default: {}
       beta-edge:
         aliases: [beta-analytics]
+
+  # The beta admin stays on host loopback. Open it through SSH; never route it through the public Caddy site.
+  analytics-admin:
+    image: near-autopilot-analytics:beta
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      analytics-api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://analytics-api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; different from API_TOKEN)}
+      ADMIN_UI: '1'
+    ports:
+      - '127.0.0.1:3004:3000'
 
 volumes:
   pgdata:
