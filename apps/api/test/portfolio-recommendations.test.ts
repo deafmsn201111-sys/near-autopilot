@@ -3,6 +3,7 @@ import { STRATEGIES } from '@near-autopilot/core';
 import { modelTokenLabel } from '../src/thesis/labels';
 import {
   concentratedToken,
+  keepsProfitableLoan,
   loanHealth,
   portfolioAdvice,
   strategyNote,
@@ -119,6 +120,37 @@ describe('portfolioRecommendations', () => {
         }),
       );
       expect(r.find((x) => x.kind === 'improve_loan_safety')?.intent).toBeNull();
+    });
+
+    it('shows what the loan costs next to what the Burrow deposits earn, with provenance', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: demoLoan,
+          largestDebt: demoDebt,
+          carry: { borrowAprPct: 6.5, loanMonthlyUsd: 0.21, depositsMonthlyUsd: 0.19 },
+        }),
+      );
+      const l = r.find((x) => x.kind === 'improve_loan_safety');
+      expect(l?.carry).toEqual({
+        text: 'Loan costs 6.5% a year (≈ $0.21/month); your Burrow deposits earn ≈ $0.19/month.',
+        provenance: 'calculated_estimate',
+      });
+      expect(l?.why).not.toMatch(
+        /loan (itself )?is (the )?(problem|bad)|close the loan|closes the loop/i,
+      );
+    });
+
+    it('says "rate unavailable" for a missing rate, never 0', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: demoLoan,
+          largestDebt: demoDebt,
+          carry: { borrowAprPct: null, loanMonthlyUsd: null, depositsMonthlyUsd: null },
+        }),
+      );
+      const text = r.find((x) => x.kind === 'improve_loan_safety')?.carry?.text;
+      expect(text).toBe('Loan rate unavailable; deposit rate unavailable.');
+      expect(text).not.toMatch(/\$0|0\.0%/);
     });
 
     it('says nothing about the loan above the watch line', () => {
@@ -508,5 +540,28 @@ describe('strategyNote', () => {
     const loan = { ...demoLoan, collateralDropToLiquidation: 0.22 };
     expect(strategyNote(ctx({ loan, largestDebt: demoDebt }), loan)).toBeNull();
     expect(strategyNote(ctx({ metrics: nearAt(70) }), noLoan)).toBeNull();
+  });
+});
+
+describe('keepsProfitableLoan', () => {
+  const carry = { borrowAprPct: 3, loanMonthlyUsd: 1, depositsMonthlyUsd: 2 };
+  const safe = { ...demoLoan, healthFactor: 2.2 };
+  it('keeps a safe loan whose deposits earn more than it costs: no repay is offered', () => {
+    expect(keepsProfitableLoan(ctx({ loan: safe, carry }), STRATEGIES.balanced)).toBe(true);
+  });
+  it('does not when the health factor is under the safe line, the carry is negative or a rate is missing', () => {
+    expect(keepsProfitableLoan(ctx({ loan: demoLoan, carry }), STRATEGIES.balanced)).toBe(false);
+    expect(
+      keepsProfitableLoan(
+        ctx({ loan: safe, carry: { ...carry, depositsMonthlyUsd: 0.5 } }),
+        STRATEGIES.balanced,
+      ),
+    ).toBe(false);
+    expect(
+      keepsProfitableLoan(
+        ctx({ loan: safe, carry: { ...carry, loanMonthlyUsd: null } }),
+        STRATEGIES.balanced,
+      ),
+    ).toBe(false);
   });
 });
