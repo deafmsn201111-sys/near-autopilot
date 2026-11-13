@@ -37,6 +37,19 @@ describe('portfolioRecommendations', () => {
     expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 400 });
   });
 
+  it('sizes the concentration swap to what is in the wallet, not what is staked or in a pool', () => {
+    const at = (liquidUsd: number) =>
+      portfolioRecommendations(
+        ctx({
+          metrics: metrics({ concentration: { token: 'near', symbol: 'NEAR', pct: 90 } }),
+          concentrationLiquidUsd: liquidUsd,
+        }),
+      ).find((x) => x.kind === 'reduce_concentration');
+    expect(at(150)?.intent).toEqual({ action: 'swap', fromToken: 'near', approxUsd: 150 });
+    expect(at(150)?.why).toContain('$150');
+    expect(at(0.4)).toBeUndefined();
+  });
+
   it('warns on a low health factor with a repay intent on the largest debt', () => {
     const r = portfolioRecommendations(
       ctx({

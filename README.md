@@ -307,6 +307,14 @@ $5,000) are simulated and labelled as such.
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
+- **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from
+  FastNEAR's `/v1/account/{id}/full`), Burrow, Rhea v1 liquidity in any pool (pool ids from `api.ref.finance`, shares
+  read on-chain), Rhea DCL positions, liquid staking and NEAR staked with validator pools (balances read on-chain).
+  Tokens on our list are priced with the collector's confirmed prices; any other token is marked **Unverified**,
+  priced as an estimate from Rhea's indexer (or "no price", kept out of the totals), shown only and never used in a
+  suggestion or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
+  every unpriced unverified token, sits behind "Show small balances". When an indexer is down, the page says so and
+  shows the allowlisted tokens and pools only.
 - **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
   site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs
   money per run) is only for a visitor who signs a short NEP-413 message in the wallet. It is not a transaction:

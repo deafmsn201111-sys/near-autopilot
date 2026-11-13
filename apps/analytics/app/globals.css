@@ -3066,3 +3066,33 @@ main.page {
 .actions-list:has(> .action:only-child) > .action {
   flex: 1 1 auto;
 }
+
+/* ---- holdings: unverified badge, "show all" and "show small balances" ---- */
+.ht-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--grid);
+  vertical-align: middle;
+}
+.ht-more summary,
+.ht-small summary {
+  cursor: pointer;
+  padding: 14px 26px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ht-more[open] summary {
+  border-bottom: 1px solid var(--grid);
+}
+.ht-small {
+  margin-top: 12px;
+}
+.ht-small summary {
+  padding: 8px 4px;
+}
