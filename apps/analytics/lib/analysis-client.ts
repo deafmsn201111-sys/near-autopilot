@@ -76,6 +76,9 @@ const analysisSchema = z.object({
       title: z.string(),
       why: z.string(),
       intent: intentSchema.nullable(),
+      carry: z
+        .object({ text: z.string(), provenance: z.literal('calculated_estimate') })
+        .optional(),
     }),
   ),
   calledTools: z.array(z.string()).default([]),

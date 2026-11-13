@@ -257,7 +257,7 @@ export function walletAgentConfig(
 /** Our own enum and numbers only: safe to put in the prompt. */
 function strategyLine(id: StrategyId): string {
   const s = STRATEGIES[id];
-  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). Weigh the candidates for that strategy.`;
+  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). A loan is not a problem by itself: when you suggest a repayment, the reason is the health factor, never the loan. Weigh the candidates for that strategy.`;
 }
 
 const SYSTEM = [
@@ -327,6 +327,7 @@ function guardianTool(
   steps: Steps,
 ): LoopTool {
   const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
+  const carry = checks.find((c) => c.kind === 'improve_loan_safety')?.carry;
   return {
     spec: {
       name: 'liquidation_guardian',
@@ -377,6 +378,7 @@ function guardianTool(
             amount: p.amount.toString(),
             ...sizingFor(loanCards, p.token),
           },
+          ...(carry && { carry }),
         });
       }
       candidates.push(...fromCollateral);

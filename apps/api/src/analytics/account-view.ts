@@ -546,6 +546,15 @@ export interface PortfolioRecommendation {
   readonly why: string;
   /** The parameterised intent the transaction engine turns into a cascade to sign; null = advice with no button. */
   readonly intent: RecommendationIntent | null;
+  /** Loan cards: what the loan costs against what the Burrow deposits earn, so a profitable loan never reads as bad. */
+  readonly carry?: { readonly text: string; readonly provenance: 'calculated_estimate' };
+}
+
+/** Today's rates on the Burrow position; a figure is null when a position of $1 or more has no current rate. */
+export interface LoanCarry {
+  readonly borrowAprPct: number | null;
+  readonly loanMonthlyUsd: number | null;
+  readonly depositsMonthlyUsd: number | null;
 }
 
 /** A token's Burrow-side numbers in whole tokens, for sizing a repay or a withdrawal. */
@@ -584,6 +593,8 @@ export interface RecommendationContext {
     readonly collateral: number;
     readonly aprPct: number | null;
   })[];
+  /** borrowAprPct is the largest debt's rate. */
+  readonly carry?: LoanCarry;
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
     lptId: string;
@@ -628,7 +639,10 @@ export function portfolioAdvice(
     ctx.largestDebt &&
     ctx.largestDebt.usd >= 0.01
   )
-    recs.push(loanSafety(ctx.loan, hf, ctx.largestDebt, strategy));
+    recs.push({
+      ...loanSafety(ctx.loan, hf, ctx.largestDebt, strategy),
+      ...(ctx.carry && { carry: carryLine(ctx.carry) }),
+    });
 
   // 2. Reduce single-asset concentration, swapping only what the wallet holds.
   const c = ctx.metrics.concentration;
@@ -706,11 +720,35 @@ export function portfolioAdvice(
   return { recommendations: recs, skipped };
 }
 
+export function carryLine(c: LoanCarry): NonNullable<PortfolioRecommendation['carry']> {
+  const loan =
+    c.borrowAprPct === null || c.loanMonthlyUsd === null
+      ? 'Loan rate unavailable'
+      : `Loan costs ${c.borrowAprPct.toFixed(1)}% a year (≈ ${money2(c.loanMonthlyUsd)}/month)`;
+  const deposits =
+    c.depositsMonthlyUsd === null
+      ? 'deposit rate unavailable'
+      : `your Burrow deposits earn ≈ ${money2(c.depositsMonthlyUsd)}/month`;
+  return { text: `${loan}; ${deposits}.`, provenance: 'calculated_estimate' };
+}
+
+/** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
+export function keepsProfitableLoan(ctx: RecommendationContext, strategy: Strategy): boolean {
+  const hf = ctx.loan?.healthFactor ?? null;
+  const loan = ctx.carry?.loanMonthlyUsd ?? null;
+  const deposits = ctx.carry?.depositsMonthlyUsd ?? null;
+  return (
+    hf !== null && hf >= strategy.healthyAt && loan !== null && deposits !== null && deposits > loan
+  );
+}
+
 /** The token a concentration card may name: the largest one we can act on, never a stablecoin. */
 export const concentratedToken = <T extends { readonly token: string }>(
   byToken: readonly T[],
   actionable: (token: string) => boolean,
 ): T | undefined => byToken.find((b) => actionable(b.token) && !STABLES.has(b.token));
+
+const REPAY_ACTION = 'repay-';
 
 const DANGER_HF = ORCH.risk.dangerBelowBps / 10_000;
 
@@ -917,6 +955,7 @@ function withdrawable(
 /** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
 interface WalletBody {
   readonly holdings: readonly { readonly token: string; readonly verified: boolean }[];
+  readonly actions: readonly PortfolioAction[];
   readonly [field: string]: unknown;
 }
 type AccountBody = WalletBody & { readonly recommendations: readonly PortfolioRecommendation[] };
@@ -1030,10 +1069,14 @@ export function registerAccountView(
   const withStrategy = (entry: CachedAccount, strategyId: StrategyId) => {
     const strategy = STRATEGIES[strategyId];
     const { recommendations, skipped } = portfolioAdvice(entry.checks.user, strategy);
+    const keepLoan = keepsProfitableLoan(entry.checks.user, strategy);
     return {
       status: 200 as const,
       body: {
         ...entry.body,
+        actions: keepLoan
+          ? entry.body.actions.filter((a) => !a.id.startsWith(REPAY_ACTION))
+          : entry.body.actions,
         strategy: strategyId,
         recommendations,
         skipped,
@@ -1197,7 +1240,7 @@ export function registerAccountView(
       if (!idle?.usd || !debt.usd || b === null) continue;
       const repay = Math.min(idle.usd, debt.usd);
       add({
-        id: `repay-${debt.token}`,
+        id: `${REPAY_ACTION}${debt.token}`,
         kind: 'keep',
         title: `Repay ${money(repay)} of your ${debt.symbol} loan`,
         summary: `The loan costs ${(b * 100).toFixed(1)}% a year and you hold idle ${debt.symbol} in the wallet. Repaying saves that interest and makes the loan safer.`,
@@ -1340,15 +1383,22 @@ export function registerAccountView(
     actions.sort((a, b) => (b.netUsd ?? -Infinity) - (a.netUsd ?? -Infinity));
 
     // What the current Burrow position earns or costs per month at today's rates (deposits earn, loans cost).
-    let monthly = 0;
+    let loanMonthly = 0;
+    let depositsMonthly = 0;
     const noRate: string[] = [];
+    const noRateOn = new Set<'borrowed' | 'supplied'>();
     for (const h of v.holdings) {
       // dust (under $1) in dead markets would only block the figure; larger positions without a rate are named
       if (h.where === 'wallet' || h.usd === null || h.usd < 1) continue;
-      const r = rate(h.token, h.where === 'borrowed' ? 'borrowApr' : 'netSupplyApr');
-      if (r === null) noRate.push(h.symbol);
-      else monthly += (h.where === 'borrowed' ? -1 : 1) * h.usd * r * H;
+      const borrowed = h.where === 'borrowed';
+      const r = rate(h.token, borrowed ? 'borrowApr' : 'netSupplyApr');
+      if (r === null) {
+        noRate.push(h.symbol);
+        noRateOn.add(borrowed ? 'borrowed' : 'supplied');
+      } else if (borrowed) loanMonthly += h.usd * r * H;
+      else depositsMonthly += h.usd * r * H;
     }
+    const monthly = depositsMonthly - loanMonthly;
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
     const v1PoolIds = [...new Set([...deps.pools.map((p) => p.poolId), ...(foundPools ?? [])])];
     const [dclPositions, v1Positions, staking, nativeStaking] = await Promise.all([
@@ -1434,6 +1484,12 @@ export function registerAccountView(
         )
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+    const debtApr = debts[0] ? rate(debts[0].token, 'borrowApr') : null;
+    const carry: LoanCarry = {
+      borrowAprPct: debtApr === null ? null : debtApr * 100,
+      loanMonthlyUsd: noRateOn.has('borrowed') ? null : loanMonthly,
+      depositsMonthlyUsd: noRateOn.has('supplied') ? null : depositsMonthly,
+    };
     const loan = {
       // any borrowed entry counts, priced or not: an unpriced loan must not read as "nothing borrowed"
       hasDebt: v.holdings.some((h) => h.where === 'borrowed'),
@@ -1455,6 +1511,7 @@ export function registerAccountView(
       idleEarn,
       largestDebt,
       burrowBalances,
+      carry,
       dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
@@ -1476,6 +1533,7 @@ export function registerAccountView(
       idleEarn: idleEarn.map(labelled),
       largestDebt: largestDebt && labelled(largestDebt),
       burrowBalances: burrowBalances.map(labelled),
+      carry,
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     };
 
