@@ -343,9 +343,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         />
         <span className="sync-note">
           <span className="dot" aria-hidden="true" />
-          {isAccount
-            ? 'Synced from mainnet · just now'
-            : `Demo portfolio · updated ${ago(data.asOf)}`}
+          {isAccount ? 'Synced from mainnet · just now' : `Updated ${ago(data.asOf)}`}
         </span>
       </div>
 
@@ -359,7 +357,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       <section className="hero">
         <div className="hero-main">
           <span className="eyebrow">Net worth</span>
-          <div className="hero-mode" role="status">
+          <div className="hero-mode">
             <span className={`hero-live ${mode.mine ? 'is-live' : ''}`}>
               <span className="dot" aria-hidden="true" />
               {mode.label}

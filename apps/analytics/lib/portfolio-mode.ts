@@ -27,23 +27,22 @@ export function portfolioMode({
     };
 
   const ai = verified ? ' AI analysis available.' : '';
+  const signingOff = 'Prepare only: signing is off on this server.';
   if (!connected || connected !== account) {
     const whose = connected ? `This is not your connected wallet (${connected}). ` : '';
     return {
       label: 'Mainnet account · read-only',
-      note: `${whose}Prepare only: the account's owner signs in their own wallet.${ai}`,
+      note: `${whose}${signingEnabled ? "Prepare only: the account's owner signs in their own wallet." : signingOff}${ai}`,
       mine: false,
     };
   }
 
-  const act = signingEnabled
-    ? 'Prepare and sign in your wallet.'
-    : 'Prepare only: signing is off on this server.';
+  const act = signingEnabled ? 'Prepare and sign in your wallet.' : signingOff;
   return verified
     ? { label: 'Your wallet · ownership verified', note: `${act}${ai}`, mine: true }
     : {
         label: 'Your wallet',
-        note: `${act} Verify ownership below to unlock AI analysis.`,
+        note: `${act} Verify ownership to unlock AI analysis.`,
         mine: true,
       };
 }

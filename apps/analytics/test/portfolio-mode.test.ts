@@ -38,6 +38,12 @@ describe('portfolioMode', () => {
     expect(m.note).toMatch(/AI analysis available/);
   });
 
+  it('a typed account with signing off on this server does not promise signing', () => {
+    const m = portfolioMode({ ...base, signingEnabled: false });
+    expect(m.note).toMatch(/signing is off/i);
+    expect(m.note).not.toMatch(/signs in their own wallet/);
+  });
+
   it('the connected wallet, not verified', () => {
     const m = portfolioMode({ ...base, connected: 'alice.near' });
     expect(m.label).toBe('Your wallet');
