@@ -16,7 +16,9 @@ export const MAINNET_SIGNING = 'owner-wallet-only' as const;
 
 let connector: NearConnector | null = null;
 const listeners = new Set<(accountId: string | null) => void>();
+let accountEventVersion = 0;
 const emit = (id: string | null) => {
+  accountEventVersion += 1;
   for (const l of listeners) l(id);
 };
 
@@ -47,7 +49,12 @@ export async function currentAccount(): Promise<string | null> {
 /** Calls `onChange` now and on every sign-in / sign-out. Returns an unsubscribe function. */
 export function watchAccount(onChange: (accountId: string | null) => void): () => void {
   listeners.add(onChange);
-  void currentAccount().then(onChange);
+  // A sign-in/sign-out event can arrive while the initial wallet query is pending. Do not let
+  // that older query overwrite the newer event (most visibly, a connected wallet with a stale null).
+  const versionAtStart = accountEventVersion;
+  void currentAccount().then((id) => {
+    if (versionAtStart === accountEventVersion) onChange(id);
+  });
   return () => {
     listeners.delete(onChange);
   };

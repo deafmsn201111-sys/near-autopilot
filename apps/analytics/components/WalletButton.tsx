@@ -25,6 +25,7 @@ function rememberAccount(id: string | null): boolean {
  */
 export function WalletButton() {
   const [account, setAccount] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
   const [state, setState] = useState<'idle' | 'connecting' | 'opening'>('idle');
   const router = useRouter();
 
@@ -34,12 +35,18 @@ export function WalletButton() {
     () =>
       watchAccount((id) => {
         setAccount(id);
+        setReady(true);
         if (rememberAccount(id)) router.refresh();
       }),
     [router],
   );
 
-  if (state === 'opening') return <span className="wallet-chip muted-note">One moment…</span>;
+  if (state === 'opening' || !ready)
+    return (
+      <span className="wallet-chip muted-note">
+        {state === 'opening' ? 'One moment…' : 'Checking wallet…'}
+      </span>
+    );
   if (account)
     return (
       <span className="wallet-chip">

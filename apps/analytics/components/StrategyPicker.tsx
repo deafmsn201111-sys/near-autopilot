@@ -1,6 +1,5 @@
 'use client';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { STRATEGIES, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import { saveStrategy } from '../app/account-actions';
@@ -15,7 +14,6 @@ export function StrategyPicker({
   current: StrategyId;
   note?: string | null;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const href = (id: StrategyId) =>
     `/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`;
@@ -36,7 +34,9 @@ export function StrategyPicker({
                 e.preventDefault();
                 startTransition(async () => {
                   await saveStrategy(account, id);
-                  router.push(href(id));
+                  // The account panel is rendered from two server reads (portfolio and agent advice).
+                  // A hard navigation ensures both reads use this strategy instead of reusing a cached RSC payload.
+                  window.location.assign(href(id));
                 });
               }}
             >
