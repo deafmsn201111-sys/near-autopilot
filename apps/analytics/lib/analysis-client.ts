@@ -66,6 +66,7 @@ export type TraceStep = z.infer<typeof traceStepSchema>;
 
 const analysisSchema = z.object({
   source: z.enum(['llm', 'heuristic']),
+  fallback: z.string().nullish(),
   note: z.string().nullable(),
   recommendations: z.array(
     z.object({
@@ -85,6 +86,7 @@ const analysisSchema = z.object({
 
 export type Analysis = {
   source: 'llm' | 'heuristic';
+  fallback?: string | null;
   note: string | null;
   recommendations: AccountRecommendation[];
   calledTools: string[];

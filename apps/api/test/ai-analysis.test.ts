@@ -820,30 +820,22 @@ describe('analyseAccount', () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it('does not offer agent actions worth less than $1', async () => {
+  it('with no action worth $1 calls no model, records no spend and says there is nothing to rank', async () => {
     const dust = observation();
-    const snapshot = {
-      ...dust.snapshot,
-      walletBalances: [{ token: USDT, raw: usdt(0.5) }],
-    };
-    let candidates: unknown[] = [];
-    const { llm } = fake([
-      () => callAll,
-      (results) => {
-        candidates = (results ?? []).flatMap(
-          (r) => (JSON.parse(r.content) as { candidates?: unknown[] }).candidates ?? [],
-        );
-        return final([]);
-      },
-    ]);
-    await analyseAccount(ai(llm), {
+    const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
+    const l = ledger();
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm, l), {
       accountId: ALICE,
       observe: async () => ({ ...dust, snapshot }),
       heuristics: [],
       checks: [],
       ownerVerified: true,
     });
-    expect(candidates).toEqual([]);
+    expect(tools).toEqual([]);
+    expect(l.rows).toEqual([]);
+    expect(out).toMatchObject({ source: 'heuristic', fallback: 'nothing_to_rank' });
+    expect(out.note).toMatch(/^Nothing to rank/);
   });
 
   it('falls back when the model ranks nothing', async () => {

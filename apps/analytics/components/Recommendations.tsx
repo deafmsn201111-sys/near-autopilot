@@ -67,7 +67,11 @@ export function Recommendations({
         <p className="muted-note">
           <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
             <i aria-hidden="true">{analysis.source === 'llm' ? '✓' : '!'}</i>
-            {analysis.source === 'llm' ? 'AI-ranked' : 'Heuristic (AI unavailable)'}
+            {analysis.source === 'llm'
+              ? 'AI-ranked'
+              : analysis.fallback === 'nothing_to_rank'
+                ? 'Nothing for the AI to rank'
+                : 'Heuristic (AI unavailable)'}
           </span>
           {analysis.note && <small> {analysis.note}</small>}
         </p>

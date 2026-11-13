@@ -383,3 +383,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics`: strategy picker on "Your account" (URL param, then a per-account cookie), the preset in the
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
+
+## #119 — No model call when there is nothing to rank
+
+- `analyseAccount` runs the agent tools as plain code before the model; with no card offered it returns fallback
+  `nothing_to_rank` (no model call, no `llm_calls` row) and the UI badge says "Nothing for the AI to rank" instead of
+  "AI unavailable".

@@ -48,6 +48,15 @@ describe('runAnalysis', () => {
     });
   });
 
+  it('keeps the fallback code', async () => {
+    const nothing = { ...base, source: 'heuristic', fallback: 'nothing_to_rank' };
+    reply(nothing);
+    expect(await runAnalysis('alice.near', 'balanced')).toEqual({
+      ok: true,
+      analysis: { ...nothing, calledTools: [], trace: [], run: null },
+    });
+  });
+
   it('accepts an older reply without them', async () => {
     reply(base);
     expect(await runAnalysis('alice.near', 'balanced')).toEqual({

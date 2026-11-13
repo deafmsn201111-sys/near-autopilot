@@ -202,8 +202,13 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
 
   it('calls the model for the owner of the account', async () => {
     const llm = countingLlm();
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
     const res = await analyse(
-      server(chain, store, llm),
+      server(listed, earning, llm),
       'alice.near',
       await proofHeader('alice.near'),
     );

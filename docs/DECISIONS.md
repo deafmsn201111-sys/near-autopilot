@@ -196,8 +196,8 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
-- Fallback codes (`off`, `kill_switch` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
-  `deadline`, `loop_limit` (too many turns or tool calls).
+- Fallback codes (`off`, `kill_switch`, `not_owner`, `busy` and `nothing_to_rank` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+  `nothing_to_rank` (the agent tools, run as code first, offered no card), `deadline`, `loop_limit` (too many turns or tool calls).
 
 ## D15 — Leaked secrets are rotated, history is not rewritten
 

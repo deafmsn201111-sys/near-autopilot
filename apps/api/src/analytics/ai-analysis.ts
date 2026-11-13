@@ -55,12 +55,13 @@ export type FallbackCode =
   | 'model_error'
   | 'invalid_output'
   | 'empty'
+  | 'nothing_to_rank'
   | 'deadline'
   | 'loop_limit';
 
-/** A run that reached the model ends in one of these; `off`, `kill_switch`, `not_owner` and `busy` never reach it. */
+/** A run that reached the model ends in one of these; the excluded codes never reach it. */
 export type CallOutcome =
-  'ok' | Exclude<FallbackCode, 'off' | 'kill_switch' | 'not_owner' | 'busy'>;
+  'ok' | Exclude<FallbackCode, 'off' | 'kill_switch' | 'not_owner' | 'busy' | 'nothing_to_rank'>;
 
 /** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
 export interface LlmCallRecord {
@@ -589,6 +590,7 @@ const NOTES: Record<FallbackCode, string> = {
   model_error: 'AI analysis failed; showing the rule-based list.',
   invalid_output: 'AI analysis failed; showing the rule-based list.',
   empty: 'The AI ranked nothing; showing the rule-based list.',
+  nothing_to_rank: `Nothing to rank: the agents found no action worth $${MIN_ACTION_USD} or more on this portfolio.`,
   deadline: 'AI analysis took too long; showing the rule-based list.',
   loop_limit: 'AI analysis failed; showing the rule-based list.',
 };
@@ -667,6 +669,60 @@ export async function analyseAccount(
     onError(e);
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
+  const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
+    guardianTool(obs, ctx.checks, found, steps),
+    allocatorTool(obs, found, steps),
+    marketTool(obs, steps),
+    walletTool(
+      'portfolio_concentration',
+      'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
+      'reduce_concentration',
+      ctx.checks,
+      found,
+      steps,
+      ([top]) => {
+        const c = ctx.concentration;
+        if (top) return { text: top.title, provenance: 'calculated_estimate' };
+        if (!c) return { text: 'No priced token to measure', provenance: null };
+        return {
+          text: `${c.pct.toFixed(0)}% of your portfolio is in ${modelTokenLabel(c.token)}; no swap from the wallet suggested`,
+          provenance: 'calculated_estimate',
+        };
+      },
+    ),
+    walletTool(
+      'liquidity_positions',
+      'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
+      'reposition_dcl_position',
+      ctx.checks,
+      found,
+      steps,
+      ({ length: n }) =>
+        n > 0
+          ? {
+              text: `${n} position${n === 1 ? '' : 's'} out of range`,
+              provenance: 'on_chain_verified',
+            }
+          : { text: 'No position out of range; nothing to do', provenance: null },
+    ),
+    walletTool(
+      'burrow_withdrawals',
+      'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
+      'withdraw_from_burrow',
+      ctx.checks,
+      found,
+      steps,
+      ([top]) =>
+        top
+          ? { text: top.title, provenance: 'calculated_estimate' }
+          : { text: 'Nothing on Burrow to move to the wallet', provenance: null },
+    ),
+  ];
+  // The tools are plain code: with no card to offer, the model has nothing to rank and the call would cost for nothing.
+  const offered = new Map<string, PortfolioRecommendation>();
+  const dryRun = await Promise.allSettled(toolsFor(offered, new Map()).map((t) => t.run({})));
+  if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled'))
+    return early(fallback('nothing_to_rank'));
   const key = analysisKey(obs, ctx.heuristics, strategy);
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return early(hit.analysis);
@@ -768,65 +824,15 @@ export async function analyseAccount(
 
   const found = new Map<string, PortfolioRecommendation>();
   const steps: Steps = new Map();
-  const run = async () => {
-    const tools = [
-      guardianTool(obs, ctx.checks, found, steps),
-      allocatorTool(obs, found, steps),
-      marketTool(obs, steps),
-      walletTool(
-        'portfolio_concentration',
-        'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
-        'reduce_concentration',
-        ctx.checks,
-        found,
-        steps,
-        ([top]) => {
-          const c = ctx.concentration;
-          if (top) return { text: top.title, provenance: 'calculated_estimate' };
-          if (!c) return { text: 'No priced token to measure', provenance: null };
-          return {
-            text: `${c.pct.toFixed(0)}% of your portfolio is in ${modelTokenLabel(c.token)}; no swap from the wallet suggested`,
-            provenance: 'calculated_estimate',
-          };
-        },
-      ),
-      walletTool(
-        'liquidity_positions',
-        'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
-        'reposition_dcl_position',
-        ctx.checks,
-        found,
-        steps,
-        ({ length: n }) =>
-          n > 0
-            ? {
-                text: `${n} position${n === 1 ? '' : 's'} out of range`,
-                provenance: 'on_chain_verified',
-              }
-            : { text: 'No position out of range; nothing to do', provenance: null },
-      ),
-      walletTool(
-        'burrow_withdrawals',
-        'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
-        'withdraw_from_burrow',
-        ctx.checks,
-        found,
-        steps,
-        ([top]) =>
-          top
-            ? { text: top.title, provenance: 'calculated_estimate' }
-            : { text: 'Nothing on Burrow to move to the wallet', provenance: null },
-      ),
-    ].map(counted);
-    return runToolLoop({
+  const run = () =>
+    runToolLoop({
       llm: metered,
       system: `${SYSTEM}\n${strategyLine(strategy)}`,
       prompt: 'Analyse the connected wallet.',
-      tools,
+      tools: toolsFor(found, steps).map(counted),
       maxTurns: MAX_TURNS,
       signal: abort.signal,
     });
-  };
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
     reply = await Promise.race([run(), deadline]).finally(() => {
