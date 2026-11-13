@@ -15,15 +15,15 @@ const amountText = (n: number) =>
 
 /** Token coin chip: a deterministic gradient + readable foreground per known symbol, neutral otherwise. */
 const TOKEN_COLORS: Record<string, readonly [string, string]> = {
-  NEAR: ['linear-gradient(135deg,#8e9f84,#6c7d62)', '#111411'],
-  WNEAR: ['linear-gradient(135deg,#70846d,#53664e)', '#f1f3ed'],
-  STNEAR: ['linear-gradient(135deg,#a2b196,#7a8a70)', '#111411'],
-  USDC: ['linear-gradient(135deg,#8596a7,#627688)', '#ffffff'],
-  'USDC.E': ['linear-gradient(135deg,#74869b,#53677d)', '#ffffff'],
-  USDT: ['linear-gradient(135deg,#91a391,#6d816e)', '#111411'],
+  NEAR: ['#25312b', '#f4f6f2'],
+  WNEAR: ['#1d3228', '#87e8be'],
+  STNEAR: ['#31463a', '#f4f6f2'],
+  USDC: ['#25312b', '#9caaa3'],
+  'USDC.E': ['#25312b', '#9caaa3'],
+  USDT: ['#1d3228', '#87e8be'],
 } as const;
 const tokenVisual = (s: string): readonly [string, string] =>
-  TOKEN_COLORS[s.toUpperCase()] ?? ['linear-gradient(135deg,#788575,#596653)', '#ffffff'];
+  TOKEN_COLORS[s.toUpperCase()] ?? ['#25312b', '#f4f6f2'];
 
 /** A short "what kind of token" subtitle for the holdings table. */
 const TOKEN_KIND: Record<string, string> = {
@@ -36,7 +36,7 @@ const TOKEN_KIND: Record<string, string> = {
 };
 
 /** Muted natural tones shared by the hero allocation bar and its legend. */
-const ALLOC_COLORS = ['#81947a', '#c1ad91', '#75847b', '#b27769', '#596a56'] as const;
+const ALLOC_COLORS = ['#00ec97', '#87e8be', '#568b70', '#9caaa3', '#3e5d4b'] as const;
 import Link from 'next/link';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';

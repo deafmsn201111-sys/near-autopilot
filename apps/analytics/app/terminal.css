@@ -803,55 +803,73 @@ main.page {
   }
 }
 
-/* Handoff v1: quiet institutional terminal, open portfolio summary and decision rail. */
+/* NEAR palette: light surfaces are adapted for the same calm hierarchy; dark uses the supplied hex values. */
 :root {
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --num-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'SFMono-Regular', Consolas, monospace;
   --sidebar: 222px;
-  --page: #f6f7f3;
-  --surface: #eef0e9;
-  --surface-2: #e4e9df;
-  --ink: #242b25;
-  --ink-2: #687469;
-  --muted: #758176;
-  --grid: #d6ddd2;
-  --line: #d6ddd2;
-  --axis: #c9d3c6;
-  --accent: #294b35;
-  --accent-strong: #294b35;
-  --accent-wash: rgba(41, 75, 53, 0.09);
-  --good: #2f714a;
-  --good-text: #2f714a;
-  --warning: #98623d;
-  --serious: #98623d;
-  --critical: #b4644f;
-  --meter-track: #d6ddd2;
-  --meter-fill: #81947a;
+  --page: #f4f7f4;
+  --surface: #ffffff;
+  --surface-2: #eaf2ed;
+  --ink: #17221c;
+  --ink-2: #52635a;
+  --muted: #63746b;
+  --grid: #d4e1d9;
+  --line: #d4e1d9;
+  --axis: #b9cbc0;
+  --accent: #007a50;
+  --accent-strong: #006c48;
+  --accent-soft: #276f56;
+  --accent-wash: rgba(0, 122, 80, 0.1);
+  --good: #176443;
+  --good-text: #176443;
+  --warning: #8a5a20;
+  --serious: #8a5a20;
+  --critical: #a33e3e;
+  --c1: #008755;
+  --c2: #56a982;
+  --c3: #758f82;
+  --meter-track: #d4e1d9;
+  --meter-fill: #007a50;
+  --tip-bg: #151c19;
+  --tip-ink: #f4f6f2;
+  --cascade-bg: #eaf2ed;
+  --ht-head-bg: #eaf2ed;
+  --ring: rgba(0, 122, 80, 0.3);
   --shadow: none;
   --shadow-md: none;
 }
 
 :root[data-theme='dark'] {
-  --page: #111411;
-  --surface: #191e19;
-  --surface-2: #222922;
-  --ink: #edf1e9;
-  --ink-2: #a0ada0;
-  --muted: #879487;
-  --grid: #303930;
-  --line: #303930;
-  --axis: #414c40;
-  --accent: #dce7d6;
-  --accent-strong: #dce7d6;
-  --accent-wash: rgba(220, 231, 214, 0.09);
-  --good: #b9d6b5;
-  --good-text: #b9d6b5;
+  --page: #0b0f0e;
+  --surface: #151c19;
+  --surface-2: #151c19;
+  --ink: #f4f6f2;
+  --ink-2: #9caaa3;
+  --muted: #9caaa3;
+  --grid: #25312b;
+  --line: #25312b;
+  --axis: #25312b;
+  --accent: #00ec97;
+  --accent-strong: #00ec97;
+  --accent-soft: #87e8be;
+  --accent-wash: rgba(0, 236, 151, 0.11);
+  --good: #87e8be;
+  --good-text: #87e8be;
   --warning: #dac0a4;
   --serious: #cba985;
   --critical: #dfafa4;
-  --meter-track: #303930;
-  --meter-fill: #81947a;
+  --c1: #00ec97;
+  --c2: #87e8be;
+  --c3: #9caaa3;
+  --meter-track: #25312b;
+  --meter-fill: #00ec97;
+  --tip-bg: #151c19;
+  --tip-ink: #f4f6f2;
+  --cascade-bg: #101613;
+  --ht-head-bg: #151c19;
+  --ring: rgba(135, 232, 190, 0.4);
 }
 
 html,
@@ -1147,6 +1165,11 @@ main.page {
   overscroll-behavior-inline: contain;
   scrollbar-color: var(--axis) transparent;
 }
+.recs.wheel-scrolling,
+.decision-rail.wheel-scrolling {
+  scroll-snap-type: none !important;
+  scroll-behavior: auto !important;
+}
 .decision-card {
   display: flex;
   flex: 0 0 clamp(375px, 56%, 580px);
@@ -1161,6 +1184,7 @@ main.page {
 }
 .decision-card.decision-priority {
   background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--accent-soft) 36%, var(--axis));
 }
 .decision-card-meta {
   display: flex;

@@ -54,19 +54,29 @@ export function Recommendations({
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) return;
+    let snapTimer: ReturnType<typeof setTimeout> | undefined;
     const wheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rail.clientWidth : 1;
-      const delta = event.deltaY * scale;
+      if (event.ctrlKey || event.metaKey) return;
+      const horizontalGesture = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+      const rawDelta = horizontalGesture ? event.deltaX : event.deltaY;
+      const scale = event.deltaMode === 1 ? 36 : event.deltaMode === 2 ? rail.clientHeight : 1;
+      const delta = rawDelta * scale;
       const max = rail.scrollWidth - rail.clientWidth;
-      const atStart = rail.scrollLeft <= 1;
-      const atEnd = rail.scrollLeft >= max - 1;
-      if (max <= 1 || (delta < 0 && atStart) || (delta > 0 && atEnd)) return;
+      if (max < 2 || Math.abs(delta) < 0.1) return;
+      const next = Math.max(0, Math.min(max, rail.scrollLeft + delta));
+      if (Math.abs(next - rail.scrollLeft) < 0.1) return;
       event.preventDefault();
-      rail.scrollLeft = Math.max(0, Math.min(max, rail.scrollLeft + delta));
+      rail.classList.add('wheel-scrolling');
+      rail.scrollLeft = next;
+      clearTimeout(snapTimer);
+      snapTimer = setTimeout(() => rail.classList.remove('wheel-scrolling'), 220);
     };
     rail.addEventListener('wheel', wheel, { passive: false });
-    return () => rail.removeEventListener('wheel', wheel);
+    return () => {
+      rail.removeEventListener('wheel', wheel);
+      clearTimeout(snapTimer);
+      rail.classList.remove('wheel-scrolling');
+    };
   }, [recommendations.length]);
 
   const moveRail = (direction: -1 | 1) => {

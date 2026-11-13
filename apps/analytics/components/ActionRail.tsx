@@ -28,16 +28,29 @@ export function ActionRail({ actions }: { actions: readonly PortfolioAction[] })
   useEffect(() => {
     const node = rail.current;
     if (!node) return;
+    let snapTimer: ReturnType<typeof setTimeout> | undefined;
     const wheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      if (event.ctrlKey || event.metaKey) return;
+      const horizontalGesture = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+      const rawDelta = horizontalGesture ? event.deltaX : event.deltaY;
+      const scale = event.deltaMode === 1 ? 36 : event.deltaMode === 2 ? node.clientHeight : 1;
+      const delta = rawDelta * scale;
       const max = node.scrollWidth - node.clientWidth;
-      const next = Math.max(0, Math.min(max, node.scrollLeft + event.deltaY));
+      if (max < 2 || Math.abs(delta) < 0.1) return;
+      const next = Math.max(0, Math.min(max, node.scrollLeft + delta));
       if (Math.abs(next - node.scrollLeft) < 0.1) return;
       event.preventDefault();
+      node.classList.add('wheel-scrolling');
       node.scrollLeft = next;
+      clearTimeout(snapTimer);
+      snapTimer = setTimeout(() => node.classList.remove('wheel-scrolling'), 220);
     };
     node.addEventListener('wheel', wheel, { passive: false });
-    return () => node.removeEventListener('wheel', wheel);
+    return () => {
+      node.removeEventListener('wheel', wheel);
+      clearTimeout(snapTimer);
+      node.classList.remove('wheel-scrolling');
+    };
   }, [actions.length]);
 
   return (
