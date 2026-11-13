@@ -838,6 +838,32 @@ describe('analyseAccount', () => {
     expect(out.note).toMatch(/^Nothing to rank/);
   });
 
+  it('does not offer a supply under 1% a year, the same floor as the rule-based card', async () => {
+    const base = observation();
+    const snapshot = {
+      ...base.snapshot,
+      walletBalances: [{ token: WNEAR, raw: near(1) }],
+      lending: null,
+    };
+    const l = ledger();
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm, l), {
+      accountId: ALICE,
+      observe: async () => ({
+        ...base,
+        snapshot,
+        risk: assessRisk(snapshot, base.config),
+        market: { ...base.market!, estimatedYieldWad: new Map([[WNEAR, 3n * 10n ** 15n]]) },
+      }),
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    expect(tools).toEqual([]);
+    expect(l.rows).toEqual([]);
+    expect(out.fallback).toBe('nothing_to_rank');
+  });
+
   it('still asks the model when the page shows a card the agents did not offer', async () => {
     const dust = observation();
     const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
