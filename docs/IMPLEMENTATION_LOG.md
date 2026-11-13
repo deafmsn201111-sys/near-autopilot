@@ -268,3 +268,14 @@ no longer said what comes first.
   `analysisInputs`, which the analysis route also uses.
 - `AnthropicToolLlm` takes an optional `effort` (`output_config.effort`).
 - Result in D17: Haiku 5.5 at default effort stays; same answers as Sonnet 5.5 at 1/15 the cost.
+
+## 2026-11-13 — The account view reads the whole account and hides small balances (#73)
+
+- `apps/api/src/analytics/discovery.ts`: FastNEAR tokens + staking pools, Rhea v1 pool ids, Rhea indexer prices;
+  zod, caps, null on failure (D18).
+- `apps/api/src/analytics/account-view.ts`: wallet tokens beyond Burrow's list, v1 LP in any pool the account has
+  shares in, native staking (staked / unstaking rows). Every holding and position row carries `verified`, `estimate`,
+  `small`; actions, recommendations and the agents' observation use verified tokens only. `discovery.complete` tells
+  the page when it fell back to the allowlists.
+- `apps/analytics/app/page.tsx`: "What you hold" (top 7, "Show all"), "Unverified tokens", "Show small balances".
+- Test: `apps/api/test/account-full.test.ts` replays recorded mainnet reads of `npro-validator.near`.

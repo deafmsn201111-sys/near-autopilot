@@ -259,3 +259,24 @@ about $11 of USDC"; "99% in NEAR … swap about $31"). The one difference: Haiku
 The adapter takes an optional effort (used by the comparison); no env setting is added since the default wins.
 **Consequences:** the AI list may leave out small idle-balance cards (info only; warnings are put back by code). Revisit
 with `llm:compare` if the prompt or tools change; a Sonnet → Haiku fallback step is not needed.
+
+## D18 — The account view reads indexers for discovery and prices unlisted tokens as estimates
+
+**Context:** #73. The NEAR RPC has no "list tokens" or "list pools of an account" call, so the account view only read
+allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $2.
+**Decision:**
+
+- Three new read-only external endpoints, all through `apps/api/src/analytics/discovery.ts`: FastNEAR
+  `api.fastnear.com/v1/account/{id}/full` (tokens and staking pools, no key), `api.ref.finance/liquidity-pools/{id}`
+  (Rhea v1 pool ids; `indexer.ref.finance/liquidity-pools` returns `[]` and is not used) and
+  `indexer.ref.finance/list-token-price` (prices, cached 5 minutes). Every answer is zod-checked, capped (4 MB, 60
+  tokens, 5 staking pools, 20 pools, 5 s timeout) and treated as a hint: pool shares and staked balances are read
+  on-chain, token metadata via `ft_metadata`.
+- "Verified" = listed by Burrow or tracked by the collector. Anything else is display-only: symbol sanitised to
+  `[A-Za-z0-9._-]{1,12}`, marked "Unverified", never in an action, a recommendation or the agents' observation (#19).
+  Swapping such tokens is #90.
+- An unlisted token's price is Rhea's indexer price, tagged "price estimate"; it counts in the totals and allocation.
+  A collector-confirmed price always wins, and actions and `prepare` only ever use confirmed prices.
+  **Consequences:** A thin pool can give a meme token an inflated estimate, so the total can overstate such an
+  account; the "Unverified · price estimate" label is the guard. An indexer outage shows a notice and the allowlisted
+  view. A read makes up to 3 more HTTP calls and a bounded number of view calls; the 60 s cache (D10) is unchanged.
