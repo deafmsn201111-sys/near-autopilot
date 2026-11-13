@@ -25,7 +25,8 @@
     "audit:replay": "pnpm --filter @near-autopilot/api run audit:replay",
     "demo:attack": "pnpm --filter @near-autopilot/api run demo:attack",
     "thesis:fetch": "pnpm --filter @near-autopilot/api run thesis:fetch",
-    "thesis:rebuild": "pnpm --filter @near-autopilot/api run thesis:rebuild"
+    "thesis:rebuild": "pnpm --filter @near-autopilot/api run thesis:rebuild",
+    "sync:ref-token-icons": "node scripts/sync-ref-token-icons.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

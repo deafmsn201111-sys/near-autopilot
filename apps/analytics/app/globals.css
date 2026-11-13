@@ -3141,6 +3141,24 @@ main.page {
   border-radius: 50%;
   object-fit: contain;
 }
+.coin.has-logo.coin-pair {
+  overflow: visible;
+  padding: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+.coin.has-logo.coin-pair img {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border: 2px solid var(--surface);
+  background: #fff;
+}
+.coin.has-logo.coin-pair img + img {
+  z-index: 1;
+  margin-left: -10px;
+}
 .ht-asset .nm {
   font-size: 15px;
   font-weight: 600;

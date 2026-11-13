@@ -1,4 +1,7 @@
 import { CURATED } from './token-label';
+import refTokenIconData from './ref-token-icons.json';
+
+const REF_TOKEN_ICONS = refTokenIconData.icons as Record<string, string>;
 
 /** Locally stored logos for contracts in the curated token list. Unknown contracts deliberately get no logo. */
 const CURATED_TOKEN_ICONS: Readonly<Record<string, string>> = {
@@ -25,7 +28,8 @@ const CURATED_TOKEN_ICONS: Readonly<Record<string, string>> = {
 
 export function tokenIcon(token: string | undefined, symbol: string): string | null {
   if (token === 'near') return '/token-icons/near.jpg';
-  if (token) return CURATED[token] ? (CURATED_TOKEN_ICONS[token] ?? null) : null;
+  if (token)
+    return REF_TOKEN_ICONS[token] ?? (CURATED[token] ? (CURATED_TOKEN_ICONS[token] ?? null) : null);
   // Native NEAR is not an NEP-141 contract, so its trusted identity has no token id.
   return symbol.toUpperCase() === 'NEAR' ? '/token-icons/near.jpg' : null;
 }

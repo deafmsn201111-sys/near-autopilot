@@ -83,6 +83,7 @@ interface Row {
   key: string;
   where: keyof typeof WHERE | 'position';
   token?: string;
+  tokens?: readonly string[];
   symbol: string;
   sub: string | null;
   amount: number | null;
@@ -94,7 +95,10 @@ interface Row {
 
 function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
   const [bg, fg] = tokenVisual(r.symbol);
-  const icon = tokenIcon(r.token, r.symbol);
+  const logoTokens = r.tokens?.length ? r.tokens.slice(0, 2) : r.token ? [r.token] : [];
+  const logos = logoTokens.map((token) => tokenIcon(token, token === 'near' ? 'NEAR' : ''));
+  const allLogosFound = logos.length > 0 && logos.every((logo): logo is string => logo !== null);
+  const icon = allLogosFound ? (logos[0] ?? null) : tokenIcon(r.token, r.symbol);
   const isDebt = r.where === 'borrowed';
   const kind =
     r.sub ??
@@ -105,13 +109,29 @@ function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
   return (
     <div className="ht-row">
       <div className="ht-asset">
-        <span className={`coin${icon ? ' has-logo' : ''}`} style={{ background: bg, color: fg }}>
-          {icon ? (
-            <Image src={icon} alt="" aria-hidden="true" width={38} height={38} unoptimized />
-          ) : (
-            r.symbol.slice(0, 1)
-          )}
-        </span>
+        {allLogosFound && logos.length > 1 ? (
+          <span className="coin has-logo coin-pair" aria-hidden="true">
+            {logos.map((src, index) => (
+              <Image
+                key={`${logoTokens[index]}-${src}`}
+                src={src}
+                alt=""
+                aria-hidden="true"
+                width={26}
+                height={26}
+                unoptimized
+              />
+            ))}
+          </span>
+        ) : (
+          <span className={`coin${icon ? ' has-logo' : ''}`} style={{ background: bg, color: fg }}>
+            {icon ? (
+              <Image src={icon} alt="" aria-hidden="true" width={38} height={38} unoptimized />
+            ) : (
+              r.symbol.slice(0, 1)
+            )}
+          </span>
+        )}
         <div>
           <div className="nm">
             {r.symbol}
@@ -324,7 +344,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
   const allRows: Row[] = [
     ...data.holdings.map((h) => ({ ...h, key: `${h.where}-${h.token ?? h.symbol}`, sub: null })),
-    ...(data.positions ?? []).map((r) => ({ ...r, where: 'position' as const, symbol: r.label })),
+    ...(data.positions ?? []).map((r) => ({
+      ...r,
+      where: 'position' as const,
+      symbol: r.label,
+    })),
   ].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
   const rows = allRows.filter((h) => !isSmall(h) && h.verified !== false);
   const unverifiedRows = allRows.filter((h) => !isSmall(h) && h.verified === false);
