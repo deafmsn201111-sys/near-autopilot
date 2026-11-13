@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  oneClickFeeBps,
-  toBaseUnits,
-  type DepositDeps,
-  type StoredDepositQuote,
-} from '../src/analytics/deposit';
+import { toBaseUnits, type DepositDeps, type StoredDepositQuote } from '../src/analytics/deposit';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
 import {
@@ -56,12 +51,13 @@ const quoted = (over: Partial<DepositQuote> = {}): DepositQuote => ({
   minAmountOut: 98_752_500n,
   amountOutUsd: '99.74',
   timeEstimateSeconds: 120,
+  appFeeBps: 1,
   correlationId: 'c0ffee',
   signature: 'ed25519:sig',
   ...over,
 });
 
-function setup(o: { quote?: () => Promise<DepositQuote>; authenticated?: boolean } = {}) {
+function setup(o: { quote?: () => Promise<DepositQuote> } = {}) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
   const deposit: DepositDeps = {
@@ -74,7 +70,6 @@ function setup(o: { quote?: () => Promise<DepositQuote>; authenticated?: boolean
     },
     store: { save: async (q) => void saved.push(q), purge: async () => undefined },
     destinationTokens: ['wrap.near', USDC_NEAR_ID, 'usdt.tether-token.near'],
-    authenticated: o.authenticated ?? false,
     newId: () => 'dq_1',
   };
   const app = buildAnalyticsServer({
@@ -126,20 +121,6 @@ describe('toBaseUnits', () => {
   });
 });
 
-describe('oneClickFeeBps', () => {
-  const t = (symbol: string) => ({ assetId: symbol, decimals: 6, blockchain: 'eth', symbol });
-  it('is 25 bps without a JWT, whatever the pair', () => {
-    expect(oneClickFeeBps(false, t('USDC'), t('USDC'))).toBe(25);
-    expect(oneClickFeeBps(false, t('ETH'), t('wNEAR'))).toBe(25);
-  });
-  it('is 1 bp for stablecoin pairs and the same asset with a JWT, 20 bps otherwise', () => {
-    expect(oneClickFeeBps(true, t('USDC'), t('USDT'))).toBe(1);
-    expect(oneClickFeeBps(true, t('ETH'), t('ETH'))).toBe(1);
-    expect(oneClickFeeBps(true, t('ETH'), t('wNEAR'))).toBe(20);
-    expect(oneClickFeeBps(true, t('USDC'), t('wNEAR'))).toBe(20);
-  });
-});
-
 describe('GET /v1/deposit/assets', () => {
   it('lists origins on the allowed chains only, popular first, and destinations from our own list', async () => {
     const res = await setup().app.inject({
@@ -180,7 +161,7 @@ describe('POST /v1/deposit/quote', () => {
       amountOut: '99750000',
       minAmountOut: '98752500',
       amountOutUsd: { value: '99.74', provenance: 'protocol_reported' },
-      fee: { bps: 25, provenance: 'calculated_estimate', authenticated: false },
+      fee: { bps: 1, provenance: 'protocol_reported' },
       recipient: 'alice.near',
       refundTo: REFUND,
       depositAddress: DEPOSIT,
@@ -203,14 +184,16 @@ describe('POST /v1/deposit/quote', () => {
         deadline: new Date('2026-11-13T10:10:00Z'),
         correlationId: 'c0ffee',
         signature: 'ed25519:sig',
-        feeBps: 25,
+        feeBps: 1,
       },
     ]);
   });
 
-  it('shows the authenticated fee when a JWT is configured', async () => {
-    const res = await setup({ authenticated: true }).post(body);
-    expect(res.json<{ fee: { bps: number } }>().fee.bps).toBe(1);
+  it('stores and returns no fee when 1Click echoes none', async () => {
+    const { post, saved } = setup({ quote: async () => quoted({ appFeeBps: null }) });
+    const res = await post(body);
+    expect(res.json<{ fee: { bps: number | null } }>().fee.bps).toBeNull();
+    expect(saved[0]?.feeBps).toBeNull();
   });
 
   it('refuses a refund address of another chain before calling 1Click', async () => {
@@ -273,7 +256,6 @@ describe('POST /v1/deposit/quote', () => {
           purge: async () => undefined,
         },
         destinationTokens: [USDC_NEAR_ID],
-        authenticated: false,
       },
     }).inject({
       method: 'POST',

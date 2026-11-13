@@ -23,11 +23,7 @@ export interface DepositQuote {
   readonly amountOut: string;
   readonly minAmountOut: string;
   readonly amountOutUsd: { readonly value: string; readonly provenance: ProvenanceTier };
-  readonly fee: {
-    readonly bps: number;
-    readonly provenance: ProvenanceTier;
-    readonly authenticated: boolean;
-  };
+  readonly fee: { readonly bps: number | null; readonly provenance: ProvenanceTier };
   readonly recipient: string;
   readonly refundTo: string;
   readonly depositAddress: string;

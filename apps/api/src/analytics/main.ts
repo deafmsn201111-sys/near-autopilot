@@ -117,7 +117,6 @@ const app = buildAnalyticsServer(
             }),
             store: depositQuotes,
             destinationTokens,
-            authenticated: ONE_CLICK_JWT !== undefined,
           },
         }
       : {}),

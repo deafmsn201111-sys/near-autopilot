@@ -680,7 +680,8 @@ export const depositQuotes = pgTable(
     correlationId: text('correlation_id').notNull(),
     /** 1Click's signature over the quote: kept to settle a dispute. */
     signature: text('signature').notNull(),
-    feeBps: integer('fee_bps').notNull(),
+    /** As 1Click echoed it in the quote; null when it echoed none. */
+    feeBps: integer('fee_bps'),
   },
   (t) => [
     index('deposit_quotes_created_at_idx').on(t.createdAt),

@@ -29,7 +29,7 @@ const quote = (id: string, createdAt: Date): StoredDepositQuote => ({
   deadline: new Date(createdAt.getTime() + 10 * 60_000),
   correlationId: 'c0ffee',
   signature: 'ed25519:sig',
-  feeBps: 25,
+  feeBps: 1,
 });
 
 describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
@@ -60,6 +60,12 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
     const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
     await store.save(quote('dq_1', NOW));
     expect(await handle.db.select().from(depositQuotes)).toEqual([quote('dq_1', NOW)]);
+  });
+
+  it('stores a quote without a fee', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    await store.save({ ...quote('dq_1', NOW), feeBps: null });
+    expect((await handle.db.select().from(depositQuotes))[0]?.feeBps).toBeNull();
   });
 
   it('refuses a duplicate id and a non-integer amount', async () => {

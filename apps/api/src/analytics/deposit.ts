@@ -27,7 +27,7 @@ export interface StoredDepositQuote {
   readonly deadline: Date;
   readonly correlationId: string;
   readonly signature: string;
-  readonly feeBps: number;
+  readonly feeBps: number | null;
 }
 
 export interface DepositQuoteStore {
@@ -41,8 +41,6 @@ export interface DepositDeps {
   readonly store: DepositQuoteStore;
   /** NEP-141 account ids the user may receive (config/market.json): our own list, never user input. */
   readonly destinationTokens: readonly string[];
-  /** Whether ONE_CLICK_JWT is set: it decides the fee 1Click charges. */
-  readonly authenticated: boolean;
   readonly newId?: () => string;
 }
 
@@ -54,24 +52,12 @@ const CHAIN_NAMES: Record<DepositChain, string> = {
   btc: 'Bitcoin',
 };
 const POPULAR = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
-const STABLES = new Set(['USDC', 'USDT', 'DAI']);
 const SLIPPAGE_BPS = 100;
 const NOT_VERIFIED =
   'The 1Click quote could not be verified, so no deposit address is shown. Try again.';
 const NO_QUOTE =
   '1Click has no quote for this amount right now. Try a larger amount or another token.';
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
-
-/** 1Click's published platform fee (docs.near-intents.org/resources/fees): a quote does not echo it. */
-export function oneClickFeeBps(
-  authenticated: boolean,
-  from: OneClickToken,
-  to: OneClickToken,
-): number {
-  if (!authenticated) return 25;
-  const stablePair = STABLES.has(from.symbol) && STABLES.has(to.symbol);
-  return stablePair || from.symbol === to.symbol ? 1 : 20;
-}
 
 /** "1.5" with 6 decimals -> 1500000n. Null unless a positive plain decimal with at most `decimals` places. */
 export function toBaseUnits(amount: string, decimals: number): bigint | null {
@@ -189,7 +175,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
         .send({ error: err instanceof DepositQuoteRefused ? NOT_VERIFIED : NO_QUOTE });
     }
 
-    const feeBps = oneClickFeeBps(deps.authenticated, origin, destination);
+    const feeBps = q.appFeeBps;
     const id = newId();
     try {
       await deps.store.save({
@@ -226,12 +212,8 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
         value: q.amountOutUsd,
         provenance: 'protocol_reported' satisfies ProvenanceTier,
       },
-      // Our reading of 1Click's published schedule: a quote does not echo the fee it charges.
-      fee: {
-        bps: feeBps,
-        provenance: 'calculated_estimate' satisfies ProvenanceTier,
-        authenticated: deps.authenticated,
-      },
+      // As 1Click echoes it in the quote; it already comes off amountOut.
+      fee: { bps: feeBps, provenance: 'protocol_reported' satisfies ProvenanceTier },
       recipient: body.account,
       refundTo: body.refundTo,
       depositAddress: q.depositAddress,

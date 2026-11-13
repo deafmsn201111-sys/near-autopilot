@@ -47,6 +47,11 @@ function Qr({ text }: { text: string }) {
   );
 }
 
+const remaining = (s: number) =>
+  s >= 3600
+    ? `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`
+    : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
 function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -75,10 +80,7 @@ function QuoteView({ q, onBack }: { q: DepositQuote; onBack: () => void }) {
       ) : (
         <p>
           Send exactly this amount from your own wallet on {q.chainName}, to this address, within{' '}
-          <b className="num">
-            {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
-          </b>
-          . Another token or another chain can be lost.
+          <b className="num">{remaining(left)}</b>. Another token or another chain can be lost.
         </p>
       )}
       {!expired && (
@@ -115,8 +117,14 @@ function QuoteView({ q, onBack }: { q: DepositQuote; onBack: () => void }) {
         </dd>
         <dt>1Click fee</dt>
         <dd>
-          <span className="num">{(q.fee.bps / 100).toFixed(2)}%</span>
-          <span className="muted-note"> · {fee}, 1Click&apos;s published rate</span>
+          {q.fee.bps === null ? (
+            'not reported by 1Click'
+          ) : (
+            <>
+              <span className="num">{(q.fee.bps / 100).toFixed(2)}%</span>
+              <span className="muted-note"> · {fee}, already taken off what you receive</span>
+            </>
+          )}
         </dd>
         <dt>To NEAR account</dt>
         <dd>{q.recipient}</dd>

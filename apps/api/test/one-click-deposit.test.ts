@@ -39,6 +39,7 @@ function answer(over: { quoteRequest?: object; quote?: object } = {}) {
       refundType: 'ORIGIN_CHAIN',
       recipientType: 'DESTINATION_CHAIN',
       slippageTolerance: 100,
+      appFees: [{ recipient: 'fees.near', fee: 1 }],
       ...over.quoteRequest,
     },
     quote: {
@@ -101,6 +102,7 @@ describe('OneClickDepositClient.quote', () => {
       minAmountOut: 98_752_500n,
       amountOutUsd: '99.74',
       timeEstimateSeconds: 120,
+      appFeeBps: 1,
       correlationId: 'c0ffee',
       signature: 'ed25519:sig',
     });
@@ -135,12 +137,34 @@ describe('OneClickDepositClient.quote', () => {
     ['a deadline equal to now', { quote: { deadline: '2026-11-13T10:00:00Z' } }],
     ['a non-integer amount out', { quote: { amountOut: '1.5' } }],
     ['another slippage', { quoteRequest: { slippageTolerance: 5000 } }],
+    ['a zero payout', { quote: { amountOut: '0', minAmountOut: '0' } }],
+    ['fees summing over 1%', { quoteRequest: { appFees: [{ fee: 60 }, { fee: 41 }] } }],
+    ['a deadline over 7 days away', { quote: { deadline: '2026-11-20T10:00:01Z' } }],
+    ['a time estimate over a day', { quote: { timeEstimate: 1e308 } }],
+    ['a custom recipient message', { quoteRequest: { customRecipientMsg: 'x' } }],
+    [
+      'a virtual chain recipient',
+      { quoteRequest: { virtualChainRecipient: '0x' + '1'.repeat(40) } },
+    ],
+    [
+      'a virtual chain recipient on the quote',
+      { quote: { virtualChainRecipient: '0x' + '1'.repeat(40) } },
+    ],
     ['a floor below the 1% slippage', { quote: { minAmountOut: '98752499' } }],
     ['a floor above the estimate', { quote: { minAmountOut: '99750001' } }],
   ])('refuses a quote with %s', async (_, over) => {
     const { http } = stub(answer(over));
     await expect(new OneClickDepositClient({ http }).quote(request)).rejects.toBeInstanceOf(
       DepositQuoteRefused,
+    );
+  });
+
+  it('reads the fee 1Click echoes in appFees, null when it echoes none', async () => {
+    const two = stub(answer({ quoteRequest: { appFees: [{ fee: 20 }, { fee: 5 }] } }));
+    expect((await new OneClickDepositClient({ http: two.http }).quote(request)).appFeeBps).toBe(25);
+    const none = stub(answer({ quoteRequest: { appFees: undefined } }));
+    expect((await new OneClickDepositClient({ http: none.http }).quote(request)).appFeeBps).toBe(
+      null,
     );
   });
 

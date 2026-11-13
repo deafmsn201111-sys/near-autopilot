@@ -18,7 +18,6 @@ describe('isRefundAddress', () => {
 
   it('sol takes base58 that decodes to a 32-byte key', () => {
     expect(isRefundAddress('sol', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')).toBe(true);
-    expect(isRefundAddress('sol', '11111111111111111111111111111111')).toBe(true);
     expect(isRefundAddress('sol', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4w')).toBe(false);
     expect(isRefundAddress('sol', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v1')).toBe(false);
     expect(isRefundAddress('sol', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt10')).toBe(false);
@@ -47,6 +46,23 @@ describe('isRefundAddress', () => {
       isRefundAddress('btc', 'bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqh2y7hd'),
     ).toBe(false);
     expect(isRefundAddress('btc', '0x2527d02599ba641c19fea793cd0f167589a0f10d')).toBe(false);
+  });
+
+  it('refuses burn addresses', () => {
+    expect(isRefundAddress('eth', '0x0000000000000000000000000000000000000000')).toBe(false);
+    expect(isRefundAddress('sol', '11111111111111111111111111111111')).toBe(false);
+  });
+
+  it('refuses witness versions that are not spendable as a refund today', () => {
+    // BIP-350 test vectors: v2 and v16, and a v1 program that is not 32 bytes
+    expect(isRefundAddress('btc', 'bc1zw508d6qejxtdg4y5r3zarvaryvaxxpcs')).toBe(false);
+    expect(isRefundAddress('btc', 'bc1sw50qgdz25j')).toBe(false);
+    expect(
+      isRefundAddress(
+        'btc',
+        'bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kt5nd6y',
+      ),
+    ).toBe(false);
   });
 
   it('refuses surrounding whitespace and an empty string', () => {

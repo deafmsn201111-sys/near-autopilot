@@ -24,31 +24,26 @@ function isBtcBase58(address: string): boolean {
   return payload.length === 21 && (payload[0] === BTC_P2PKH || payload[0] === BTC_P2SH);
 }
 
-// BIP-173 / BIP-350: witness v0 uses bech32 with a 20- or 32-byte program, v1..16 use bech32m with 2..40 bytes.
+// BIP-173 / BIP-350: v0 (bech32) with a 20- or 32-byte program, v1 taproot (bech32m) with 32 bytes. Higher versions
+// and other v1 lengths are valid encodings but not spendable outputs today, so a refund there would be lost.
 function isBtcSegwit(address: string): boolean {
   const v0 = attempt(() => {
     const { prefix, words } = bech32.decode(address as `${string}1${string}`);
     const program = bech32.fromWords(words.slice(1));
     return prefix === 'bc' && words[0] === 0 && (program.length === 20 || program.length === 32);
   });
-  if (v0) return true;
-  return attempt(() => {
-    const { prefix, words } = bech32m.decode(address as `${string}1${string}`);
-    const version = words[0] ?? -1;
-    const program = bech32m.fromWords(words.slice(1));
-    return (
-      prefix === 'bc' &&
-      version >= 1 &&
-      version <= 16 &&
-      program.length >= 2 &&
-      program.length <= 40
-    );
-  });
+  return (
+    v0 ||
+    attempt(() => {
+      const { prefix, words } = bech32m.decode(address as `${string}1${string}`);
+      return prefix === 'bc' && words[0] === 1 && bech32m.fromWords(words.slice(1)).length === 32;
+    })
+  );
 }
 
 // EIP-55: a mixed-case address carries a checksum in its letter case; all-lower or all-upper carries none.
 function isEvm(address: string): boolean {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return false;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address) || /^0x0{40}$/.test(address)) return false;
   const hex = address.slice(2);
   if (hex === hex.toLowerCase() || hex === hex.toUpperCase()) return true;
   const hash = Buffer.from(keccak_256(hex.toLowerCase())).toString('hex');
@@ -57,7 +52,7 @@ function isEvm(address: string): boolean {
   );
 }
 
-/** Whether `address` is a mainnet address of `chain` that 1Click can refund to. Format and checksum only. */
+/** Whether `address` is a mainnet address of `chain` that 1Click can refund to. Format, checksum, no burn address. */
 export function isRefundAddress(chain: DepositChain, address: string): boolean {
   switch (chain) {
     case 'eth':
@@ -65,7 +60,10 @@ export function isRefundAddress(chain: DepositChain, address: string): boolean {
     case 'arb':
       return isEvm(address);
     case 'sol':
-      return attempt(() => base58.decode(address).length === 32);
+      return attempt(() => {
+        const key = base58.decode(address);
+        return key.length === 32 && key.some((b) => b !== 0);
+      });
     case 'btc':
       return attempt(() => isBtcBase58(address)) || isBtcSegwit(address);
   }

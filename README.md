@@ -128,8 +128,8 @@ from another chain (below), in a separate client.
    on the portfolio. Pick the token and chain you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), the
    amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
-   a one-time deposit address with a QR code, the deadline (about 10 minutes) and 1Click's fee: 0.25% without a
-   partner key, 0.20% with one (0.01% for stablecoin pairs). Send exactly that amount from your wallet on that chain;
+   a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
+   partner key, `ONE_CLICK_JWT`, gives the partner schedule). Send exactly that amount from your wallet on that chain;
    1Click delivers to your NEAR account, or refunds to your address if the swap fails. Tracking the deposit's status
    is not on the page yet. What we keep: one `deposit_quotes` row per address shown (your NEAR account, the tokens
    and amounts, your refund address on the other chain, the deposit address, deadline, fee and 1Click's id and

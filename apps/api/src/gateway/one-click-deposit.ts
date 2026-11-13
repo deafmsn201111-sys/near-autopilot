@@ -9,6 +9,10 @@ import type { HttpJsonClient } from '../market-data/http';
  */
 export const ONE_CLICK_BASE_URL = 'https://1click.chaindefuser.com';
 const TOKENS_TTL_MS = 10 * 60_000;
+// 1Click sets the deadline itself (days, not the 10 minutes asked); anything later than this is refused.
+const MAX_DEADLINE_MS = 7 * 24 * 60 * 60_000;
+// A fee above this is not 1Click's schedule: refused rather than shown.
+const MAX_FEE_BPS = 100;
 
 /** A quote that failed verification or parsing. The message is ours (no upstream text, no JWT); it goes to the log. */
 export class DepositQuoteRefused extends Error {
@@ -45,6 +49,8 @@ export interface DepositQuote {
   /** 1Click's own USD estimate: display only, never used in logic. */
   readonly amountOutUsd: string;
   readonly timeEstimateSeconds: number;
+  /** The fee 1Click echoes in `quoteRequest.appFees` (its own and any app fee), null when it echoes none. */
+  readonly appFeeBps: number | null;
   readonly correlationId: string;
   readonly signature: string;
 }
@@ -73,6 +79,14 @@ const quoteResponse = z.object({
       refundTo: z.string(),
       recipient: z.string(),
       slippageTolerance: z.number(),
+      appFees: z
+        .array(z.object({ fee: z.number().int().min(0).max(MAX_FEE_BPS) }))
+        .refine((fees) => fees.reduce((t, f) => t + f.fee, 0) <= MAX_FEE_BPS)
+        .optional(),
+      // Never sent by us; either would change where or how the funds are delivered.
+      customRecipientMsg: z.undefined(),
+      virtualChainRecipient: z.undefined(),
+      virtualChainRefundRecipient: z.undefined(),
     })
     .passthrough(),
   quote: z
@@ -84,7 +98,13 @@ const quoteResponse = z.object({
       minAmountOut: u128,
       amountOutUsd: z.string().max(40),
       deadline: z.string().datetime({ offset: true }),
-      timeEstimate: z.number().nonnegative(),
+      timeEstimate: z
+        .number()
+        .nonnegative()
+        .max(24 * 60 * 60),
+      customRecipientMsg: z.undefined(),
+      virtualChainRecipient: z.undefined(),
+      virtualChainRefundRecipient: z.undefined(),
     })
     .passthrough(),
 });
@@ -166,12 +186,14 @@ export class OneClickDepositClient {
     const minAmountOut = BigInt(q.minAmountOut);
     const floor = (amountOut * BigInt(10_000 - r.slippageBps)) / 10_000n;
     if (echo.slippageTolerance !== r.slippageBps) mismatch.push('slippageTolerance');
+    if (amountOut === 0n) mismatch.push('amountOut');
     if (minAmountOut > amountOut || minAmountOut < floor) mismatch.push('minAmountOut');
     if (mismatch.length)
       throw new DepositQuoteRefused(`1Click quote differs: ${mismatch.join(', ')}`);
     const deadline = new Date(q.deadline);
-    if (deadline.getTime() <= r.now.getTime())
-      throw new DepositQuoteRefused('1Click quote deadline is not in the future');
+    const ahead = deadline.getTime() - r.now.getTime();
+    if (ahead <= 0 || ahead > MAX_DEADLINE_MS)
+      throw new DepositQuoteRefused('1Click quote deadline is not within 7 days');
     return {
       depositAddress: q.depositAddress,
       deadline,
@@ -180,6 +202,7 @@ export class OneClickDepositClient {
       minAmountOut,
       amountOutUsd: q.amountOutUsd,
       timeEstimateSeconds: q.timeEstimate,
+      appFeeBps: echo.appFees ? echo.appFees.reduce((t, f) => t + f.fee, 0) : null,
       correlationId,
       signature,
     };

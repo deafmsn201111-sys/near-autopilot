@@ -296,21 +296,24 @@ receives real money.
   ids and decimals taken from that list, never built by hand). No memo chains. Destination: a token from
   `config/market.json` `policy.allowedTokens` (wNEAR, USDC, USDT), never user input; recipient = the connected
   account, delivered to the NEAR chain.
-- The refund address is checked on the server before 1Click is called: EVM `0x` + 40 hex; Solana base58 decoding to
-  32 bytes; Bitcoin mainnet base58check P2PKH/P2SH or bech32 (v0) / bech32m (v1+) with checksum (`@scure/base`).
+- The refund address is checked on the server before 1Click is called: EVM `0x` + 40 hex (EIP-55 when mixed case);
+  Solana base58 decoding to 32 bytes; Bitcoin mainnet base58check P2PKH/P2SH, bech32 v0 (20/32 bytes) or bech32m v1
+  taproot (32 bytes), with checksum (`@scure/base`). Burn addresses (zero EVM address, all-zero Solana key) and
+  witness versions that are not spendable today are refused.
 - The answer is zod-parsed and verified: `dry: false`, `EXACT_INPUT`, `ORIGIN_CHAIN` deposit and refund,
   `DESTINATION_CHAIN` recipient, `originAsset`, `destinationAsset`, `amount`, `quote.amountIn`, `recipient`,
-  `refundTo`; a deposit address that is a valid address of the origin chain; no memo; a deadline in the future. Any
-  mismatch: no address is shown, a generic error, the reason logged.
+  `refundTo`, `slippageTolerance`; `amountOut` above 0 and `minAmountOut` within the 1% slippage; fees at most 1%; no
+  `customRecipientMsg` or virtual-chain recipient; a deposit address that is a valid address of the origin chain; no
+  memo; a deadline in the next 7 days. Any mismatch: no address is shown, a generic error, the reason logged.
 - Stored in `deposit_quotes` (migration 0020) with our id, deleted after 30 days. The UI gets our id and read-only
   fields.
 - Gate: a connected account plus the proxy limit (5 quotes per visitor, 100 overall per 10 minutes), no NEP-413
   proof. A quote costs nothing; someone naming another account as recipient only sends their own money there.
 - `ONE_CLICK_JWT` is optional, only in the `analytics-api` service, sent as `Authorization: Bearer` to 1Click only,
-  never logged or returned. 1Click does not echo its platform fee in a quote, so the fee shown is its published
-  schedule for our JWT state and the pair (25 bps without; 20 bps with, 1 bp for stablecoin or same-asset pairs),
-  labelled as such.
+  never logged or returned. The fee shown is the sum 1Click echoes in `quoteRequest.appFees` of that quote (a live
+  keyless USDC→USDC quote echoed 1 bp, not the 25 bps of the published table), tagged protocol-reported; "not
+  reported" when it echoes none. It is already taken off `amountOut`.
 - QR: `qrcode-generator` (MIT, no dependencies) drawn as inline SVG; no external QR service.
 - No NEAR transaction is built, so `validateCascade` and its allowlists are untouched.
-  **Consequences:** The fee shown can differ from what 1Click charges if 1Click changes its schedule or gives us a
-  custom agreement. Status tracking is #29. The analytics API now makes outbound calls to 1Click and writes rows.
+  **Consequences:** 1Click sets the deadline itself (a live quote gave about 3 days, not the 10 minutes we ask for);
+  the page counts down from the server's seconds-left. Status tracking is #29. The analytics API now makes outbound calls to 1Click and writes rows.
