@@ -258,7 +258,7 @@ const readAccount = async (id: string, fresh = false): Promise<AccountResult> =>
 };
 
 /**
- * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D19). True once the
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
  * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
  * stops retrying.
  */

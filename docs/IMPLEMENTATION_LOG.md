@@ -324,7 +324,7 @@ running window and listener removal.
 
 ## 2026-11-13 — Fresh portfolio after signing (#65)
 
-- API: `GET /v1/analytics/account/:id?fresh=1` replaces the cached read, at most once per account every 5 s (D19).
+- API: `GET /v1/analytics/account/:id?fresh=1` replaces the cached read, at most once per account every 5 s (D20).
 - UI: `refreshAccount` now reads fresh and returns whether the holdings changed; `refreshPortfolio`
   (`apps/analytics/lib/portfolio-refresh.ts`) retries up to 4 times, 5 s apart, shared by `PrepareDialog` and
   `AccountWatcher`, which shows "Transaction seen, updating your portfolio…" while it runs. The fixed 4 s wait after
@@ -339,7 +339,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 ## 2026-11-13 — One-click actions from $1 (#120)
 
-- `MIN_ACTION_USD` 10 → 1; the idle-asset "skipped" note from $0.10 (D20). An $11 all-NEAR wallet now gets a
+- `MIN_ACTION_USD` 10 → 1; the idle-asset "skipped" note from $0.10 (D21). An $11 all-NEAR wallet now gets a
   rebalance card of about $5.57.
 
 **Tests run:** `pnpm verify`; `portfolio-recommendations.test.ts` thresholds rewritten for $1.
+
+## 2026-11-13 — Deposit from another chain through 1Click (#27)
+
+- `apps/api/src/gateway/one-click-deposit.ts`: real-quote client (hard-coded URL, optional JWT, cached token list,
+  every echoed field verified). `refund-address.ts`: per-chain refund address check.
+- `apps/api/src/analytics/deposit.ts`: `GET /v1/deposit/assets`, `POST /v1/deposit/quote`; `deposit-store.ts` +
+  migration 0020 `deposit_quotes` (30-day purge).
+- `apps/analytics`: `/api/deposit/*` proxies (`deposit-quote` limit 5/100 per 10 min), `DepositDialog` (form → deposit
+  address, QR, deadline countdown, fee) in the header and on the portfolio.
+- D19.
