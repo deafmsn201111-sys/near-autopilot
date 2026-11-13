@@ -1,5 +1,5 @@
 'use client';
-import { PROVENANCE_TIERS, type ProvenanceTier } from '@near-autopilot/core';
+import { PROVENANCE_TIERS } from '@near-autopilot/core';
 import { z } from 'zod';
 import type { AccountRecommendation } from './product';
 
@@ -20,6 +20,17 @@ const intentSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('reposition_dcl'), lptId: z.string(), poolId: z.string() }),
 ]);
 
+const traceStepSchema = z.object({
+  tool: z.string(),
+  agent: z.string(),
+  ok: z.boolean(),
+  text: z.string(),
+  // A tier this build does not know drops only the label, not the whole analysis.
+  provenance: z.enum(PROVENANCE_TIERS).nullable().catch(null),
+});
+
+export type TraceStep = z.infer<typeof traceStepSchema>;
+
 const analysisSchema = z.object({
   source: z.enum(['llm', 'heuristic']),
   note: z.string().nullable(),
@@ -35,26 +46,8 @@ const analysisSchema = z.object({
     }),
   ),
   calledTools: z.array(z.string()).default([]),
-  trace: z
-    .array(
-      z.object({
-        tool: z.string(),
-        agent: z.string(),
-        ok: z.boolean(),
-        text: z.string(),
-        provenance: z.enum(PROVENANCE_TIERS).nullable(),
-      }),
-    )
-    .default([]),
+  trace: z.array(traceStepSchema).default([]),
 });
-
-export type TraceStep = {
-  tool: string;
-  agent: string;
-  ok: boolean;
-  text: string;
-  provenance: ProvenanceTier | null;
-};
 
 export type Analysis = {
   source: 'llm' | 'heuristic';

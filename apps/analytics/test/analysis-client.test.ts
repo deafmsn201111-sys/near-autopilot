@@ -44,11 +44,14 @@ describe('runAnalysis', () => {
     });
   });
 
-  it('rejects a provenance tier it does not know', async () => {
+  it('drops a provenance tier it does not know but keeps the analysis', async () => {
     reply({
       ...base,
       trace: [{ tool: 'x', agent: 'X', ok: true, text: 'y', provenance: 'trust_me' }],
     });
-    expect((await runAnalysis('alice.near')).ok).toBe(false);
+    const r = await runAnalysis('alice.near');
+    expect(r.ok && r.analysis.trace).toEqual([
+      { tool: 'x', agent: 'X', ok: true, text: 'y', provenance: null },
+    ]);
   });
 });

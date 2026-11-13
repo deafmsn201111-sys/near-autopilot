@@ -6,6 +6,14 @@ import { envelope, noAction } from './envelope';
 
 const pow10 = (n: number): bigint => 10n ** BigInt(n);
 
+/** Tokens the account holds in the wallet or on Burrow: the ones whose market conditions matter to it. */
+export const heldTokens = (obs: AgentObservation): Set<TokenId> =>
+  new Set([
+    ...obs.snapshot.walletBalances.filter((b) => b.raw > 0n).map((b) => b.token),
+    ...(obs.snapshot.lending?.collateral ?? []).map((b) => b.token),
+    ...(obs.snapshot.lending?.borrowed ?? []).map((b) => b.token),
+  ]);
+
 /** |a - b| / b in bps, exact integer arithmetic on two oracle-format prices. Null if b is zero. */
 export function priceDivergenceBps(a: UnitPrice, b: UnitPrice): bigint | null {
   const num = a.multiplier * pow10(b.decimals);
@@ -39,19 +47,15 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       obs.now.getTime() + (this.options.signalTtlSeconds ?? 900) * 1000,
     ).toISOString();
 
-    const tokens = new Set<TokenId>([
-      ...obs.snapshot.walletBalances.filter((b) => b.raw > 0n).map((b) => b.token),
-      ...(obs.snapshot.lending?.collateral ?? []).map((b) => b.token),
-      ...(obs.snapshot.lending?.borrowed ?? []).map((b) => b.token),
-    ]);
+    const tokens = heldTokens(obs);
     const proposals: Array<Record<string, unknown> & { severity: number }> = [];
     let compared = false;
     for (const token of [...tokens].sort()) {
       const oracle = obs.snapshot.prices.get(token);
       const reference = market.referencePrices.get(token);
       if (oracle && reference) {
-        compared = true;
         const bps = priceDivergenceBps(oracle, reference);
+        if (bps !== null) compared = true;
         const severity =
           bps === null
             ? 0

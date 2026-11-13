@@ -143,6 +143,15 @@ describe('market intelligence: never reports healthy when nothing was compared',
     expect(await reason(await observe(market))).toBe('insufficient_data');
   });
 
+  it('a second price it cannot divide by is no comparison', async () => {
+    const w = makeWorld();
+    const zero = new Map(
+      [...w.buildSnapshot().prices.keys()].map((t) => [t, { multiplier: 0n, decimals: 10 }]),
+    );
+    const market = { ...w.buildMarket(), referencePrices: zero, volatility24hBps: new Map() };
+    expect(await reason(await observe(market))).toBe('insufficient_data');
+  });
+
   it('with matching prices from a second source it says healthy', async () => {
     const w = makeWorld();
     const market = {

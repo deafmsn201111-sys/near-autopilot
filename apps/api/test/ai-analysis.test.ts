@@ -351,6 +351,29 @@ describe('analyseAccount', () => {
     ]);
   });
 
+  it('never says "no loan" for a loan whose health factor cannot be computed', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const unpriced = async () => {
+      const o = observation();
+      const prices = new Map(o.snapshot.prices);
+      prices.delete(WNEAR);
+      const snapshot = { ...o.snapshot, prices };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: unpriced,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'Health factor unknown: a price is missing',
+    );
+  });
+
   it('says when no second price source was there to compare', async () => {
     const { llm } = fake([
       () => callAll,

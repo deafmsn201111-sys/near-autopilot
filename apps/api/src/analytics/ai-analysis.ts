@@ -13,6 +13,7 @@ import {
   LiquidationGuardianAgent,
   MarketIntelligenceAgent,
   orchestratorConfigSchema,
+  heldTokens,
   parseAgentOutput,
   priceDivergenceBps,
   runToolLoop,
@@ -172,7 +173,8 @@ export interface TraceStep {
 }
 
 type StepLine = Pick<TraceStep, 'text' | 'provenance'>;
-type Steps = Map<string, StepLine>;
+/** Per tool: a line for each card it produced (the trace shows the one the model ranked highest), else `none`. */
+type Steps = Map<string, { none: StepLine; byCandidate: Map<string, StepLine> }>;
 
 const AGENTS: Readonly<Record<string, string>> = {
   liquidation_guardian: 'Liquidation Guardian',
@@ -263,7 +265,7 @@ function guardianTool(
       const hf = hfText(obs.risk.healthFactorWad);
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
-      let step: StepLine | null = null;
+      const byCandidate = new Map<string, StepLine>();
       for (const p of proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
         const view = tokenView(obs, p.token, p.amount);
@@ -271,12 +273,13 @@ function guardianTool(
           assessLendingPosition(afterRepay(model.model, p.token, p.amount)).healthFactorWad,
         );
         if (!view || !after) continue;
-        step ??= {
+        const id = `liquidation-guardian:repay:${p.token}`;
+        byCandidate.set(id, {
           text: `Health factor ${hf} → ${after} after repaying ${view.amount} ${view.symbol}`,
           provenance: 'calculated_estimate',
-        };
+        });
         candidates.push({
-          id: `liquidation-guardian:repay:${p.token}`,
+          id,
           kind: 'improve_loan_safety',
           agent: 'Liquidation Guardian',
           severity: 'warning',
@@ -291,13 +294,20 @@ function guardianTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
-      steps.set(
-        'liquidation_guardian',
-        step ??
-          (hf === null
-            ? { text: 'No Burrow loan; nothing to do', provenance: null }
-            : { text: `Health factor ${hf}; nothing to do`, provenance: 'calculated_estimate' }),
-      );
+      const hasDebt = (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n);
+      const repayProposed = proposals.some((p) => p.kind === 'lending.repay');
+      steps.set('liquidation_guardian', {
+        none:
+          hf === null
+            ? hasDebt
+              ? { text: 'Health factor unknown: a price is missing', provenance: null }
+              : { text: 'No Burrow loan; nothing to do', provenance: null }
+            : {
+                text: `Health factor ${hf}; ${repayProposed ? 'a repayment could not be sized' : 'nothing to do'}`,
+                provenance: 'calculated_estimate',
+              },
+        byCandidate,
+      });
       return {
         riskLevel: obs.risk.level,
         healthFactor: hf,
@@ -324,19 +334,20 @@ function allocatorTool(
     run: async () => {
       const proposals = await propose(new CapitalAllocatorAgent(), obs);
       const candidates: PortfolioRecommendation[] = [];
-      let step: StepLine | null = null;
+      const byCandidate = new Map<string, StepLine>();
       for (const p of proposals) {
         if (p.kind !== 'lending.supply') continue;
         const view = tokenView(obs, p.token, p.amount);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const aprPct = (Number(yieldWad / 10n ** 14n) / 100).toFixed(1);
-        step ??= {
+        const id = `capital-allocator:supply:${p.token}`;
+        byCandidate.set(id, {
           text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
           provenance: 'protocol_reported',
-        };
+        });
         candidates.push({
-          id: `capital-allocator:supply:${p.token}`,
+          id,
           kind: 'put_idle_to_work',
           agent: 'Capital Allocator',
           severity: 'info',
@@ -351,10 +362,16 @@ function allocatorTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
-      steps.set(
-        'capital_allocator',
-        step ?? { text: 'Nothing idle to put to work', provenance: null },
-      );
+      const supplyProposed = proposals.some((p) => p.kind === 'lending.supply');
+      steps.set('capital_allocator', {
+        none: {
+          text: supplyProposed
+            ? 'Idle tokens found, but no supply rate or price to size them'
+            : 'Nothing idle to put to work',
+          provenance: null,
+        },
+        byCandidate,
+      });
       return { candidates, notes: rationales(proposals) };
     },
   };
@@ -362,13 +379,7 @@ function allocatorTool(
 
 /** Each held token's gap between the snapshot price and the second source, largest first. */
 function priceGaps(obs: AgentObservation) {
-  const lending = obs.snapshot.lending;
-  const held = new Set([
-    ...obs.snapshot.walletBalances.filter((b) => b.raw > 0n).map((b) => b.token),
-    ...(lending?.collateral ?? []).map((b) => b.token),
-    ...(lending?.borrowed ?? []).map((b) => b.token),
-  ]);
-  return [...held]
+  return [...heldTokens(obs)]
     .flatMap((token) => {
       const price = obs.snapshot.prices.get(token);
       const reference = obs.market?.referencePrices.get(token);
@@ -399,9 +410,9 @@ function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
       const notes = rationales(proposals);
       const [signal] = signals;
       const [gap] = gaps;
-      steps.set(
-        'market_intelligence',
-        signal
+      steps.set('market_intelligence', {
+        byCandidate: new Map(),
+        none: signal
           ? {
               text: `${modelTokenLabel(signal.token)}: ${signal.detail}`,
               provenance: 'external_market',
@@ -412,7 +423,7 @@ function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
                 provenance: 'external_market',
               }
             : { text: sentence(notes[0] ?? 'nothing to report'), provenance: null },
-      );
+      });
       return { signals, gaps, notes };
     },
   };
@@ -433,7 +444,7 @@ function walletTool(
     run: async () => {
       const candidates = heuristics.filter((h) => h.kind === kind);
       for (const c of candidates) found.set(c.id, c);
-      steps.set(name, line(candidates));
+      steps.set(name, { none: line(candidates), byCandidate: new Map() });
       return { candidates };
     },
   };
@@ -742,19 +753,33 @@ export async function analyseAccount(
     fallback: null,
     note: null,
     recommendations,
-    calledTools: [...new Set(trace.map((t) => t.tool))],
-    trace: traceSteps(trace, steps),
+    calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
+    trace: traceSteps(trace, steps, recommendations),
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });
   return analysis;
 }
 
 /** The model may call a tool twice or name one we never offered: one line per offered tool, in first-call order. */
-function traceSteps(trace: readonly ToolTraceEntry[], steps: Steps): TraceStep[] {
+function traceSteps(
+  trace: readonly ToolTraceEntry[],
+  steps: Steps,
+  ranked: readonly PortfolioRecommendation[],
+): TraceStep[] {
+  const line = (tool: string) => {
+    const entry = steps.get(tool);
+    if (!entry || !trace.some((t) => t.tool === tool && t.ok)) return undefined;
+    const top = ranked.find((r) => entry.byCandidate.has(r.id));
+    return (
+      (top && entry.byCandidate.get(top.id)) ??
+      entry.byCandidate.values().next().value ??
+      entry.none
+    );
+  };
   return [...new Set(trace.map((t) => t.tool))].flatMap((tool) => {
     const agent = AGENTS[tool];
     if (!agent) return [];
-    const step = trace.some((t) => t.tool === tool && t.ok) ? steps.get(tool) : undefined;
+    const step = line(tool);
     return [
       step
         ? { tool, agent, ok: true, ...step }
