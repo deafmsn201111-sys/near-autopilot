@@ -6,6 +6,14 @@ import { envelope, noAction } from './envelope';
 
 const pow10 = (n: number): bigint => 10n ** BigInt(n);
 
+/** Tokens the account holds in the wallet or on Burrow: the ones whose market conditions matter to it. */
+export const heldTokens = (obs: AgentObservation): Set<TokenId> =>
+  new Set([
+    ...obs.snapshot.walletBalances.filter((b) => b.raw > 0n).map((b) => b.token),
+    ...(obs.snapshot.lending?.collateral ?? []).map((b) => b.token),
+    ...(obs.snapshot.lending?.borrowed ?? []).map((b) => b.token),
+  ]);
+
 /** |a - b| / b in bps, exact integer arithmetic on two oracle-format prices. Null if b is zero. */
 export function priceDivergenceBps(a: UnitPrice, b: UnitPrice): bigint | null {
   const num = a.multiplier * pow10(b.decimals);
@@ -39,17 +47,15 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       obs.now.getTime() + (this.options.signalTtlSeconds ?? 900) * 1000,
     ).toISOString();
 
-    const tokens = new Set<TokenId>([
-      ...obs.snapshot.walletBalances.filter((b) => b.raw > 0n).map((b) => b.token),
-      ...(obs.snapshot.lending?.collateral ?? []).map((b) => b.token),
-      ...(obs.snapshot.lending?.borrowed ?? []).map((b) => b.token),
-    ]);
+    const tokens = heldTokens(obs);
     const proposals: Array<Record<string, unknown> & { severity: number }> = [];
+    let compared = false;
     for (const token of [...tokens].sort()) {
       const oracle = obs.snapshot.prices.get(token);
       const reference = market.referencePrices.get(token);
       if (oracle && reference) {
         const bps = priceDivergenceBps(oracle, reference);
+        if (bps !== null) compared = true;
         const severity =
           bps === null
             ? 0
@@ -72,6 +78,7 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       }
       const vol = market.volatility24hBps.get(token);
       if (vol !== undefined) {
+        compared = true;
         const severity = severityFor(BigInt(vol), [
           [1500n, 3],
           [3000n, 4],
@@ -95,10 +102,11 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       .sort((a, b) => b.p.severity - a.p.severity || a.i - b.i)
       .slice(0, MAX_PROPOSALS_PER_OUTPUT)
       .map(({ p }) => p);
-    return envelope(
-      this.id,
-      obs,
-      kept.length > 0 ? kept : [noAction('healthy', 'no abnormal conditions found')],
-    );
+    if (kept.length > 0) return envelope(this.id, obs, kept);
+    return envelope(this.id, obs, [
+      compared
+        ? noAction('healthy', 'no abnormal conditions found')
+        : noAction('insufficient_data', 'no second price source or volatility to compare'),
+    ]);
   }
 }
