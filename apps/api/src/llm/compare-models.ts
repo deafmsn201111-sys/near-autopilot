@@ -76,8 +76,9 @@ const sdk = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 120_000, max
 
 let spentMicro = 0n;
 let calls: LlmCallRecord[] = [];
+const budgetLeft = () => BigInt(MAX_SPEND_USD * 1e6) - spentMicro;
 const ledger = {
-  remainingTodayMicro: async () => BigInt(MAX_SPEND_USD * 1e6) - spentMicro,
+  remainingTodayMicro: async () => budgetLeft(),
   record: async (call: LlmCallRecord) => {
     spentMicro += call.costMicroUsd;
     calls.push(call);
@@ -122,7 +123,7 @@ const median = (xs: number[]) => {
 };
 
 const rows: Record<string, unknown>[] = [];
-for (const account of accounts) {
+measure: for (const account of accounts) {
   const inputs = await analysisInputs(account, app.log);
   if ('error' in inputs) {
     console.warn(`${account}: ${inputs.error}; skipped`);
@@ -131,6 +132,10 @@ for (const account of accounts) {
   say(`\n${account}: rule-based list ${inputs.heuristics.map((h) => h.kind).join(', ')}`);
   for (const config of CONFIGS) {
     for (let run = 1; run <= RUNS; run++) {
+      if (budgetLeft() <= 0n) {
+        console.warn(`spend limit $${MAX_SPEND_USD} reached; stopping`);
+        break measure;
+      }
       calls = [];
       const { wrapped, seen } = observed(
         new AnthropicToolLlm(sdk, {
