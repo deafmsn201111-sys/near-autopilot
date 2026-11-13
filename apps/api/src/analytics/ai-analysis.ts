@@ -718,14 +718,16 @@ export async function analyseAccount(
           : { text: 'Nothing on Burrow to move to the wallet', provenance: null },
     ),
   ];
-  // The tools are plain code: with no card to offer, the model has nothing to rank and the call would cost for nothing.
-  const offered = new Map<string, PortfolioRecommendation>();
-  const dryRun = await Promise.allSettled(toolsFor(offered, new Map()).map((t) => t.run({})));
-  if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled'))
-    return early(fallback('nothing_to_rank'));
   const key = analysisKey(obs, ctx.heuristics, strategy);
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return early(hit.analysis);
+  // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
+  if (ctx.heuristics.length === 0) {
+    const offered = new Map<string, PortfolioRecommendation>();
+    const dryRun = await Promise.allSettled(toolsFor(offered, new Map()).map((t) => t.run({})));
+    if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled'))
+      return early(fallback('nothing_to_rank'));
+  }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));

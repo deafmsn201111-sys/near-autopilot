@@ -838,6 +838,22 @@ describe('analyseAccount', () => {
     expect(out.note).toMatch(/^Nothing to rank/);
   });
 
+  it('still asks the model when the page shows a card the agents did not offer', async () => {
+    const dust = observation();
+    const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
+    const warning: PortfolioRecommendation = { ...heuristic, severity: 'warning', intent: null };
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => ({ ...dust, snapshot }),
+      heuristics: [warning],
+      checks: [warning],
+      ownerVerified: true,
+    });
+    expect(tools).toHaveLength(1);
+    expect(out.fallback).not.toBe('nothing_to_rank');
+  });
+
   it('falls back when the model ranks nothing', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
     const out = await analyseAccount(ai(llm), {

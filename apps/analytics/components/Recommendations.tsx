@@ -66,7 +66,13 @@ export function Recommendations({
       {analysis && (
         <p className="muted-note">
           <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
-            <i aria-hidden="true">{analysis.source === 'llm' ? '✓' : '!'}</i>
+            <i aria-hidden="true">
+              {analysis.source === 'llm'
+                ? '✓'
+                : analysis.fallback === 'nothing_to_rank'
+                  ? 'i'
+                  : '!'}
+            </i>
             {analysis.source === 'llm'
               ? 'AI-ranked'
               : analysis.fallback === 'nothing_to_rank'
