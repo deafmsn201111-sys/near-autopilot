@@ -181,8 +181,7 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
             <strong>Code checked the answer</strong>
             <ul className="ai-checks">
               <li className={run.checks.replaced ? 'warn' : undefined}>
-                {run.checks.explained} of {run.checks.explained + run.checks.replaced} AI
-                explanations use only numbers the agents returned
+                {explained(run.checks.explained, run.checks.explained + run.checks.replaced)}
                 {run.checks.replaced > 0 &&
                   `; ${run.checks.replaced} replaced by the agent's own text`}
               </li>
@@ -203,6 +202,9 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
     </section>
   );
 }
+
+const explained = (ok: number, all: number) =>
+  `${ok} of ${all} AI ${all === 1 ? 'explanation uses' : 'explanations use'} only numbers the agents returned`;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
