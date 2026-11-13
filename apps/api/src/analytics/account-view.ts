@@ -500,7 +500,8 @@ export function portfolioRecommendations(
   if (ctx.loan?.hasDebt && hf !== null && hf < strategy.healthyAt && ctx.largestDebt) {
     // ponytail: assumes one borrow factor across debts; the guardian in the AI analysis sizes it exactly.
     const toTarget = ctx.metrics.totalDebtUsd * (1 - hf / strategy.targetHealthFactor);
-    const approxUsd = Math.round(Math.min(ctx.largestDebt.usd, toTarget));
+    // prepare needs a positive amount; it caps the repay at the wallet balance and the debt.
+    const approxUsd = Math.max(1, Math.round(Math.min(ctx.largestDebt.usd, toTarget)));
     recs.push({
       id: 'improve-loan-safety',
       kind: 'improve_loan_safety',

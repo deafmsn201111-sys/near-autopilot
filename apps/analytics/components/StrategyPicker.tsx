@@ -24,6 +24,7 @@ export function StrategyPicker({ account, current }: { account: string; current:
               href={href(id)}
               aria-current={id === current ? 'true' : undefined}
               onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
                 e.preventDefault();
                 startTransition(async () => {
                   await saveStrategy(account, id);

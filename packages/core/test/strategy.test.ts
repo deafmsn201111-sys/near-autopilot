@@ -3,6 +3,8 @@ import {
   DEFAULT_STRATEGY,
   STRATEGIES,
   STRATEGY_IDS,
+  rememberStrategy,
+  savedStrategy,
   strategyOf,
   strategySchema,
 } from '../src/strategy';
@@ -45,5 +47,23 @@ describe('strategy presets', () => {
     expect(strategyOf(['conservative'])).toBe('balanced');
     expect(strategyOf('nope')).toBe('balanced');
     expect(strategyOf(undefined)).toBe('balanced');
+  });
+
+  it('remembers one choice per account in a single bounded cookie value', () => {
+    let v = rememberStrategy(undefined, 'alice.near', 'aggressive');
+    v = rememberStrategy(v, 'bob.near', 'conservative');
+    expect(savedStrategy(v, 'alice.near')).toBe('aggressive');
+    expect(savedStrategy(v, 'bob.near')).toBe('conservative');
+    expect(savedStrategy(v, 'carol.near')).toBeUndefined();
+    for (let i = 0; i < 50; i++) v = rememberStrategy(v, `a${i}.near`, 'aggressive');
+    expect(savedStrategy(v, 'alice.near')).toBeUndefined();
+    expect(savedStrategy(v, 'a49.near')).toBe('aggressive');
+    expect(v.length).toBeLessThan(1_500);
+  });
+
+  it('reads a tampered cookie as nothing saved', () => {
+    expect(savedStrategy('not json', 'alice.near')).toBeUndefined();
+    expect(savedStrategy('{"alice.near":"yolo"}', 'alice.near')).toBeUndefined();
+    expect(savedStrategy('{"__proto__":"aggressive"}', '__proto__')).toBeUndefined();
   });
 });

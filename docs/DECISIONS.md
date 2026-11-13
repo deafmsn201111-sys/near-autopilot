@@ -232,6 +232,6 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   critical (1.05) lines stay the agents' defaults. The loop comparison keeps HF 1.6.
 - The API caches the wallet read without the preset and computes the cards and the loan label per request; the UI
   account cache and the AI analysis cache key include it. Unknown preset → 400, missing → Balanced.
-- The choice lives in the URL and a per-account cookie in this browser (quick hackathon solution; #100 moves it to a
+- The choice lives in the URL and one cookie in this browser that remembers the last 20 accounts (quick hackathon solution; #100 moves it to a
   server-side setting written by the proven owner).
   **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.

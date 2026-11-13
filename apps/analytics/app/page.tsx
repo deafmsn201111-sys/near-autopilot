@@ -54,7 +54,12 @@ import { walletSigningEnabled } from '../lib/wallet-signing';
 import { AccountForm } from '../components/AccountForm';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
-import { STRATEGY_COOKIE_PREFIX, strategyOf } from '@near-autopilot/core/strategy';
+import {
+  savedStrategy,
+  STRATEGY_COOKIE,
+  STRATEGY_IDS,
+  strategyOf,
+} from '@near-autopilot/core/strategy';
 
 export const dynamic = 'force-dynamic';
 
@@ -175,7 +180,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const accountParam = urlAccount || (isAccount ? cookieAccount : '');
   // The URL wins (a shared link shows its strategy), then the last choice for this account in this browser.
   const strategy = strategyOf(
-    sp.strategy ?? (await cookies()).get(`${STRATEGY_COOKIE_PREFIX}${accountParam}`)?.value,
+    STRATEGY_IDS.find((s) => s === sp.strategy) ??
+      savedStrategy((await cookies()).get(STRATEGY_COOKIE)?.value, accountParam),
   );
   const id = portfolioOf(sp.p);
   if (isAccount && !accountParam)

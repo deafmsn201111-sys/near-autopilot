@@ -2,7 +2,7 @@
 import { cookies, headers } from 'next/headers';
 import { accountIdSchema } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE, OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
-import { STRATEGY_COOKIE_PREFIX, strategySchema } from '@near-autopilot/core/strategy';
+import { rememberStrategy, STRATEGY_COOKIE, strategySchema } from '@near-autopilot/core/strategy';
 import { forgetAccount } from '../lib/product';
 
 const accountOf = (account: unknown) =>
@@ -22,7 +22,9 @@ export async function saveStrategy(account: unknown, strategy: unknown): Promise
   const choice = strategySchema.safeParse(strategy);
   if (!id.success || !choice.success) return;
   const secure = (await headers()).get('x-forwarded-proto') === 'https';
-  (await cookies()).set(`${STRATEGY_COOKIE_PREFIX}${id.data}`, choice.data, {
+  const jar = await cookies();
+  const value = rememberStrategy(jar.get(STRATEGY_COOKIE)?.value, id.data, choice.data);
+  jar.set(STRATEGY_COOKIE, value, {
     httpOnly: true,
     secure,
     sameSite: 'lax',

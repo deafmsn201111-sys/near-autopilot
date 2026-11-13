@@ -57,4 +57,36 @@ export const strategySchema = z.enum(STRATEGY_IDS).default(DEFAULT_STRATEGY);
 export const strategyOf = (value: unknown): StrategyId =>
   STRATEGY_IDS.find((id) => id === value) ?? DEFAULT_STRATEGY;
 
-export const STRATEGY_COOKIE_PREFIX = 'np_strategy.';
+export const STRATEGY_COOKIE = 'np_strategy';
+const REMEMBERED_ACCOUNTS = 20;
+
+type Remembered = [account: string, strategy: StrategyId][];
+
+const remembered = (cookie: string | undefined): Remembered => {
+  try {
+    const parsed: unknown = JSON.parse(cookie ?? '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (e): e is Remembered[number] =>
+        Array.isArray(e) && typeof e[0] === 'string' && STRATEGY_IDS.includes(e[1] as StrategyId),
+    );
+  } catch {
+    return [];
+  }
+};
+
+/** The last strategy chosen for this account, from the one cookie that holds the most recent accounts. */
+export const savedStrategy = (cookie: string | undefined, account: string) =>
+  remembered(cookie).find(([a]) => a === account)?.[1];
+
+/** The cookie value with this choice as the most recent; the oldest accounts drop off past the limit. */
+export const rememberStrategy = (
+  cookie: string | undefined,
+  account: string,
+  strategy: StrategyId,
+): string =>
+  JSON.stringify(
+    [...remembered(cookie).filter(([a]) => a !== account), [account, strategy]].slice(
+      -REMEMBERED_ACCOUNTS,
+    ),
+  );

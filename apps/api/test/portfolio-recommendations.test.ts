@@ -119,6 +119,15 @@ describe('portfolioRecommendations per strategy', () => {
     });
   });
 
+  it('never offers a repay under $1: prepare rejects a zero amount', () => {
+    const small = ctx({
+      metrics: metrics({ totalDebtUsd: 5 }),
+      loan: { hasDebt: true, healthFactor: 1.49 },
+      largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 5 },
+    });
+    expect(portfolioRecommendations(small)[0]?.intent).toMatchObject({ approxUsd: 1 });
+  });
+
   it('a 70% position is a card under Conservative and Balanced, none under Aggressive', () => {
     const c = ctx({
       metrics: metrics({ concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 70 } }),
