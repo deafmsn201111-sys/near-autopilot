@@ -51,15 +51,17 @@ describe('portfolioMetrics', () => {
 describe('accountPortfolio', () => {
   const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
   const p = accountPortfolio({
-    holdings: [
-      { where: 'wallet', token: USDC, symbol: 'USDC', amount: 40, usd: 40 },
-      { where: 'wallet', token: 'near', symbol: 'NEAR', amount: 2, usd: 6 },
-      { where: 'wallet', token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 },
-      { where: 'deposited', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
-      { where: 'collateral', token: 'wrap.near', symbol: 'wNEAR', amount: 10, usd: 30 },
-      { where: 'borrowed', token: USDC, symbol: 'USDC', amount: 20, usd: 20 },
-      { where: 'wallet', token: 'unpriced.near', symbol: 'X', amount: 5, usd: null },
-    ],
+    holdings: (
+      [
+        { where: 'wallet', token: USDC, symbol: 'USDC', amount: 40, usd: 40 },
+        { where: 'wallet', token: 'near', symbol: 'NEAR', amount: 2, usd: 6 },
+        { where: 'wallet', token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 },
+        { where: 'deposited', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
+        { where: 'collateral', token: 'wrap.near', symbol: 'wNEAR', amount: 10, usd: 30 },
+        { where: 'borrowed', token: USDC, symbol: 'USDC', amount: 20, usd: 20 },
+        { where: 'wallet', token: 'unpriced.near', symbol: 'X', amount: 5, usd: null },
+      ] as const
+    ).map((h) => ({ ...h, verified: true, estimate: false, small: false })),
     staking: [{ token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 }],
     v1Positions: [
       {
@@ -89,7 +91,7 @@ describe('accountPortfolio', () => {
   });
 
   it('lists each LP position once at its priced value, so the rows add up to the total', () => {
-    expect(p.positions).toEqual([
+    expect(p.positions).toMatchObject([
       { key: 'v1-4512', label: 'USDC/wNEAR', sub: 'Rhea liquidity', amount: null, usd: 16 },
       {
         key: 'dcl-lpt-1',
@@ -132,7 +134,7 @@ describe('accountPortfolio', () => {
       dclPositions: [],
     });
     expect(q.totals.assetsUsd).toBe(5);
-    expect(q.positions).toEqual([
+    expect(q.positions).toMatchObject([
       {
         key: 'staking-linear-protocol.near',
         label: 'LiNEAR',

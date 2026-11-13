@@ -8,6 +8,7 @@ import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
 import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
 import { analysisMemo } from './ai-analysis';
+import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
 
@@ -71,6 +72,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
         tokenA: accountId(p.tokenA),
         tokenB: accountId(p.tokenB),
       })),
+      discovery: httpDiscovery(),
       ai: toolLlm
         ? {
             llm: toolLlm,
