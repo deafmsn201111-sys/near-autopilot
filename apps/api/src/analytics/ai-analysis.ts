@@ -158,6 +158,8 @@ export interface AnalysisContext {
   readonly strategy?: StrategyId;
   /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
+  /** The loan's cost against the deposits' earnings, for every loan card the guardian returns. */
+  readonly loanCarry?: PortfolioRecommendation['carry'];
 }
 
 export interface Analysis {
@@ -257,7 +259,7 @@ export function walletAgentConfig(
 /** Our own enum and numbers only: safe to put in the prompt. */
 function strategyLine(id: StrategyId): string {
   const s = STRATEGIES[id];
-  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). Weigh the candidates for that strategy.`;
+  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). A loan is not a problem by itself: when you suggest a repayment, the reason is the health factor, never the loan. Weigh the candidates for that strategy.`;
 }
 
 const SYSTEM = [
@@ -323,6 +325,7 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd
 function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
+  carry: PortfolioRecommendation['carry'],
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
@@ -377,6 +380,7 @@ function guardianTool(
             amount: p.amount.toString(),
             ...sizingFor(loanCards, p.token),
           },
+          ...(carry && { carry }),
         });
       }
       candidates.push(...fromCollateral);
@@ -775,7 +779,7 @@ export async function analyseAccount(
   const steps: Steps = new Map();
   const run = async () => {
     const tools = [
-      guardianTool(obs, ctx.checks, found, steps),
+      guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
       allocatorTool(obs, found, steps),
       marketTool(obs, steps),
       walletTool(
