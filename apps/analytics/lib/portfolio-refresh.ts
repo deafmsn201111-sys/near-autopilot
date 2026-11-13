@@ -5,7 +5,9 @@ const running = new Map<string, Promise<void>>();
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
-export const refreshing = (account: string) => running.has(account);
+const keyOf = (account: string) => account.trim().toLowerCase();
+
+export const refreshing = (account: string) => running.has(keyOf(account));
 
 export const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -22,7 +24,8 @@ export function refreshPortfolio(
   read: (account: string) => Promise<boolean>,
   rerender: () => void,
 ): Promise<void> {
-  const current = running.get(account);
+  const key = keyOf(account);
+  const current = running.get(key);
   if (current) return current;
   const run = (async () => {
     for (let i = 0; i < ATTEMPTS; i++) {
@@ -32,10 +35,10 @@ export function refreshPortfolio(
       if (settled) break;
     }
   })().finally(() => {
-    running.delete(account);
+    running.delete(key);
     notify();
   });
-  running.set(account, run);
+  running.set(key, run);
   notify();
   return run;
 }

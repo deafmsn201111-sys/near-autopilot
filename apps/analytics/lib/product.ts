@@ -1,4 +1,5 @@
-import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
+import { BoundedMap } from '@near-autopilot/core';
+import { ACCOUNT_LIMIT, consume, RATE_LIMITED, MAX_TRACKED_KEYS, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
 import { cookies } from 'next/headers';
@@ -203,6 +204,19 @@ type AccountResult = { data: AccountRead | null; error: string | null };
 
 const ACCOUNT_TTL_MS = 60_000;
 const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
+const lastHoldings = new BoundedMap<string, string>(MAX_TRACKED_KEYS);
+
+// ponytail: 4 significant digits hide Burrow interest and gas; an action smaller than that waits out the retries
+const holdingsOf = (r: AccountResult) =>
+  r.data
+    ? JSON.stringify([
+        ...r.data.holdings.map((h) => [h.where, h.token, Number(h.amount.toPrecision(4))]),
+        ...(r.data.positions ?? []).map((x) => [
+          x.key,
+          x.amount && Number(x.amount.toPrecision(4)),
+        ]),
+      ])
+    : null;
 
 const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
@@ -231,11 +245,10 @@ const readAccount = async (id: string, fresh = false): Promise<AccountResult> =>
   if (accountReads.get(key) !== entry) return r;
   if (r.error) accountReads.delete(key);
   else entry.at = Date.now();
+  const holdings = holdingsOf(r);
+  if (holdings) lastHoldings.set(key, holdings);
   return r;
 };
-
-const holdingsOf = (r: AccountResult | undefined) =>
-  r?.data ? JSON.stringify(r.data.holdings.map((h) => [h.where, h.token, h.amount])) : null;
 
 /**
  * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D19). True once the
@@ -244,11 +257,9 @@ const holdingsOf = (r: AccountResult | undefined) =>
  */
 export const refreshAccountRead = async (id: string): Promise<boolean> => {
   const normalized = id.trim().toLowerCase();
-  const before = holdingsOf(
-    await accountReads.get(await readKey(normalized, await ownershipProof()))?.read,
-  );
+  const before = lastHoldings.get(await readKey(normalized, await ownershipProof()));
   const after = holdingsOf(await readAccount(normalized, true));
-  return before === null || after === null || after !== before;
+  return before === undefined || after === null || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

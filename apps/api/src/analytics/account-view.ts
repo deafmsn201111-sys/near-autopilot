@@ -663,6 +663,7 @@ const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
 const FRESH_READ_GAP_MS = 5_000;
+const freshQuery = z.object({ fresh: z.literal('1').optional() });
 
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
@@ -709,7 +710,6 @@ export function registerAccountView(
       concentration: Concentration;
     }
   >(ACCOUNT_CACHE_MAX);
-  // After a transaction the UI asks for a fresh read (D19); one per account every 5 s, the rest get the cache.
   const freshReads = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
   const mayReadFresh = (id: string) => {
     const at = freshReads.get(id);
@@ -1217,7 +1217,7 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const fresh = (req.query as { fresh?: string }).fresh === '1';
+    const fresh = freshQuery.safeParse(req.query).data?.fresh === '1';
     const out = await readAccount(parsed.data, req.log, fresh);
     if (out.status !== 200) return reply.code(out.status).send(out.body);
     return { ...out.body, ownerVerified: await ownerVerified };

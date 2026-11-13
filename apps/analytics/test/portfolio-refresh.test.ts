@@ -30,7 +30,7 @@ describe('refreshPortfolio', () => {
     const heard = vi.fn();
     const off = subscribe(heard);
     const a = refreshPortfolio('alice.near', read, () => undefined);
-    const b = refreshPortfolio('alice.near', read, () => undefined);
+    const b = refreshPortfolio(' Alice.near', read, () => undefined);
     expect(b).toBe(a);
     await a;
     off();

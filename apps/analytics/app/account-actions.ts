@@ -4,7 +4,6 @@ import { accountIdSchema } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE, OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
 import { refreshAccountRead } from '../lib/product';
 
-/** True once the fresh read shows a changed account (or there is nothing more to wait for). */
 export async function refreshAccount(account: unknown): Promise<boolean> {
   const id = accountIdSchema.safeParse(
     typeof account === 'string' ? account.trim().toLowerCase() : account,

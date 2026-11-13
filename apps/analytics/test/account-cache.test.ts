@@ -4,6 +4,7 @@ const reads = vi.fn();
 let forwardedFor = '203.0.113.7';
 let ownerCookie: string | undefined;
 let nearInWallet = 1;
+let supplied = 100;
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', forwardedFor]]),
@@ -19,7 +20,10 @@ vi.mock('../lib/api', () => ({
       data: {
         accountId: 'alice.near',
         recommendations: [],
-        holdings: [{ where: 'wallet', token: 'near', amount: nearInWallet }],
+        holdings: [
+          { where: 'wallet', token: 'near', amount: nearInWallet },
+          { where: 'deposited', token: 'usdt', amount: supplied },
+        ],
       },
       error: null,
     };
@@ -36,6 +40,20 @@ describe('account read cache', () => {
     forwardedFor = '203.0.113.7';
     ownerCookie = undefined;
     nearInWallet = 1;
+    supplied = 100;
+  });
+
+  it('interest and gas dust are not a new state; the cached read expiring does not lose the baseline', async () => {
+    vi.useFakeTimers();
+    const p = await load();
+    await p.accountView('alice.near');
+    vi.advanceTimersByTime(120_000);
+    await p.accountView('bob.near');
+    supplied = 100.000001;
+    nearInWallet = 0.99997;
+    expect(await p.refreshAccountRead('alice.near')).toBe(false);
+    supplied = 150;
+    expect(await p.refreshAccountRead('alice.near')).toBe(true);
   });
 
   it('forwards the ownership proof and reads again once it is signed', async () => {

@@ -295,8 +295,9 @@ finality, before the new state was readable.
 - Only the `refreshAccount` server action asks for it (after a signed cascade in `PrepareDialog`, or a nonce bump in
   `AccountWatcher`). Each fresh read is a normal account read: it spends one of the visitor's 30 reads (D10).
 - The page retries up to 4 reads, 5 s apart (`apps/analytics/lib/portfolio-refresh.ts`), until the holdings differ
-  from the read they replace, and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per
-  account at a time.
+  from the visitor's last read (holding and position amounts to 4 significant digits, so Burrow interest and gas do
+  not count as a change), and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per account
+  at a time.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
-  a price-driven change) shows the note for the full ~15 s.
+  one below 4 significant digits) shows the note for the full ~15 s.
