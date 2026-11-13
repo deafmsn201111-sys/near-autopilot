@@ -233,3 +233,29 @@ and a break-in to the public site container must not be able to change them.
   so the screen asks to re-enter a balance older than 7 days.
   **Consequences:** anyone with SSH to the server can open the admin; there is no login. Screens 2–4 (#33, #34) reuse
   the token and service.
+
+## D17 — Haiku 5.5 at its default effort stays the analysis model
+
+**Context:** #16. Haiku 5.5 was the default by guess. Measured on the real tool-use loop (`analyseAccount`, code
+computes numbers, the model orders and explains) with `pnpm --filter @near-autopilot/api llm:compare`, 13 Nov 2026,
+3 runs per config on two mainnet wallets: `autopilot-test.near` (Burrow loan, HF 1.28, idle USDt) and the public
+`hodl13.near` (4 in-range Rhea DCL positions, 99% NEAR). Cost at list prices ($0.10/$0.50 Haiku, $2/$10 Sonnet per
+1M tokens); every run took 2 model turns and about 2.9K input tokens; total spend $0.11.
+
+| Wallet              | Config             | $ / analysis | p50 latency | AI answer, no fallback | "why" replaced | Loan warning first |
+| ------------------- | ------------------ | ------------ | ----------- | ---------------------- | -------------- | ------------------ |
+| autopilot-test.near | Haiku 5.5 (medium) | $0.0006      | 4.4 s       | 3/3                    | 0              | 3/3                |
+| autopilot-test.near | Sonnet 5.5 `low`   | $0.0089      | 3.9 s       | 3/3                    | 0              | 3/3                |
+| autopilot-test.near | Sonnet 5.5 (high)  | $0.0100      | 5.3 s       | 3/3                    | 0              | 3/3                |
+| hodl13.near         | Haiku 5.5 (medium) | $0.0005      | 2.6 s       | 3/3                    | 0              | n/a                |
+| hodl13.near         | Sonnet 5.5 `low`   | $0.0078      | 3.4 s       | 3/3                    | 0              | n/a                |
+| hodl13.near         | Sonnet 5.5 (high)  | $0.0082      | 3.9 s       | 3/3                    | 0              | n/a                |
+
+Ranking: every config put the loan first and said the same thing with the same numbers ("health factor 1.28 … repay
+about $11 of USDC"; "99% in NEAR … swap about $31"). The one difference: Haiku left out the $5 idle-USDt supply card
+(about 10% a year) on all 3 runs, Sonnet `low` kept it on 3/3, Sonnet high on 1/3. Raw picks are on #16.
+**Decision:** keep `claude-haiku-5-5` at its default effort (`medium`). It is as valid and as safe (loan first, no
+"why" rejected by the numbers check) at 1/15 the cost, so the $20 deposit lasts about 35K analyses instead of 2K.
+The adapter takes an optional effort (used by the comparison); no env setting is added since the default wins.
+**Consequences:** the AI list may leave out small idle-balance cards (info only; warnings are put back by code). Revisit
+with `llm:compare` if the prompt or tools change; a Sonnet → Haiku fallback step is not needed.
