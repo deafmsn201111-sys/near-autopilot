@@ -184,6 +184,7 @@ const AGENTS: Readonly<Record<string, string>> = {
   liquidity_positions: 'Liquidity Optimizer',
 };
 
+const LEFT_OUT: StepLine = { text: 'Suggested an action the AI left out', provenance: null };
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The orchestrator config the agents run with on a wallet: idle supply on, every priced Burrow token allowed. */
@@ -295,7 +296,7 @@ function guardianTool(
       }
       for (const c of candidates) found.set(c.id, c);
       const hasDebt = (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n);
-      const repayProposed = proposals.some((p) => p.kind === 'lending.repay');
+      const safe = obs.risk.level === 'healthy' || obs.risk.level === 'none';
       steps.set('liquidation_guardian', {
         none:
           hf === null
@@ -303,7 +304,9 @@ function guardianTool(
               ? { text: 'Health factor unknown: a price is missing', provenance: null }
               : { text: 'No Burrow loan; nothing to do', provenance: null }
             : {
-                text: `Health factor ${hf}; ${repayProposed ? 'a repayment could not be sized' : 'nothing to do'}`,
+                text: safe
+                  ? `Health factor ${hf}; nothing to do`
+                  : `Health factor ${hf} is below target; no repayment from the wallet could be sized`,
                 provenance: 'calculated_estimate',
               },
         byCandidate,
@@ -770,11 +773,8 @@ function traceSteps(
     const entry = steps.get(tool);
     if (!entry || !trace.some((t) => t.tool === tool && t.ok)) return undefined;
     const top = ranked.find((r) => entry.byCandidate.has(r.id));
-    return (
-      (top && entry.byCandidate.get(top.id)) ??
-      entry.byCandidate.values().next().value ??
-      entry.none
-    );
+    if (top) return entry.byCandidate.get(top.id);
+    return entry.byCandidate.size > 0 ? LEFT_OUT : entry.none;
   };
   return [...new Set(trace.map((t) => t.tool))].flatMap((tool) => {
     const agent = AGENTS[tool];

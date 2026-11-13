@@ -268,7 +268,12 @@ describe('analyseAccount', () => {
     const { llm } = fake([
       () => callAll,
       () => ({ kind: 'tool_calls', calls: [{ id: '6', name: 'liquidation_guardian', input: {} }] }),
-      () => final([{ id: REPAY, why: 'Repay first.' }]),
+      () =>
+        final([
+          { id: REPAY, why: 'Repay first.' },
+          { id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn on it.' },
+          { id: heuristic.id, why: 'Worth a look.' },
+        ]),
     ]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
@@ -372,6 +377,43 @@ describe('analyseAccount', () => {
     expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
       'Health factor unknown: a price is missing',
     );
+  });
+
+  it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const empty = async () => {
+      const o = observation();
+      const snapshot = { ...o.snapshot, walletBalances: [] };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: empty,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'Health factor 1.37 is below target; no repayment from the wallet could be sized',
+    );
+  });
+
+  it('shows no number for a card the model left out', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'capital_allocator')).toMatchObject({
+      text: 'Suggested an action the AI left out',
+      provenance: null,
+    });
   });
 
   it('says when no second price source was there to compare', async () => {
