@@ -682,6 +682,28 @@ describe('analyseAccount', () => {
     });
   });
 
+  it('supplies the whole idle balance like the rule-based card, past the $100 swap limit', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
+    ]);
+    const obs = observation();
+    const rich: AgentObservation = {
+      ...obs,
+      snapshot: { ...obs.snapshot, walletBalances: [{ token: USDT, raw: usdt(507.42) }] },
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => rich,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    const card = out.recommendations.find((r) => r.kind === 'put_idle_to_work');
+    expect(card?.intent).toMatchObject({ amount: usdt(507.42).toString() });
+    expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
+  });
+
   it.each([
     ['invalid JSON', (): LlmToolTurn => ({ kind: 'final', text: 'not json' })],
     ['a model error', (): Promise<LlmToolTurn> => Promise.reject(new Error('529'))],

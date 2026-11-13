@@ -383,3 +383,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics`: strategy picker on "Your account" (URL param, then a per-account cookie), the preset in the
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
+
+## 2026-11-13 — Idle supply sized the same on the AI path (#131)
+
+- `CapitalAllocatorAgent.proposeSupply` deposits the whole idle balance; the decision engine no longer applies
+  `maxSwapUsd` to `lending.supply` (D23). The AI card now says "Put $507.42 of your idle USDt to work", as the
+  rule-based card does.

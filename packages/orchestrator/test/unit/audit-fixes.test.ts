@@ -258,17 +258,17 @@ describe('capital allocator: deposits idle tokens into Burrow when enabled', () 
       wallet: { near: 0, usdt },
       yields: { near: 2, usdt: 10 },
       config: { allocation: { assets: [{ token: WNEAR_ID }, { token: USDT_ID }], supplyIdle } },
+      policy: { maxActionUsd: 600, approvalThresholdUsd: 600 },
     });
-  it('proposes a supply of the idle, best-yielding token, capped at the per-action limit, and it is executed dry-run', async () => {
-    const w = world(true, 500); // $500 USDt idle at 10 %
+  it('proposes a supply of the whole idle balance of the best-yielding token, past the swap size limit, and it is executed dry-run', async () => {
+    const w = world(true, 500); // $500 USDt idle at 10 %; maxSwapUsd is $100, the policy allows $600
     const report = await w.orchestrator.runCycle('supply-1');
     expect(report.decision?.ranked[0]?.action).toMatchObject({
       kind: 'lending.supply',
       token: USDT_ID,
     });
-    // capped at maxSwapUsd ($100) worth of USDt
     const action = report.decision?.ranked[0]?.action as { amount: bigint } | undefined;
-    expect(action?.amount).toBe(100n * 10n ** 6n);
+    expect(action?.amount).toBe(500n * 10n ** 6n);
     expect(report.status).toBe('dry_run');
   });
   it('picks the token that earns the most in dollars, not the highest rate on dust', async () => {
