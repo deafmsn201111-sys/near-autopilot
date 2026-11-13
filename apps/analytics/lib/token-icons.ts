@@ -24,6 +24,7 @@ const CURATED_TOKEN_ICONS: Readonly<Record<string, string>> = {
 };
 
 export function tokenIcon(token: string | undefined, symbol: string): string | null {
+  if (token === 'near') return '/token-icons/near.jpg';
   if (token) return CURATED[token] ? (CURATED_TOKEN_ICONS[token] ?? null) : null;
   // Native NEAR is not an NEP-141 contract, so its trusted identity has no token id.
   return symbol.toUpperCase() === 'NEAR' ? '/token-icons/near.jpg' : null;
