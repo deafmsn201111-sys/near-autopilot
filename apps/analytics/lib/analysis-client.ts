@@ -78,7 +78,8 @@ const analysisSchema = z.object({
       intent: intentSchema.nullable(),
       carry: z
         .object({ text: z.string(), provenance: z.literal('calculated_estimate') })
-        .optional(),
+        .optional()
+        .catch(undefined),
     }),
   ),
   calledTools: z.array(z.string()).default([]),

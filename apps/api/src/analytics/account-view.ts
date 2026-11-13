@@ -550,7 +550,7 @@ export interface PortfolioRecommendation {
   readonly carry?: { readonly text: string; readonly provenance: 'calculated_estimate' };
 }
 
-/** Today's rates on the Burrow position; a figure is null when a position of $1 or more has no current rate. */
+/** Today's rates on the Burrow position; a side's figure is null when one of its positions is unpriced or unrated. */
 export interface LoanCarry {
   readonly borrowAprPct: number | null;
   readonly loanMonthlyUsd: number | null;
@@ -593,7 +593,7 @@ export interface RecommendationContext {
     readonly collateral: number;
     readonly aprPct: number | null;
   })[];
-  /** borrowAprPct is the largest debt's rate. */
+  /** borrowAprPct is the debts' rate weighted by their USD value. */
   readonly carry?: LoanCarry;
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
@@ -747,8 +747,6 @@ export const concentratedToken = <T extends { readonly token: string }>(
   byToken: readonly T[],
   actionable: (token: string) => boolean,
 ): T | undefined => byToken.find((b) => actionable(b.token) && !STABLES.has(b.token));
-
-const REPAY_ACTION = 'repay-';
 
 const DANGER_HF = ORCH.risk.dangerBelowBps / 10_000;
 
@@ -1075,7 +1073,7 @@ export function registerAccountView(
       body: {
         ...entry.body,
         actions: keepLoan
-          ? entry.body.actions.filter((a) => !a.id.startsWith(REPAY_ACTION))
+          ? entry.body.actions.filter((a) => a.kind !== 'keep') // 'keep' is the repay-from-wallet action
           : entry.body.actions,
         strategy: strategyId,
         recommendations,
@@ -1240,7 +1238,7 @@ export function registerAccountView(
       if (!idle?.usd || !debt.usd || b === null) continue;
       const repay = Math.min(idle.usd, debt.usd);
       add({
-        id: `${REPAY_ACTION}${debt.token}`,
+        id: `repay-${debt.token}`,
         kind: 'keep',
         title: `Repay ${money(repay)} of your ${debt.symbol} loan`,
         summary: `The loan costs ${(b * 100).toFixed(1)}% a year and you hold idle ${debt.symbol} in the wallet. Repaying saves that interest and makes the loan safer.`,
@@ -1384,19 +1382,25 @@ export function registerAccountView(
 
     // What the current Burrow position earns or costs per month at today's rates (deposits earn, loans cost).
     let loanMonthly = 0;
+    let loanUsd = 0;
     let depositsMonthly = 0;
     const noRate: string[] = [];
-    const noRateOn = new Set<'borrowed' | 'supplied'>();
+    // a side with an unpriced or unrated position gets no figure on the loan card, never a too-small one
+    const unknownOn = new Set<'borrowed' | 'supplied'>();
     for (const h of v.holdings) {
-      // dust (under $1) in dead markets would only block the figure; larger positions without a rate are named
-      if (h.where === 'wallet' || h.usd === null || h.usd < 1) continue;
+      if (h.where === 'wallet') continue;
       const borrowed = h.where === 'borrowed';
+      if (h.usd === null) unknownOn.add(borrowed ? 'borrowed' : 'supplied');
+      // dust (under $1) in dead markets would only block the figure; larger positions without a rate are named
+      if (h.usd === null || h.usd < 1) continue;
       const r = rate(h.token, borrowed ? 'borrowApr' : 'netSupplyApr');
       if (r === null) {
         noRate.push(h.symbol);
-        noRateOn.add(borrowed ? 'borrowed' : 'supplied');
-      } else if (borrowed) loanMonthly += h.usd * r * H;
-      else depositsMonthly += h.usd * r * H;
+        unknownOn.add(borrowed ? 'borrowed' : 'supplied');
+      } else if (borrowed) {
+        loanMonthly += h.usd * r * H;
+        loanUsd += h.usd;
+      } else depositsMonthly += h.usd * r * H;
     }
     const monthly = depositsMonthly - loanMonthly;
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
@@ -1484,11 +1488,11 @@ export function registerAccountView(
         )
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
-    const debtApr = debts[0] ? rate(debts[0].token, 'borrowApr') : null;
+    const loanKnown = !unknownOn.has('borrowed') && loanUsd > 0;
     const carry: LoanCarry = {
-      borrowAprPct: debtApr === null ? null : debtApr * 100,
-      loanMonthlyUsd: noRateOn.has('borrowed') ? null : loanMonthly,
-      depositsMonthlyUsd: noRateOn.has('supplied') ? null : depositsMonthly,
+      borrowAprPct: loanKnown ? (loanMonthly / H / loanUsd) * 100 : null,
+      loanMonthlyUsd: loanKnown ? loanMonthly : null,
+      depositsMonthlyUsd: unknownOn.has('supplied') ? null : depositsMonthly,
     };
     const loan = {
       // any borrowed entry counts, priced or not: an unpriced loan must not read as "nothing borrowed"
