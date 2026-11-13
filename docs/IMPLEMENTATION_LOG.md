@@ -268,6 +268,7 @@ no longer said what comes first.
   `analysisInputs`, which the analysis route also uses.
 - `AnthropicToolLlm` takes an optional `effort` (`output_config.effort`).
 - Result in D17: Haiku 5.5 at default effort stays; same answers as Sonnet 5.5 at 1/15 the cost.
+
 ## 2026-11-13 — Reasoning trace in the UI (#26)
 
 - `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount` returns `trace`, one `{tool, agent, ok, text, provenance}`
