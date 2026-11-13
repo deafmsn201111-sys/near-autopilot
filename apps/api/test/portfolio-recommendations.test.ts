@@ -146,17 +146,21 @@ describe('actions under the $10 minimum', () => {
     expect(advice.skipped).toEqual([]);
   });
 
-  it('skips a repayment under $10 and says why', () => {
-    const advice = portfolioAdvice(
-      ctx({
-        loan: { hasDebt: true, healthFactor: 1.2 },
-        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 20 },
-      }),
-    );
-    expect(advice.recommendations).toEqual([]);
-    expect(advice.skipped).toEqual([
-      "Your loan's health factor is 1.20. Repaying 30% of the USDt debt would be only $6.00, under the $10 the agents act on. Below 1.0 the collateral can be liquidated.",
-    ]);
+  it('keeps the loan warning on a small debt and repays at least $10, at most the debt', () => {
+    const repay = (usd: number) =>
+      portfolioAdvice(
+        ctx({
+          loan: { hasDebt: true, healthFactor: 1.2 },
+          largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd },
+        }),
+      ).recommendations[0]?.intent;
+    expect(repay(20)).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 10 });
+    expect(repay(6.5)).toEqual({
+      action: 'repay',
+      token: 'usdt.tether-token.near',
+      approxUsd: 6.5,
+    });
+    expect(repay(0.001)).toBeUndefined();
   });
 
   it('skips idle assets under $10 and says why', () => {
@@ -165,7 +169,7 @@ describe('actions under the $10 minimum', () => {
     );
     expect(advice.recommendations).toEqual([]);
     expect(advice.skipped).toEqual([
-      '$9.00 of NEAR could earn about 2.1% a year on Burrow, but that is under the $10 the agents act on: the first deposit locks 0.1 NEAR for Burrow registration.',
+      '$9.00 of NEAR could earn about 2.1% a year on Burrow, but that is under the $10 the agents act on.',
     ]);
   });
 
@@ -181,8 +185,10 @@ describe('actions under the $10 minimum', () => {
         idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 1, aprPct: 2 }],
       }),
     );
-    expect(advice.recommendations).toEqual([]);
-    expect(advice.skipped).toHaveLength(3);
+    expect(advice.recommendations.map((r) => r.intent)).toEqual([
+      { action: 'repay', token: 'usdt.tether-token.near', approxUsd: 1 },
+    ]);
+    expect(advice.skipped).toHaveLength(2);
   });
 });
 

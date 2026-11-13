@@ -27,7 +27,9 @@ import { analysisKey } from './analysis-key';
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
 export const MAX_TURNS = 6;
 /** Agent-sized actions worth less than this are not offered. */
-const MIN_ACTION_USD = 1;
+/** Smallest rule-based card or deposit; a repay sizes from the health factor, so only dust is dropped. */
+export const MIN_ACTION_USD = 10;
+const MIN_REPAY_USD = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
 
@@ -201,11 +203,11 @@ const rationales = (proposals: readonly { kind: string; rationale: string }[]) =
   proposals.filter((p) => p.kind === 'no_action').map((p) => p.rationale);
 
 /** Token names come from our own labels, never the token's ft_metadata (untrusted text a deployer chooses). */
-function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
+function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd: number) {
   const info = obs.snapshot.tokens.get(token);
   if (!info || !obs.snapshot.prices.has(token)) return null;
   const approxUsd = usd(tokenValueUsd(obs.snapshot.prices, token, amount));
-  if (!(approxUsd >= MIN_ACTION_USD)) return null;
+  if (!(approxUsd >= minUsd)) return null;
   return {
     symbol: modelTokenLabel(token),
     amount: human(amount, info.decimals),
@@ -232,7 +234,7 @@ function guardianTool(
       const candidates: PortfolioRecommendation[] = [];
       for (const p of proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
-        const view = tokenView(obs, p.token, p.amount);
+        const view = tokenView(obs, p.token, p.amount, MIN_REPAY_USD);
         const after = hfText(
           assessLendingPosition(afterRepay(model.model, p.token, p.amount)).healthFactorWad,
         );
@@ -280,7 +282,7 @@ function allocatorTool(
       const candidates: PortfolioRecommendation[] = [];
       for (const p of proposals) {
         if (p.kind !== 'lending.supply') continue;
-        const view = tokenView(obs, p.token, p.amount);
+        const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const aprPct = (Number(yieldWad / 10n ** 14n) / 100).toFixed(1);

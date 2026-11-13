@@ -43,6 +43,7 @@ import { SnapshotService } from '../services/snapshot';
 import { toWad } from '../yield/math';
 import {
   analyseAccount,
+  MIN_ACTION_USD,
   walletAgentConfig,
   type AnalysisContext,
   type ToolLlmDeps,
@@ -547,8 +548,6 @@ const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const cents = (usd: number) => Math.round(usd * 100) / 100;
 
-/** Smallest action a heuristic card offers: under it a swap or repay is noise and a first Burrow deposit locks 0.1 NEAR. */
-const MIN_ACTION_USD = 10;
 const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
 
 export interface PortfolioAdvice {
@@ -568,23 +567,24 @@ export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
 
   // 1. Loan safety first: a low health factor is the most time-sensitive thing.
   const hf = ctx.loan?.healthFactor ?? null;
-  if (ctx.loan?.hasDebt && hf !== null && hf < 1.5 && ctx.largestDebt) {
-    const approxUsd = cents(ctx.largestDebt.usd * 0.3);
-    if (approxUsd < MIN_ACTION_USD) {
-      skipped.push(
-        `Your loan's health factor is ${hf.toFixed(2)}. Repaying 30% of the ${ctx.largestDebt.symbol} debt would be only ${money2(approxUsd)}, ${UNDER_MIN}. Below 1.0 the collateral can be liquidated.`,
-      );
-    } else {
-      recs.push({
-        id: 'improve-loan-safety',
-        kind: 'improve_loan_safety',
-        agent: 'Liquidation Guardian',
-        severity: hf < 1.3 ? 'warning' : 'info',
-        title: `Your loan's health factor is ${hf.toFixed(2)}`,
-        why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
-        intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
-      });
-    }
+  if (
+    ctx.loan?.hasDebt &&
+    hf !== null &&
+    hf < 1.5 &&
+    ctx.largestDebt &&
+    ctx.largestDebt.usd >= 0.01
+  ) {
+    const debt = ctx.largestDebt.usd;
+    const approxUsd = cents(Math.min(debt, Math.max(debt * 0.3, MIN_ACTION_USD)));
+    recs.push({
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: hf < 1.3 ? 'warning' : 'info',
+      title: `Your loan's health factor is ${hf.toFixed(2)}`,
+      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money2(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
+      intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
+    });
   }
 
   // 2. Reduce single-asset concentration.
@@ -626,7 +626,7 @@ export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
   } else if (earning[0]) {
     const small = earning[0];
     skipped.push(
-      `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}: the first deposit locks 0.1 NEAR for Burrow registration.`,
+      `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
     );
   }
 
