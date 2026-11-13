@@ -185,16 +185,7 @@ export const agentActivity = (portfolio: string) =>
     `/v1/analytics/agent-activity?portfolio=${portfolio}&limit=300`,
   );
 
-/** $1,234 / $12.34 with a real minus sign. */
-export const money = (v: number | null | undefined, cents?: boolean): string => {
-  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
-  const c = cents ?? Math.abs(v) < 100;
-  const s = Math.abs(v).toLocaleString('en-US', {
-    minimumFractionDigits: c ? 2 : 0,
-    maximumFractionDigits: c ? 2 : 0,
-  });
-  return `${v < 0 && Number(s.replace(/,/g, '')) !== 0 ? '−' : ''}$${s}`;
-};
+export { money } from './format';
 
 type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
   accountId: string;
