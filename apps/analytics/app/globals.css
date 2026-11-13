@@ -3328,3 +3328,12 @@ main.page {
   font-weight: 500;
   opacity: 0.75;
 }
+.strategy-note {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-wash);
+  font-size: 13px;
+}

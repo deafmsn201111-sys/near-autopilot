@@ -362,7 +362,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </span>
       </div>
 
-      {isAccount && <StrategyPicker account={accountParam} current={strategy} />}
+      {isAccount && (
+        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
+      )}
 
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>

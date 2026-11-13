@@ -5,6 +5,7 @@ import {
   concentratedToken,
   loanHealth,
   portfolioAdvice,
+  strategyNote,
   type PortfolioMetrics,
   type RecommendationContext,
 } from '../src/analytics/account-view';
@@ -478,5 +479,34 @@ describe('concentratedToken', () => {
   });
   it('is nothing when only stablecoins are held', () => {
     expect(concentratedToken(byToken.slice(0, 1), () => true)).toBeUndefined();
+  });
+});
+
+describe('strategyNote', () => {
+  const noLoan = { hasDebt: false, healthFactor: null, collateralDropToLiquidation: null };
+  const nearAt = (pct: number) =>
+    metrics({ concentration: { token: 'wrap.near', symbol: 'NEAR', pct } });
+
+  it('explains why all three strategies give the same advice: no loan, small non-stable share', () => {
+    expect(strategyNote(ctx({ metrics: nearAt(10.3) }), noLoan)).toBe(
+      'All three strategies give the same advice here: there is no loan, and your largest non-stablecoin, NEAR, is 10% of the portfolio. A strategy changes when a loan counts as safe and how much to repay, and from what share one token (50–75%) needs rebalancing.',
+    );
+  });
+
+  it('says when only stablecoins are held', () => {
+    expect(strategyNote(ctx({}), noLoan)).toContain('you hold no non-stablecoin of note');
+  });
+
+  it('names a loan that is safe under every strategy', () => {
+    const loan = { ...demoLoan, healthFactor: 2.5, collateralDropToLiquidation: 0.6 };
+    expect(strategyNote(ctx({ loan, largestDebt: demoDebt }), loan)).toContain(
+      "your loan's health factor 2.50 is safe under all three",
+    );
+  });
+
+  it('is null when the strategies differ', () => {
+    const loan = { ...demoLoan, collateralDropToLiquidation: 0.22 };
+    expect(strategyNote(ctx({ loan, largestDebt: demoDebt }), loan)).toBeNull();
+    expect(strategyNote(ctx({ metrics: nearAt(70) }), noLoan)).toBeNull();
   });
 });

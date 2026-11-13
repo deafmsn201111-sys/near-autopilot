@@ -149,6 +149,8 @@ export interface PortfolioView {
   }[];
   totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
   health: { healthFactor: number | null; level: Level; label: string; sentence: string };
+  /** Set when the chosen strategy changes nothing on this account: why the presets agree. */
+  strategyNote?: string | null;
   earnings: { monthlyNetUsd: number | null; sentence: string };
   actions: PortfolioAction[];
   lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;

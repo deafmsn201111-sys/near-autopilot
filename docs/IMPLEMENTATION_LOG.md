@@ -382,3 +382,4 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   lines; the system prompt gets one line naming the preset and its numbers; the preset is in the analysis cache key.
 - `apps/analytics`: strategy picker on "Your account" (URL param, then a per-account cookie), the preset in the
   account read cache key and in `POST /api/analysis`.
+- `strategyNote`: when the presets agree on an account, a sentence under the picker says why.

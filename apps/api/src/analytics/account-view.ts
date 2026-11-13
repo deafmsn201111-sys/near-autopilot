@@ -748,6 +748,30 @@ export function loanHealth(
   } as const;
 }
 
+type LoanForHealth = Parameters<typeof loanHealth>[0];
+
+const presets = STRATEGY_IDS.map((id) => STRATEGIES[id]);
+const span = (pick: (s: Strategy) => number) =>
+  `${Math.min(...presets.map(pick))}–${Math.max(...presets.map(pick))}%`;
+
+/** When the preset changes nothing on this account, one sentence on why, so the picker does not look broken. */
+export function strategyNote(ctx: RecommendationContext, loan: LoanForHealth): string | null {
+  const outcome = (s: Strategy) => JSON.stringify([portfolioAdvice(ctx, s), loanHealth(loan, s)]);
+  if (new Set(presets.map(outcome)).size > 1) return null;
+  const c = ctx.metrics.concentration;
+  const hf = loan.healthFactor;
+  const loanPart = !loan.hasDebt
+    ? 'there is no loan'
+    : hf !== null
+      ? `your loan's health factor ${hf.toFixed(2)} is safe under all three`
+      : 'your loan could not be valued';
+  const tokenPart =
+    c && c.pct >= 1
+      ? `your largest non-stablecoin, ${c.symbol}, is ${c.pct.toFixed(0)}% of the portfolio`
+      : 'you hold no non-stablecoin of note';
+  return `All three strategies give the same advice here: ${loanPart}, and ${tokenPart}. A strategy changes when a loan counts as safe and how much to repay, and from what share one token (${span((s) => s.concentrationInfoPct)}) needs rebalancing.`;
+}
+
 const tokenText = (n: number) => (n >= 1 ? n.toFixed(2) : n.toPrecision(3));
 
 /** Whole tokens -> base units at up to 6 decimals, rounded `up` or down; null when that is zero. */
@@ -1014,6 +1038,7 @@ export function registerAccountView(
         recommendations,
         skipped,
         health: loanHealth(entry.loan, strategy),
+        strategyNote: strategyNote(entry.checks.user, entry.loan),
       },
       forModel: portfolioAdvice(entry.checks.model, strategy).recommendations,
       concentration: entry.concentration,

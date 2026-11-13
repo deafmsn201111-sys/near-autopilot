@@ -6,7 +6,15 @@ import { STRATEGIES, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/
 import { saveStrategy } from '../app/account-actions';
 
 /** The risk preset for "Your account": the cards, repay amounts and the AI ranking follow it. */
-export function StrategyPicker({ account, current }: { account: string; current: StrategyId }) {
+export function StrategyPicker({
+  account,
+  current,
+  note,
+}: {
+  account: string;
+  current: StrategyId;
+  note?: string | null;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const href = (id: StrategyId) =>
@@ -46,6 +54,7 @@ export function StrategyPicker({ account, current }: { account: string; current:
         {STRATEGIES[current].concentrationWarningPct}% in one token. Stablecoins never count as a
         concentration.
       </span>
+      {note && <p className="strategy-note">{note}</p>}
     </div>
   );
 }

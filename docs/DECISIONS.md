@@ -376,4 +376,6 @@ caps and cascade validation are unchanged.
   account cache and the AI analysis cache key include it. Unknown preset → 400, missing → Balanced.
 - The choice lives in the URL and one cookie in this browser that remembers the last 20 accounts (quick hackathon solution; #100 moves it to a
   server-side setting written by the proven owner).
+- When all three presets give the same cards and loan label on an account, the API returns `strategyNote`, one
+  sentence on why (no loan, the largest non-stablecoin's share), shown under the picker.
   **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.
