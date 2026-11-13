@@ -1,4 +1,5 @@
 'use client';
+import type { StrategyId } from '@near-autopilot/core/strategy';
 import { z } from 'zod';
 import type { AccountRecommendation } from './product';
 
@@ -43,13 +44,14 @@ export type Analysis = {
 
 export async function runAnalysis(
   account: string,
+  strategy: StrategyId,
 ): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string }> {
   let res: Response;
   try {
     res = await fetch('/api/analysis', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ account }),
+      body: JSON.stringify({ account, strategy }),
     });
   } catch {
     return { ok: false, error: 'network error' };

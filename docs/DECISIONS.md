@@ -211,3 +211,27 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   says how to install them. The other third-party skills keep their licences next to them.
   **Consequences:** The old FastNEAR key stays readable in history and must be dead before the repo goes public
   (owner step on #45). A new real finding turns CI red until it is rotated and listed.
+
+## D16 — Three strategy presets on "Your account"
+
+**Context:** #25. One fixed risk line (HF 1.5, concentration 60%) treated a cautious holder and a looper the same.
+**Decision:**
+
+- One table, `packages/core/src/strategy.ts`; Balanced keeps the numbers used before presets. Numbers agreed with the
+  DeFi teammate on 13 Nov:
+
+  | Strategy     | Safe from HF | Repay to HF | Urgent below HF | Concentration card / urgent / swap to |
+  | ------------ | ------------ | ----------- | --------------- | ------------------------------------- |
+  | Conservative | 1.80         | 2.00        | 1.50            | 50% / 75% / 40%                       |
+  | Balanced     | 1.50         | 1.60        | 1.30            | 60% / 85% / 50%                       |
+  | Aggressive   | 1.25         | 1.35        | 1.15            | 75% / 95% / 65%                       |
+
+- Concentration counts non-stable tokens only (the stablecoin list in `apps/api/src/thesis/labels.ts`).
+- The rule-based repay is sized to the target HF (`total debt × (1 − HF / target)`, capped at the largest debt), not a
+  fixed 30%. The guardian's `watchBelowBps` and `targetHealthFactorBps` follow the preset; the danger (1.1) and
+  critical (1.05) lines stay the agents' defaults. The loop comparison keeps HF 1.6.
+- The API caches the wallet read without the preset and computes the cards and the loan label per request; the UI
+  account cache and the AI analysis cache key include it. Unknown preset → 400, missing → Balanced.
+- The choice lives in the URL and a per-account cookie in this browser (quick hackathon solution; #100 moves it to a
+  server-side setting written by the proven owner).
+  **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.

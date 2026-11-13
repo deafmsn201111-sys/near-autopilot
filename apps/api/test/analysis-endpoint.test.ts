@@ -218,6 +218,26 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
     expect(res.json()).toMatchObject({ note: /Verify ownership/ });
   });
 
+  it('rejects an unknown strategy and reads a missing one as Balanced', async () => {
+    const app = server(chain, store);
+    const post = (payload: object) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/analytics/account/alice.near/analysis',
+        headers,
+        payload,
+      });
+    expect((await post({ strategy: 'yolo' })).statusCode).toBe(400);
+    expect((await post({ strategy: 'aggressive' })).statusCode).toBe(200);
+    const get = (q: string) =>
+      app.inject({ method: 'GET', url: `/v1/analytics/account/alice.near${q}`, headers });
+    expect((await get('?strategy=yolo')).statusCode).toBe(400);
+    expect((await get('')).json()).toMatchObject({ strategy: 'balanced' });
+    expect((await get('?strategy=conservative')).json()).toMatchObject({
+      strategy: 'conservative',
+    });
+  });
+
   it('does not accept a proof signed by a key the account does not hold', async () => {
     const llm = countingLlm();
     const stranger = KeyPairEd25519.fromRandom();
@@ -326,6 +346,20 @@ describe('what the model is sent', () => {
     expect(seen).toContain('USDt/wNEAR');
     expect(res.json()).toMatchObject({ source: 'llm' });
     expect(res.body).not.toContain('IGNORE');
+  });
+
+  it('names the chosen strategy and its thresholds in the system prompt', async () => {
+    const { llm, sent } = recordingLlm();
+    await server(node, hostileStore, llm, DCL).inject({
+      method: 'POST',
+      url: '/v1/analytics/account/alice.near/analysis',
+      headers: { ...headers, 'x-ownership-proof': await proofHeader('alice.near') },
+      payload: { strategy: 'aggressive' },
+    });
+    const system = (sent[0] as { system: string }).system;
+    expect(system).toContain('Aggressive');
+    expect(system).toContain('1.25');
+    expect(system).not.toContain('Balanced');
   });
 
   it('does not put the account id in the prompt', async () => {

@@ -3,6 +3,7 @@ import 'server-only';
 import { tryApi } from './api';
 import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
+import { DEFAULT_STRATEGY, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import type { RecommendationIntent } from './recommendation-intent';
 
 /** Shapes of the product endpoints (opportunities, activity, system). */
@@ -196,26 +197,33 @@ const accountReads = new Map<string, { at: number; read: Promise<AccountResult> 
 
 const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
-const readKey = async (id: string, proof: string) =>
-  `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
+const readKey = async (id: string, proof: string, strategy: StrategyId) =>
+  `${await visitor()}:${id.trim().toLowerCase()}:${proof}:${strategy}`;
 
-const fetchAccount = async (id: string, proof: string): Promise<AccountResult> => {
+const fetchAccount = async (
+  id: string,
+  proof: string,
+  strategy: StrategyId,
+): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
   return tryApi<AccountRead>(
-    `/v1/analytics/account/${encodeURIComponent(id)}`,
+    `/v1/analytics/account/${encodeURIComponent(id)}?strategy=${strategy}`,
     proof ? { 'x-ownership-proof': proof } : {},
   );
 };
 
-const readAccount = async (id: string): Promise<AccountResult> => {
+const readAccount = async (
+  id: string,
+  strategy: StrategyId = DEFAULT_STRATEGY,
+): Promise<AccountResult> => {
   const proof = await ownershipProof();
-  const key = await readKey(id, proof);
+  const key = await readKey(id, proof, strategy);
   const now = Date.now();
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
   if (cached) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id, proof) };
+  const entry = { at: Infinity, read: fetchAccount(id, proof, strategy) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
@@ -225,12 +233,13 @@ const readAccount = async (id: string): Promise<AccountResult> => {
 };
 
 export const forgetAccount = async (id: string) => {
-  accountReads.delete(await readKey(id, await ownershipProof()));
+  const proof = await ownershipProof();
+  for (const strategy of STRATEGY_IDS) accountReads.delete(await readKey(id, proof, strategy));
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
-export const accountView = async (id: string) => {
-  const r = await readAccount(id);
+export const accountView = async (id: string, strategy?: StrategyId) => {
+  const r = await readAccount(id, strategy);
   return {
     error: r.error,
     data: r.data

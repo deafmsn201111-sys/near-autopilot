@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { modelTokenLabel } from '../src/thesis/labels';
+import { STRATEGIES } from '@near-autopilot/core';
 import {
+  loanHealth,
   portfolioRecommendations,
   type PortfolioMetrics,
   type RecommendationContext,
@@ -40,6 +42,7 @@ describe('portfolioRecommendations', () => {
   it('warns on a low health factor with a repay intent on the largest debt', () => {
     const r = portfolioRecommendations(
       ctx({
+        metrics: metrics({ totalDebtUsd: 1000 }),
         loan: { hasDebt: true, healthFactor: 1.2 },
         largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 1000 },
       }),
@@ -47,7 +50,8 @@ describe('portfolioRecommendations', () => {
     const l = r.find((x) => x.kind === 'improve_loan_safety');
     expect(l?.agent).toBe('Liquidation Guardian');
     expect(l?.severity).toBe('warning'); // hf < 1.3
-    expect(l?.intent).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 300 });
+    // sized back to Balanced's 1.6: 1000 × (1 − 1.2 / 1.6)
+    expect(l?.intent).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 250 });
     // loan safety is ordered first
     expect(r[0]?.kind).toBe('improve_loan_safety');
   });
@@ -87,6 +91,70 @@ describe('portfolioRecommendations', () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('portfolioRecommendations per strategy', () => {
+  const loan = ctx({
+    metrics: metrics({ totalDebtUsd: 1000 }),
+    loan: { hasDebt: true, healthFactor: 1.4 },
+    largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 600 },
+  });
+  const repay = (id: keyof typeof STRATEGIES) =>
+    portfolioRecommendations(loan, STRATEGIES[id]).find((x) => x.kind === 'improve_loan_safety');
+
+  it('the same loan at HF 1.4 is a card under Conservative and Balanced, none under Aggressive', () => {
+    expect(repay('conservative')?.severity).toBe('warning');
+    expect(repay('balanced')?.severity).toBe('info');
+    expect(repay('aggressive')).toBeUndefined();
+  });
+
+  it('sizes the repay to the strategy target, capped at the largest debt', () => {
+    // Balanced: 1000 × (1 − 1.4 / 1.6) = 125; Conservative: 1000 × (1 − 1.4 / 2.0) = 300
+    expect(repay('balanced')?.intent).toMatchObject({ approxUsd: 125 });
+    expect(repay('conservative')?.intent).toMatchObject({ approxUsd: 300 });
+    const deep = ctx({ ...loan, loan: { hasDebt: true, healthFactor: 0.5 } });
+    expect(portfolioRecommendations(deep, STRATEGIES.conservative)[0]?.intent).toMatchObject({
+      approxUsd: 600,
+    });
+  });
+
+  it('a 70% position is a card under Conservative and Balanced, none under Aggressive', () => {
+    const c = ctx({
+      metrics: metrics({ concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 70 } }),
+    });
+    const card = (id: keyof typeof STRATEGIES) =>
+      portfolioRecommendations(c, STRATEGIES[id]).find((x) => x.kind === 'reduce_concentration');
+    expect(card('conservative')).toMatchObject({
+      severity: 'info',
+      intent: { approxUsd: 300 },
+    });
+    expect(card('balanced')).toMatchObject({ severity: 'info', intent: { approxUsd: 200 } });
+    expect(card('aggressive')).toBeUndefined();
+  });
+});
+
+describe('loanHealth', () => {
+  const at = (hf: number, id: keyof typeof STRATEGIES) =>
+    loanHealth(
+      { hasDebt: true, healthFactor: hf, collateralDropToLiquidation: 0.2 },
+      STRATEGIES[id],
+    ).label;
+
+  it('calls a loan safe from the strategy healthy line, at risk below the agents danger line', () => {
+    expect(at(1.6, 'balanced')).toBe('Safe');
+    expect(at(1.6, 'conservative')).toBe('Needs watching');
+    expect(at(1.3, 'aggressive')).toBe('Safe');
+    expect(at(1.05, 'aggressive')).toBe('At risk');
+  });
+
+  it('has no loan to judge without debt', () => {
+    expect(
+      loanHealth(
+        { hasDebt: false, healthFactor: null, collateralDropToLiquidation: null },
+        STRATEGIES.balanced,
+      ).label,
+    ).toBe('No loan');
   });
 });
 

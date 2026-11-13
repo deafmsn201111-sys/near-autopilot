@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import type { StrategyId } from '@near-autopilot/core/strategy';
 import { runAnalysis, type Analysis } from '../lib/analysis-client';
 import type { AccountRecommendation } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
@@ -12,10 +13,12 @@ import { PrepareDialog } from './PrepareDialog';
  */
 export function Recommendations({
   account,
+  strategy,
   recommendations: initial,
   signingEnabled,
 }: {
   account: string;
+  strategy: StrategyId;
   recommendations: readonly AccountRecommendation[];
   signingEnabled: boolean;
 }) {
@@ -32,7 +35,7 @@ export function Recommendations({
   async function analyse() {
     setRunning(true);
     setError(null);
-    const r = await runAnalysis(account);
+    const r = await runAnalysis(account, strategy);
     if (r.ok) setAnalysis(r.analysis);
     else setError(r.error);
     setRunning(false);

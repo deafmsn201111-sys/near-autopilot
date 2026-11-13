@@ -1,11 +1,14 @@
 import {
   accountId,
   type AssetRisk,
+  type StrategyId,
   type PortfolioSnapshot,
   type TokenId,
 } from '@near-autopilot/core';
 import {
   assessRisk,
+  LiquidationGuardianAgent,
+  parseAgentOutput,
   type AgentObservation,
   type LlmToolTurn,
   type ToolLlm,
@@ -37,7 +40,7 @@ const risk = (token: TokenId, bps: number): AssetRisk => ({
 });
 
 /** HF = 100 NEAR * $5 * 0.7 / (230 USDT / 0.9) ≈ 1.37: in the watch band, so the guardian proposes a repay. */
-function observation(): AgentObservation {
+function observation(strategy: StrategyId = 'balanced'): AgentObservation {
   const snapshot: PortfolioSnapshot = {
     accountId: ALICE,
     takenAt: NOW,
@@ -67,7 +70,7 @@ function observation(): AgentObservation {
       [USDT, { id: USDT, symbol: 'USDt', decimals: 6 }],
     ]),
   };
-  const config = walletAgentConfig([WNEAR, USDT]);
+  const config = walletAgentConfig([WNEAR, USDT], strategy);
   return {
     now: NOW,
     accountId: ALICE,
@@ -1089,6 +1092,39 @@ describe('analyseAccount', () => {
       expect(out.fallback).toBe('cap');
       expect(tools).toEqual([]);
     });
+  });
+});
+
+describe('walletAgentConfig per strategy', () => {
+  const repayRaw = async (strategy: StrategyId) => {
+    const agent = new LiquidationGuardianAgent();
+    const out = parseAgentOutput(agent.id, await agent.propose(observation(strategy)));
+    const repay = out.proposals.map((p) => p.proposal).find((p) => p.kind === 'lending.repay');
+    return repay?.kind === 'lending.repay' ? BigInt(repay.amount) : null;
+  };
+
+  it('moves the guardian watch line and repay target with the strategy', () => {
+    expect(walletAgentConfig([], 'balanced').risk).toMatchObject({
+      watchBelowBps: 15_000,
+      targetHealthFactorBps: 16_000,
+    });
+    expect(walletAgentConfig([], 'conservative').risk).toMatchObject({
+      watchBelowBps: 18_000,
+      targetHealthFactorBps: 20_000,
+    });
+    expect(walletAgentConfig([], 'aggressive').risk).toMatchObject({
+      watchBelowBps: 12_500,
+      targetHealthFactorBps: 13_500,
+    });
+  });
+
+  it('the same HF 1.37 loan: a larger repay under Conservative, none under Aggressive', async () => {
+    const [conservative, balanced, aggressive] = await Promise.all(
+      (['conservative', 'balanced', 'aggressive'] as const).map(repayRaw),
+    );
+    expect(balanced).not.toBeNull();
+    expect(conservative! > balanced!).toBe(true);
+    expect(aggressive).toBeNull();
   });
 });
 

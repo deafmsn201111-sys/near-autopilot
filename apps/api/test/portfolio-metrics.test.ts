@@ -40,6 +40,18 @@ describe('portfolioMetrics', () => {
     expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'wNEAR', pct: 90 });
   });
 
+  it('a stablecoin is never the concentrated asset: the largest other token is', () => {
+    const m = portfolioMetrics([
+      leg('usdt.tether-token.near', 'USDt', 'Wallet', 900),
+      leg('wrap.near', 'wNEAR', 'Wallet', 100),
+    ]);
+    expect(m.byToken[0]?.symbol).toBe('USDt');
+    expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'wNEAR', pct: 10 });
+    expect(
+      portfolioMetrics([leg('usdt.tether-token.near', 'USDt', 'Wallet', 9)]).concentration,
+    ).toBeNull();
+  });
+
   it('is empty-safe', () => {
     const m = portfolioMetrics([]);
     expect(m.totalAssetsUsd).toBe(0);
@@ -104,9 +116,14 @@ describe('accountPortfolio', () => {
     expect(rows.reduce((a, b) => a + b, 0)).toBe(p.totals.assetsUsd);
   });
 
-  it('the concentration % is the top token share of the same total', () => {
-    expect(p.metrics.concentration).toEqual({ token: USDC, symbol: 'USDC', pct: (60 / 108) * 100 });
-    expect(p.metrics.byToken[0]?.pct).toBe(p.metrics.concentration?.pct);
+  it('the concentration % is the top non-stable token share of the same total', () => {
+    const wnear = p.metrics.byToken.find((t) => t.token === 'wrap.near');
+    expect(p.metrics.byToken[0]?.token).toBe(USDC);
+    expect(p.metrics.concentration).toEqual({
+      token: 'wrap.near',
+      symbol: 'wNEAR',
+      pct: wnear?.pct,
+    });
   });
 
   it('lists an unpriced or negative leg without counting it', () => {

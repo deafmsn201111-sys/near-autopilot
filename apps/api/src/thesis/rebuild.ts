@@ -17,7 +17,7 @@ import {
   type PoolMetrics,
 } from './analysis';
 import { OUT_DIR, RAW_DIR, ROOT } from './paths';
-import { tokenLabel } from './labels';
+import { STABLES, tokenLabel } from './labels';
 import { thesisMarkdown } from './report';
 import { dumbbell, scatterLogX } from './svg';
 
@@ -68,15 +68,6 @@ export interface Cohort {
   readonly medianNetApr5000: number | null;
   readonly negativeNet5000: number;
 }
-
-const STABLES = new Set([
-  '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
-  'usdt.tether-token.near',
-  'dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near',
-  'a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near',
-  '6b175474e89094c44da98b954eedeac495271d0f.factory.bridge.near',
-  '853d955acef822db058eb8505911ed77f175b99e.factory.bridge.near',
-]);
 
 const median = (xs: readonly number[]): number | null => {
   const s = [...xs].sort((a, b) => a - b);

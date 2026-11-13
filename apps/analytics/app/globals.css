@@ -3045,3 +3045,22 @@ main.page {
 .actions-list:has(> .action:only-child) > .action {
   flex: 1 1 auto;
 }
+
+.strategy-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+.strategy-picker .segmented a {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+}
+.strategy-lines {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.75;
+}

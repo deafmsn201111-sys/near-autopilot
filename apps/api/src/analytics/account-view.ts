@@ -3,8 +3,13 @@ import {
   BoundedMap,
   MissingPriceError,
   PreconditionError,
+  STRATEGIES,
+  STRATEGY_IDS,
+  strategySchema,
   UnsupportedIntentError,
   type AccountId,
+  type Strategy,
+  type StrategyId,
   type FunctionCallAction,
   type TokenId,
 } from '@near-autopilot/core';
@@ -65,7 +70,7 @@ import { valueAccount, type AccountReads, type Holding, type TokenFacts } from '
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { consensus } from './series';
-import { modelTokenLabel } from '../thesis/labels';
+import { modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
  * YOUR ACCOUNT, read-only: any mainnet account id -> what it holds, how safe its Burrow loan is, and what could be done
@@ -329,7 +334,7 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
     .map(([protocol, usd]) => ({ protocol, usd, pct: pct(usd) }))
     .sort((a, b) => b.usd - a.usd);
 
-  const top = byToken[0] ?? null;
+  const top = byToken.find((t) => !STABLES.has(t.token)) ?? null;
   return {
     totalAssetsUsd,
     totalDebtUsd,
@@ -484,35 +489,42 @@ const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
  * Each carries a concrete intent for the one-click transaction engine. Deterministic, explainable, ordered by urgency,
  * and never an instruction — the user decides and signs.
  */
-export function portfolioRecommendations(ctx: RecommendationContext): PortfolioRecommendation[] {
+export function portfolioRecommendations(
+  ctx: RecommendationContext,
+  strategy: Strategy = STRATEGIES.balanced,
+): PortfolioRecommendation[] {
   const recs: PortfolioRecommendation[] = [];
 
   // 1. Loan safety first: a low health factor is the most time-sensitive thing.
   const hf = ctx.loan?.healthFactor ?? null;
-  if (ctx.loan?.hasDebt && hf !== null && hf < 1.5 && ctx.largestDebt) {
-    const approxUsd = Math.round(ctx.largestDebt.usd * 0.3);
+  if (ctx.loan?.hasDebt && hf !== null && hf < strategy.healthyAt && ctx.largestDebt) {
+    // ponytail: assumes one borrow factor across debts; the guardian in the AI analysis sizes it exactly.
+    const toTarget = ctx.metrics.totalDebtUsd * (1 - hf / strategy.targetHealthFactor);
+    const approxUsd = Math.round(Math.min(ctx.largestDebt.usd, toTarget));
     recs.push({
       id: 'improve-loan-safety',
       kind: 'improve_loan_safety',
       agent: 'Liquidation Guardian',
-      severity: hf < 1.3 ? 'warning' : 'info',
+      severity: hf < strategy.warningBelow ? 'warning' : 'info',
       title: `Your loan's health factor is ${hf.toFixed(2)}`,
-      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
+      why: `A health factor of ${hf.toFixed(2)} is under the ${strategy.healthyAt.toFixed(2)} your ${strategy.label} strategy counts as safe (1.0 is liquidation). Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt brings it back to about ${strategy.targetHealthFactor.toFixed(2)}.`,
       intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
     });
   }
 
   // 2. Reduce single-asset concentration.
   const c = ctx.metrics.concentration;
-  if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
-    const approxUsd = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+  if (c && c.pct >= strategy.concentrationInfoPct && ctx.metrics.totalAssetsUsd > 0) {
+    const approxUsd = Math.round(
+      (ctx.metrics.totalAssetsUsd * (c.pct - strategy.concentrationTargetPct)) / 100,
+    );
     recs.push({
       id: 'reduce-concentration',
       kind: 'reduce_concentration',
       agent: 'Portfolio Intelligence',
-      severity: c.pct >= 85 ? 'warning' : 'info',
+      severity: c.pct >= strategy.concentrationWarningPct ? 'warning' : 'info',
       title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
-      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
+      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings it down toward ${strategy.concentrationTargetPct}% of the portfolio.`,
       intent: { action: 'swap', fromToken: c.token, approxUsd },
     });
   }
@@ -548,13 +560,50 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
   return recs;
 }
 
+const DANGER_HF = ORCH.risk.dangerBelowBps / 10_000;
+
+/** The loan's safety label on the account view: "Safe" from the strategy's healthy line, "At risk" below the agents' danger line. */
+export function loanHealth(
+  loan: {
+    readonly hasDebt: boolean;
+    readonly healthFactor: number | null;
+    readonly collateralDropToLiquidation: number | null;
+  },
+  strategy: Strategy,
+) {
+  if (!loan.hasDebt)
+    return {
+      level: 'low',
+      label: 'No loan',
+      sentence: 'Nothing is borrowed: there is nothing to liquidate.',
+    } as const;
+  const hf = loan.healthFactor;
+  if (hf === null)
+    return {
+      level: 'high',
+      label: 'Unknown',
+      sentence: 'The loan could not be valued: a price or a risk parameter is missing.',
+    } as const;
+  const safe = hf >= strategy.healthyAt;
+  const watch = hf >= DANGER_HF;
+  return {
+    level: safe ? 'low' : watch ? 'medium' : 'high',
+    label: safe ? 'Safe' : watch ? 'Needs watching' : 'At risk',
+    sentence:
+      loan.collateralDropToLiquidation !== null
+        ? `Health factor ${hf.toFixed(2)}: the loan stays safe unless your collateral loses ${(loan.collateralDropToLiquidation * 100).toFixed(0)}% of its value.`
+        : 'The loan can be liquidated now.',
+  } as const;
+}
+
 /** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
-interface AccountBody {
-  readonly recommendations: readonly PortfolioRecommendation[];
+interface WalletBody {
   readonly holdings: readonly { readonly token: string }[];
   readonly [field: string]: unknown;
 }
+type AccountBody = WalletBody & { readonly recommendations: readonly PortfolioRecommendation[] };
 
+const UNKNOWN_STRATEGY = `strategy must be one of: ${STRATEGY_IDS.join(', ')}`;
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
@@ -597,7 +646,12 @@ export function registerAccountView(
   );
   const cache = new BoundedMap<
     string,
-    { at: number; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+    {
+      at: number;
+      body: WalletBody;
+      loan: Parameters<typeof loanHealth>[0];
+      checks: { readonly user: RecommendationContext; readonly model: RecommendationContext };
+    }
   >(ACCOUNT_CACHE_MAX);
   const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrowOptions);
@@ -642,15 +696,32 @@ export function registerAccountView(
     return out;
   };
 
+  type CachedAccount = NonNullable<ReturnType<typeof cache.get>>;
+  /** The cache holds the wallet read; the strategy's cards and loan label are recomputed on every request. */
+  const withStrategy = (entry: CachedAccount, strategyId: StrategyId) => {
+    const strategy = STRATEGIES[strategyId];
+    return {
+      status: 200 as const,
+      body: {
+        ...entry.body,
+        strategy: strategyId,
+        recommendations: portfolioRecommendations(entry.checks.user, strategy),
+        health: loanHealth(entry.loan, strategy),
+      },
+      forModel: portfolioRecommendations(entry.checks.model, strategy),
+    };
+  };
+
   const readAccount = async (
     id: AccountId,
     log: FastifyRequest['log'],
+    strategy: StrategyId,
   ): Promise<
     | { status: 200; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
     | { status: 404 | 502; body: { error: string } }
   > => {
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, ...hit };
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return withStrategy(hit, strategy);
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -923,19 +994,19 @@ export function registerAccountView(
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
     const loan = { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor };
-    const recommendations = portfolioRecommendations({
+    const user: RecommendationContext = {
       metrics,
       loan,
       idleEarn,
       largestDebt,
       dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
-    });
+    };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
     const labelled = <T extends { token: string }>(x: T) => ({
       ...x,
       symbol: modelTokenLabel(x.token),
     });
-    const forModel = portfolioRecommendations({
+    const model: RecommendationContext = {
       metrics: {
         ...metrics,
         concentration: metrics.concentration && labelled(metrics.concentration),
@@ -944,7 +1015,7 @@ export function registerAccountView(
       idleEarn: idleEarn.map(labelled),
       largestDebt: largestDebt && labelled(largestDebt),
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
-    });
+    };
 
     const body = {
       earnings: {
@@ -968,46 +1039,22 @@ export function registerAccountView(
       v1Positions,
       staking,
       metrics,
-      recommendations,
       loan: v.loan,
-      health: !v.loan.hasDebt
-        ? {
-            level: 'low',
-            label: 'No loan',
-            sentence: 'Nothing is borrowed: there is nothing to liquidate.',
-          }
-        : v.loan.healthFactor === null
-          ? {
-              level: 'high',
-              label: 'Unknown',
-              sentence: 'The loan could not be valued: a price or a risk parameter is missing.',
-            }
-          : {
-              level:
-                v.loan.healthFactor >= 1.5 ? 'low' : v.loan.healthFactor >= 1.1 ? 'medium' : 'high',
-              label:
-                v.loan.healthFactor >= 1.5
-                  ? 'Safe'
-                  : v.loan.healthFactor >= 1.1
-                    ? 'Needs watching'
-                    : 'At risk',
-              sentence:
-                v.loan.collateralDropToLiquidation !== null
-                  ? `Health factor ${v.loan.healthFactor.toFixed(2)}: the loan stays safe unless your collateral loses ${(v.loan.collateralDropToLiquidation * 100).toFixed(0)}% of its value.`
-                  : 'The loan can be liquidated now.',
-            },
       actions,
     };
-    cache.set(id, { at: Date.now(), body, forModel });
-    return { status: 200, body, forModel };
+    const entry = { at: Date.now(), body, loan: v.loan, checks: { user, model } };
+    cache.set(id, entry);
+    return withStrategy(entry, strategy);
   };
 
   app.get('/v1/analytics/account/:id', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
+    const strategy = strategySchema.safeParse((req.query as { strategy?: unknown }).strategy);
+    if (!strategy.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const out = await readAccount(parsed.data, req.log);
+    const out = await readAccount(parsed.data, req.log, strategy.data);
     if (out.status !== 200) return reply.code(out.status).send(out.body);
     return { ...out.body, ownerVerified: await ownerVerified };
   });
@@ -1018,7 +1065,11 @@ export function registerAccountView(
    * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
    * recent price). The context is as old as the collector snapshot it was priced from.
    */
-  const observe = async (id: AccountId, held: readonly TokenId[]): Promise<AgentObservation> => {
+  const observe = async (
+    id: AccountId,
+    held: readonly TokenId[],
+    strategy: StrategyId,
+  ): Promise<AgentObservation> => {
     const [markets, meta, prices, collected] = await Promise.all([
       store.markets(),
       store.tokenMetadata(),
@@ -1058,7 +1109,7 @@ export function registerAccountView(
       clock,
     }).take();
     const priced = [...snapshot.prices.keys()];
-    const config = walletAgentConfig(priced);
+    const config = walletAgentConfig(priced, strategy);
     const estimatedYieldWad = new Map<TokenId, bigint>();
     for (const token of priced) {
       const m = markets.find((x) => x.token === token)?.latest as
@@ -1089,24 +1140,32 @@ export function registerAccountView(
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
+    const { strategy } = body.data;
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const view = await readAccount(parsed.data, req.log);
+    const view = await readAccount(parsed.data, req.log, strategy);
     if (view.status !== 200) return reply.code(view.status).send(view.body);
     return analyseAccount(
       deps.ai ?? null,
       {
         accountId: parsed.data,
         observe: () =>
-          observe(parsed.data, [
-            ...new Set(
-              view.body.holdings
-                .filter((h) => h.token !== NATIVE_HOLDING)
-                .map((h) => accountIdSchema.parse(h.token)),
-            ),
-          ]),
+          observe(
+            parsed.data,
+            [
+              ...new Set(
+                view.body.holdings
+                  .filter((h) => h.token !== NATIVE_HOLDING)
+                  .map((h) => accountIdSchema.parse(h.token)),
+              ),
+            ],
+            strategy,
+          ),
         heuristics: view.body.recommendations,
         checks: view.forModel,
         ownerVerified: await ownerVerified,
+        strategy,
       },
       (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
     );
