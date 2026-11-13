@@ -17,6 +17,16 @@ const KNOWN: Readonly<Record<string, string>> = {
   near: 'NEAR',
 };
 
+/** USD stablecoins: never a concentration risk. */
+export const STABLES: ReadonlySet<string> = new Set([
+  '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+  'usdt.tether-token.near',
+  'dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near',
+  'a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.factory.bridge.near',
+  '6b175474e89094c44da98b954eedeac495271d0f.factory.bridge.near',
+  '853d955acef822db058eb8505911ed77f175b99e.factory.bridge.near',
+]);
+
 /** Labels for the pools' other token: the account id, shortened where it is a bridge address. */
 export function tokenLabel(id: string): string {
   if (KNOWN[id]) return KNOWN[id];

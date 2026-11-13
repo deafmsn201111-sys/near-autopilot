@@ -41,7 +41,7 @@ describe('runAnalysis', () => {
       checks: { picked: 2, explained: 2, replaced: 0, restored: 1, dropped: 0 },
     };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
-    const r = await runAnalysis('alice.near');
+    const r = await runAnalysis('alice.near', 'balanced');
     expect(r).toEqual({
       ok: true,
       analysis: { ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run },
@@ -50,7 +50,7 @@ describe('runAnalysis', () => {
 
   it('accepts an older reply without them', async () => {
     reply(base);
-    expect(await runAnalysis('alice.near')).toEqual({
+    expect(await runAnalysis('alice.near', 'balanced')).toEqual({
       ok: true,
       analysis: { ...base, calledTools: [], trace: [], run: null },
     });
@@ -61,7 +61,7 @@ describe('runAnalysis', () => {
       ...base,
       trace: [{ tool: 'x', agent: 'X', ok: true, text: 'y', provenance: 'trust_me' }],
     });
-    const r = await runAnalysis('alice.near');
+    const r = await runAnalysis('alice.near', 'balanced');
     expect(r.ok && r.analysis.trace).toEqual([
       { tool: 'x', agent: 'X', ok: true, text: 'y', provenance: null, pick: null, rank: null },
     ]);

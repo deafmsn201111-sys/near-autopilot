@@ -12,4 +12,5 @@ export * from './api-contracts';
 export * from './wasm-abi';
 export * from './chain-identity';
 export * from './bounded-map';
+export * from './strategy';
 export * from './loan-math';

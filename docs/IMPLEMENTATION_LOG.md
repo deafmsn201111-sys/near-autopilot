@@ -370,3 +370,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics/components/RepayPicker.tsx`: amount field + slider + "To safe" / "Whole debt", live HF in the
   zone colours; prepares exactly the chosen amount.
 - Supersedes #99's "repay 30% of the debt, at least $10": the loan card now repays to HF 1.6.
+
+## 2026-11-13 — Three strategy presets (#25)
+
+- `packages/core/src/strategy.ts`: Conservative / Balanced / Aggressive thresholds, the request schema and the cookie
+  name; shared by the API and the UI (D22).
+- `apps/api/src/analytics/account-view.ts`: `portfolioRecommendations` and `loanHealth` read the preset; the repay and
+  withdraw cards use its target HF; concentration skips stablecoins; the cache holds the wallet read and the cards are computed
+  per request; `?strategy=` on the account read and `{ strategy }` on the analysis, 400 on an unknown one.
+- `apps/api/src/analytics/ai-analysis.ts`: `walletAgentConfig(tokens, strategy)` moves the guardian's watch and target
+  lines; the system prompt gets one line naming the preset and its numbers; the preset is in the analysis cache key.
+- `apps/analytics`: strategy picker on "Your account" (URL param, then a per-account cookie), the preset in the
+  account read cache key and in `POST /api/analysis`.
+- `strategyNote`: when the presets agree on an account, a sentence under the picker says why.

@@ -62,9 +62,28 @@ describe('account read cache', () => {
     ownerCookie = 'eyJwcm9vZiI6MX0';
     await p.accountView('alice.near');
     expect(reads).toHaveBeenCalledTimes(2);
-    expect(reads).toHaveBeenLastCalledWith('/v1/analytics/account/alice.near', {
+    expect(reads).toHaveBeenLastCalledWith('/v1/analytics/account/alice.near?strategy=balanced', {
       'x-ownership-proof': 'eyJwcm9vZiI6MX0',
     });
+  });
+
+  it('keys the read by strategy and asks the API for that strategy', async () => {
+    const p = await load();
+    await p.accountView('alice.near', 'aggressive');
+    await p.accountRecommendations('alice.near', 'aggressive');
+    await p.accountView('alice.near', 'conservative');
+    expect(reads.mock.calls.map(([path]) => String(path))).toEqual([
+      '/v1/analytics/account/alice.near?strategy=aggressive',
+      '/v1/analytics/account/alice.near?strategy=conservative',
+    ]);
+  });
+
+  it('a refresh forgets the read under every strategy', async () => {
+    const p = await load();
+    await p.accountView('alice.near', 'aggressive');
+    await p.forgetAccount('alice.near');
+    await p.accountView('alice.near', 'aggressive');
+    expect(reads).toHaveBeenCalledTimes(2);
   });
 
   it('re-renders within 60 s read the account once', async () => {
@@ -113,7 +132,10 @@ describe('account read cache', () => {
     const p = await load();
     await p.accountView('alice.near');
     expect(await p.refreshAccountRead(' Alice.near ')).toBe(false);
-    expect(reads).toHaveBeenLastCalledWith('/v1/analytics/account/alice.near?fresh=1', {});
+    expect(reads).toHaveBeenLastCalledWith(
+      '/v1/analytics/account/alice.near?strategy=balanced&fresh=1',
+      {},
+    );
     nearInWallet = 0.9;
     expect(await p.refreshAccountRead('alice.near')).toBe(true);
     await p.accountView('alice.near');

@@ -58,6 +58,13 @@ import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositDialog } from '../components/DepositDialog';
 import { OwnershipCheck } from '../components/OwnershipCheck';
+import { StrategyPicker } from '../components/StrategyPicker';
+import {
+  savedStrategy,
+  STRATEGY_COOKIE,
+  STRATEGY_IDS,
+  strategyOf,
+} from '@near-autopilot/core/strategy';
 
 export const dynamic = 'force-dynamic';
 
@@ -261,6 +268,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const urlAccount = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const cookieAccount = (await cookies()).get('np_account')?.value?.trim().toLowerCase() ?? '';
   const accountParam = urlAccount || (isAccount ? cookieAccount : '');
+  // The URL wins (a shared link shows its strategy), then the last choice for this account in this browser.
+  const strategy = strategyOf(
+    STRATEGY_IDS.find((s) => s === sp.strategy) ??
+      savedStrategy((await cookies()).get(STRATEGY_COOKIE)?.value, accountParam),
+  );
   const id = portfolioOf(sp.p);
   if (isAccount && !accountParam)
     return (
@@ -271,7 +283,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <AccountForm />
       </>
     );
-  const { data, error } = isAccount ? await accountView(accountParam) : await portfolioView(id);
+  const { data, error } = isAccount
+    ? await accountView(accountParam, strategy)
+    : await portfolioView(id);
   if (!data)
     return (
       <>
@@ -323,7 +337,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       : []),
   ];
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
-  const recs = isAccount ? (await accountRecommendations(accountParam)).data : null;
+  const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
   const mode = portfolioMode({
     isAccount,
@@ -347,6 +361,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           {isAccount ? 'Synced from mainnet · just now' : `Updated ${ago(data.asOf)}`}
         </span>
       </div>
+
+      {isAccount && (
+        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
+      )}
 
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>
@@ -426,8 +444,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {isAccount && recs && (
         <section className="block">
           <Recommendations
-            key={accountParam}
+            key={`${accountParam}:${strategy}`}
             account={accountParam}
+            strategy={strategy}
             recommendations={recs.recommendations}
             skipped={recs.skipped ?? []}
             holdings={data.holdings}

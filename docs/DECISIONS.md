@@ -353,3 +353,29 @@ $1 are listed as skipped with a reason (idle ones from $0.10; less is dust and s
 $1 and at most the debt.
 **Consequences:** A $1–10 action costs a fraction of a cent in gas on NEAR, so it is still worth signing; the prepare
 caps and cascade validation are unchanged.
+
+## D22 — Three strategy presets on "Your account"
+
+**Context:** #25. One fixed risk line (HF 1.5, concentration 60%) treated a cautious holder and a looper the same.
+**Decision:**
+
+- One table, `packages/core/src/strategy.ts`; Balanced keeps the numbers used before presets. Numbers agreed with the
+  DeFi teammate on 13 Nov:
+
+  | Strategy     | Safe from HF | Repay to HF | Urgent below HF | Concentration card / urgent / swap to |
+  | ------------ | ------------ | ----------- | --------------- | ------------------------------------- |
+  | Conservative | 1.80         | 2.00        | 1.50            | 50% / 75% / 40%                       |
+  | Balanced     | 1.50         | 1.60        | 1.30            | 60% / 85% / 50%                       |
+  | Aggressive   | 1.25         | 1.35        | 1.15            | 75% / 95% / 65%                       |
+
+- Concentration counts non-stable tokens only (the stablecoin list in `apps/api/src/thesis/labels.ts`).
+- The rule-based repay (from the wallet or the collateral, #64) is sized to the preset's target HF, and the
+  withdraw card keeps the HF at that target. The guardian's `watchBelowBps` and `targetHealthFactorBps` follow the preset; the danger (1.1) and
+  critical (1.05) lines stay the agents' defaults. The loop comparison keeps HF 1.6.
+- The API caches the wallet read without the preset and computes the cards and the loan label per request; the UI
+  account cache and the AI analysis cache key include it. Unknown preset → 400, missing → Balanced.
+- The choice lives in the URL and one cookie in this browser that remembers the last 20 accounts (quick hackathon solution; #100 moves it to a
+  server-side setting written by the proven owner).
+- When all three presets give the same cards and loan label on an account, the API returns `strategyNote`, one
+  sentence on why (no loan, the largest non-stablecoin's share), shown under the picker.
+  **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.

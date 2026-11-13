@@ -1,8 +1,11 @@
 import type { LlmModel } from '@near-autopilot/config';
 import {
   BoundedMap,
+  DEFAULT_STRATEGY,
+  STRATEGIES,
   hfAfterRepay,
   type AccountId,
+  type StrategyId,
   type ProvenanceTier,
   type TokenId,
 } from '@near-autopilot/core';
@@ -93,7 +96,6 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 10 * 60_000;
 const RUN_WINDOW_MS = 10 * 60_000;
 const MAX_RUNS_PER_WINDOW = 60;
-const DEFAULT_PRESET = 'default';
 
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
 export interface AnalysisMemo {
@@ -152,7 +154,8 @@ export interface AnalysisContext {
   readonly checks: readonly PortfolioRecommendation[];
   /** A NEP-413 proof from a full-access key of this account (D12): only its owner may spend a model call. */
   readonly ownerVerified: boolean;
-  readonly preset?: string;
+  /** Balanced when absent. */
+  readonly strategy?: StrategyId;
   /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
 }
@@ -234,11 +237,27 @@ const AGENTS: Readonly<Record<string, string>> = {
 
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** The orchestrator config the agents run with on a wallet: idle supply on, every priced Burrow token allowed. */
-export function walletAgentConfig(tokens: readonly TokenId[]): OrchestratorConfig {
+const bps = (hf: number) => Math.round(hf * 10_000);
+
+/**
+ * The orchestrator config the agents run with on a wallet: idle supply on, every priced Burrow token allowed, and the
+ * strategy's health-factor lines, so the guardian's watch band and repay size follow the user's choice.
+ */
+export function walletAgentConfig(
+  tokens: readonly TokenId[],
+  strategy: StrategyId,
+): OrchestratorConfig {
+  const s = STRATEGIES[strategy];
   return orchestratorConfigSchema.parse({
+    risk: { watchBelowBps: bps(s.healthyAt), targetHealthFactorBps: bps(s.targetHealthFactor) },
     allocation: { assets: tokens.map((token) => ({ token })), supplyIdle: true },
   });
+}
+
+/** Our own enum and numbers only: safe to put in the prompt. */
+function strategyLine(id: StrategyId): string {
+  const s = STRATEGIES[id];
+  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). Weigh the candidates for that strategy.`;
 }
 
 const SYSTEM = [
@@ -607,6 +626,7 @@ export async function analyseAccount(
     run: null,
   });
   if (!ai) return fallback('off');
+  const strategy = ctx.strategy ?? DEFAULT_STRATEGY;
   if (!ctx.ownerVerified) return fallback('not_owner');
   // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
   const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
@@ -647,7 +667,7 @@ export async function analyseAccount(
     onError(e);
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
-  const key = analysisKey(obs, ctx.heuristics, ctx.preset ?? DEFAULT_PRESET);
+  const key = analysisKey(obs, ctx.heuristics, strategy);
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return early(hit.analysis);
   if (!(await affordable(worstCall))) return early(fallback('cap'));
@@ -800,7 +820,7 @@ export async function analyseAccount(
     ].map(counted);
     return runToolLoop({
       llm: metered,
-      system: SYSTEM,
+      system: `${SYSTEM}\n${strategyLine(strategy)}`,
       prompt: 'Analyse the connected wallet.',
       tools,
       maxTurns: MAX_TURNS,

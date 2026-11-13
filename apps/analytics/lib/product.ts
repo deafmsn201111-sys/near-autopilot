@@ -5,6 +5,7 @@ import { tryApi } from './api';
 import { processWide } from './process-state';
 import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
+import { DEFAULT_STRATEGY, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import type { RecommendationIntent } from './recommendation-intent';
 
 /** Shapes of the product endpoints (opportunities, activity, system). */
@@ -148,6 +149,8 @@ export interface PortfolioView {
   }[];
   totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
   health: { healthFactor: number | null; level: Level; label: string; sentence: string };
+  /** Set when the chosen strategy changes nothing on this account: why the presets agree. */
+  strategyNote?: string | null;
   earnings: { monthlyNetUsd: number | null; sentence: string };
   actions: PortfolioAction[];
   lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
@@ -227,51 +230,69 @@ const holdingsOf = (r: AccountResult) =>
 
 const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
-const readKey = async (id: string, proof: string) =>
+const readKey = async (id: string, proof: string, strategy: StrategyId) =>
+  `${await visitor()}:${id.trim().toLowerCase()}:${proof}:${strategy}`;
+
+const holdingsKey = async (id: string, proof: string) =>
   `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
 
-const fetchAccount = async (id: string, proof: string, fresh: boolean): Promise<AccountResult> => {
+const fetchAccount = async (
+  id: string,
+  proof: string,
+  strategy: StrategyId,
+  fresh: boolean,
+): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
   return tryApi<AccountRead>(
-    `/v1/analytics/account/${encodeURIComponent(id)}${fresh ? '?fresh=1' : ''}`,
+    `/v1/analytics/account/${encodeURIComponent(id)}?strategy=${strategy}${fresh ? '&fresh=1' : ''}`,
     proof ? { 'x-ownership-proof': proof } : {},
   );
 };
 
-const readAccount = async (id: string, fresh = false): Promise<AccountResult> => {
+const readAccount = async (
+  id: string,
+  strategy: StrategyId = DEFAULT_STRATEGY,
+  fresh = false,
+): Promise<AccountResult> => {
   const proof = await ownershipProof();
-  const key = await readKey(id, proof);
+  const key = await readKey(id, proof, strategy);
   const now = Date.now();
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
   if (cached && !fresh) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id, proof, fresh) };
+  const entry = { at: Infinity, read: fetchAccount(id, proof, strategy, fresh) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
   if (r.error) accountReads.delete(key);
   else entry.at = Date.now();
   const holdings = holdingsOf(r);
-  if (holdings) lastHoldings.set(key, holdings);
+  if (holdings) lastHoldings.set(await holdingsKey(id, proof), holdings);
   return r;
+};
+
+export const forgetAccount = async (id: string) => {
+  const proof = await ownershipProof();
+  for (const strategy of STRATEGY_IDS) accountReads.delete(await readKey(id, proof, strategy));
 };
 
 /**
  * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
  * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
- * stops retrying.
+ * stops retrying. Reads under other strategies are dropped; the next page render re-reads them from the fresh API cache.
  */
 export const refreshAccountRead = async (id: string): Promise<boolean> => {
   const normalized = id.trim().toLowerCase();
-  const before = lastHoldings.get(await readKey(normalized, await ownershipProof()));
-  const after = holdingsOf(await readAccount(normalized, true));
+  const before = lastHoldings.get(await holdingsKey(normalized, await ownershipProof()));
+  await forgetAccount(normalized);
+  const after = holdingsOf(await readAccount(normalized, DEFAULT_STRATEGY, true));
   return before === undefined || after === null || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
-export const accountView = async (id: string) => {
-  const r = await readAccount(id);
+export const accountView = async (id: string, strategy?: StrategyId) => {
+  const r = await readAccount(id, strategy);
   return {
     error: r.error,
     data: r.data

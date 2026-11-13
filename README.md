@@ -341,6 +341,18 @@ $5,000) are simulated and labelled as such.
   suggestion or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
   every unpriced unverified token, sits behind "Show small balances". When an indexer is down, the page says so and
   shows the allowlisted tokens and pools only.
+
+- **Strategy** (on "Your account"): Conservative, Balanced or Aggressive. It changes when a loan or a position gets a
+  card, how urgent the card is and how much it suggests repaying or swapping; the Liquidation Guardian and the AI
+  prompt use the same lines. Stablecoins never count as a concentration. The choice is in the link (`&strategy=`) and
+  is remembered for that account in this browser.
+
+  | Strategy     | Loan safe from HF | Repay back to HF | Urgent below HF | One token: card / urgent / swap down to |
+  | ------------ | ----------------- | ---------------- | --------------- | --------------------------------------- |
+  | Conservative | 1.80              | 2.00             | 1.50            | 50% / 75% / 40%                         |
+  | Balanced     | 1.50              | 1.60             | 1.30            | 60% / 85% / 50%                         |
+  | Aggressive   | 1.25              | 1.35             | 1.15            | 75% / 95% / 65%                         |
+
 - **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
   site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs
   money per run) is only for a visitor who signs a short NEP-413 message in the wallet. It is not a transaction:

@@ -3309,3 +3309,31 @@ main.page {
 .hero-mode .hero-live {
   margin-bottom: 0;
 }
+
+.strategy-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+.strategy-picker .segmented a {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+}
+.strategy-lines {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.strategy-note {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-wash);
+  font-size: 13px;
+}

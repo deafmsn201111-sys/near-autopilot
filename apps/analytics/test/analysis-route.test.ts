@@ -35,28 +35,46 @@ describe('POST /api/analysis', () => {
     expect(res.status).toBe(200);
     expect(apiPost).toHaveBeenCalledWith(
       '/v1/analytics/account/alice.near/analysis',
-      {},
+      { strategy: 'balanced' },
       60_000,
       {},
     );
   });
 
-  it.each([{}, { account: 'not a/near id' }, { account: 42 }])(
-    'answers 400 to %j without calling the API',
-    async (body) => {
-      const { POST } = await import('../app/api/analysis/route');
-      expect((await POST(request(body))).status).toBe(400);
-      expect(apiPost).not.toHaveBeenCalled();
-    },
-  );
+  it('forwards the chosen strategy', async () => {
+    const { POST } = await import('../app/api/analysis/route');
+    await POST(request({ account: 'alice.near', strategy: 'aggressive' }));
+    expect(apiPost).toHaveBeenCalledWith(
+      '/v1/analytics/account/alice.near/analysis',
+      { strategy: 'aggressive' },
+      60_000,
+      {},
+    );
+  });
+
+  it.each([
+    {},
+    { account: 'not a/near id' },
+    { account: 42 },
+    { account: 'alice.near', strategy: 'yolo' },
+  ])('answers 400 to %j without calling the API', async (body) => {
+    const { POST } = await import('../app/api/analysis/route');
+    expect((await POST(request(body))).status).toBe(400);
+    expect(apiPost).not.toHaveBeenCalled();
+  });
 
   it('forwards the ownership proof cookie so the API can unlock the LLM for the owner', async () => {
     proof = 'signed-proof';
     const { POST } = await import('../app/api/analysis/route');
     await POST(request({ account: 'alice.near' }));
-    expect(apiPost).toHaveBeenCalledWith('/v1/analytics/account/alice.near/analysis', {}, 60_000, {
-      'x-ownership-proof': 'signed-proof',
-    });
+    expect(apiPost).toHaveBeenCalledWith(
+      '/v1/analytics/account/alice.near/analysis',
+      { strategy: 'balanced' },
+      60_000,
+      {
+        'x-ownership-proof': 'signed-proof',
+      },
+    );
   });
 
   it('answers 429 once a visitor has used up the tight per-visitor limit', async () => {

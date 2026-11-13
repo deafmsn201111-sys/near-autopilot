@@ -1,5 +1,6 @@
 import { accountIdSchema } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
+import { strategySchema } from '@near-autopilot/core/strategy';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { apiPost } from '../../../lib/api';
@@ -31,13 +32,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
-  const raw = (body as { account?: unknown } | null)?.account;
+  const fields = (body ?? {}) as { account?: unknown; strategy?: unknown };
+  const raw = fields.account;
   const account = accountIdSchema.safeParse(
     typeof raw === 'string' ? raw.trim().toLowerCase() : raw,
   );
-  if (!account.success) {
+  const strategy = strategySchema.safeParse(fields.strategy);
+  if (!account.success || !strategy.success) {
     return NextResponse.json(
-      { error: 'body must be { account: <NEAR account id> }' },
+      { error: 'body must be { account: <NEAR account id>, strategy?: <strategy name> }' },
       { status: 400 },
     );
   }
@@ -51,7 +54,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const proof = (await cookies()).get(OWNERSHIP_COOKIE)?.value;
   const { status, body: out } = await apiPost(
     `/v1/analytics/account/${encodeURIComponent(account.data)}/analysis`,
-    {},
+    { strategy: strategy.data },
     LLM_TIMEOUT_MS,
     proof ? { 'x-ownership-proof': proof } : {},
   );

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { modelName, runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
+import type { StrategyId } from '@near-autopilot/core/strategy';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
@@ -15,12 +16,14 @@ import { RepayPicker } from './RepayPicker';
  */
 export function Recommendations({
   account,
+  strategy,
   recommendations: initial,
   skipped,
   holdings,
   signingEnabled,
 }: {
   account: string;
+  strategy: StrategyId;
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
@@ -37,7 +40,7 @@ export function Recommendations({
   async function analyse() {
     setRunning(true);
     setError(null);
-    const r = await runAnalysis(account);
+    const r = await runAnalysis(account, strategy);
     if (r.ok) setAi({ analysis: r.analysis, signature });
     else setError(r.error);
     setRunning(false);
