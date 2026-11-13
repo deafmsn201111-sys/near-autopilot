@@ -23,12 +23,8 @@ const CURATED_TOKEN_ICONS: Readonly<Record<string, string>> = {
   'token.burrow.near': '/token-icons/brrr.png',
 };
 
-export function tokenIcon(
-  token: string | undefined,
-  symbol: string,
-  verified?: boolean,
-): string | null {
+export function tokenIcon(token: string | undefined, symbol: string): string | null {
   if (token) return CURATED[token] ? (CURATED_TOKEN_ICONS[token] ?? null) : null;
-  // Native NEAR is not an NEP-141 contract; show it only when the source has marked it trusted.
-  return verified !== false && symbol.toUpperCase() === 'NEAR' ? '/token-icons/near.jpg' : null;
+  // Native NEAR is not an NEP-141 contract, so its trusted identity has no token id.
+  return symbol.toUpperCase() === 'NEAR' ? '/token-icons/near.jpg' : null;
 }

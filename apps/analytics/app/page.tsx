@@ -94,7 +94,7 @@ interface Row {
 
 function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
   const [bg, fg] = tokenVisual(r.symbol);
-  const icon = tokenIcon(r.token, r.symbol, r.verified);
+  const icon = tokenIcon(r.token, r.symbol);
   const isDebt = r.where === 'borrowed';
   const kind =
     r.sub ??
