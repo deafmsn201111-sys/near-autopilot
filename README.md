@@ -198,6 +198,16 @@ turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 
+Under **AI-ranked**, **How the AI got here** lists each agent the model called, one line each with its key number
+(health factor before and after the repayment, the supply rate, the largest gap between two price sources, the
+concentration share, positions out of range) and that number's provenance label, plus what became of its card
+(its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
+pipeline of the run: what was read on-chain, what each agent returned, what the model ranked, and what code checked
+before showing it (explanations whose numbers all came from the agents, explanations replaced, warnings put back,
+made-up actions dropped). The line is built on the server
+from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
+it says so; it never reports "healthy" without a comparison.
+
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the

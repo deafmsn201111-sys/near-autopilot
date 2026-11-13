@@ -116,6 +116,53 @@ describe('market intelligence: stays inside the envelope cap instead of losing e
   });
 });
 
+describe('market intelligence: never reports healthy when nothing was compared', () => {
+  const observe = (market: ReturnType<ReturnType<typeof makeWorld>['buildMarket']>) => {
+    const w = makeWorld();
+    const snapshot = w.buildSnapshot();
+    return new MarketIntelligenceAgent().propose({
+      now: NOW,
+      accountId: ALICE,
+      snapshot,
+      market,
+      risk: assessRisk(snapshot, w.config),
+      config: w.config,
+    });
+  };
+  const reason = async (raw: unknown) => {
+    const [p] = parseAgentOutput('market-intelligence', JSON.stringify(raw)).proposals;
+    return p?.proposal.kind === 'no_action' ? p.proposal.reasonCode : p?.proposal.kind;
+  };
+
+  it('without a second price source or volatility it says insufficient_data', async () => {
+    const market = {
+      ...makeWorld().buildMarket(),
+      referencePrices: new Map(),
+      volatility24hBps: new Map(),
+    };
+    expect(await reason(await observe(market))).toBe('insufficient_data');
+  });
+
+  it('a second price it cannot divide by is no comparison', async () => {
+    const w = makeWorld();
+    const zero = new Map(
+      [...w.buildSnapshot().prices.keys()].map((t) => [t, { multiplier: 0n, decimals: 10 }]),
+    );
+    const market = { ...w.buildMarket(), referencePrices: zero, volatility24hBps: new Map() };
+    expect(await reason(await observe(market))).toBe('insufficient_data');
+  });
+
+  it('with matching prices from a second source it says healthy', async () => {
+    const w = makeWorld();
+    const market = {
+      ...w.buildMarket(),
+      referencePrices: new Map(w.buildSnapshot().prices),
+      volatility24hBps: new Map(),
+    };
+    expect(await reason(await observe(market))).toBe('healthy');
+  });
+});
+
 describe('proposal schema: real Rhea DCL ids are accepted', () => {
   const lp = (positionId: string) =>
     JSON.stringify({

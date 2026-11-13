@@ -298,6 +298,22 @@ no longer said what comes first.
 **Tests run:** `pnpm verify` (green); `polling.test.ts` covers the deadline, restart on visible/focus, extending a
 running window and listener removal.
 
+## 2026-11-13 — Reasoning trace in the UI (#26)
+
+- `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount` returns `trace`, one `{tool, agent, ok, text, provenance}`
+  per offered tool the model called (first-call order, made-up tool names dropped, `Failed` when every call failed).
+  Each tool writes its line from the numbers it returns to the model; raw outputs stay on the server. The market tool
+  also returns each held token's gap to the second price source. The heuristic fallback has an empty trace.
+- `packages/orchestrator/src/agents/market-intelligence.ts`: with no second price source and no volatility it answers
+  `insufficient_data` instead of `healthy`.
+- `apps/analytics`: the analysis schema accepts `trace` and `calledTools` (both optional for older replies); a "How the
+  AI got here" block under the badge, with the provenance label per line, or the plain list of called tools.
+- Each trace line also says what became of its card (`pick`: ranked / kept by code / left out, and `rank`); a card
+  the model left out still shows its number, labelled as left out. The guardian line names the debt token missing
+  from the wallet when it cannot size a repayment. `run` summarises the model run (model, turns, tool calls, ms).
+- `run.read` (tokens held, loan or not) and `run.checks` (picked, explained, replaced, restored, dropped) let the UI
+  show the run as a four-step pipeline: read → agents → model ranking → code checks.
+
 ## 2026-11-13 — No $0 cards on small wallets (#99)
 
 - Reduce-concentration and put-idle-to-work cards (rule-based and the AI deposit) need an action of at least $10
