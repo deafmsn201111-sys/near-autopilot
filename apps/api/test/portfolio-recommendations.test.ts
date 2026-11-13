@@ -154,6 +154,17 @@ describe('portfolioRecommendations', () => {
       expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
     });
 
+    it('offers no withdrawal at all while the health factor is below the target, not even plain supply', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: demoLoan,
+          largestDebt: demoDebt,
+          burrowBalances: [{ ...usdcBalance, deposited: 500, collateral: 53.87 }],
+        }),
+      );
+      expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
+    });
+
     it('skips balances under $10', () => {
       const r = portfolioRecommendations(
         ctx({ burrowBalances: [{ ...usdcBalance, collateral: 5 }] }),

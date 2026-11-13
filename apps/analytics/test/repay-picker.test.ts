@@ -35,6 +35,13 @@ describe('pickRepay', () => {
     expect(BigInt(p?.raw ?? '0')).toBeGreaterThan(37_870_000n);
   });
 
+  it('does not call the loan repaid while debt in another token is left', () => {
+    const twoDebts = { ...sizing, debtAdjUsd: sizing.debtAdjUsd + 10 };
+    const p = pickRepay(twoDebts, 'collateral', '37.87');
+    expect(p?.hf).not.toBeNull();
+    expect(p?.hf).toBeGreaterThan(1.28);
+  });
+
   it('has nothing to prepare for zero or a non-number', () => {
     expect(pickRepay(sizing, 'collateral', '0')).toBeNull();
     expect(pickRepay(sizing, 'collateral', 'abc')).toBeNull();

@@ -676,19 +676,23 @@ function loanSafety(
 
 function withdrawable(ctx: RecommendationContext): PortfolioRecommendation | null {
   const loan = ctx.loan?.hasDebt ? ctx.loan : null;
+  // Below the target the money belongs against the loan (the repay card), not in the wallet.
+  if (loan && !((loan.healthFactor ?? 0) >= TARGET_HF)) return null;
   const best = ctx.burrowBalances
     .map((b) => {
-      const room = loan
-        ? withdrawableToKeep(
-            {
-              collateralAdjUsd: loan.collateralAdjUsd,
-              debtAdjUsd: loan.debtAdjUsd,
-              vr: b.vr,
-              usdPerToken: b.usdPerToken,
-            },
-            TARGET_HF,
-          )
-        : Infinity;
+      // a token with vr 0 cannot be collateral: its plain deposit leaves without touching the health factor
+      const room =
+        loan && b.collateral > 0 && b.vr > 0
+          ? withdrawableToKeep(
+              {
+                collateralAdjUsd: loan.collateralAdjUsd,
+                debtAdjUsd: loan.debtAdjUsd,
+                vr: b.vr,
+                usdPerToken: b.usdPerToken,
+              },
+              TARGET_HF,
+            )
+          : Infinity;
       const tokens = b.deposited + Math.min(b.collateral, room);
       return { b, tokens, all: room >= b.collateral, usd: tokens * b.usdPerToken };
     })
@@ -1095,13 +1099,13 @@ export function registerAccountView(
         .reduce((s, h) => s + h.amount, 0);
     const burrowFacts = (token: string) => {
       const f = facts.get(token);
-      return f && f.usd !== null && f.vr
+      return f && f.usd !== null && f.vr !== undefined
         ? { token, symbol: f.symbol, decimals: f.decimals, usdPerToken: f.usd, vr: f.vr }
         : null;
     };
     const debtFacts = debts[0] && burrowFacts(debts[0].token);
     const largestDebt =
-      debts[0] && debtFacts
+      debts[0] && debtFacts && debtFacts.vr > 0
         ? {
             ...debtFacts,
             usd: debts[0].usd as number,
@@ -1131,7 +1135,9 @@ export function registerAccountView(
         : [];
     });
     const walletUsd: Record<string, number> = {};
-    for (const h of v.holdings.filter((x) => x.where === 'wallet' && x.usd !== null)) {
+    for (const h of v.holdings.filter(
+      (x) => x.where === 'wallet' && x.usd !== null && x.amount > 0,
+    )) {
       const usd =
         h.token === NATIVE_HOLDING
           ? (Math.max(0, h.amount - NEAR_RESERVE) * (h.usd as number)) / h.amount

@@ -27,6 +27,6 @@ export function pickRepay(s: RepaySizing, from: RepaySource, text: string) {
     s.decimals,
   );
   if (!raw) return null;
-  const hf = whole ? null : hfAfterRepay(s, tokens, from);
+  const hf = hfAfterRepay(s, tokens, from);
   return { raw: raw.toString(), tokens, usd: tokens * s.usdPerToken, hf, zone: healthZone(hf) };
 }

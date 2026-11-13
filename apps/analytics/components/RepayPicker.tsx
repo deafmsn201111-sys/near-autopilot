@@ -28,7 +28,12 @@ export function RepayPicker({
   const from = intent.action === 'repay' ? 'wallet' : 'collateral';
   const safeText = amountText(sizing.safeTokens, sizing.decimals);
   const maxText = amountText(sizing.maxTokens, sizing.decimals);
-  const [text, setText] = useState(safeText);
+  // The card's own amount first (an agent may have sized it), so the text and the input agree.
+  const [text, setText] = useState(
+    intent.amount
+      ? amountText(Number(intent.amount) / 10 ** sizing.decimals, sizing.decimals)
+      : safeText,
+  );
   const pick = pickRepay(sizing, from, text);
   const request = pick && recommendationToPrepare(intent, account, pick.raw);
 
