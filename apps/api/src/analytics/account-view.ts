@@ -1096,14 +1096,17 @@ export function registerAccountView(
   ): Promise<Omit<AnalysisContext, 'ownerVerified'> | { status: 404 | 502; error: string }> => {
     const view = await readAccount(id, log);
     if (view.status !== 200) return { status: view.status, error: view.body.error };
-    const held = new Set(
-      view.body.holdings
-        .filter((h) => h.token !== NATIVE_HOLDING)
-        .map((h) => accountIdSchema.parse(h.token)),
-    );
+    const { holdings } = view.body;
     return {
       accountId: id,
-      observe: () => observe(id, [...held]),
+      observe: () =>
+        observe(id, [
+          ...new Set(
+            holdings
+              .filter((h) => h.token !== NATIVE_HOLDING)
+              .map((h) => accountIdSchema.parse(h.token)),
+          ),
+        ]),
       heuristics: view.body.recommendations,
       checks: view.forModel,
     };
@@ -1789,6 +1792,5 @@ export function registerAccountView(
       return prepareFailure(req, reply, e);
     }
   });
-  // The model comparison script (src/llm/compare-models.ts) runs the analysis on these without a server route.
   return { analysisInputs };
 }

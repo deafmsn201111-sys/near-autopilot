@@ -5,7 +5,6 @@ import type { LlmClient, LlmToolTurn, ToolChat, ToolLlm } from '@near-autopilot/
 export interface AnthropicLlmConfig {
   readonly model: string;
   readonly maxTokens: number;
-  /** Unset: the model's own default effort. */
   readonly effort?: Anthropic.OutputConfig['effort'];
 }
 

@@ -103,10 +103,12 @@ function observed(llm: ToolLlm) {
   return { wrapped, seen };
 }
 
+const picksSchema = z.object({ picks: z.array(z.object({ id: z.string(), why: z.string() })) });
+
 function proposedWhys(text: string): Map<string, string> {
   try {
-    const parsed = JSON.parse(stripFence(text)) as { picks?: { id: string; why: string }[] };
-    return new Map((parsed.picks ?? []).map((p) => [p.id, p.why]));
+    const parsed = picksSchema.safeParse(JSON.parse(stripFence(text)));
+    return new Map(parsed.success ? parsed.data.picks.map((p) => [p.id, p.why]) : []);
   } catch {
     return new Map();
   }
@@ -122,8 +124,10 @@ const median = (xs: number[]) => {
 const rows: Record<string, unknown>[] = [];
 for (const account of accounts) {
   const inputs = await analysisInputs(account, app.log);
-  if ('error' in inputs) throw new Error(`${account}: ${inputs.error}`);
-  const warnings = inputs.heuristics.filter((h) => h.severity === 'warning');
+  if ('error' in inputs) {
+    console.warn(`${account}: ${inputs.error}; skipped`);
+    continue;
+  }
   say(`\n${account}: rule-based list ${inputs.heuristics.map((h) => h.kind).join(', ')}`);
   for (const config of CONFIGS) {
     for (let run = 1; run <= RUNS; run++) {
@@ -159,11 +163,14 @@ for (const account of accounts) {
         latencyMs: call?.latencyMs ?? Date.now() - started,
         turns: seen.turns,
         replaced,
-        warningFirst: warnings.length === 0 || analysis.recommendations[0]?.severity === 'warning',
+        warningFirst:
+          !analysis.recommendations.some((r) => r.severity === 'warning') ||
+          analysis.recommendations[0]?.severity === 'warning',
         picks: analysis.recommendations.map((r) => ({ id: r.id, title: r.title, why: r.why })),
         rawFinal: seen.final,
       };
       rows.push(row);
+      writeFileSync(env.COMPARE_OUT, JSON.stringify(rows, null, 2));
       say(
         `  ${config.label} #${run}: ${row.source}${row.fallback ? ` (${row.fallback})` : ''}, $${row.costUsd.toFixed(4)}, ${(row.latencyMs / 1000).toFixed(1)} s, ${row.turns} turns, ${replaced} why replaced`,
       );
@@ -176,6 +183,7 @@ say('\naccount | config | $/analysis | p50 s | llm ok | why replaced | warning f
 for (const account of accounts)
   for (const config of CONFIGS) {
     const rs = rows.filter((r) => r.account === account && r.config === config.label);
+    if (rs.length === 0) continue;
     const cost = rs.reduce((s, r) => s + (r.costUsd as number), 0) / rs.length;
     say(
       [
@@ -190,5 +198,4 @@ for (const account of accounts)
     );
   }
 say(`\ntotal spend $${usd(spentMicro).toFixed(4)}; raw runs in ${env.COMPARE_OUT}`);
-writeFileSync(env.COMPARE_OUT, JSON.stringify(rows, null, 2));
 await database.close();
