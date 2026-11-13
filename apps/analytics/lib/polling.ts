@@ -6,7 +6,8 @@ export interface PollOptions {
 
 /**
  * Calls `tick` every `everyMs` while visible and stops after `forMs`, so an unattended tab goes quiet.
- * When the tab becomes visible or gets focus, the `forMs` window starts over. Returns a stop function.
+ * When the tab becomes visible or gets focus, the `forMs` window starts over (with an immediate tick if it had
+ * stopped). Returns a stop function.
  */
 export function poll(tick: () => void, { everyMs, forMs, hidden }: PollOptions): () => void {
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -14,6 +15,7 @@ export function poll(tick: () => void, { everyMs, forMs, hidden }: PollOptions):
 
   const halt = () => {
     clearInterval(interval);
+    clearTimeout(deadline);
     interval = undefined;
   };
   const start = () => {
@@ -24,7 +26,10 @@ export function poll(tick: () => void, { everyMs, forMs, hidden }: PollOptions):
     deadline = setTimeout(halt, forMs);
   };
   const onPresence = () => {
-    if (!hidden()) start();
+    if (hidden()) return;
+    const wasHalted = interval === undefined;
+    start();
+    if (wasHalted) tick();
   };
 
   start();
@@ -32,7 +37,6 @@ export function poll(tick: () => void, { everyMs, forMs, hidden }: PollOptions):
   window.addEventListener('focus', onPresence);
   return () => {
     halt();
-    clearTimeout(deadline);
     document.removeEventListener('visibilitychange', onPresence);
     window.removeEventListener('focus', onPresence);
   };

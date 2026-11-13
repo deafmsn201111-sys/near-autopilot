@@ -44,8 +44,9 @@ describe('poll', () => {
 
     doc.visibilityState = 'visible';
     doc.dispatchEvent(new Event('visibilitychange'));
+    expect(tick).toHaveBeenCalledTimes(6);
     vi.advanceTimersByTime(10_000);
-    expect(tick).toHaveBeenCalledTimes(10);
+    expect(tick).toHaveBeenCalledTimes(11);
   });
 
   it('restarts on window focus', () => {
@@ -54,7 +55,7 @@ describe('poll', () => {
     vi.advanceTimersByTime(10_000);
     win.dispatchEvent(new Event('focus'));
     vi.advanceTimersByTime(10_000);
-    expect(tick).toHaveBeenCalledTimes(10);
+    expect(tick).toHaveBeenCalledTimes(11);
   });
 
   it('extends the window on presence while still running, without doubling ticks', () => {
