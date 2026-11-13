@@ -905,6 +905,42 @@ tr.detail details[open] {
   justify-content: flex-end;
   gap: 8px;
 }
+.modal.deposit {
+  max-width: 520px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.deposit-warn {
+  color: var(--critical) !important;
+}
+.deposit-address {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.deposit-address code {
+  font-size: 13px;
+  word-break: break-all;
+  text-align: center;
+}
+.deposit-qr {
+  border-radius: 8px;
+}
+.deposit-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+.deposit-facts dt {
+  color: var(--ink-2);
+}
+.deposit-facts dd {
+  margin: 0;
+  word-break: break-all;
+}
 
 /* ---------------- empty / error / loading */
 .state {

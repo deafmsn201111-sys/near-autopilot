@@ -1,0 +1,271 @@
+import { describe, expect, it } from 'vitest';
+import {
+  oneClickFeeBps,
+  toBaseUnits,
+  type DepositDeps,
+  type StoredDepositQuote,
+} from '../src/analytics/deposit';
+import { buildAnalyticsServer } from '../src/analytics/server';
+import type { CollectorStore } from '../src/collector/store';
+import {
+  DepositQuoteRefused,
+  type DepositQuote,
+  type DepositQuoteRequest,
+  type OneClickToken,
+} from '../src/gateway/one-click-deposit';
+
+const NOW = new Date('2026-11-13T10:00:00Z');
+const API_TOKEN = 'public-token-public-token-public-token-1';
+const USDC_NEAR_ID = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+const TOKENS: OneClickToken[] = [
+  { assetId: 'nep141:eth.omft.near', decimals: 18, blockchain: 'eth', symbol: 'ETH' },
+  { assetId: 'nep141:eth-0xa0b8.omft.near', decimals: 6, blockchain: 'eth', symbol: 'USDC' },
+  { assetId: 'nep141:zzz.omft.near', decimals: 6, blockchain: 'base', symbol: 'AAA' },
+  { assetId: 'nep141:btc.omft.near', decimals: 8, blockchain: 'btc', symbol: 'BTC' },
+  { assetId: 'nep141:xlm.omft.near', decimals: 7, blockchain: 'stellar', symbol: 'XLM' },
+  {
+    assetId: `nep141:${USDC_NEAR_ID}`,
+    decimals: 6,
+    blockchain: 'near',
+    symbol: 'USDC',
+    contractAddress: USDC_NEAR_ID,
+  },
+  {
+    assetId: 'nep141:wrap.near',
+    decimals: 24,
+    blockchain: 'near',
+    symbol: 'wNEAR',
+    contractAddress: 'wrap.near',
+  },
+  {
+    assetId: 'nep141:aurora',
+    decimals: 18,
+    blockchain: 'near',
+    symbol: 'AURORA',
+    contractAddress: 'aurora',
+  },
+];
+const REFUND = '0x2527d02599ba641c19fea793cd0f167589a0f10d';
+const DEPOSIT = '0x76b4c56085ed136a8744d52be956396624a730e8';
+
+const quoted = (over: Partial<DepositQuote> = {}): DepositQuote => ({
+  depositAddress: DEPOSIT,
+  deadline: new Date('2026-11-13T10:10:00Z'),
+  amountIn: 100_000_000n,
+  amountOut: 99_750_000n,
+  minAmountOut: 98_750_000n,
+  amountOutUsd: '99.74',
+  timeEstimateSeconds: 120,
+  correlationId: 'c0ffee',
+  signature: 'ed25519:sig',
+  ...over,
+});
+
+function setup(o: { quote?: () => Promise<DepositQuote>; authenticated?: boolean } = {}) {
+  const saved: StoredDepositQuote[] = [];
+  const asked: DepositQuoteRequest[] = [];
+  const deposit: DepositDeps = {
+    oneClick: {
+      tokens: async () => TOKENS,
+      quote: async (r) => {
+        asked.push(r);
+        return (o.quote ?? (async () => quoted()))();
+      },
+    },
+    store: { save: async (q) => void saved.push(q), purge: async () => undefined },
+    destinationTokens: ['wrap.near', USDC_NEAR_ID, 'usdt.tether-token.near'],
+    authenticated: o.authenticated ?? false,
+    newId: () => 'dq_1',
+  };
+  const app = buildAnalyticsServer({
+    apiToken: API_TOKEN,
+    store: {} as CollectorStore,
+    intervalSeconds: 900,
+    now: () => NOW,
+    deposit,
+  });
+  const post = (body: object) =>
+    app.inject({
+      method: 'POST',
+      url: '/v1/deposit/quote',
+      headers: { authorization: `Bearer ${API_TOKEN}` },
+      payload: body,
+    });
+  return { app, post, saved, asked };
+}
+
+const body = {
+  account: 'alice.near',
+  originAsset: 'nep141:eth-0xa0b8.omft.near',
+  destinationAsset: `nep141:${USDC_NEAR_ID}`,
+  amount: '100',
+  refundTo: REFUND,
+};
+
+describe('toBaseUnits', () => {
+  it('converts a decimal amount with the token decimals, exactly', () => {
+    expect(toBaseUnits('100', 6)).toBe(100_000_000n);
+    expect(toBaseUnits('0.000001', 6)).toBe(1n);
+    expect(toBaseUnits('1.5', 18)).toBe(1_500_000_000_000_000_000n);
+  });
+  it('refuses zero, too many decimals, signs and junk', () => {
+    for (const a of [
+      '0',
+      '0.0',
+      '0.0000001',
+      '-1',
+      '1e6',
+      '',
+      '.5',
+      '1.',
+      ' 1',
+      '1,5',
+      '1'.repeat(40),
+    ])
+      expect(toBaseUnits(a, 6)).toBeNull();
+  });
+});
+
+describe('oneClickFeeBps', () => {
+  const t = (symbol: string) => ({ assetId: symbol, decimals: 6, blockchain: 'eth', symbol });
+  it('is 25 bps without a JWT, whatever the pair', () => {
+    expect(oneClickFeeBps(false, t('USDC'), t('USDC'))).toBe(25);
+    expect(oneClickFeeBps(false, t('ETH'), t('wNEAR'))).toBe(25);
+  });
+  it('is 1 bp for stablecoin pairs and the same asset with a JWT, 20 bps otherwise', () => {
+    expect(oneClickFeeBps(true, t('USDC'), t('USDT'))).toBe(1);
+    expect(oneClickFeeBps(true, t('ETH'), t('ETH'))).toBe(1);
+    expect(oneClickFeeBps(true, t('ETH'), t('wNEAR'))).toBe(20);
+    expect(oneClickFeeBps(true, t('USDC'), t('wNEAR'))).toBe(20);
+  });
+});
+
+describe('GET /v1/deposit/assets', () => {
+  it('lists origins on the allowed chains only, popular first, and destinations from our own list', async () => {
+    const res = await setup().app.inject({
+      url: '/v1/deposit/assets',
+      headers: { authorization: `Bearer ${API_TOKEN}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json<{ origins: { assetId: string }[]; destinations: { symbol: string }[] }>();
+    expect(json.origins.map((o) => o.assetId)).toEqual([
+      'nep141:eth-0xa0b8.omft.near',
+      'nep141:eth.omft.near',
+      'nep141:btc.omft.near',
+      'nep141:zzz.omft.near',
+    ]);
+    expect(json.destinations.map((d) => d.symbol)).toEqual(['wNEAR', 'USDC']);
+  });
+});
+
+describe('POST /v1/deposit/quote', () => {
+  it('quotes the connected account, stores the quote and returns our id with read-only fields', async () => {
+    const { post, saved, asked } = setup();
+    const res = await post(body);
+    expect(res.statusCode).toBe(200);
+    expect(asked[0]).toMatchObject({
+      originAsset: 'nep141:eth-0xa0b8.omft.near',
+      destinationAsset: `nep141:${USDC_NEAR_ID}`,
+      amountIn: 100_000_000n,
+      refundTo: REFUND,
+      recipient: 'alice.near',
+    });
+    expect(res.json()).toEqual({
+      id: 'dq_1',
+      chain: 'eth',
+      chainName: 'Ethereum',
+      origin: { assetId: 'nep141:eth-0xa0b8.omft.near', symbol: 'USDC', decimals: 6 },
+      destination: { assetId: `nep141:${USDC_NEAR_ID}`, symbol: 'USDC', decimals: 6 },
+      amountIn: '100000000',
+      amountOut: '99750000',
+      minAmountOut: '98750000',
+      amountOutUsd: { value: '99.74', provenance: 'protocol_reported' },
+      fee: { bps: 25, provenance: 'protocol_reported', authenticated: false },
+      recipient: 'alice.near',
+      refundTo: REFUND,
+      depositAddress: DEPOSIT,
+      deadline: '2026-11-13T10:10:00.000Z',
+      timeEstimateSeconds: 120,
+    });
+    expect(saved).toEqual([
+      {
+        id: 'dq_1',
+        createdAt: NOW,
+        accountId: 'alice.near',
+        originAsset: 'nep141:eth-0xa0b8.omft.near',
+        destinationAsset: `nep141:${USDC_NEAR_ID}`,
+        amountIn: '100000000',
+        amountOut: '99750000',
+        minAmountOut: '98750000',
+        refundTo: REFUND,
+        depositAddress: DEPOSIT,
+        deadline: new Date('2026-11-13T10:10:00Z'),
+        correlationId: 'c0ffee',
+        signature: 'ed25519:sig',
+        feeBps: 25,
+      },
+    ]);
+  });
+
+  it('shows the authenticated fee when a JWT is configured', async () => {
+    const res = await setup({ authenticated: true }).post(body);
+    expect(res.json<{ fee: { bps: number } }>().fee.bps).toBe(1);
+  });
+
+  it('refuses a refund address of another chain before calling 1Click', async () => {
+    const { post, asked } = setup();
+    const res = await post({ ...body, refundTo: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'The refund address is not a valid Ethereum address.' });
+    expect(asked).toHaveLength(0);
+  });
+
+  it.each([
+    ['an unknown origin', { originAsset: 'nep141:evil.near' }],
+    ['an origin on a memo chain', { originAsset: 'nep141:xlm.omft.near' }],
+    ['a NEAR token as origin', { originAsset: 'nep141:wrap.near' }],
+    ['a destination outside our list', { destinationAsset: 'nep141:aurora' }],
+    ['a destination that is not on NEAR', { destinationAsset: 'nep141:eth.omft.near' }],
+    ['a zero amount', { amount: '0' }],
+    ['too many decimals', { amount: '1.0000001' }],
+    ['an invalid account', { account: 'Not An Account' }],
+    ['an extra field', { recipient: 'mallory.near' }],
+  ])('refuses %s with 400 and never calls 1Click', async (_, over) => {
+    const { post, asked, saved } = setup();
+    const res = await post({ ...body, ...over });
+    expect(res.statusCode).toBe(400);
+    expect(asked).toHaveLength(0);
+    expect(saved).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      'a refused quote',
+      async () => Promise.reject(new DepositQuoteRefused('1Click quote differs: recipient')),
+    ],
+    [
+      'a deposit address not of the origin chain',
+      async () => quoted({ depositAddress: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4' }),
+    ],
+  ])('hides the address on %s: generic 502, nothing stored', async (_, quote) => {
+    const { post, saved } = setup({ quote });
+    const res = await post(body);
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      error: 'The 1Click quote could not be verified, so no deposit address is shown. Try again.',
+    });
+    expect(res.body).not.toContain('recipient');
+    expect(saved).toHaveLength(0);
+  });
+
+  it('answers a 1Click failure with a generic message, without upstream text', async () => {
+    const { post } = setup({
+      quote: async () => Promise.reject(new Error('Amount too low <script>')),
+    });
+    const res = await post(body);
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      error: '1Click has no quote for this amount right now. Try a larger amount or another token.',
+    });
+  });
+});

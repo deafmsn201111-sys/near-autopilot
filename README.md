@@ -37,8 +37,9 @@ everywhere in this repository:
 | **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                     |
 | **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                     |
 
-The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet, and NEAR
-Intents 1Click is used for dry quotes only.
+The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
+Intents 1Click gives dry quotes for route comparison, and real quotes only for depositing into your account from
+another chain (you send from your own wallet there; the server builds no transaction).
 
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
@@ -96,7 +97,8 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 ### DeFi track: protect the position, refuse value-losing actions
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
-1Click API is called with `dry: true`, which is a constant in the client.
+route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
+from another chain (below), in a separate client.
 
 **What works**
 
@@ -121,6 +123,17 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 4. Press **Connect wallet** and sign in with a NEAR wallet (checked with HOT). You see your own mainnet account:
    holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
    them in your wallet or cancel.
+
+5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
+   on the portfolio. Pick the token and chain you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), the
+   amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
+   checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
+   a one-time deposit address with a QR code, the deadline (about 10 minutes) and 1Click's fee: 0.25% without a
+   partner key, 0.20% with one (0.01% for stablecoin pairs). Send exactly that amount from your wallet on that chain;
+   1Click delivers to your NEAR account, or refunds to your address if the swap fails. Tracking the deposit's status
+   is not on the page yet. What we keep: one `deposit_quotes` row per address shown (your NEAR account, the tokens
+   and amounts, your refund address on the other chain, the deposit address, deadline, fee and 1Click's id and
+   signature), deleted after 30 days; no IP address.
 
 **Not done**
 
