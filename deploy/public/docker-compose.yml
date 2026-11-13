@@ -98,6 +98,8 @@ services:
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
+      # 1Click partner JWT for deposit quotes: only this service gets it. Empty = keyless fee schedule.
+      ONE_CLICK_JWT: ${ONE_CLICK_JWT:-}
       # Server LLM: only this service gets the key. Empty = LLM off, heuristics only.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}

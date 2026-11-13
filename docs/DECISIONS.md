@@ -282,7 +282,43 @@ allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $
   account; the "Unverified · price estimate" label is the guard. An indexer outage shows a notice and the allowlisted
   view. A read makes up to 3 more HTTP calls and a bounded number of view calls; the 60 s cache (D10) is unchanged.
 
-## D19 — Three strategy presets on "Your account"
+## D19 — Deposits from another chain: real 1Click quotes, verified on the server, no NEAR transaction
+
+**Context:** #27 (security items 4 and 5 of HACKATHON_PLAN). A user with funds on Ethereum, Base, Arbitrum, Solana or
+Bitcoin should be able to fund their NEAR account from the site. A real 1Click quote returns a deposit address that
+receives real money.
+**Decision:**
+
+- A separate client (`apps/api/src/gateway/one-click-deposit.ts`) posts `dry: false` quotes to the hard-coded
+  `https://1click.chaindefuser.com`; it never reads `ONE_CLICK_URL`. The dry client (`one-click.ts`) is unchanged. No
+  retries: every real quote mints a new address and the user must see exactly one.
+- Origin tokens: every `/v0/tokens` entry on `eth`, `base`, `arb`, `sol`, `btc` (zod-parsed, cached 10 minutes; asset
+  ids and decimals taken from that list, never built by hand). No memo chains. Destination: a token from
+  `config/market.json` `policy.allowedTokens` (wNEAR, USDC, USDT), never user input; recipient = the connected
+  account, delivered to the NEAR chain.
+- The refund address is checked on the server before 1Click is called: EVM `0x` + 40 hex (EIP-55 when mixed case);
+  Solana base58 decoding to 32 bytes; Bitcoin mainnet base58check P2PKH/P2SH, bech32 v0 (20/32 bytes) or bech32m v1
+  taproot (32 bytes), with checksum (`@scure/base`). Burn addresses (zero EVM address, all-zero Solana key) and
+  witness versions that are not spendable today are refused.
+- The answer is zod-parsed and verified: `dry: false`, `EXACT_INPUT`, `ORIGIN_CHAIN` deposit and refund,
+  `DESTINATION_CHAIN` recipient, `originAsset`, `destinationAsset`, `amount`, `quote.amountIn`, `recipient`,
+  `refundTo`, `slippageTolerance`; `amountOut` above 0 and `minAmountOut` within the 1% slippage; fees at most 1%; no
+  `customRecipientMsg` or virtual-chain recipient; a deposit address that is a valid address of the origin chain; no
+  memo; a deadline in the next 7 days. Any mismatch: no address is shown, a generic error, the reason logged.
+- Stored in `deposit_quotes` (migration 0020) with our id, deleted after 30 days. The UI gets our id and read-only
+  fields.
+- Gate: a connected account plus the proxy limit (5 quotes per visitor, 100 overall per 10 minutes), no NEP-413
+  proof. A quote costs nothing; someone naming another account as recipient only sends their own money there.
+- `ONE_CLICK_JWT` is optional, only in the `analytics-api` service, sent as `Authorization: Bearer` to 1Click only,
+  never logged or returned. The fee shown is the sum 1Click echoes in `quoteRequest.appFees` of that quote (a live
+  keyless USDC→USDC quote echoed 1 bp, not the 25 bps of the published table), tagged protocol-reported; "not
+  reported" when it echoes none. It is already taken off `amountOut`.
+- QR: `qrcode-generator` (MIT, no dependencies) drawn as inline SVG; no external QR service.
+- No NEAR transaction is built, so `validateCascade` and its allowlists are untouched.
+  **Consequences:** 1Click sets the deadline itself (a live quote gave about 3 days, not the 10 minutes we ask for);
+  the page counts down from the server's seconds-left. Status tracking is #29. The analytics API now makes outbound calls to 1Click and writes rows.
+
+## D20 — Three strategy presets on "Your account"
 
 **Context:** #25. One fixed risk line (HF 1.5, concentration 60%) treated a cautious holder and a looper the same.
 **Decision:**

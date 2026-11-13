@@ -236,7 +236,7 @@ no longer said what comes first.
 
 ## 2026-11-12 — Admin: Spend screen and kill switch (#31)
 
-- API: `/v1/admin/spend` and `/v1/admin/settings` behind `ADMIN_API_TOKEN` (D19); `spendSummary` gives today vs cap,
+- API: `/v1/admin/spend` and `/v1/admin/settings` behind `ADMIN_API_TOKEN` (D16); `spendSummary` gives today vs cap,
   7 UTC days, model split, average per analysis and the deposit run-out estimate. Migration 0019 adds `llm_enabled`,
   `deposit_micro_usd`, `deposit_set_at` to `llm_settings`.
 - `analyseAccount` reads the kill switch first: off → labelled rule-based list, code `kill_switch`, no model call, no
@@ -322,10 +322,20 @@ running window and listener removal.
 - What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
   dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.
 
+## 2026-11-13 — Deposit from another chain through 1Click (#27)
+
+- `apps/api/src/gateway/one-click-deposit.ts`: real-quote client (hard-coded URL, optional JWT, cached token list,
+  every echoed field verified). `refund-address.ts`: per-chain refund address check.
+- `apps/api/src/analytics/deposit.ts`: `GET /v1/deposit/assets`, `POST /v1/deposit/quote`; `deposit-store.ts` +
+  migration 0020 `deposit_quotes` (30-day purge).
+- `apps/analytics`: `/api/deposit/*` proxies (`deposit-quote` limit 5/100 per 10 min), `DepositDialog` (form → deposit
+  address, QR, deadline countdown, fee) in the header and on the portfolio.
+- D19.
+
 ## 2026-11-13 — Three strategy presets (#25)
 
 - `packages/core/src/strategy.ts`: Conservative / Balanced / Aggressive thresholds, the request schema and the cookie
-  name; shared by the API and the UI (D19).
+  name; shared by the API and the UI (D20).
 - `apps/api/src/analytics/account-view.ts`: `portfolioRecommendations` and `loanHealth` read the preset; the repay is
   sized to its target HF; concentration skips stablecoins; the cache holds the wallet read and the cards are computed
   per request; `?strategy=` on the account read and `{ strategy }` on the analysis, 400 on an unknown one.
