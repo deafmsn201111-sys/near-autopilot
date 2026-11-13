@@ -31,7 +31,10 @@ const env = z
     MAINNET_READ_RPC_URL: z.string().url().optional(),
     MAINNET_READ_RPC_API_KEY: z.string().optional(),
     MARKET_CONFIG_FILE: z.string().optional(),
+    /** Only the loopback admin site holds it; unset or empty = the admin routes answer 401. */
+    ADMIN_API_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
   })
+  .refine((e) => e.ADMIN_API_TOKEN !== e.API_TOKEN, 'ADMIN_API_TOKEN must differ from API_TOKEN')
   .parse(process.env);
 // Parsed on every start, so a model outside the allowlist stops the API even when the wallet path is off.
 const llmEnv = llmEnvSchema.parse(process.env);
@@ -39,10 +42,8 @@ const llmEnv = llmEnvSchema.parse(process.env);
 const database = createDatabase(env.DATABASE_URL, { max: 4 });
 // The only process that migrates: the collector waits for this API to be healthy before it starts.
 await runMigrations(database.db);
-const llmLedger = new DrizzleLlmLedger(
-  database.db,
-  BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6)),
-);
+const defaultCapMicro = BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6));
+const llmLedger = new DrizzleLlmLedger(database.db, defaultCapMicro);
 const toolLlm = anthropicToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const pools = env.MARKET_CONFIG_FILE
@@ -88,6 +89,15 @@ const app = buildAnalyticsServer(
     evidence: new EvidenceStore(database.db),
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
     ...(mainnet ? { mainnet } : {}),
+    ...(env.ADMIN_API_TOKEN
+      ? {
+          admin: {
+            token: env.ADMIN_API_TOKEN,
+            store: llmLedger,
+            defaultCapMicro,
+          },
+        }
+      : {}),
     ...(env.AUDIT_CHECKPOINT_PUBLIC_KEY
       ? {
           checkpoints: {

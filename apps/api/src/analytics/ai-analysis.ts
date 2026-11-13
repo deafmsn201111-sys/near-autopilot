@@ -34,6 +34,7 @@ export const DEADLINE_MS = 45_000;
 /** Why the rule-based list was shown instead of the AI ranking. */
 export type FallbackCode =
   | 'off'
+  | 'kill_switch'
   | 'not_owner'
   | 'cap'
   | 'busy'
@@ -43,8 +44,9 @@ export type FallbackCode =
   | 'deadline'
   | 'loop_limit';
 
-/** A run that reached the model ends in one of these; `off`, `not_owner` and `busy` never reach it. */
-export type CallOutcome = 'ok' | Exclude<FallbackCode, 'off' | 'not_owner' | 'busy'>;
+/** A run that reached the model ends in one of these; `off`, `kill_switch`, `not_owner` and `busy` never reach it. */
+export type CallOutcome =
+  'ok' | Exclude<FallbackCode, 'off' | 'kill_switch' | 'not_owner' | 'busy'>;
 
 /** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
 export interface LlmCallRecord {
@@ -60,6 +62,8 @@ export interface LlmCallRecord {
 }
 
 export interface LlmLedger {
+  /** The admin kill switch: false means no model call for anyone. */
+  enabled(): Promise<boolean>;
   /** Micro-USD the daily cap still allows today (UTC day); negative once over it. */
   remainingTodayMicro(): Promise<bigint>;
   record(call: LlmCallRecord): Promise<void>;
@@ -368,6 +372,7 @@ function displayNumbers(value: unknown, key = ''): string[] {
 
 const NOTES: Record<FallbackCode, string> = {
   off: 'AI analysis is off on this server; showing the rule-based list.',
+  kill_switch: 'AI analysis is paused by the operator; showing the rule-based list.',
   not_owner:
     'Verify ownership of this account to get the AI analysis; showing the rule-based list.',
   cap: 'Paused: daily AI budget reached; showing the rule-based list.',
@@ -411,6 +416,9 @@ export async function analyseAccount(
   });
   if (!ai) return fallback('off');
   if (!ctx.ownerVerified) return fallback('not_owner');
+  // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
+  const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
+  if (!enabled) return fallback('kill_switch');
 
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };

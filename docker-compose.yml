@@ -74,6 +74,8 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
       ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
       LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
+      # The only token /v1/admin/* accepts (quickstart.sh adds it). Empty = the admin routes answer 401.
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
@@ -112,6 +114,7 @@ services:
     build:
       context: .
       dockerfile: docker/analytics.Dockerfile
+    image: near-autopilot-analytics:local
     restart: unless-stopped
     depends_on:
       analytics-api:
@@ -123,6 +126,24 @@ services:
       MAINNET_WALLET_SIGNING: ${MAINNET_WALLET_SIGNING:-}
     ports:
       - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
+
+  # The admin (/admin: AI spend, kill switch, cap): the same image with ADMIN_UI=1, on 127.0.0.1:3002 only.
+  analytics-admin:
+    image: near-autopilot-analytics:local
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      analytics:
+        condition: service_started
+      analytics-api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://analytics-api:4000
+      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      ADMIN_UI: '1'
+    ports:
+      - '127.0.0.1:${ANALYTICS_ADMIN_PORT:-3002}:3000'
 
 volumes:
   pgdata:
