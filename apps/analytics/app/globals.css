@@ -3454,6 +3454,10 @@ main.page {
 }
 
 @media (max-width: 760px) {
+  .topbar-inner {
+    height: auto;
+    min-height: 64px;
+  }
   .account-form.compact {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
