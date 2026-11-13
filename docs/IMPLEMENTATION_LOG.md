@@ -280,6 +280,15 @@ no longer said what comes first.
 - `apps/analytics/app/page.tsx`: "What you hold" (top 7, "Show all"), "Unverified tokens", "Show small balances".
 - Test: `apps/api/test/account-full.test.ts` replays recorded mainnet reads of `npro-validator.near`.
 
+## 2026-11-13 — Portfolio mode label (#87)
+
+- `apps/analytics/lib/portfolio-mode.ts`: one label + one "what you can do here" line from `isAccount`, the
+  connected wallet (`np_account` cookie), the ownership proof and `MAINNET_WALLET_SIGNING`: demo / read-only (with a
+  "not your connected wallet" line on mismatch) / your wallet / ownership verified. Replaces the "Live" / "Simulated"
+  badge; the switch tab is now "Mainnet account" without the LIVE chip.
+- `WalletButton` writes the `np_account` cookie before the post-connect page load, so the first load already knows
+  the wallet.
+
 ## 2026-11-13 — Reasoning trace in the UI (#26)
 
 - `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount` returns `trace`, one `{tool, agent, ok, text, provenance}`
