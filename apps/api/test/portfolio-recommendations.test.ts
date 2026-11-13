@@ -23,6 +23,7 @@ const ctx = (over: Partial<RecommendationContext>): RecommendationContext => ({
   loan: null,
   idleEarn: [],
   largestDebt: null,
+  burrowBalances: [],
   dclOutOfRange: [],
   ...over,
 });
@@ -32,55 +33,205 @@ const portfolioRecommendations = (
   strategy: (typeof STRATEGIES)[keyof typeof STRATEGIES] = STRATEGIES.balanced,
 ) => portfolioAdvice(c, strategy).recommendations;
 
+const USDC = 'usdc.token';
+// The demo wallet: 53.87 USDC collateral, 37.87 USDC borrowed, vr 0.95, $1, none of it in the wallet.
+const demoLoan = {
+  hasDebt: true,
+  healthFactor: (53.87 * 0.95) / (37.87 / 0.95),
+  collateralAdjUsd: 53.87 * 0.95,
+  debtAdjUsd: 37.87 / 0.95,
+};
+const demoDebt = {
+  token: USDC,
+  symbol: 'USDC',
+  usd: 37.87,
+  amount: 37.87,
+  decimals: 6,
+  usdPerToken: 1,
+  vr: 0.95,
+  wallet: 0,
+  collateral: 53.87,
+};
+const directHf = (collateral: number, debt: number) => (collateral * 0.95) / (debt / 0.95);
+/** The demo loan's shape (collateral 1.42 x debt, HF 1.28) scaled to a debt of `usd`. */
+const scaledLoan = (usd: number) => ({
+  ...demoLoan,
+  collateralAdjUsd: (demoLoan.collateralAdjUsd * usd) / 37.87,
+  debtAdjUsd: (demoLoan.debtAdjUsd * usd) / 37.87,
+});
+const scaledDebt = (usd: number) => ({
+  ...demoDebt,
+  usd,
+  amount: usd,
+  collateral: (53.87 * usd) / 37.87,
+});
+
 describe('portfolioRecommendations', () => {
-  it('flags high single-asset concentration with a swap intent to cut it toward half', () => {
-    const r = portfolioRecommendations(
-      ctx({
-        metrics: metrics({ concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 90 } }),
-      }),
-    );
-    const c = r.find((x) => x.kind === 'reduce_concentration');
-    expect(c?.agent).toBe('Portfolio Intelligence');
-    expect(c?.severity).toBe('warning');
-    expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 400 });
+  describe('loan safety (Liquidation Guardian)', () => {
+    it('repays from collateral when the wallet holds none of the debt token, sized to the 1.6 target', () => {
+      const r = portfolioRecommendations(ctx({ loan: demoLoan, largestDebt: demoDebt }));
+      const l = r.find((x) => x.kind === 'improve_loan_safety');
+      expect(r[0]?.kind).toBe('improve_loan_safety');
+      expect(l?.agent).toBe('Liquidation Guardian');
+      expect(l?.severity).toBe('warning');
+      expect(l?.title).toBe("Your loan's health factor is 1.28");
+      const intent = l?.intent;
+      if (intent?.action !== 'repay_from_collateral')
+        throw new Error('expected repay_from_collateral');
+      const tokens = Number(intent.amount) / 1e6;
+      expect(directHf(53.87 - tokens, 37.87 - tokens)).toBeGreaterThanOrEqual(1.6);
+      expect(directHf(53.87 - tokens, 37.87 - tokens)).toBeLessThan(1.6001);
+      expect(intent.token).toBe(USDC);
+      expect(intent.sizing).toMatchObject({ decimals: 6, maxTokens: 37.87, targetHf: 1.6 });
+      expect(intent.sizing?.safeTokens).toBeCloseTo(tokens, 6);
+      expect(l?.why).toContain('17.17 USDC');
+      expect(l?.why).toContain('from your USDC collateral');
+      expect(l?.why).toContain('1.60');
+      expect(l?.why).not.toMatch(/closes the loop/i);
+    });
+
+    it('repays from the wallet when it holds enough of the debt token, capped by what it holds', () => {
+      const r = portfolioRecommendations(
+        ctx({ loan: demoLoan, largestDebt: { ...demoDebt, wallet: 30 } }),
+      );
+      const intent = r.find((x) => x.kind === 'improve_loan_safety')?.intent;
+      if (intent?.action !== 'repay') throw new Error('expected repay');
+      const tokens = Number(intent.amount) / 1e6;
+      expect(directHf(53.87, 37.87 - tokens)).toBeCloseTo(1.6, 3);
+      expect(intent.sizing?.maxTokens).toBe(30);
+    });
+
+    it('gives advice without a button when neither the wallet nor the collateral holds the debt token', () => {
+      const r = portfolioRecommendations(
+        ctx({ loan: demoLoan, largestDebt: { ...demoDebt, collateral: 0 } }),
+      );
+      const l = r.find((x) => x.kind === 'improve_loan_safety');
+      expect(l?.intent).toBeNull();
+      expect(l?.why).toContain('USDC');
+    });
+
+    it('never offers a repay from collateral that would lower the health factor (already liquidatable)', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: { hasDebt: true, healthFactor: 0.9, collateralAdjUsd: 90, debtAdjUsd: 100 },
+          largestDebt: { ...demoDebt, vr: 0.98, amount: 98, usd: 98, collateral: 50 },
+        }),
+      );
+      expect(r.find((x) => x.kind === 'improve_loan_safety')?.intent).toBeNull();
+    });
+
+    it('says nothing about the loan above the watch line', () => {
+      const r = portfolioRecommendations(
+        ctx({ loan: { ...demoLoan, healthFactor: 1.7 }, largestDebt: demoDebt }),
+      );
+      expect(r.some((x) => x.kind === 'improve_loan_safety')).toBe(false);
+    });
   });
 
-  it('sizes the concentration swap to what is in the wallet, not what is staked or in a pool', () => {
-    const at = (liquidUsd: number) =>
-      portfolioRecommendations(
+  describe('withdraw from Burrow', () => {
+    const usdcBalance = {
+      token: USDC,
+      symbol: 'USDC',
+      deposited: 0,
+      collateral: 16.7,
+      decimals: 6,
+      usdPerToken: 1,
+      vr: 0.95,
+      aprPct: 4.2,
+    };
+
+    it('withdraws the whole balance when nothing is borrowed, last on the list, saying what it stops earning', () => {
+      const r = portfolioRecommendations(
         ctx({
-          metrics: metrics({ concentration: { token: 'near', symbol: 'NEAR', pct: 90 } }),
-          concentrationLiquidUsd: liquidUsd,
+          burrowBalances: [usdcBalance],
+          idleEarn: [{ token: 'x', symbol: 'X', usd: 500, aprPct: 9 }],
         }),
+      );
+      const w = r.find((x) => x.kind === 'withdraw_from_burrow');
+      expect(r.at(-1)?.kind).toBe('withdraw_from_burrow');
+      expect(w?.title).toBe('Withdraw 16.70 USDC from Burrow');
+      expect(w?.why).toContain('4.2%');
+      if (w?.intent?.action !== 'withdraw') throw new Error('expected withdraw');
+      expect(BigInt(w.intent.amount ?? '0')).toBeGreaterThanOrEqual(16_700_000n);
+    });
+
+    it('with a loan, withdraws only what keeps the health factor at 1.6', () => {
+      const loan = {
+        hasDebt: true,
+        healthFactor: 2.4,
+        collateralAdjUsd: 60 * 0.95,
+        debtAdjUsd: 20 / 0.95,
+      };
+      const r = portfolioRecommendations(
+        ctx({ loan, burrowBalances: [{ ...usdcBalance, collateral: 60 }] }),
+      );
+      const w = r.find((x) => x.kind === 'withdraw_from_burrow');
+      if (w?.intent?.action !== 'withdraw') throw new Error('expected withdraw');
+      const tokens = Number(w.intent.amount) / 1e6;
+      expect(directHf(60 - tokens, 20)).toBeGreaterThanOrEqual(1.6);
+      expect(directHf(60 - tokens, 20)).toBeLessThan(1.601);
+    });
+
+    it('offers nothing when the health factor leaves no room and nothing is plainly supplied', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: demoLoan,
+          largestDebt: demoDebt,
+          burrowBalances: [{ ...usdcBalance, collateral: 53.87 }],
+        }),
+      );
+      expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
+    });
+
+    it('offers no withdrawal at all while the health factor is below the target, not even plain supply', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: demoLoan,
+          largestDebt: demoDebt,
+          burrowBalances: [{ ...usdcBalance, deposited: 500, collateral: 53.87 }],
+        }),
+      );
+      expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
+    });
+
+    it('skips balances under the action minimum', () => {
+      const r = portfolioRecommendations(
+        ctx({ burrowBalances: [{ ...usdcBalance, collateral: 0.5 }] }),
+      );
+      expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
+    });
+  });
+
+  describe('concentration (Portfolio Intelligence)', () => {
+    const concentrated = metrics({
+      concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 90 },
+    });
+
+    it('swaps toward half when the wallet holds enough', () => {
+      const r = portfolioRecommendations(
+        ctx({ metrics: concentrated, concentrationLiquidUsd: 900 }),
+      );
+      const c = r.find((x) => x.kind === 'reduce_concentration');
+      expect(c?.agent).toBe('Portfolio Intelligence');
+      expect(c?.severity).toBe('warning');
+      expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 400 });
+    });
+
+    it('swaps only what the wallet holds, not what is staked, pooled or on Burrow', () => {
+      const c = portfolioRecommendations(
+        ctx({ metrics: concentrated, concentrationLiquidUsd: 150 }),
       ).find((x) => x.kind === 'reduce_concentration');
-    expect(at(150)?.intent).toEqual({ action: 'swap', fromToken: 'near', approxUsd: 150 });
-    expect(at(150)?.why).toContain('$150');
-    expect(at(0.4)).toBeUndefined();
-    expect(
-      portfolioAdvice(
-        ctx({
-          metrics: metrics({ concentration: { token: 'near', symbol: 'NEAR', pct: 90 } }),
-          concentrationLiquidUsd: 0.4,
-        }),
-      ).skipped,
-    ).toEqual([]);
-  });
+      expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 150 });
+      expect(c?.why).toContain('$150');
+    });
 
-  it('warns on a low health factor with a repay intent on the largest debt', () => {
-    const r = portfolioRecommendations(
-      ctx({
-        metrics: metrics({ totalDebtUsd: 1000 }),
-        loan: { hasDebt: true, healthFactor: 1.2 },
-        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 1000 },
-      }),
-    );
-    const l = r.find((x) => x.kind === 'improve_loan_safety');
-    expect(l?.agent).toBe('Liquidation Guardian');
-    expect(l?.severity).toBe('warning'); // hf < 1.3
-    // sized back to Balanced's 1.6: 1000 × (1 − 1.2 / 1.6)
-    expect(l?.intent).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 250 });
-    // loan safety is ordered first
-    expect(r[0]?.kind).toBe('improve_loan_safety');
+    it('is advice without a button when the wallet holds none (or under $10) of the token', () => {
+      const advice = portfolioAdvice(ctx({ metrics: concentrated, concentrationLiquidUsd: 0.4 }));
+      const c = advice.recommendations.find((x) => x.kind === 'reduce_concentration');
+      expect(c?.intent).toBeNull();
+      expect(c?.why).toMatch(/none of it is in your wallet/i);
+      expect(advice.skipped).toEqual([]);
+    });
   });
 
   it('suggests putting the largest idle earning asset to work', () => {
@@ -88,7 +239,7 @@ describe('portfolioRecommendations', () => {
       ctx({
         idleEarn: [
           { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 500, aprPct: 9 },
-          { token: 'small', symbol: 'S', usd: 5, aprPct: 9 }, // below $10, ignored
+          { token: 'small', symbol: 'S', usd: 0.5, aprPct: 9 }, // below $1, ignored
         ],
       }),
     );
@@ -114,34 +265,44 @@ describe('portfolioRecommendations', () => {
       portfolioRecommendations(
         ctx({
           metrics: metrics({ concentration: { token: 't', symbol: 'T', pct: 40 } }),
-          loan: { hasDebt: true, healthFactor: 2.5 },
+          loan: { ...demoLoan, healthFactor: 2.5 },
         }),
       ),
     ).toEqual([]);
   });
 });
 
-describe('actions under the $10 minimum', () => {
-  it('skips a concentration rebalance that would move under $10 and says why', () => {
+describe('actions under the $1 minimum', () => {
+  it('skips a concentration rebalance that would move under $1 and says why', () => {
     const advice = portfolioAdvice(
       ctx({
         metrics: metrics({
-          totalAssetsUsd: 9,
+          totalAssetsUsd: 1.5,
           concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
         }),
       }),
     );
     expect(advice.recommendations).toEqual([]);
     expect(advice.skipped).toEqual([
-      '100% of your $9.00 portfolio is in NEAR. Rebalancing it would move only $4.50, under the $10 the agents act on, so they skip it until the portfolio grows.',
+      '100% of your $1.50 portfolio is in NEAR. Rebalancing it would move only $0.75, under the $1 the agents act on, so they skip it until the portfolio grows.',
     ]);
   });
 
-  it('keeps a concentration rebalance of exactly $10', () => {
+  it('keeps a concentration rebalance of exactly $1, and one on an $11 wallet', () => {
+    const rebalance = (totalAssetsUsd: number) =>
+      portfolioAdvice(
+        ctx({
+          metrics: metrics({
+            totalAssetsUsd,
+            concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
+          }),
+        }),
+      ).recommendations[0]?.intent;
+    expect(rebalance(11.13)).toEqual({ action: 'swap', fromToken: 'near', approxUsd: 5.57 });
     const advice = portfolioAdvice(
       ctx({
         metrics: metrics({
-          totalAssetsUsd: 20,
+          totalAssetsUsd: 2,
           concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
         }),
       }),
@@ -149,35 +310,38 @@ describe('actions under the $10 minimum', () => {
     expect(advice.recommendations[0]?.intent).toEqual({
       action: 'swap',
       fromToken: 'near',
-      approxUsd: 10,
+      approxUsd: 1,
     });
     expect(advice.skipped).toEqual([]);
   });
 
-  it('keeps the loan warning on a small debt and repays at least $10, at most the debt', () => {
-    const repay = (usd: number) =>
+  it('keeps the loan warning on a small debt (sized to the target, even under $10) but not on dust', () => {
+    const repay = (debt: number) =>
       portfolioAdvice(
         ctx({
-          loan: { hasDebt: true, healthFactor: 1.2 },
-          largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd },
+          loan: {
+            hasDebt: true,
+            healthFactor: (debt * 1.35 * 0.95) / (debt / 0.95),
+            collateralAdjUsd: debt * 1.35 * 0.95,
+            debtAdjUsd: debt / 0.95,
+          },
+          largestDebt: { ...demoDebt, usd: debt, amount: debt, collateral: debt * 1.35 },
         }),
       ).recommendations[0]?.intent;
-    expect(repay(20)).toEqual({ action: 'repay', token: 'usdt.tether-token.near', approxUsd: 10 });
-    expect(repay(6.5)).toEqual({
-      action: 'repay',
-      token: 'usdt.tether-token.near',
-      approxUsd: 6.5,
-    });
+    const small = repay(6.5);
+    if (small?.action !== 'repay_from_collateral') throw new Error('expected a repay');
+    expect(small.approxUsd).toBeGreaterThan(0);
+    expect(small.approxUsd).toBeLessThanOrEqual(6.5);
     expect(repay(0.001)).toBeUndefined();
   });
 
-  it('skips idle assets under $10 and says why', () => {
+  it('skips idle assets under $1 and says why', () => {
     const advice = portfolioAdvice(
-      ctx({ idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 9, aprPct: 2.1 }] }),
+      ctx({ idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 0.5, aprPct: 2.1 }] }),
     );
     expect(advice.recommendations).toEqual([]);
     expect(advice.skipped).toEqual([
-      '$9.00 of NEAR could earn about 2.1% a year on Burrow, but that is under the $10 the agents act on.',
+      '$0.50 of NEAR could earn about 2.1% a year on Burrow, but that is under the $1 the agents act on.',
     ]);
   });
 
@@ -193,14 +357,14 @@ describe('actions under the $10 minimum', () => {
           totalDebtUsd: 4_000_000,
           concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
         }),
-        loan: { hasDebt: true, healthFactor: 1.2 },
-        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 4_000_000 },
+        loan: scaledLoan(4_000_000),
+        largestDebt: scaledDebt(4_000_000),
         idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 2_000_000, aprPct: 5 }],
       }),
     );
-    expect(whale.recommendations.map((r) => 'approxUsd' in r.intent && r.intent.approxUsd)).toEqual(
-      [1_000_000, 1_000_000, 1_000_000],
-    );
+    expect(
+      whale.recommendations.map((r) => r.intent && 'approxUsd' in r.intent && r.intent.approxUsd),
+    ).toEqual([1_000_000, 1_000_000, 1_000_000]);
   });
 
   it('never returns an intent of $0', () => {
@@ -210,14 +374,15 @@ describe('actions under the $10 minimum', () => {
           totalAssetsUsd: 1,
           concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
         }),
-        loan: { hasDebt: true, healthFactor: 1.1 },
-        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 1 },
-        idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 1, aprPct: 2 }],
+        loan: scaledLoan(1),
+        largestDebt: scaledDebt(1),
+        idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 0.5, aprPct: 2 }],
       }),
     );
-    expect(advice.recommendations.map((r) => r.intent)).toEqual([
-      { action: 'repay', token: 'usdt.tether-token.near', approxUsd: 1 },
-    ]);
+    expect(advice.recommendations).toHaveLength(1);
+    expect(advice.recommendations[0]?.intent?.action).toBe('repay_from_collateral');
+    const approxUsd = (advice.recommendations[0]?.intent as { approxUsd: number }).approxUsd;
+    expect(approxUsd).toBeGreaterThan(0);
     expect(advice.skipped).toHaveLength(2);
   });
 });
@@ -235,11 +400,7 @@ describe('modelTokenLabel', () => {
 });
 
 describe('portfolioRecommendations per strategy', () => {
-  const loan = ctx({
-    metrics: metrics({ totalDebtUsd: 1000 }),
-    loan: { hasDebt: true, healthFactor: 1.4 },
-    largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 600 },
-  });
+  const loan = ctx({ loan: { ...demoLoan, healthFactor: 1.4 }, largestDebt: demoDebt });
   const repay = (id: keyof typeof STRATEGIES) =>
     portfolioRecommendations(loan, STRATEGIES[id]).find((x) => x.kind === 'improve_loan_safety');
 
@@ -249,18 +410,25 @@ describe('portfolioRecommendations per strategy', () => {
     expect(repay('aggressive')).toBeUndefined();
   });
 
-  it('sizes the repay to the strategy target, capped at the largest debt', () => {
-    // Balanced: 1000 × (1 − 1.4 / 1.6) = 125; Conservative: 1000 × (1 − 1.4 / 2.0) = 300
-    expect(repay('balanced')?.intent).toMatchObject({ approxUsd: 125 });
-    expect(repay('conservative')?.intent).toMatchObject({ approxUsd: 300 });
-    const deep = ctx({ ...loan, loan: { hasDebt: true, healthFactor: 0.5 } });
-    expect(portfolioRecommendations(deep, STRATEGIES.conservative)[0]?.intent).toMatchObject({
-      approxUsd: 600,
-    });
-    expect(portfolioRecommendations(deep, STRATEGIES.conservative)[0]?.why).toContain(
-      'brings it closer to 2.00',
-    );
-    expect(repay('conservative')?.why).toContain('brings it back to about 2.00');
+  it('sizes the repay to the strategy target and names the strategy', () => {
+    const demo = ctx({ loan: demoLoan, largestDebt: demoDebt });
+    for (const id of ['conservative', 'balanced'] as const) {
+      const l = portfolioRecommendations(demo, STRATEGIES[id]).find(
+        (x) => x.kind === 'improve_loan_safety',
+      );
+      if (l?.intent?.action !== 'repay_from_collateral') throw new Error(`no repay under ${id}`);
+      const tokens = Number(l.intent.amount) / 1e6;
+      const target = STRATEGIES[id].targetHealthFactor;
+      expect(directHf(53.87 - tokens, 37.87 - tokens)).toBeGreaterThanOrEqual(target);
+      expect(directHf(53.87 - tokens, 37.87 - tokens)).toBeLessThan(target + 0.001);
+      expect(l.intent.sizing?.targetHf).toBe(target);
+      expect(l.why).toContain(`your ${STRATEGIES[id].label} strategy counts as safe`);
+    }
+    expect(
+      portfolioRecommendations(demo, STRATEGIES.aggressive).find(
+        (x) => x.kind === 'improve_loan_safety',
+      ),
+    ).toBeUndefined();
   });
 
   it('a 70% position is a card under Conservative and Balanced, none under Aggressive', () => {

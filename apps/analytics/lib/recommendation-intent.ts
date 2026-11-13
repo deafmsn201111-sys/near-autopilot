@@ -1,3 +1,4 @@
+import type { RepaySizing } from '@near-autopilot/core/loan-math';
 import type { PrepareRequest, PrepareRequestIntent } from './prepare-types';
 
 /**
@@ -6,10 +7,12 @@ import type { PrepareRequest, PrepareRequestIntent } from './prepare-types';
  */
 export type RecommendationIntent =
   | {
-      readonly action: 'repay' | 'supply';
+      readonly action: 'repay' | 'repay_from_collateral' | 'supply' | 'withdraw';
       readonly token: string;
       readonly approxUsd: number;
       readonly amount?: string;
+      /** Repay cards: what the amount picker needs to recompute the health factor. */
+      readonly sizing?: RepaySizing;
     }
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
@@ -21,7 +24,8 @@ export interface Recommendation {
   readonly severity: 'info' | 'warning';
   readonly title: string;
   readonly why: string;
-  readonly intent: RecommendationIntent;
+  /** Null for advice with no one-click action. */
+  readonly intent: RecommendationIntent | null;
 }
 
 /** Canonical wrapped NEAR, and the stablecoin the allowlisted Rhea pool routes NEAR to (USDC). */
@@ -39,26 +43,32 @@ function swapTargetFor(from: string): string {
 }
 
 /**
- * Map a recommendation's intent to a concrete `prepare` request for `account`. Returns null when the intent cannot be
- * turned into a one-click action the engine supports yet (so the card simply shows the advice without a button).
- * `repay`/`supply` map straight through; `swap` (reduce concentration) targets a stablecoin; `reposition_dcl` carries
+ * Map a recommendation's intent to a concrete `prepare` request for `account`. Returns null for advice-only cards
+ * (no intent), so the card shows the advice without a button. Burrow intents map straight through, with `amount`
+ * (base units) when the user picked one; `swap` (reduce concentration) targets a stablecoin; `reposition_dcl` carries
  * the position id. The engine still validates everything and refuses anything it cannot assemble safely.
  */
 export function recommendationToPrepare(
-  intent: RecommendationIntent,
+  intent: RecommendationIntent | null,
   account: string,
+  pickedAmount?: string,
 ): PrepareRequest | null {
-  let mapped: PrepareRequestIntent | null = null;
+  if (!intent) return null;
+  let mapped: PrepareRequestIntent;
   switch (intent.action) {
     case 'repay':
+    case 'repay_from_collateral':
     case 'supply':
+    case 'withdraw': {
+      const amount = pickedAmount ?? intent.amount;
       mapped = {
         action: intent.action,
         token: intent.token,
         approxUsd: intent.approxUsd,
-        ...(intent.amount ? { amount: intent.amount } : {}),
+        ...(amount ? { amount } : {}),
       };
       break;
+    }
     case 'swap': {
       const from = normalizeFrom(intent.fromToken);
       mapped = {
@@ -73,7 +83,7 @@ export function recommendationToPrepare(
       mapped = { action: 'reposition_dcl', lptId: intent.lptId };
       break;
   }
-  return mapped ? { account, intent: mapped } : null;
+  return { account, intent: mapped };
 }
 
 /** A short verb for the card's action button. */
@@ -81,8 +91,12 @@ export function actionLabel(intent: RecommendationIntent): string {
   switch (intent.action) {
     case 'repay':
       return 'Prepare repayment';
+    case 'repay_from_collateral':
+      return 'Prepare repayment from collateral';
     case 'supply':
       return 'Prepare deposit';
+    case 'withdraw':
+      return 'Prepare withdrawal';
     case 'swap':
       return 'Prepare rebalance';
     case 'reposition_dcl':

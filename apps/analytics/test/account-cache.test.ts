@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const reads = vi.fn();
 let forwardedFor = '203.0.113.7';
 let ownerCookie: string | undefined;
+let nearInWallet = 1;
+let supplied = 100;
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', forwardedFor]]),
@@ -14,7 +16,17 @@ vi.mock('next/headers', () => ({
 vi.mock('../lib/api', () => ({
   tryApi: async (path: string, headers?: Record<string, string>) => {
     reads(path, headers);
-    return { data: { accountId: 'alice.near', recommendations: [] }, error: null };
+    return {
+      data: {
+        accountId: 'alice.near',
+        recommendations: [],
+        holdings: [
+          { where: 'wallet', token: 'near', amount: nearInWallet },
+          { where: 'deposited', token: 'usdt', amount: supplied },
+        ],
+      },
+      error: null,
+    };
   },
 }));
 
@@ -27,6 +39,21 @@ describe('account read cache', () => {
     reads.mockClear();
     forwardedFor = '203.0.113.7';
     ownerCookie = undefined;
+    nearInWallet = 1;
+    supplied = 100;
+  });
+
+  it('interest and gas dust are not a new state; the cached read expiring does not lose the baseline', async () => {
+    vi.useFakeTimers();
+    const p = await load();
+    await p.accountView('alice.near');
+    vi.advanceTimersByTime(120_000);
+    await p.accountView('bob.near');
+    supplied = 100.000001;
+    nearInWallet = 0.99997;
+    expect(await p.refreshAccountRead('alice.near')).toBe(false);
+    supplied = 150;
+    expect(await p.refreshAccountRead('alice.near')).toBe(true);
   });
 
   it('forwards the ownership proof and reads again once it is signed', async () => {
@@ -101,21 +128,48 @@ describe('account read cache', () => {
     expect(reads).toHaveBeenCalledTimes(2);
   });
 
-  it('reads again at once after the account is forgotten (a new transaction)', async () => {
+  it('a refresh after a transaction reads past the API cache and says whether the account changed', async () => {
     const p = await load();
     await p.accountView('alice.near');
-    await p.forgetAccount(' Alice.near ');
+    expect(await p.refreshAccountRead(' Alice.near ')).toBe(false);
+    expect(reads).toHaveBeenLastCalledWith(
+      '/v1/analytics/account/alice.near?strategy=balanced&fresh=1',
+      {},
+    );
+    nearInWallet = 0.9;
+    expect(await p.refreshAccountRead('alice.near')).toBe(true);
     await p.accountView('alice.near');
-    expect(reads).toHaveBeenCalledTimes(2);
+    expect(reads).toHaveBeenCalledTimes(3);
+  });
+
+  it('Next runs server actions on a separate copy of the module: a refresh there is what the page reads', async () => {
+    const page = await load();
+    await page.accountView('alice.near');
+    vi.resetModules();
+    const action = await load();
+    expect(await action.refreshAccountRead('alice.near')).toBe(false);
+    nearInWallet = 0.5;
+    expect(await action.refreshAccountRead('alice.near')).toBe(true);
+    expect((await page.accountView('alice.near')).data?.holdings[0]?.amount).toBe(0.5);
+    for (let i = 0; i < 27; i++) await action.refreshAccountRead('alice.near');
+    expect((await page.accountView('bob.near')).error).not.toBeNull();
+  });
+
+  it('a refresh counts toward the visitor limit and stops once it is spent', async () => {
+    const p = await load();
+    for (let i = 0; i < 30; i++) await p.refreshAccountRead('alice.near');
+    expect(reads).toHaveBeenCalledTimes(30);
+    expect(await p.refreshAccountRead('alice.near')).toBe(true);
+    expect(reads).toHaveBeenCalledTimes(30);
   });
 
   it("another visitor cannot drop this visitor's cached read", async () => {
     const p = await load();
     await p.accountView('alice.near');
     forwardedFor = '198.51.100.9';
-    await p.forgetAccount('alice.near');
+    await p.refreshAccountRead('alice.near');
     forwardedFor = '203.0.113.7';
     await p.accountView('alice.near');
-    expect(reads).toHaveBeenCalledTimes(1);
+    expect(reads.mock.calls.filter(([path]) => !String(path).includes('fresh'))).toHaveLength(1);
   });
 });

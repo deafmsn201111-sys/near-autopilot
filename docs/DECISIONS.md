@@ -90,7 +90,8 @@ limit in about 7 minutes, because the 15 s auto-refresh re-read the account on e
   (`apps/analytics/lib/product.ts`). Re-renders and the auto-refresh reuse it; only a real read spends the limit.
   Concurrent renders share one read; failed reads are not cached.
 - After a new transaction from the wallet (`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops
-  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it.
+  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it. It also
+  skips the API cache (D20).
 - The 15 s auto-refresh stays on every page, so prices and the health factor keep updating (at most once a minute
   on the account view).
 - `MAINNET_READ_RPC_URL` must be the FastNEAR URL whenever `MAINNET_READ_RPC_API_KEY` is set; the public NEAR RPC
@@ -137,10 +138,13 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the tokens the wallet holds (`SnapshotService`),
   priced with the collector's confirmed prices, the same ones the portfolio table uses. `priceoracle.near` returned no
   recent price on 11 Nov 2026, so it is only Market Intelligence's second source (empty when it has none). Yields
-  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus two
-  wallet checks: concentration and DCL out of range. The LP Optimizer waits for a 24 h volume source (separate issue).
+  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus three
+  wallet checks: concentration, DCL out of range and Burrow withdrawals (#64). The LP Optimizer waits for a 24 h volume source (separate issue).
 - Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
-  repay text states the health factor the repayment actually reaches. Allocator swaps (they would
+  repay text states the health factor the repayment actually reaches. When the account view's loan card repays from
+  collateral (the wallet cannot reach the target), the guardian tool returns that card instead of the agent's wallet
+  repay, so the AI path never offers a repay the wallet cannot pay (#64). Repayments are sized to HF 1.6, never the
+  whole debt by default; the user can pick another amount. Allocator swaps (they would
   move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
   dropped.
 - The LLM returns only `{picks: [{id, why}]}` (zod). Unknown ids are dropped; a "why" with a number that neither its own
@@ -221,7 +225,7 @@ and a break-in to the public site container must not be able to change them.
 - `/v1/admin/*` (`apps/api/src/analytics/admin.ts`) accepts only `ADMIN_API_TOKEN`; `API_TOKEN` gets 401 there and
   `ADMIN_API_TOKEN` gets 401 everywhere else. No admin token configured = every admin URL answers 401. The API refuses
   to start when both tokens are equal.
-- The admin UI is the same Next image as the site with `ADMIN_UI=1` (service `analytics-admin`, `127.0.0.1:3002`,
+- The admin UI is the same Next image as the site with `ADMIN_UI=1` (service `analytics-admin`, `127.0.0.1:3003` on the server, 3002 locally,
   no Caddy route), opened through an SSH tunnel. Without `ADMIN_UI=1`, `/admin` and the admin server actions answer
   404 and never call the API. The public `analytics` container has no `ADMIN_API_TOKEN`. Caddy answers 404 for
   `/admin` and `/admin/*` before proxying.
@@ -318,7 +322,39 @@ receives real money.
   **Consequences:** 1Click sets the deadline itself (a live quote gave about 3 days, not the 10 minutes we ask for);
   the page counts down from the server's seconds-left. Status tracking is #29. The analytics API now makes outbound calls to 1Click and writes rows.
 
-## D20 — Three strategy presets on "Your account"
+## D20 — A fresh account read after a transaction
+
+**Context:** #65. After signing, the portfolio caught up only after 2–3 minutes: `refreshAccount` dropped the UI's
+cached read, but the API kept its own 60 s cache per account (D10), and the watcher refreshed once, at `optimistic`
+finality, before the new state was readable.
+**Decision:**
+
+- `GET /v1/analytics/account/:id?fresh=1` replaces the API's cached read for that account, at most once per account
+  every 5 s; any other request in that gap gets the cache as before. The ownership cache is untouched.
+- Only the `refreshAccount` server action asks for it (after a signed cascade in `PrepareDialog`, or a nonce bump in
+  `AccountWatcher`). Each fresh read is a normal account read: it spends one of the visitor's 30 reads (D10).
+- The page retries up to 4 reads, 5 s apart (`apps/analytics/lib/portfolio-refresh.ts`), until the holdings differ
+  from the visitor's last read (holding and position amounts to 4 significant digits, so Burrow interest and gas do
+  not count as a change), and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per account
+  at a time.
+- Next bundles server actions apart from page rendering, each with its own copy of a module, so the account read
+  cache and the rate-limit counters live once per process (`apps/analytics/lib/process-state.ts`). Before this, the
+  action dropped and refilled a cache the page never read, and its reads had a limit of their own.
+  **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
+  limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
+  one below 4 significant digits) shows the note for the full ~15 s.
+
+## D21 — One-click actions start at $1
+
+**Context:** #120. #99 set a $10 minimum per card to stop "$0" actions; it hid every card on wallets under ~$20,
+the size a judge's test wallet usually is.
+**Decision:** `MIN_ACTION_USD` is $1 for rule-based cards and agent-sized deposits. Rebalances and idle assets under
+$1 are listed as skipped with a reason (idle ones from $0.10; less is dust and says nothing). A loan repay is at least
+$1 and at most the debt.
+**Consequences:** A $1–10 action costs a fraction of a cent in gas on NEAR, so it is still worth signing; the prepare
+caps and cascade validation are unchanged.
+
+## D22 — Three strategy presets on "Your account"
 
 **Context:** #25. One fixed risk line (HF 1.5, concentration 60%) treated a cautious holder and a looper the same.
 **Decision:**
@@ -333,8 +369,8 @@ receives real money.
   | Aggressive   | 1.25         | 1.35        | 1.15            | 75% / 95% / 65%                       |
 
 - Concentration counts non-stable tokens only (the stablecoin list in `apps/api/src/thesis/labels.ts`).
-- The rule-based repay is sized to the target HF (`total debt × (1 − HF / target)`, at least the $10 action minimum, capped at the largest debt), not a
-  fixed 30%. The guardian's `watchBelowBps` and `targetHealthFactorBps` follow the preset; the danger (1.1) and
+- The rule-based repay (from the wallet or the collateral, #64) is sized to the preset's target HF, and the
+  withdraw card keeps the HF at that target. The guardian's `watchBelowBps` and `targetHealthFactorBps` follow the preset; the danger (1.1) and
   critical (1.05) lines stay the agents' defaults. The loop comparison keeps HF 1.6.
 - The API caches the wallet read without the preset and computes the cards and the loan label per request; the UI
   account cache and the AI analysis cache key include it. Unknown preset → 400, missing → Balanced.

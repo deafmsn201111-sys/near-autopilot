@@ -175,23 +175,68 @@ export function buildBorrow(
 }
 
 /**
- * Withdraw up to `rawAmount` of a previously supplied (or collateral) balance to the wallet. Priced through the
- * oracle so that, if the account also has debt, Burrow verifies the remaining collateral still covers it or the
- * call reverts; with no debt it simply returns the funds. `max_amount` caps the withdrawal at what was requested
- * (never more than the available balance). The token must have been verified with purpose `withdraw`
+ * Withdraw up to `rawAmount` of a supplied (or collateral) balance to the wallet. Burrow's `Withdraw` only draws on
+ * the plain supplied balance, so `fromCollateralRaw` first moves that much collateral back to it with
+ * `DecreaseCollateral` (A: withdraw.ts). Priced through the oracle so that, if the account also has debt, Burrow
+ * verifies the remaining collateral still covers it or the call reverts; with no debt it simply returns the funds.
+ * `max_amount` caps each action at what is there. The token must have been verified with purpose `withdraw`
  * (asset `can_withdraw`). `assetIds` must cover every asset Burrow values for this account.
  */
 export function buildWithdraw(
-  args: Common & { readonly rawAmount: bigint; readonly assetIds: readonly string[] },
+  args: Common & {
+    readonly rawAmount: bigint;
+    readonly fromCollateralRaw?: bigint;
+    readonly assetIds: readonly string[];
+  },
 ): BuiltBurrowTransaction {
   guard(args, ['withdraw'], 'withdraw');
-  if (args.rawAmount <= 0n) throw new RangeError('amount must be positive');
-  const inner = rawToInner(args.rawAmount, args.token.extraDecimals).toString();
   return oracleExecute(
     args.deployment,
-    [{ Withdraw: { token_id: args.token.tokenId, max_amount: inner } }],
+    withCollateralRelease(args, args.fromCollateralRaw ?? 0n, 'Withdraw'),
     args.assetIds,
   );
+}
+
+/**
+ * Repay debt from the account's own Burrow balance of the SAME token, without the wallet holding it: an optional
+ * `DecreaseCollateral` of `fromCollateralRaw` moves collateral to the supplied balance, then `Repay` (capped at
+ * `rawAmount` and at the debt) pays from that balance (S: actions.rs internal_repay; A: repayFromDeposits.ts). The
+ * part of `rawAmount` above `fromCollateralRaw` comes from plain supply, which counts for nothing in the health
+ * factor. Collateral and debt fall by the same amount while collateral covers the debt, so the health factor only
+ * rises; Burrow still re-checks it at fresh oracle prices. Decreased collateral the debt did not need stays as
+ * supply. The token must have been verified with purpose `repay`, `supply` or `collateral`.
+ */
+export function buildRepayFromCollateral(
+  args: Common & {
+    readonly rawAmount: bigint;
+    readonly fromCollateralRaw: bigint;
+    readonly assetIds: readonly string[];
+  },
+): BuiltBurrowTransaction {
+  guard(args, ['repay', 'supply', 'collateral'], 'repay');
+  return oracleExecute(
+    args.deployment,
+    withCollateralRelease(args, args.fromCollateralRaw, 'Repay'),
+    args.assetIds,
+  );
+}
+
+function withCollateralRelease(
+  args: Common & { readonly rawAmount: bigint },
+  fromCollateralRaw: bigint,
+  then: 'Withdraw' | 'Repay',
+): Record<string, unknown>[] {
+  if (args.rawAmount <= 0n) throw new RangeError('amount must be positive');
+  if (fromCollateralRaw < 0n || fromCollateralRaw > args.rawAmount)
+    throw new RangeError('the collateral to release must be between zero and the amount');
+  const asset = (raw: bigint) => ({
+    token_id: args.token.tokenId,
+    max_amount: rawToInner(raw, args.token.extraDecimals).toString(),
+  });
+  return [
+    ...(fromCollateralRaw > 0n ? [{ DecreaseCollateral: asset(fromCollateralRaw) }] : []),
+    { [then]: asset(args.rawAmount) },
+  ];
 }
 
 /**

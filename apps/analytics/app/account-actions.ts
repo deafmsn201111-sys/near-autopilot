@@ -3,14 +3,14 @@ import { cookies, headers } from 'next/headers';
 import { accountIdSchema } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE, OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
 import { rememberStrategy, STRATEGY_COOKIE, strategySchema } from '@near-autopilot/core/strategy';
-import { forgetAccount } from '../lib/product';
+import { refreshAccountRead } from '../lib/product';
 
 const accountOf = (account: unknown) =>
   accountIdSchema.safeParse(typeof account === 'string' ? account.trim().toLowerCase() : account);
 
-export async function refreshAccount(account: unknown): Promise<void> {
+export async function refreshAccount(account: unknown): Promise<boolean> {
   const id = accountOf(account);
-  if (id.success) await forgetAccount(id.data);
+  return id.success ? refreshAccountRead(id.data) : true;
 }
 
 const YEAR_S = 365 * 24 * 60 * 60;

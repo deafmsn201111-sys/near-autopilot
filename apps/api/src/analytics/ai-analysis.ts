@@ -3,6 +3,7 @@ import {
   BoundedMap,
   DEFAULT_STRATEGY,
   STRATEGIES,
+  hfAfterRepay,
   type AccountId,
   type StrategyId,
   type ProvenanceTier,
@@ -39,7 +40,7 @@ import { analysisKey } from './analysis-key';
 export const MAX_TURNS = 6;
 /** Agent-sized actions worth less than this are not offered. */
 /** Smallest rule-based card or deposit; a repay sizes from the health factor, so only dust is dropped. */
-export const MIN_ACTION_USD = 10;
+export const MIN_ACTION_USD = 1;
 const MIN_REPAY_USD = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
@@ -222,6 +223,7 @@ const KINDS: Readonly<Record<string, PortfolioRecommendation['kind']>> = {
   capital_allocator: 'put_idle_to_work',
   portfolio_concentration: 'reduce_concentration',
   liquidity_positions: 'reposition_dcl_position',
+  burrow_withdrawals: 'withdraw_from_burrow',
 };
 
 const AGENTS: Readonly<Record<string, string>> = {
@@ -230,6 +232,7 @@ const AGENTS: Readonly<Record<string, string>> = {
   market_intelligence: 'Market Intelligence',
   portfolio_concentration: 'Portfolio Intelligence',
   liquidity_positions: 'Liquidity Optimizer',
+  burrow_withdrawals: 'Liquidation Guardian',
 };
 
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -311,16 +314,24 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd
   };
 }
 
+/**
+ * The orchestrator agent sizes a repayment from the wallet. When the wallet cannot cover it, the account view's loan
+ * card repays from the collateral of the same token instead (Burrow repays from the account's own balance), so the
+ * tool offers that card: the AI path never shows a repay the wallet cannot pay. A wallet repay keeps the card's
+ * sizing for the amount picker.
+ */
 function guardianTool(
   obs: AgentObservation,
+  checks: readonly PortfolioRecommendation[],
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
+  const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
   return {
     spec: {
       name: 'liquidation_guardian',
       description:
-        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment from the wallet that restores the target.',
+        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment that restores the target, from the wallet or, when the wallet holds too little, from the collateral of the same token.',
       inputSchema: noInputSchema,
     },
     input: noInput,
@@ -330,7 +341,17 @@ function guardianTool(
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
-      for (const p of proposals) {
+      const fromCollateral = loanCards.filter((c) => c.intent?.action === 'repay_from_collateral');
+      for (const c of fromCollateral) {
+        const s = c.intent && 'sizing' in c.intent ? c.intent.sizing : undefined;
+        const after = s && hfAfterRepay(s, s.safeTokens, 'collateral');
+        if (s)
+          byCandidate.set(c.id, {
+            text: `Health factor ${hf} → ${after === null || after === undefined ? 'no debt' : after.toFixed(2)} after repaying ${s.safeTokens.toFixed(2)} ${s.symbol} from collateral`,
+            provenance: 'calculated_estimate',
+          });
+      }
+      for (const p of fromCollateral.length > 0 ? [] : proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
         const view = tokenView(obs, p.token, p.amount, MIN_REPAY_USD);
         const after = hfText(
@@ -354,9 +375,11 @@ function guardianTool(
             token: p.token,
             approxUsd: view.approxUsd,
             amount: p.amount.toString(),
+            ...sizingFor(loanCards, p.token),
           },
         });
       }
+      candidates.push(...fromCollateral);
       for (const c of candidates) found.set(c.id, c);
       const debts = (obs.snapshot.lending?.borrowed ?? []).filter((b) => b.raw > 0n);
       const hasDebt = debts.length > 0;
@@ -388,6 +411,13 @@ function guardianTool(
       };
     },
   };
+}
+
+function sizingFor(cards: readonly PortfolioRecommendation[], token: string) {
+  for (const c of cards)
+    if (c.intent?.action === 'repay' && c.intent.token === token && c.intent.sizing)
+      return { sizing: c.intent.sizing };
+  return {};
 }
 
 function allocatorTool(
@@ -572,7 +602,7 @@ const parseJson = (text: string): unknown => {
 };
 
 /**
- * Architecture C: the central LLM calls the orchestrator agents and two wallet checks as tools, then only orders the
+ * Architecture C: the central LLM calls the orchestrator agents and three wallet checks as tools, then only orders the
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
@@ -740,7 +770,7 @@ export async function analyseAccount(
   const steps: Steps = new Map();
   const run = async () => {
     const tools = [
-      guardianTool(obs, found, steps),
+      guardianTool(obs, ctx.checks, found, steps),
       allocatorTool(obs, found, steps),
       marketTool(obs, steps),
       walletTool(
@@ -774,6 +804,18 @@ export async function analyseAccount(
                 provenance: 'on_chain_verified',
               }
             : { text: 'No position out of range; nothing to do', provenance: null },
+      ),
+      walletTool(
+        'burrow_withdrawals',
+        'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
+        'withdraw_from_burrow',
+        ctx.checks,
+        found,
+        steps,
+        ([top]) =>
+          top
+            ? { text: top.title, provenance: 'calculated_estimate' }
+            : { text: 'Nothing on Burrow to move to the wallet', provenance: null },
       ),
     ].map(counted);
     return runToolLoop({

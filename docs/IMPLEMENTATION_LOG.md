@@ -322,6 +322,28 @@ running window and listener removal.
 - What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
   dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.
 
+## 2026-11-13 — Fresh portfolio after signing (#65)
+
+- API: `GET /v1/analytics/account/:id?fresh=1` replaces the cached read, at most once per account every 5 s (D20).
+- UI: `refreshAccount` now reads fresh and returns whether the holdings changed; `refreshPortfolio`
+  (`apps/analytics/lib/portfolio-refresh.ts`) retries up to 4 times, 5 s apart, shared by `PrepareDialog` and
+  `AccountWatcher`, which shows "Transaction seen, updating your portfolio…" while it runs. The fixed 4 s wait after
+  signing is gone.
+
+**Tests run:** `pnpm verify`; `account-full.test.ts` (fresh flag and its 5 s gap), `account-cache.test.ts` (fresh
+read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries stop, early stop, shared run).
+
+- Owner's local check found the action and the page did not share state: Next puts server actions in the
+  `action-browser` layer and pages in `rsc`, each with its own module copy. The account cache and the rate-limit maps
+  now live in `processWide` (`globalThis`); `test/setup.ts` clears them between tests.
+
+## 2026-11-13 — One-click actions from $1 (#120)
+
+- `MIN_ACTION_USD` 10 → 1; the idle-asset "skipped" note from $0.10 (D21). An $11 all-NEAR wallet now gets a
+  rebalance card of about $5.57.
+
+**Tests run:** `pnpm verify`; `portfolio-recommendations.test.ts` thresholds rewritten for $1.
+
 ## 2026-11-13 — Deposit from another chain through 1Click (#27)
 
 - `apps/api/src/gateway/one-click-deposit.ts`: real-quote client (hard-coded URL, optional JWT, cached token list,
@@ -332,12 +354,29 @@ running window and listener removal.
   address, QR, deadline countdown, fee) in the header and on the portfolio.
 - D19.
 
+## 2026-11-13 — Repay from collateral, withdraw from Burrow, no dead-end cards (#64)
+
+- `packages/burrow-adapter/src/builders.ts`: `buildRepayFromCollateral` (one priced `oracle_call` →
+  `Execute { [DecreaseCollateral?, Repay] }`); `buildWithdraw` takes `fromCollateralRaw` and releases collateral
+  first, since Burrow's `Withdraw` only draws on plain supply.
+- `packages/core/src/loan-math.ts`: health factor after a repay (wallet or collateral), the repay that reaches a
+  target, the withdrawal that keeps it; shared by the API and the UI amount picker.
+- `apps/api/src/analytics/account-view.ts`: the loan card repays to HF 1.6 (wallet if it holds enough, else from
+  collateral, else advice only) and carries `sizing`; a last "Withdraw from Burrow" card; the concentration swap is
+  capped at what the wallet holds (no button when it holds none). `POST /v1/wallet/prepare` gains
+  `repay_from_collateral` and an exact `amount` for `withdraw`; both draw plain supply first, then collateral.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns the repay-from-collateral card when the wallet
+  cannot repay; new `burrow_withdrawals` wallet check.
+- `apps/analytics/components/RepayPicker.tsx`: amount field + slider + "To safe" / "Whole debt", live HF in the
+  zone colours; prepares exactly the chosen amount.
+- Supersedes #99's "repay 30% of the debt, at least $10": the loan card now repays to HF 1.6.
+
 ## 2026-11-13 — Three strategy presets (#25)
 
 - `packages/core/src/strategy.ts`: Conservative / Balanced / Aggressive thresholds, the request schema and the cookie
-  name; shared by the API and the UI (D20).
-- `apps/api/src/analytics/account-view.ts`: `portfolioRecommendations` and `loanHealth` read the preset; the repay is
-  sized to its target HF; concentration skips stablecoins; the cache holds the wallet read and the cards are computed
+  name; shared by the API and the UI (D22).
+- `apps/api/src/analytics/account-view.ts`: `portfolioRecommendations` and `loanHealth` read the preset; the repay and
+  withdraw cards use its target HF; concentration skips stablecoins; the cache holds the wallet read and the cards are computed
   per request; `?strategy=` on the account read and `{ strategy }` on the analysis, 400 on an unknown one.
 - `apps/api/src/analytics/ai-analysis.ts`: `walletAgentConfig(tokens, strategy)` moves the guardian's watch and target
   lines; the system prompt gets one line naming the preset and its numbers; the preset is in the analysis cache key.

@@ -5,6 +5,7 @@ import {
   buildBurrowStorageDeposit,
   buildIncreaseCollateralFromSupplied,
   buildRepay,
+  buildRepayFromCollateral,
   buildSupply,
   buildSupplyAsCollateral,
   buildWithdraw,
@@ -281,5 +282,90 @@ describe('buildBorrow / buildWithdraw (priced via oracle_call)', () => {
     expect(() =>
       buildBorrow({ deployment, token: supplyToken, now, rawAmount: 1n, assetIds: [USDT] }),
     ).toThrow(BurrowVerificationError);
+  });
+});
+
+describe('buildRepayFromCollateral (priced via oracle_call)', () => {
+  it('decreases collateral and repays the same token in one Execute, both capped in inner units', async () => {
+    const { deployment, tokens, now } = await setup();
+    const tx = buildRepayFromCollateral({
+      deployment,
+      token: tokens.usdtRepay,
+      now,
+      rawAmount: 42n,
+      fromCollateralRaw: 40n,
+      assetIds: [USDT],
+    });
+    expect(tx.receiverId).toBe(ORACLE);
+    const a = tx.actions[0]!;
+    expect(a.methodName).toBe('oracle_call');
+    expect(a.deposit).toBe(1n);
+    expect(a.args['receiver_id']).toBe(BURROW);
+    expect(JSON.parse(String(a.args['msg']))).toEqual({
+      Execute: {
+        actions: [
+          { DecreaseCollateral: { token_id: USDT, max_amount: '40000000000000' } },
+          { Repay: { token_id: USDT, max_amount: '42000000000000' } },
+        ],
+      },
+    });
+  });
+
+  it('repays from the plain supplied balance alone when no collateral needs to move', async () => {
+    const { deployment, tokens, now } = await setup();
+    const tx = buildRepayFromCollateral({
+      deployment,
+      token: tokens.usdtRepay,
+      now,
+      rawAmount: 5n,
+      fromCollateralRaw: 0n,
+      assetIds: [USDT],
+    });
+    expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
+      Execute: { actions: [{ Repay: { token_id: USDT, max_amount: '5000000000000' } }] },
+    });
+  });
+
+  it('refuses a non-positive amount, more collateral than the repayment, and a borrow-only proof', async () => {
+    const { deployment, tokens, w, now } = await setup();
+    const base = { deployment, token: tokens.usdtRepay, now, assetIds: [USDT] };
+    expect(() =>
+      buildRepayFromCollateral({ ...base, rawAmount: 0n, fromCollateralRaw: 0n }),
+    ).toThrow(RangeError);
+    expect(() =>
+      buildRepayFromCollateral({ ...base, rawAmount: 5n, fromCollateralRaw: 6n }),
+    ).toThrow(RangeError);
+    const borrowOnly = await w.verifier.verifyToken(deployment, USDT, 'borrow');
+    expect(() =>
+      buildRepayFromCollateral({
+        ...base,
+        token: borrowOnly,
+        rawAmount: 5n,
+        fromCollateralRaw: 0n,
+      }),
+    ).toThrow(BurrowVerificationError);
+  });
+});
+
+describe('buildWithdraw from collateral', () => {
+  it('decreases collateral first when the plain supplied balance does not cover the withdrawal', async () => {
+    const { deployment, w, now } = await setup();
+    const t = await w.verifier.verifyToken(deployment, USDT, 'withdraw');
+    const tx = buildWithdraw({
+      deployment,
+      token: t,
+      now,
+      rawAmount: 7n,
+      fromCollateralRaw: 3n,
+      assetIds: [USDT],
+    });
+    expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
+      Execute: {
+        actions: [
+          { DecreaseCollateral: { token_id: USDT, max_amount: '3000000000000' } },
+          { Withdraw: { token_id: USDT, max_amount: '7000000000000' } },
+        ],
+      },
+    });
   });
 });

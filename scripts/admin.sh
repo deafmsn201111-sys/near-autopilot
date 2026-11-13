@@ -6,7 +6,7 @@ host="${1:-near-autopilot}"
 port="${ADMIN_LOCAL_PORT:-3012}"
 url="http://127.0.0.1:$port/admin"
 
-ssh -N -o ExitOnForwardFailure=yes -L "$port:127.0.0.1:3002" "$host" &
+ssh -N -o ExitOnForwardFailure=yes -L "$port:127.0.0.1:3003" "$host" &
 pid=$!
 trap 'kill $pid 2>/dev/null || true' EXIT INT TERM
 

@@ -8,7 +8,8 @@
     "./hash": "./src/hash.ts",
     "./testing": "./src/testing.ts",
     "./ownership": "./src/ownership.ts",
-    "./strategy": "./src/strategy.ts"
+    "./strategy": "./src/strategy.ts",
+    "./loan-math": "./src/loan-math.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

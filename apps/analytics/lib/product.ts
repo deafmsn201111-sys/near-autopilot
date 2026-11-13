@@ -1,6 +1,8 @@
-import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
+import { BoundedMap } from '@near-autopilot/core';
+import { ACCOUNT_LIMIT, consume, RATE_LIMITED, MAX_TRACKED_KEYS, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
+import { processWide } from './process-state';
 import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { DEFAULT_STRATEGY, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
@@ -17,7 +19,7 @@ export interface AccountRecommendation {
   severity: 'info' | 'warning';
   title: string;
   why: string;
-  intent: RecommendationIntent;
+  intent: RecommendationIntent | null;
 }
 export interface Opportunity {
   id: string;
@@ -203,21 +205,44 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecis
 type AccountResult = { data: AccountRead | null; error: string | null };
 
 const ACCOUNT_TTL_MS = 60_000;
-const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
+const accountReads = processWide(
+  'accountReads',
+  () => new Map<string, { at: number; read: Promise<AccountResult> }>(),
+);
+const lastHoldings = processWide(
+  'lastHoldings',
+  () => new BoundedMap<string, string>(MAX_TRACKED_KEYS),
+);
+
+// ponytail: 4 significant digits hide Burrow interest and gas; an action smaller than that waits out the retries
+const holdingsOf = (r: AccountResult) =>
+  r.data
+    ? JSON.stringify([
+        ...r.data.holdings.map((h) => [h.where, h.token, Number(h.amount.toPrecision(4))]),
+        ...(r.data.positions ?? []).map((x) => [
+          x.key,
+          x.amount && Number(x.amount.toPrecision(4)),
+        ]),
+      ])
+    : null;
 
 const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
 const readKey = async (id: string, proof: string, strategy: StrategyId) =>
   `${await visitor()}:${id.trim().toLowerCase()}:${proof}:${strategy}`;
 
+const holdingsKey = async (id: string, proof: string) =>
+  `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
+
 const fetchAccount = async (
   id: string,
   proof: string,
   strategy: StrategyId,
+  fresh: boolean,
 ): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
   return tryApi<AccountRead>(
-    `/v1/analytics/account/${encodeURIComponent(id)}?strategy=${strategy}`,
+    `/v1/analytics/account/${encodeURIComponent(id)}?strategy=${strategy}${fresh ? '&fresh=1' : ''}`,
     proof ? { 'x-ownership-proof': proof } : {},
   );
 };
@@ -225,6 +250,7 @@ const fetchAccount = async (
 const readAccount = async (
   id: string,
   strategy: StrategyId = DEFAULT_STRATEGY,
+  fresh = false,
 ): Promise<AccountResult> => {
   const proof = await ownershipProof();
   const key = await readKey(id, proof, strategy);
@@ -232,19 +258,34 @@ const readAccount = async (
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
-  if (cached) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id, proof, strategy) };
+  if (cached && !fresh) return cached.read;
+  const entry = { at: Infinity, read: fetchAccount(id, proof, strategy, fresh) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
   if (r.error) accountReads.delete(key);
   else entry.at = Date.now();
+  const holdings = holdingsOf(r);
+  if (holdings) lastHoldings.set(await holdingsKey(id, proof), holdings);
   return r;
 };
 
 export const forgetAccount = async (id: string) => {
   const proof = await ownershipProof();
   for (const strategy of STRATEGY_IDS) accountReads.delete(await readKey(id, proof, strategy));
+};
+
+/**
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
+ * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
+ * stops retrying. Reads under other strategies are dropped; the next page render re-reads them from the fresh API cache.
+ */
+export const refreshAccountRead = async (id: string): Promise<boolean> => {
+  const normalized = id.trim().toLowerCase();
+  const before = lastHoldings.get(await holdingsKey(normalized, await ownershipProof()));
+  await forgetAccount(normalized);
+  const after = holdingsOf(await readAccount(normalized, DEFAULT_STRATEGY, true));
+  return before === undefined || after === null || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

@@ -134,6 +134,9 @@ export function valueAccount(r: AccountReads, facts: ReadonlyMap<string, TokenFa
     loan: {
       hasDebt: debtUsd > 0,
       healthFactor,
+      /** sum(collateral_usd x vr) and sum(debt_usd / vr): the health factor's two sides, for sizing repayments. */
+      collateralAdjUsd: adjCollateral,
+      debtAdjUsd: adjDebt,
       /** Fall of every collateral price (debt unchanged) that brings HF to 1: exact for a uniform collateral move. */
       collateralDropToLiquidation:
         healthFactor !== null && healthFactor > 1 ? 1 - 1 / healthFactor : null,
