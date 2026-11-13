@@ -384,6 +384,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
 
+## 2026-11-13 — Incoming NEAR transfers refresh "Your account" (#117)
+
+- `apps/analytics/lib/account-signal.ts`: the watcher reads `view_account` (balance + block height) instead of the
+  access-key nonces; `watchStep` drops stale blocks, compares at 4 significant digits and stays quiet while a refresh
+  runs or for 10 s after (`recentlyRefreshed` in `portfolio-refresh.ts`). A received NEAR transfer now shows the
+  "Transaction seen" note and the new balance within one tick (D20 amendment).
+
 ## 2026-11-13 — Loan cards show the carry; a safe profitable loan is left alone (#86)
 
 - `apps/api/src/analytics/account-view.ts`: the account read splits the monthly Burrow figure into what the loan costs
