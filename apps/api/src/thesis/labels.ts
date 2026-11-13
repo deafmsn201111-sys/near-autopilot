@@ -28,3 +28,6 @@ export function tokenLabel(id: string): string {
 export function modelTokenLabel(id: string): string {
   return KNOWN[id] ?? (id.length > 20 ? `${id.slice(0, 12)}…` : id);
 }
+
+/** Tokens on our own curated list (beside Burrow's): a token outside both is shown as "Unverified". */
+export const isKnownToken = (id: string): boolean => id in KNOWN;

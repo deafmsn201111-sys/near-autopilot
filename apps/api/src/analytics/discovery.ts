@@ -17,7 +17,7 @@ export interface AccountDiscovery {
   prices(): Promise<ReadonlyMap<string, number> | null>;
 }
 
-export const MAX_DISCOVERED = { tokens: 60, stakingPools: 5, v1Pools: 20 } as const;
+export const MAX_DISCOVERED = { tokens: 200, stakingPools: 5, v1Pools: 20 } as const;
 const MAX_BODY_BYTES = 4_000_000;
 const TIMEOUT_MS = 5_000;
 const PRICES_TTL_MS = 5 * 60_000;

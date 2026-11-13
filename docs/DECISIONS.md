@@ -272,9 +272,10 @@ allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $
   `indexer.ref.finance/list-token-price` (prices, cached 5 minutes). Every answer is zod-checked, capped (4 MB, 60
   tokens, 5 staking pools, 20 pools, 5 s timeout) and treated as a hint: pool shares and staked balances are read
   on-chain, token metadata via `ft_metadata`.
-- "Verified" = listed by Burrow or tracked by the collector. Anything else is display-only: symbol sanitised to
-  `[A-Za-z0-9._-]{1,12}`, marked "Unverified", never in an action, a recommendation or the agents' observation (#19).
-  Swapping such tokens is #90.
+- "Verified" = listed by Burrow or named in our own label list (`apps/api/src/thesis/labels.ts`). Anything else is
+  display-only: symbol sanitised to `[A-Za-z0-9._-]{1,12}`, marked "Unverified", never in an action, a
+  recommendation or the agents' observation (#19). Swapping such tokens is #90. Wallet balances of tokens outside
+  Burrow's list come from FastNEAR as is (at most 30 per account, priced ones first).
 - An unlisted token's price is Rhea's indexer price, tagged "price estimate"; it counts in the totals and allocation.
   A collector-confirmed price always wins, and actions and `prepare` only ever use confirmed prices.
   **Consequences:** A thin pool can give a meme token an inflated estimate, so the total can overstate such an
