@@ -781,11 +781,11 @@ export async function analyseAccount(
 
   const found = new Map<string, PortfolioRecommendation>();
   const steps: Steps = new Map();
-  const reported = new Set<string>();
+  const succeeded = new Set<string>();
   const report = ({ tool, ok }: ToolTraceEntry) => {
     const agent = AGENTS[tool];
-    if (!agent || reported.has(tool)) return;
-    reported.add(tool);
+    if (!agent || succeeded.has(tool)) return;
+    if (ok) succeeded.add(tool);
     onEvent({ type: 'agent', step: { tool, agent, ...stepLine(steps, tool, ok), ...NO_PICK } });
   };
   const run = async () => {
@@ -921,7 +921,6 @@ export async function analyseAccount(
   return analysis;
 }
 
-/** An agent's line before the model ranks: the card it would stand behind, else its `none` line. */
 function stepLine(steps: Steps, tool: string, ok: boolean): StepLine & { ok: boolean } {
   const entry = steps.get(tool);
   if (!ok || !entry) return { ok: false, text: 'Failed', provenance: null };

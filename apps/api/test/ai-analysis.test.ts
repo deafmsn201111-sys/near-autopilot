@@ -1643,6 +1643,22 @@ describe('progress events', () => {
     ]);
   });
 
+  it('reports an agent again when a retry succeeds after a failure', async () => {
+    const guardian = (input: object) => ({
+      kind: 'tool_calls' as const,
+      calls: [{ id: '1', name: 'liquidation_guardian', input }],
+    });
+    const { llm } = fake([
+      () => guardian({ x: 1 }),
+      () => guardian({}),
+      () => guardian({}),
+      () => final([{ id: REPAY, why: 'Repay first.' }]),
+    ]);
+    const { events } = await live(llm);
+    const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step.ok] : []));
+    expect(agents).toEqual([false, true]);
+  });
+
   it('ends without checks when the run falls back', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
     const { out, events } = await live(llm);

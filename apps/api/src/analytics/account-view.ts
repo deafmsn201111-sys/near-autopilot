@@ -1658,8 +1658,9 @@ export function registerAccountView(
     if (!req.headers.accept?.includes('text/event-stream')) return run();
     // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
     const out = new PassThrough();
+    // ponytail: a tool that returns after the deadline would write after `done`; the run is not aborted on disconnect.
     const send = (event: string, data: unknown) =>
-      out.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      out.writable && out.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     run(({ type, ...data }) => send(type, data))
       .then((analysis) => send('done', analysis))
       .catch((err: unknown) => {

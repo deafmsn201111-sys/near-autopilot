@@ -33,7 +33,6 @@ export async function runToolLoop(args: {
   readonly maxTurns: number;
   /** Once aborted, no further model call is made (a call already in flight still finishes). */
   readonly signal?: AbortSignal;
-  /** Each tool result as soon as it comes back, before the turn's other calls finish. */
   readonly onResult?: (entry: ToolTraceEntry) => void;
 }): Promise<{ text: string; trace: ToolTraceEntry[] }> {
   const byName = new Map(args.tools.map((t) => [t.spec.name, t] as const));

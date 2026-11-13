@@ -121,7 +121,6 @@ const eventSchema = z.discriminatedUnion('type', [
 ]);
 type LiveEvent = z.infer<typeof eventSchema>;
 
-/** One SSE frame; an unknown event name or a body that does not parse is ignored. */
 function parseFrame(frame: string): LiveEvent | null {
   let type = '';
   let data = '';
@@ -139,16 +138,16 @@ function parseFrame(frame: string): LiveEvent | null {
 
 function apply(p: Pipeline, e: LiveEvent): Pipeline {
   if (e.type === 'read') return { ...p, model: e.model, read: { tokens: e.tokens, loan: e.loan } };
-  if (e.type === 'agent') return { ...p, trace: [...p.trace, e.step] };
+  if (e.type === 'agent')
+    return { ...p, trace: [...p.trace.filter((s) => s.tool !== e.step.tool), e.step] };
   if (e.type === 'ranked') return { ...p, turns: e.turns };
   if (e.type === 'checked') return { ...p, checks: e.checks };
   return p;
 }
 
-/** The analysis from its `done` event, or null when the stream ends or breaks without one. */
 async function readStream(
   res: Response,
-  onProgress: (p: Pipeline) => void,
+  onProgress: (p: Pipeline | null) => void,
 ): Promise<Analysis | null> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let live: Pipeline = { model: null, read: null, trace: [], turns: null, checks: null };
@@ -182,7 +181,7 @@ async function readStream(
 export async function runAnalysis(
   account: string,
   strategy: StrategyId,
-  onProgress: (p: Pipeline) => void = () => {},
+  onProgress: (p: Pipeline | null) => void = () => {},
 ): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string }> {
   const post = (accept: string) =>
     fetch('/api/analysis', {
@@ -196,6 +195,7 @@ export async function runAnalysis(
     if (res.ok && res.body && res.headers.get('content-type')?.startsWith('text/event-stream')) {
       const analysis = await readStream(res, onProgress);
       if (analysis) return { ok: true, analysis };
+      onProgress(null);
       res = await post('application/json');
     }
   } catch {
