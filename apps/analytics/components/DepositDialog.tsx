@@ -112,7 +112,8 @@ function QuoteView({ q, onBack }: { q: DepositQuote; onBack: () => void }) {
           {formatUnits(q.minAmountOut, q.destination.decimals)}
           <span className="muted-note">
             {' '}
-            · ≈ ${q.amountOutUsd.value} ({describeProvenance(q.amountOutUsd.provenance).label})
+            · ≈ ${Number(q.amountOutUsd.value).toFixed(2)} (
+            {describeProvenance(q.amountOutUsd.provenance).label})
           </span>
         </dd>
         <dt>1Click fee</dt>
