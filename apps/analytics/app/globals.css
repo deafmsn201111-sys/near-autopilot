@@ -2547,6 +2547,27 @@ main.page {
   color: #04120b;
   box-shadow: var(--logo-glow);
 }
+.logo-asset {
+  display: none;
+  flex: none;
+  object-fit: contain;
+}
+.logo-mark.logo-asset {
+  width: 34px;
+  height: 30px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.logo-wordmark.logo-asset {
+  width: auto;
+  height: 33px;
+  max-width: 126px;
+}
+html[data-theme='dark'] .logo-asset-dark,
+html[data-theme='light'] .logo-asset-light {
+  display: block;
+}
 .topnav a[aria-current='page'] {
   color: var(--accent-strong);
   background: var(--accent-wash);
