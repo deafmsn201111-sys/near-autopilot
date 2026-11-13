@@ -54,6 +54,7 @@ import {
 import { Recommendations } from '../components/Recommendations';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
+import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 
@@ -254,7 +255,7 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   const isAccount = sp.p === 'account';
-  // The account id can come from the URL (?account=) or, when navigating back to "Your account" without it, from the
+  // The account id can come from the URL (?account=) or, when navigating back to "Mainnet account" without it, from the
   // cookie the wallet set on connect — otherwise the view would read empty until the wallet is reconnected.
   const urlAccount = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const cookieAccount = (await cookies()).get('np_account')?.value?.trim().toLowerCase() ?? '';
@@ -323,6 +324,13 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
   const recs = isAccount ? (await accountRecommendations(accountParam)).data : null;
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
+  const mode = portfolioMode({
+    isAccount,
+    account: accountParam,
+    connected: cookieAccount,
+    verified: recs ? recs.ownerVerified === true : null,
+    signingEnabled,
+  });
   return (
     <>
       {isAccount && accountParam && <AccountWatcher account={accountParam} />}
@@ -335,9 +343,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         />
         <span className="sync-note">
           <span className="dot" aria-hidden="true" />
-          {isAccount
-            ? 'Synced from mainnet · just now'
-            : `Demo portfolio · updated ${ago(data.asOf)}`}
+          {isAccount ? 'Synced from mainnet · just now' : `Updated ${ago(data.asOf)}`}
         </span>
       </div>
 
@@ -350,15 +356,16 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       )}
       <section className="hero">
         <div className="hero-main">
-          <span className="eyebrow">
-            Net worth · {isAccount ? 'Your account' : 'Demo portfolio'}
-          </span>
+          <span className="eyebrow">Net worth</span>
+          <div className="hero-mode">
+            <span className={`hero-live ${mode.mine ? 'is-live' : ''}`}>
+              <span className="dot" aria-hidden="true" />
+              {mode.label}
+            </span>
+            <span className="muted-note">{mode.note}</span>
+          </div>
           <div className="hero-top">
             <div className="hero-value num">{money(t.netWorthUsd, false)}</div>
-            <span className={`hero-live ${isAccount ? 'is-live' : ''}`}>
-              <span className="dot" aria-hidden="true" />
-              {isAccount ? 'Live' : 'Simulated'}
-            </span>
           </div>
           <span className="muted-note">
             {money(t.assetsUsd, false)} in assets − {money(t.debtUsd, false)} borrowed

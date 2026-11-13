@@ -357,9 +357,12 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
 
   const byTokenMap = new Map<string, { token: string; symbol: string; usd: number }>();
   for (const l of assets) {
-    const e = byTokenMap.get(l.token) ?? { token: l.token, symbol: l.symbol, usd: 0 };
+    // Native NEAR and wNEAR are one price exposure; grouped under wrap.near, the token a swap intent can sell.
+    const isNear = l.token === NATIVE_HOLDING || l.token === WNEAR;
+    const token = isNear ? WNEAR : l.token;
+    const e = byTokenMap.get(token) ?? { token, symbol: isNear ? 'NEAR' : l.symbol, usd: 0 };
     e.usd += l.usd;
-    byTokenMap.set(l.token, e);
+    byTokenMap.set(token, e);
   }
   const byToken = [...byTokenMap.values()]
     .map((e) => ({ ...e, pct: pct(e.usd) }))
@@ -1108,7 +1111,11 @@ export function registerAccountView(
     const { recommendations: forModel } = portfolioAdvice({
       metrics: {
         ...actionable,
-        concentration: actionable.concentration && labelled(actionable.concentration),
+        concentration:
+          actionable.concentration &&
+          (actionable.concentration.token === WNEAR
+            ? actionable.concentration
+            : labelled(actionable.concentration)),
       },
       concentrationLiquidUsd,
       loan,

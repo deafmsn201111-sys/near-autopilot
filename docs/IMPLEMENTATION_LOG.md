@@ -93,7 +93,7 @@ missing-account page shows the short message, Caddy (local container) sends both
   (`lib/rate-limit.ts`, 10,000 keys, expired keys swept first) use it. The overall per-kind counts live in their own
   map, so a flood of new visitors on one route cannot evict another route's overall cap.
 - `AutoRefresh` and `AccountWatcher` poll through `lib/polling.ts`: no ticks while the tab is hidden, and they stop
-  after 30 minutes (a reload starts them again). 1Click status polling limits are in #29.
+  after 30 minutes (since #60, coming back to the tab starts them again). 1Click status polling limits are in #29.
 - `setup.sh` keeps `.env` at `chmod 600` on every run. The server README has the ufw rules (SSH, 80, 443 only), notes
   that Docker-published ports bypass ufw, and that a new secret goes only to the services that use it.
 
@@ -279,6 +279,24 @@ no longer said what comes first.
   the page when it fell back to the allowlists.
 - `apps/analytics/app/page.tsx`: "What you hold" (top 7, "Show all"), "Unverified tokens", "Show small balances".
 - Test: `apps/api/test/account-full.test.ts` replays recorded mainnet reads of `npro-validator.near`.
+
+## 2026-11-13 — Portfolio mode label (#87)
+
+- `apps/analytics/lib/portfolio-mode.ts`: one label + one "what you can do here" line from `isAccount`, the
+  connected wallet (`np_account` cookie), the ownership proof and `MAINNET_WALLET_SIGNING`: demo / read-only (with a
+  "not your connected wallet" line on mismatch) / your wallet / ownership verified. Replaces the "Live" / "Simulated"
+  badge; the switch tab is now "Mainnet account" without the LIVE chip.
+- `WalletButton` writes the `np_account` cookie before the post-connect page load, so the first load already knows
+  the wallet.
+
+## 2026-11-13 — Polling restarts when the user comes back (#60)
+
+- `poll()` (`apps/analytics/lib/polling.ts`) still stops 30 minutes after start, but the tab becoming visible or
+  getting focus starts a fresh 30-minute window, with an immediate tick if polling had stopped. An unattended tab
+  still goes quiet (Security 7); a tab the user returns to updates again after signing. `stop()` removes the listeners.
+
+**Tests run:** `pnpm verify` (green); `polling.test.ts` covers the deadline, restart on visible/focus, extending a
+running window and listener removal.
 
 ## 2026-11-13 — No $0 cards on small wallets (#99)
 

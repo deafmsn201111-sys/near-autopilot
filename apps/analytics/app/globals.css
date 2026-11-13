@@ -2380,16 +2380,6 @@ main.page {
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--grid);
 }
-.seg-live {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #03140c;
-  background: var(--accent);
-  padding: 2px 7px;
-  border-radius: 20px;
-  line-height: 1.4;
-}
 
 /* ---- hero: two-column panels ---- */
 .hero {
@@ -3074,4 +3064,15 @@ main.page {
 }
 .ht-small summary {
   padding: 8px 4px;
+}
+
+.hero-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 10px;
+}
+.hero-mode .hero-live {
+  margin-bottom: 0;
 }

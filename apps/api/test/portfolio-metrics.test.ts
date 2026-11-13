@@ -28,7 +28,7 @@ describe('portfolioMetrics', () => {
     expect(m.netUsd).toBe(600);
     // by token: wNEAR 900 (90%), USDt 100 (10%)
     expect(m.byToken.map((t) => [t.symbol, t.usd, t.pct])).toEqual([
-      ['wNEAR', 900, 90],
+      ['NEAR', 900, 90],
       ['USDt', 100, 10],
     ]);
     // by protocol: Wallet 600, Rhea DCL 300, Burrow 100
@@ -37,7 +37,24 @@ describe('portfolioMetrics', () => {
       ['Rhea DCL', 300],
       ['Burrow', 100],
     ]);
-    expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'wNEAR', pct: 90 });
+    expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'NEAR', pct: 90 });
+  });
+
+  it('counts native NEAR and wNEAR, wherever held, as one NEAR exposure', () => {
+    const m = portfolioMetrics([
+      leg('near', 'NEAR', 'Wallet', 500),
+      leg('wrap.near', 'wNEAR', 'Wallet', 400),
+      leg('wrap.near', 'wNEAR', 'Rhea DCL', 100),
+      leg('usdc', 'USDC', 'Wallet', 300),
+    ]);
+    expect(m.byToken.map((t) => [t.token, t.symbol, t.usd])).toEqual([
+      ['wrap.near', 'NEAR', 1000],
+      ['usdc', 'USDC', 300],
+    ]);
+    expect(m.concentration?.token).toBe('wrap.near');
+    expect(m.concentration?.symbol).toBe('NEAR');
+    expect(m.concentration?.pct).toBeCloseTo(76.92, 2);
+    expect(m.concentration?.pct).toBe(m.byToken[0]?.pct);
   });
 
   it('is empty-safe', () => {
