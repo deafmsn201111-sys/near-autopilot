@@ -196,6 +196,14 @@ describe('prepareSwapRepay', () => {
     expect(
       await prepareSwapRepay({ ...base, collateral: { ...base.collateral, token: USDC } }),
     ).toMatchObject({ ok: false });
+    // Rhea may pay wNEAR out as native NEAR, which the repay could not send.
+    expect(
+      await prepareSwapRepay({
+        ...base,
+        collateral: { ...base.collateral, token: USDC },
+        debt: { ...base.debt, token: WNEAR },
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   it('passes the cascade validation with the protocol, the oracle and the two tokens only', async () => {

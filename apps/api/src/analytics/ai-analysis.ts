@@ -368,7 +368,7 @@ function guardianTool(
         if (c.intent?.action === 'repay_with_collateral') {
           const { plan } = c.intent;
           byCandidate.set(c.id, {
-            text: `Health factor ${hf} → ${plan.hfAfterWithdraw.toFixed(2)} after withdrawing collateral → ${plan.hfAfterRepay === null ? 'no debt' : plan.hfAfterRepay.toFixed(2)} after swapping it and repaying`,
+            text: `Health factor ${plan.hfNow.toFixed(2)}${plan.transactions === 3 ? ` → ${plan.hfAfterWithdraw.toFixed(2)} after withdrawing collateral` : ''} → ${plan.hfAfterRepay === null ? 'no debt' : plan.hfAfterRepay.toFixed(2)} after swapping ${plan.transactions === 3 ? 'it' : 'collateral from the wallet'} and repaying`,
             provenance: 'calculated_estimate',
           });
           continue;

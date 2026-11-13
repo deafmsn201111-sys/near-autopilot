@@ -444,4 +444,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   step; `validateCascade` with the oracle, Burrow, Rhea and the two tokens.
 - `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns that card on the AI path, with the HF steps in
   the trace. `apps/analytics`: the new intent in the zod schema, the prepare mapping and the button label.
+- `packages/rhea-adapter/src/planner.ts`: `buildRheaSwap`, the one instant-swap builder the planner, the prepare swap
+  and the swap-repay cascade share.
 - D25 in `docs/DECISIONS.md`.

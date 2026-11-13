@@ -164,6 +164,18 @@ describe('portfolioRecommendations', () => {
         expect(l?.why).toContain('1.15');
       });
 
+      it('when the floor stops it, plans the withdraw a little above 1.15 so a small price tick still prepares', () => {
+        const tight = { ...loan, debtAdjUsd: 290 / 0.95, healthFactor: 360 / (290 / 0.95) };
+        const intent = card({
+          loan: tight,
+          largestDebt: { ...debt, usd: 290, amount: 290 },
+        })?.intent;
+        if (intent?.action !== 'repay_with_collateral')
+          throw new Error('expected repay_with_collateral');
+        expect(intent.plan.hfAfterWithdraw).toBeCloseTo(1.17, 3);
+        expect(intent.plan.hfAfterRepay as number).toBeGreaterThan(tight.healthFactor);
+      });
+
       it('gives advice only when any withdrawal would take the health factor under 1.15', () => {
         const low = { ...loan, debtAdjUsd: 320 / 0.95, healthFactor: 360 / (320 / 0.95) };
         const l = card({ loan: low, largestDebt: { ...debt, usd: 320, amount: 320 } });
@@ -178,6 +190,10 @@ describe('portfolioRecommendations', () => {
           throw new Error('expected repay_with_collateral');
         expect(intent.withdraw).toBeUndefined();
         expect(intent.plan.transactions).toBe(2);
+        const why = card({ swapRepay: { ...wnear, wallet: 100 } })?.why ?? '';
+        expect(why).toMatch(/two transactions/);
+        expect(why).toContain('Nothing is withdrawn');
+        expect(why).not.toContain('never under');
         expect(intent.plan.hfAfterWithdraw).toBeCloseTo(loan.healthFactor, 6);
       });
 

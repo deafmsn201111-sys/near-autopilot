@@ -182,6 +182,21 @@ describe('swap-repay plan (withdraw another collateral -> swap -> repay)', () =>
     expect(swapRepayPlan({ ...base, outPerIn: 0.5 })).toEqual({ ok: false, reason: 'no_gain' });
   });
 
+  it('swaps only the wallet part when withdrawing collateral would lower the HF (deep under water)', () => {
+    // HF 0.5 with vr 0.6 x 0.95: repaying with withdrawn collateral loses HF, the wallet's tokens still help.
+    const d = 720 / 0.95;
+    const p = ok({
+      ...base,
+      model: { collateralAdjUsd: C, debtAdjUsd: d },
+      debt: { ...base.debt, amount: 720 },
+      collateral: { ...base.collateral, wallet: 10 },
+      floor: 0, // the floor alone would already stop it; this isolates the direction check
+    });
+    expect(p.withdraw).toBe(0);
+    expect(p.swapIn).toBeCloseTo(10, 9);
+    expect(p.hfAfterRepay as number).toBeGreaterThan(C / d);
+  });
+
   it('offers nothing with no collateral of that token and none in the wallet', () => {
     expect(swapRepayPlan({ ...base, collateral: { ...base.collateral, collateral: 0 } })).toEqual({
       ok: false,

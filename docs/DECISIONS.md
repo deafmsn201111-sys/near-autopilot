@@ -429,7 +429,8 @@ step (withdraw) lowers the health factor, and the user may stop after any step.
   as swap → repay on the next read (no separate "continue").
 - Floor: the health factor after the withdraw (and the swap, which does not touch Burrow) stays at or above **1.15**,
   the agents' danger line (1.10) plus 0.05 for prices moving between the steps. If no withdrawal keeps it there, the
-  card has no button and says why. The swap is sized to reach the preset's target HF, or the most the floor allows.
+  card has no button and says why. The swap is sized to reach the preset's target HF, or the most the floor allows;
+  the card plans 0.02 above the floor so a small price tick before the click does not make prepare refuse it.
 - The card sizes from a live Rhea quote at 0.5% slippage; prepare re-reads the account, re-quotes, sizes the repay
   from the swap's minimum output plus the debt token already in the wallet (capped at the debt + 0.1%), refuses a
   withdrawal that breaks the floor at the fresh read (409), and writes the HF after each step into the preview.
@@ -437,5 +438,8 @@ step (withdraw) lowers the health factor, and the user may stop after any step.
   Burrow repay). No new method, receiver or cap: `validateCascade` allows the oracle, Burrow, Rhea and the two tokens.
 - No amount picker on this card; the AI path gets the same card from the guardian tool (no new orchestrator proposal
   kind).
+- Not for a wNEAR debt: Rhea may pay a swap into wNEAR out as native NEAR, and the repay step needs the token. The
+  candidate token may sit on Burrow or only in the wallet; the quote runs only when the wallet cannot repay to the
+  strictest preset's target.
   **Consequences:** one extra Rhea quote per account read, only for a loan under the strictest preset's safe line with
   no same-token collateral. Prices can still move between the steps; the floor is the margin.

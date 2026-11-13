@@ -137,11 +137,15 @@ export function swapRepayPlan(i: SwapRepayInput): SwapRepayPlan {
   };
   const inf = (h: number | null) => (h === null ? Infinity : h);
   const hfNow = model.debtAdjUsd > EPS ? model.collateralAdjUsd / model.debtAdjUsd : Infinity;
-  if (inf(hfAfter(sMax)) <= hfNow) return { ok: false, reason: 'no_gain' };
-  let s = sMax;
-  if (inf(hfAfter(sMax)) > i.target && inf(hfAfter(0)) < i.target) {
+  // The HF rises over the wallet and plain supply part; over the collateral part it is monotone one way or the other
+  // (a ratio of two linear functions), and falls when the HF is under about vr_collateral x vr_debt: stop before it.
+  let sTop = sMax;
+  if (sMax > free && free > EPS && inf(hfAfter(sMax)) < inf(hfAfter(free))) sTop = free;
+  if (inf(hfAfter(sTop)) <= hfNow) return { ok: false, reason: 'no_gain' };
+  let s = sTop;
+  if (inf(hfAfter(sTop)) > i.target && inf(hfAfter(0)) < i.target) {
     let lo = 0;
-    let hi = sMax;
+    let hi = sTop;
     for (let n = 0; n < 100 && hi - lo > EPS * Math.max(1, hi); n++) {
       const mid = (lo + hi) / 2;
       if (inf(hfAfter(mid)) >= i.target) hi = mid;
