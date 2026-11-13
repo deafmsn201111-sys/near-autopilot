@@ -393,3 +393,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics`: the `/api/analysis` proxy passes the stream through unbuffered; `runAnalysis` parses the events
   (zod, unknown ones ignored), falls back to JSON; "How the AI got here" fills in as events arrive.
 - `deploy/public/Caddyfile`: `flush_interval -1` on the reverse proxy.
+- UI design pass: all four stages from the first event (current one pulses, later ones dimmed, the rail fills as
+  they complete), placeholders for the agents the model asked for (`asked` event, `onCalls` in the tool loop), a
+  running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
+  `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.

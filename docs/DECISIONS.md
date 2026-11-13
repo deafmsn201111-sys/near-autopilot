@@ -384,8 +384,10 @@ caps and cascade validation are unchanged.
 
 **Context:** #113. The AI analysis takes several seconds and its pipeline appeared only at the end.
 **Decision:** The same `POST /v1/analytics/account/:id/analysis` answers `text/event-stream` when the request asks
-for it (`Accept`), else JSON as before. Events: `read`, `agent` (one per offered tool, in tool-result order, the
-server-built trace line without its pick), `ranked`, `checked`, `done` (the full analysis), `error`. Account and
+for it (`Accept`), else JSON as before. Events: `read`, `asked` (the agents the model chose to call, before they
+run), `agent` (one per offered tool, in tool-result order, the server-built trace line without its pick; sent again
+if a failed agent later succeeds), `ranked`, `checked`, `done` (the full analysis), `error`. A reused result carries
+`cachedAt`, shown as "from a run N min ago" so it is never mistaken for a live run. Account and
 strategy errors are still plain JSON with their status, before any event. Ownership, kill switch, cache, daily cap,
 global limit and the 45 s deadline are the same code path. The Next.js route passes the body through with
 `cache-control: no-cache, no-transform` and `x-accel-buffering: no`; Caddy's `reverse_proxy` has
