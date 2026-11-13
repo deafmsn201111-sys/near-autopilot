@@ -209,23 +209,23 @@ const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.valu
 const readKey = async (id: string, proof: string) =>
   `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
 
-const fetchAccount = async (id: string, proof: string): Promise<AccountResult> => {
+const fetchAccount = async (id: string, proof: string, fresh: boolean): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
   return tryApi<AccountRead>(
-    `/v1/analytics/account/${encodeURIComponent(id)}`,
+    `/v1/analytics/account/${encodeURIComponent(id)}${fresh ? '?fresh=1' : ''}`,
     proof ? { 'x-ownership-proof': proof } : {},
   );
 };
 
-const readAccount = async (id: string): Promise<AccountResult> => {
+const readAccount = async (id: string, fresh = false): Promise<AccountResult> => {
   const proof = await ownershipProof();
   const key = await readKey(id, proof);
   const now = Date.now();
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
-  if (cached) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id, proof) };
+  if (cached && !fresh) return cached.read;
+  const entry = { at: Infinity, read: fetchAccount(id, proof, fresh) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
@@ -234,8 +234,21 @@ const readAccount = async (id: string): Promise<AccountResult> => {
   return r;
 };
 
-export const forgetAccount = async (id: string) => {
-  accountReads.delete(await readKey(id, await ownershipProof()));
+const holdingsOf = (r: AccountResult | undefined) =>
+  r?.data ? JSON.stringify(r.data.holdings.map((h) => [h.where, h.token, h.amount])) : null;
+
+/**
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D19). True once the
+ * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
+ * stops retrying.
+ */
+export const refreshAccountRead = async (id: string): Promise<boolean> => {
+  const normalized = id.trim().toLowerCase();
+  const before = holdingsOf(
+    await accountReads.get(await readKey(normalized, await ownershipProof()))?.read,
+  );
+  const after = holdingsOf(await readAccount(normalized, true));
+  return before === null || after === null || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

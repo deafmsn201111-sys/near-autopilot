@@ -662,6 +662,7 @@ interface AccountBody {
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
+const FRESH_READ_GAP_MS = 5_000;
 
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
@@ -708,6 +709,14 @@ export function registerAccountView(
       concentration: Concentration;
     }
   >(ACCOUNT_CACHE_MAX);
+  // After a transaction the UI asks for a fresh read (D19); one per account every 5 s, the rest get the cache.
+  const freshReads = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
+  const mayReadFresh = (id: string) => {
+    const at = freshReads.get(id);
+    if (at !== undefined && Date.now() - at < FRESH_READ_GAP_MS) return false;
+    freshReads.set(id, Date.now());
+    return true;
+  };
   const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrowOptions);
   const burrowOracle = new BurrowPriceOracle(viewer, burrowOptions);
@@ -754,6 +763,7 @@ export function registerAccountView(
   const readAccount = async (
     id: AccountId,
     log: FastifyRequest['log'],
+    fresh = false,
   ): Promise<
     | {
         status: 200;
@@ -764,7 +774,8 @@ export function registerAccountView(
     | { status: 404 | 502; body: { error: string } }
   > => {
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, ...hit };
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS && !(fresh && mayReadFresh(id)))
+      return { status: 200, ...hit };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -1206,7 +1217,8 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const out = await readAccount(parsed.data, req.log);
+    const fresh = (req.query as { fresh?: string }).fresh === '1';
+    const out = await readAccount(parsed.data, req.log, fresh);
     if (out.status !== 200) return reply.code(out.status).send(out.body);
     return { ...out.body, ownerVerified: await ownerVerified };
   });

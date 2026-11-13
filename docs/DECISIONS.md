@@ -90,7 +90,8 @@ limit in about 7 minutes, because the 15 s auto-refresh re-read the account on e
   (`apps/analytics/lib/product.ts`). Re-renders and the auto-refresh reuse it; only a real read spends the limit.
   Concurrent renders share one read; failed reads are not cached.
 - After a new transaction from the wallet (`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops
-  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it.
+  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it. It also
+  skips the API cache (D19).
 - The 15 s auto-refresh stays on every page, so prices and the health factor keep updating (at most once a minute
   on the account view).
 - `MAINNET_READ_RPC_URL` must be the FastNEAR URL whenever `MAINNET_READ_RPC_API_KEY` is set; the public NEAR RPC
@@ -281,3 +282,21 @@ allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $
   **Consequences:** A thin pool can give a meme token an inflated estimate, so the total can overstate such an
   account; the "Unverified · price estimate" label is the guard. An indexer outage shows a notice and the allowlisted
   view. A read makes up to 3 more HTTP calls and a bounded number of view calls; the 60 s cache (D10) is unchanged.
+
+## D19 — A fresh account read after a transaction
+
+**Context:** #65. After signing, the portfolio caught up only after 2–3 minutes: `refreshAccount` dropped the UI's
+cached read, but the API kept its own 60 s cache per account (D10), and the watcher refreshed once, at `optimistic`
+finality, before the new state was readable.
+**Decision:**
+
+- `GET /v1/analytics/account/:id?fresh=1` replaces the API's cached read for that account, at most once per account
+  every 5 s; any other request in that gap gets the cache as before. The ownership cache is untouched.
+- Only the `refreshAccount` server action asks for it (after a signed cascade in `PrepareDialog`, or a nonce bump in
+  `AccountWatcher`). Each fresh read is a normal account read: it spends one of the visitor's 30 reads (D10).
+- The page retries up to 4 reads, 5 s apart (`apps/analytics/lib/portfolio-refresh.ts`), until the holdings differ
+  from the read they replace, and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per
+  account at a time.
+  **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
+  limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
+  a price-driven change) shows the note for the full ~15 s.

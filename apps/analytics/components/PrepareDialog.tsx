@@ -2,6 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { refreshAccount } from '../app/account-actions';
+import { refreshPortfolio } from '../lib/portfolio-refresh';
 import { prepareIntent } from '../lib/prepare-client';
 import {
   gasToTgas,
@@ -63,13 +64,11 @@ export function PrepareDialog({
     const r = await signCascade(cascade.transactions, request.account, signingEnabled);
     setSigned(r);
     if (r.ok) {
-      // The transactions are on-chain; give them a moment to reach finality, then refresh the portfolio so the
-      // balances, allocation and this recommendation reflect the new state (the card updates or disappears).
+      // The transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
+      // show the new state (the card updates or disappears).
       setState('updating');
-      await new Promise((res) => setTimeout(res, 4000));
       setCascade(null); // collapse the (now spent) preview; the user can prepare a fresh one if still suggested
-      await refreshAccount(request.account).catch(() => undefined);
-      router.refresh();
+      await refreshPortfolio(request.account, refreshAccount, () => router.refresh());
       setState('idle');
     } else {
       setState('idle');
