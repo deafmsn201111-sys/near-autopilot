@@ -1,13 +1,20 @@
 const ATTEMPTS = 4;
 const RETRY_MS = 5_000;
 
+const QUIET_AFTER_MS = 10_000;
+
 const running = new Map<string, Promise<void>>();
+const endedAt = new Map<string, number>();
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
 const keyOf = (account: string) => account.trim().toLowerCase();
 
 export const refreshing = (account: string) => running.has(keyOf(account));
+
+/** True while a refresh runs and for 10 s after it ends, so a watcher tick that lags the chain does not start another. */
+export const recentlyRefreshed = (account: string, now = Date.now()) =>
+  refreshing(account) || now - (endedAt.get(keyOf(account)) ?? -Infinity) < QUIET_AFTER_MS;
 
 export const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -36,6 +43,7 @@ export function refreshPortfolio(
     }
   })().finally(() => {
     running.delete(key);
+    endedAt.set(key, Date.now());
     notify();
   });
   running.set(key, run);

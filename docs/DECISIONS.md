@@ -345,10 +345,12 @@ finality, before the new state was readable.
   one below 4 significant digits) shows the note for the full ~15 s.
   **Amendment (#117):** the watcher reads the native balance (`view_account`, still one RPC call per 6 s tick)
   instead of the access-key nonces, so an incoming NEAR transfer triggers the same refresh; an own transaction moves
-  the balance too (gas). Answers from an older block are dropped, and after a trigger further changes are ignored for
-  30 s (the gas refund that follows a transaction, dust, a busy contract). Not watched: incoming fungible tokens (no
-  cheap per-account signal) and a relayed transaction signed outside this site that leaves the balance unchanged;
-  both show on the next cache expiry. A transfer within 30 s of the last trigger also waits for that.
+  the balance too. Answers from an older block are dropped. Like the holdings check, it compares the balance at 4
+  significant digits, so gas refunds, dust and a contract's gas rewards do not trigger it. It stays quiet while a
+  refresh runs and for 10 s after one ends, so the refresh started after signing is not followed by a second one.
+  Not watched, shown only on a reload after the cache expires: incoming fungible tokens (no cheap per-account signal),
+  a balance move below 4 significant digits, a transfer in the 10 s quiet window, and one that landed before the page
+  mounted while its render came from the cache.
 
 ## D21 — One-click actions start at $1
 

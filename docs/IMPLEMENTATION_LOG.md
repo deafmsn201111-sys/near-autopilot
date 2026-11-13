@@ -387,5 +387,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 ## 2026-11-13 — Incoming NEAR transfers refresh "Your account" (#117)
 
 - `apps/analytics/lib/account-signal.ts`: the watcher reads `view_account` (balance + block height) instead of the
-  access-key nonces; `watchStep` drops stale blocks and holds a 30 s cooldown after a trigger. A received NEAR
-  transfer now shows the "Transaction seen" note and the new balance within one tick (D20 amendment).
+  access-key nonces; `watchStep` drops stale blocks, compares at 4 significant digits and stays quiet while a refresh
+  runs or for 10 s after (`recentlyRefreshed` in `portfolio-refresh.ts`). A received NEAR transfer now shows the
+  "Transaction seen" note and the new balance within one tick (D20 amendment).

@@ -2,9 +2,14 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
 import { refreshAccount } from '../app/account-actions';
-import { readAccount, watchStep, type WatchState } from '../lib/account-signal';
+import { readAccount, watchStep, type Reading } from '../lib/account-signal';
 import { poll, POLL_FOR_MS, tabHidden } from '../lib/polling';
-import { refreshing, refreshPortfolio, subscribe } from '../lib/portfolio-refresh';
+import {
+  recentlyRefreshed,
+  refreshing,
+  refreshPortfolio,
+  subscribe,
+} from '../lib/portfolio-refresh';
 
 /**
  * The on-chain watcher: for the connected account it polls NEAR mainnet and, the moment something lands on it (its native
@@ -23,12 +28,12 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
 
   useEffect(() => {
     let alive = true;
-    let state: WatchState = { last: null, firedAt: -Infinity };
+    let last: Reading | null = null;
     const tick = () =>
       void readAccount(account).then((reading) => {
         if (!alive) return;
-        const step = watchStep(state, reading, Date.now());
-        state = step.state;
+        const step = watchStep(last, reading, recentlyRefreshed(account));
+        last = step.last;
         if (step.fire) void refreshPortfolio(account, refreshAccount, () => router.refresh());
       });
     tick();

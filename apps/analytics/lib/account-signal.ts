@@ -1,14 +1,8 @@
 const RPC = 'https://rpc.mainnet.fastnear.com';
-export const COOLDOWN_MS = 30_000;
 
 export interface Reading {
   height: number;
   amount: string;
-}
-
-export interface WatchState {
-  last: Reading | null;
-  firedAt: number;
 }
 
 /**
@@ -36,19 +30,20 @@ export async function readAccount(account: string): Promise<Reading | null> {
   }
 }
 
+// ponytail: 4 significant digits, as the portfolio's own change check; a smaller move (gas refund, dust) would not show
+const visible = (amount: string) => Number(amount).toPrecision(4);
+
 /**
- * Decides whether a reading means something landed. Readings from an older block than the last one (a lagging node,
- * a slow answer) are dropped. After a refresh starts, further changes only move the baseline for `COOLDOWN_MS`, so
- * the gas refund that follows an own transaction, dust, or a busy contract do not start refresh after refresh.
+ * Decides whether a reading means something landed. Readings from an older or the same block as the last one (a
+ * lagging node, a slow answer) are dropped. It fires when the balance moves at 4 significant digits, unless a portfolio
+ * refresh is running or just ended (`quiet`): that refresh already shows the new state.
  */
 export function watchStep(
-  state: WatchState,
+  last: Reading | null,
   reading: Reading | null,
-  now: number,
-): { state: WatchState; fire: boolean } {
-  if (!reading || (state.last && reading.height <= state.last.height))
-    return { state, fire: false };
-  const changed = state.last !== null && reading.amount !== state.last.amount;
-  const fire = changed && now - state.firedAt >= COOLDOWN_MS;
-  return { state: { last: reading, firedAt: fire ? now : state.firedAt }, fire };
+  quiet: boolean,
+): { last: Reading | null; fire: boolean } {
+  if (!reading || (last && reading.height <= last.height)) return { last, fire: false };
+  const fire = last !== null && !quiet && visible(reading.amount) !== visible(last.amount);
+  return { last: reading, fire };
 }

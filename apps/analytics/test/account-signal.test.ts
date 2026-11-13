@@ -1,61 +1,40 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { COOLDOWN_MS, readAccount, watchStep, type WatchState } from '../lib/account-signal';
+import { readAccount, watchStep, type Reading } from '../lib/account-signal';
 
-const start: WatchState = { last: null, firedAt: -Infinity };
-const at = (height: number, amount: string) => ({ height, amount });
+const NEAR = 10n ** 24n;
+const at = (height: number, near: number): Reading => ({
+  height,
+  amount: String((BigInt(Math.round(near * 1e6)) * NEAR) / 1_000_000n),
+});
 
-function run(readings: { r: ReturnType<typeof at> | null; t: number }[]) {
-  let state = start;
-  return readings.map(({ r, t }) => {
-    const step = watchStep(state, r, t);
-    state = step.state;
+function run(readings: (Reading | null)[], quietAt: number[] = []) {
+  let last: Reading | null = null;
+  return readings.map((r, i) => {
+    const step = watchStep(last, r, quietAt.includes(i));
+    last = step.last;
     return step.fire;
   });
 }
 
 describe('watchStep', () => {
-  it('fires once when the balance changes, never on the first reading', () => {
-    expect(
-      run([
-        { r: at(1, '1000'), t: 0 },
-        { r: at(2, '1000'), t: 6_000 },
-        { r: at(3, '3000'), t: 12_000 },
-        { r: at(4, '3000'), t: 18_000 },
-      ]),
-    ).toEqual([false, false, true, false]);
+  it('fires once when a transfer lands, never on the first reading', () => {
+    expect(run([at(1, 5), at(2, 5), at(3, 8), at(4, 8)])).toEqual([false, false, true, false]);
   });
 
   it('drops readings from an older or the same block', () => {
-    expect(
-      run([
-        { r: at(10, '1000'), t: 0 },
-        { r: at(9, '900'), t: 6_000 },
-        { r: at(10, '900'), t: 12_000 },
-        { r: at(11, '1000'), t: 18_000 },
-      ]),
-    ).toEqual([false, false, false, false]);
+    expect(run([at(10, 5), at(9, 4), at(10, 4), at(11, 5)])).toEqual([false, false, false, false]);
   });
 
-  it('a gas refund right after a transaction does not start a second refresh, a later transfer does', () => {
-    expect(
-      run([
-        { r: at(1, '1000'), t: 0 },
-        { r: at(2, '900'), t: 6_000 },
-        { r: at(3, '910'), t: 12_000 },
-        { r: at(4, '910'), t: 18_000 },
-        { r: at(9, '5000'), t: 6_000 + COOLDOWN_MS },
-      ]),
-    ).toEqual([false, true, false, false, true]);
+  it('ignores a move below 4 significant digits: gas refund, dust, contract gas rewards', () => {
+    expect(run([at(1, 12.34), at(2, 12.3412), at(3, 12.3399)])).toEqual([false, false, false]);
+  });
+
+  it('stays quiet while a refresh runs or just ended, and keeps the new baseline', () => {
+    expect(run([at(1, 5), at(2, 4), at(3, 4), at(4, 9)], [1])).toEqual([false, false, false, true]);
   });
 
   it('skips a failed read without losing the baseline', () => {
-    expect(
-      run([
-        { r: at(1, '1000'), t: 0 },
-        { r: null, t: 6_000 },
-        { r: at(3, '2000'), t: 12_000 },
-      ]),
-    ).toEqual([false, false, true]);
+    expect(run([at(1, 5), null, at(3, 6)])).toEqual([false, false, true]);
   });
 });
 

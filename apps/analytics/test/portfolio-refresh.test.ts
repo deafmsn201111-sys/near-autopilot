@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { refreshing, refreshPortfolio, subscribe } from '../lib/portfolio-refresh';
+import {
+  recentlyRefreshed,
+  refreshing,
+  refreshPortfolio,
+  subscribe,
+} from '../lib/portfolio-refresh';
 
 describe('refreshPortfolio', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -45,5 +50,18 @@ describe('refreshPortfolio', () => {
     await refreshPortfolio('alice.near', read, () => undefined);
     expect(read).toHaveBeenCalledTimes(1);
     expect(refreshing('alice.near')).toBe(false);
+  });
+
+  it('counts as recent while running and for 10 s after it ends', async () => {
+    const done = refreshPortfolio(
+      'carol.near',
+      async () => true,
+      () => undefined,
+    );
+    expect(recentlyRefreshed('carol.near')).toBe(true);
+    await done;
+    expect(recentlyRefreshed('Carol.near')).toBe(true);
+    expect(recentlyRefreshed('carol.near', Date.now() + 10_000)).toBe(false);
+    expect(recentlyRefreshed('dave.near')).toBe(false);
   });
 });
