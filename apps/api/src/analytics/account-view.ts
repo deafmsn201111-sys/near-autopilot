@@ -41,7 +41,12 @@ import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
 import { toWad } from '../yield/math';
-import { analyseAccount, walletAgentConfig, type ToolLlmDeps } from './ai-analysis';
+import {
+  analyseAccount,
+  walletAgentConfig,
+  type AnalysisContext,
+  type ToolLlmDeps,
+} from './ai-analysis';
 import {
   RheaPoolReader,
   RheaSwapQuoter,
@@ -573,7 +578,7 @@ export function registerAccountView(
   app: FastifyInstance,
   store: CollectorStore,
   deps: MainnetReadDeps,
-): void {
+) {
   const viewer = new NearContractViewer(deps.rpc);
   const tokens = new NearTokenReader(viewer);
   const native = new NearAccountReader(deps.rpc);
@@ -1085,29 +1090,35 @@ export function registerAccountView(
     };
   };
 
+  const analysisInputs = async (
+    id: AccountId,
+    log: FastifyRequest['log'],
+  ): Promise<Omit<AnalysisContext, 'ownerVerified'> | { status: 404 | 502; error: string }> => {
+    const view = await readAccount(id, log);
+    if (view.status !== 200) return { status: view.status, error: view.body.error };
+    const held = new Set(
+      view.body.holdings
+        .filter((h) => h.token !== NATIVE_HOLDING)
+        .map((h) => accountIdSchema.parse(h.token)),
+    );
+    return {
+      accountId: id,
+      observe: () => observe(id, [...held]),
+      heuristics: view.body.recommendations,
+      checks: view.forModel,
+    };
+  };
+
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const view = await readAccount(parsed.data, req.log);
-    if (view.status !== 200) return reply.code(view.status).send(view.body);
+    const inputs = await analysisInputs(parsed.data, req.log);
+    if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
     return analyseAccount(
       deps.ai ?? null,
-      {
-        accountId: parsed.data,
-        observe: () =>
-          observe(parsed.data, [
-            ...new Set(
-              view.body.holdings
-                .filter((h) => h.token !== NATIVE_HOLDING)
-                .map((h) => accountIdSchema.parse(h.token)),
-            ),
-          ]),
-        heuristics: view.body.recommendations,
-        checks: view.forModel,
-        ownerVerified: await ownerVerified,
-      },
+      { ...inputs, ownerVerified: await ownerVerified },
       (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
     );
   });
@@ -1778,4 +1789,6 @@ export function registerAccountView(
       return prepareFailure(req, reply, e);
     }
   });
+  // The model comparison script (src/llm/compare-models.ts) runs the analysis on these without a server route.
+  return { analysisInputs };
 }
