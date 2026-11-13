@@ -444,6 +444,50 @@ describe('analyseAccount', () => {
     );
   });
 
+  const healthy = async () => {
+    const o = observation();
+    const snapshot = { ...o.snapshot, walletBalances: [], lending: null };
+    return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+  };
+
+  it('labels a run with nothing to act on as an AI result, not a fallback', async () => {
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(out.source).toBe('llm');
+    expect(out.fallback).toBeNull();
+    expect(out.recommendations).toEqual([]);
+    expect(out.note).toMatch(/nothing to act on/);
+    expect(out.calledTools.length).toBeGreaterThan(0);
+  });
+
+  it('still falls back when the model calls no tool and ranks nothing', async () => {
+    const { llm } = fake([() => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(out.fallback).toBe('empty');
+  });
+
+  it('still falls back when the model drops every real candidate', async () => {
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.source).toBe('heuristic');
+    expect(out.fallback).toBe('empty');
+    expect(out.recommendations).toEqual([heuristic]);
+  });
+
   it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
     const { llm } = fake([
       () => callAll,

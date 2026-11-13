@@ -595,6 +595,22 @@ export interface RecommendationContext {
 
 type Concentration = { readonly token: string; readonly pct: number } | null;
 
+export function earningsSentence(
+  monthly: number,
+  hasPosition: boolean,
+  noRate: readonly string[],
+): string {
+  if (!hasPosition) return 'Nothing is deposited on Burrow: the tokens in the wallet earn nothing.';
+  const cents = Math.round(monthly * 100);
+  const main =
+    cents === 0
+      ? "Your Burrow position roughly breaks even at today's rates: under $0.01 a month either way."
+      : cents > 0
+        ? `Your Burrow position earns about ${money(monthly)} a month at today's rates.`
+        : `Your Burrow position costs about ${money(-monthly)} a month: the loan interest is higher than what the deposits earn.`;
+  return main + (noRate.length ? ` Not counted (no current rate): ${noRate.join(', ')}.` : '');
+}
+
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
 const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1482,12 +1498,7 @@ export function registerAccountView(
     const body = {
       earnings: {
         monthlyNetUsd: hasPosition ? monthly : 0,
-        sentence: !hasPosition
-          ? 'Nothing is deposited on Burrow: the tokens in the wallet earn nothing.'
-          : (monthly >= 0
-              ? `Your Burrow position earns about ${money(monthly)} a month at today's rates.`
-              : `Your Burrow position costs about ${money(-monthly)} a month: the loan interest is higher than what the deposits earn.`) +
-            (noRate.length ? ` Not counted (no current rate): ${noRate.join(', ')}.` : ''),
+        sentence: earningsSentence(monthly, hasPosition, noRate),
       },
       accountId: id,
       network: 'mainnet',

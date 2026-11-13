@@ -383,3 +383,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics`: strategy picker on "Your account" (URL param, then a per-account cookie), the preset in the
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
+
+## 2026-11-13 — AI "nothing to act on" is an AI result; $0.00 monthly is neutral (#130)
+
+- `analyseAccount`: an empty answer is an AI result (`source: 'llm'`, note "found nothing to act on") only when the
+  model called the tools and neither the tools nor the rule-based list produced a candidate. A model that drops a
+  real candidate, or calls no tool, still falls back with `empty`.
+- UI badge: "AI-checked · nothing to act on" for that case.
+- "Monthly result now" that rounds to $0.00 shows `$0.00` with no sign or colour (`signedMoney`), and the sentence
+  says the position roughly breaks even (`earningsSentence`) instead of "costs about $0.00".
