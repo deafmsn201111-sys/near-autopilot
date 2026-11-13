@@ -152,6 +152,7 @@ const callAll: LlmToolTurn = {
     { id: '5', name: 'liquidity_positions', input: {} },
   ],
 };
+const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
 const final = (picks: unknown): LlmToolTurn => ({ kind: 'final', text: JSON.stringify({ picks }) });
 
 describe('analyseAccount', () => {
@@ -166,6 +167,7 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('heuristic');
     expect(out.recommendations).toEqual([heuristic]);
     expect(out.calledTools).toEqual([]);
+    expect(out.trace).toEqual([]);
   });
 
   it('does not call the model for a visitor who has not proved ownership', async () => {
@@ -293,6 +295,13 @@ describe('analyseAccount', () => {
       'reduce-concentration',
       'liquidation-guardian:repay:usdt.tether-token.near',
     ]);
+    expect(out.run?.checks).toEqual({
+      picked: 2,
+      explained: 2,
+      replaced: 0,
+      restored: 0,
+      dropped: 1,
+    });
     expect(out.recommendations[0]?.why).toBe('wNEAR is 84% of the portfolio.');
     const repay = out.recommendations[1];
     expect(repay?.agent).toBe('Liquidation Guardian');
@@ -301,6 +310,308 @@ describe('analyseAccount', () => {
     expect(BigInt(intent.amount)).toBeGreaterThan(0n);
     expect(BigInt(intent.amount)).toBeLessThanOrEqual(usdt(100));
     expect(intent.approxUsd).toBeCloseTo(Number(intent.amount) / 1e6, 1);
+  });
+
+  it('traces each called agent once, in call order, with its key number and provenance', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => ({ kind: 'tool_calls', calls: [{ id: '6', name: 'liquidation_guardian', input: {} }] }),
+      () =>
+        final([
+          { id: REPAY, why: 'Repay first.' },
+          { id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn on it.' },
+          { id: heuristic.id, why: 'Worth a look.' },
+        ]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace).toEqual([
+      {
+        tool: 'liquidation_guardian',
+        agent: 'Liquidation Guardian',
+        ok: true,
+        text: 'Health factor 1.37 → 1.60 after repaying 33.125 USDt',
+        provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 1,
+      },
+      {
+        tool: 'capital_allocator',
+        agent: 'Capital Allocator',
+        ok: true,
+        text: 'Supply 100 USDt at about 8.0% a year',
+        provenance: 'protocol_reported',
+        pick: 'ranked',
+        rank: 2,
+      },
+      {
+        tool: 'market_intelligence',
+        agent: 'Market Intelligence',
+        ok: true,
+        text: 'Largest gap to a second price source: 0.00% (wNEAR)',
+        provenance: 'external_market',
+        pick: null,
+        rank: null,
+      },
+      {
+        tool: 'portfolio_concentration',
+        agent: 'Portfolio Intelligence',
+        ok: true,
+        text: heuristic.title,
+        provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 3,
+      },
+      {
+        tool: 'liquidity_positions',
+        agent: 'Liquidity Optimizer',
+        ok: true,
+        text: 'No position out of range; nothing to do',
+        provenance: null,
+        pick: null,
+        rank: null,
+      },
+    ]);
+    const card = out.recommendations.find((r) => r.id === REPAY);
+    expect(card?.title).toContain('1.37');
+  });
+
+  it('traces a failed agent as failed and leaves out tools the model made up', async () => {
+    const { llm } = fake([
+      () => ({
+        kind: 'tool_calls',
+        calls: [
+          { id: '1', name: 'liquidation_guardian', input: { x: 1 } },
+          { id: '2', name: 'sign_everything', input: {} },
+          { id: '3', name: 'portfolio_concentration', input: {} },
+        ],
+      }),
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace).toEqual([
+      {
+        tool: 'liquidation_guardian',
+        agent: 'Liquidation Guardian',
+        ok: false,
+        text: 'Failed',
+        provenance: null,
+        pick: null,
+        rank: null,
+      },
+      {
+        tool: 'portfolio_concentration',
+        agent: 'Portfolio Intelligence',
+        ok: true,
+        text: heuristic.title,
+        provenance: 'calculated_estimate',
+        pick: 'ranked',
+        rank: 1,
+      },
+    ]);
+  });
+
+  it('never says "no loan" for a loan whose health factor cannot be computed', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const unpriced = async () => {
+      const o = observation();
+      const prices = new Map(o.snapshot.prices);
+      prices.delete(WNEAR);
+      const snapshot = { ...o.snapshot, prices };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: unpriced,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'Health factor unknown: a price is missing',
+    );
+  });
+
+  it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const empty = async () => {
+      const o = observation();
+      const snapshot = { ...o.snapshot, walletBalances: [] };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: empty,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'Health factor 1.37 is below target; no USDt in the wallet to repay with',
+    );
+  });
+
+  it('marks a loan warning the model left out as kept by code', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')).toMatchObject({
+      pick: 'kept',
+      rank: 1,
+    });
+  });
+
+  it('states the concentration share even when there is no card to move it', async () => {
+    const { llm } = fake([() => callAll, () => final([{ id: REPAY, why: 'Repay first.' }])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [],
+      checks: [],
+      concentration: { token: USDT, pct: 70.7 },
+    });
+    expect(out.trace.find((t) => t.tool === 'portfolio_concentration')).toMatchObject({
+      text: '71% of your portfolio is in USDt; no swap from the wallet suggested',
+      provenance: 'calculated_estimate',
+      pick: null,
+    });
+  });
+
+  it("links an agent's line to the rule-based card of its kind the user sees", async () => {
+    const ruleRepay: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.37",
+      why: 'Repay about $69 of your USDt debt.',
+      intent: { action: 'repay', token: USDT, approxUsd: 69 },
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const empty = async () => {
+      const o = observation();
+      const snapshot = { ...o.snapshot, walletBalances: [] };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: empty,
+      heuristics: [ruleRepay, heuristic],
+      checks: [ruleRepay, heuristic],
+    });
+    expect(out.recommendations[0]?.id).toBe('improve-loan-safety');
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')).toMatchObject({
+      pick: 'kept',
+      rank: 1,
+    });
+  });
+
+  it('summarises the run: model, turns, tool calls and time', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.run).toEqual({
+      model: 'claude-haiku-5-5',
+      turns: 2,
+      toolCalls: 5,
+      ms: expect.any(Number) as number,
+      read: { tokens: 2, loan: true },
+      checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
+    });
+    const off = await analyseAccount(null, {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(off.run).toBeNull();
+  });
+
+  it('shows what the model left out, marked as left out', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'capital_allocator')).toMatchObject({
+      text: 'Supply 100 USDt at about 8.0% a year',
+      pick: 'left_out',
+      rank: null,
+    });
+  });
+
+  it('says when no second price source was there to compare', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const bare = async () => {
+      const o = observation();
+      return { ...o, market: { ...o.market!, referencePrices: new Map() } };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: bare,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'market_intelligence')).toMatchObject({
+      ok: true,
+      text: 'No second price source or volatility to compare',
+      provenance: null,
+    });
+  });
+
+  it('counts an explanation replaced for a number no tool returned', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () =>
+        final([
+          { id: REPAY, why: 'Repay first.' },
+          { id: 'reduce-concentration', why: 'Sell $999,999 of wNEAR now.' },
+          { id: REPAY, why: 'Again.' },
+        ]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.run?.checks).toEqual({
+      picked: 2,
+      explained: 1,
+      replaced: 1,
+      restored: 0,
+      dropped: 1,
+    });
   });
 
   it('keeps the code explanation when the model writes a number no tool returned', async () => {
@@ -329,7 +640,6 @@ describe('analyseAccount', () => {
     });
     return out.recommendations.find((r) => r.id === id)?.why;
   };
-  const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
 
   it.each([
     ['full-width digits', 'Repay １００ USDt now.'],

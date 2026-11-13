@@ -290,6 +290,23 @@ export const llmEnvSchema = z.object({
 });
 export type LlmEnv = z.output<typeof llmEnvSchema>;
 
+/**
+ * 1Click partner JWT for real deposit quotes (D19). Unset = 1Click's keyless fee schedule. Read from the local .env only,
+ * sent only to 1Click as a bearer header; never logged, never in a response.
+ */
+export const oneClickEnvSchema = z.object({
+  ONE_CLICK_JWT: z.preprocess(
+    unsetIfEmpty,
+    z
+      .string()
+      .regex(/^[\w-]+\.[\w-]+\.[\w-]+$/, 'must be a JWT (three base64url parts)')
+      .min(16)
+      .max(4096)
+      .optional(),
+  ),
+});
+export type OneClickEnv = z.output<typeof oneClickEnvSchema>;
+
 export const databaseEnvSchema = z.object({ DATABASE_URL: z.string().url() });
 export type DatabaseEnv = z.output<typeof databaseEnvSchema>;
 

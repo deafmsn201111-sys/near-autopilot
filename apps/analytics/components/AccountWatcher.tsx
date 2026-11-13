@@ -7,7 +7,7 @@ import { poll, POLL_FOR_MS, tabHidden } from '../lib/polling';
 /**
  * The on-chain watcher: for the connected account it polls the access-key nonces on NEAR mainnet and, the moment a new
  * transaction from this wallet lands (any nonce goes up), SILENTLY re-renders the page from fresh data (router.refresh,
- * no reload). That re-reads the real portfolio and re-forms the agents' recommendations, while the tab is visible and for at most 30 minutes — so after the user signs an
+ * no reload). That re-reads the real portfolio and re-forms the agents' recommendations, while the tab is visible and for 30 minutes after the user last came back to it — so after the user signs an
  * action (or moves funds elsewhere) the portfolio, allocation and suggestions update on their own, quietly.
  */
 const RPC = 'https://rpc.mainnet.fastnear.com';

@@ -1,4 +1,5 @@
 'use client';
+import { PROVENANCE_TIERS } from '@near-autopilot/core';
 import { z } from 'zod';
 import type { AccountRecommendation } from './product';
 
@@ -34,6 +35,34 @@ const intentSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('reposition_dcl'), lptId: z.string(), poolId: z.string() }),
 ]);
 
+const traceStepSchema = z.object({
+  tool: z.string(),
+  agent: z.string(),
+  ok: z.boolean(),
+  text: z.string(),
+  // A tier this build does not know drops only the label, not the whole analysis.
+  provenance: z.enum(PROVENANCE_TIERS).nullable().catch(null),
+  pick: z.enum(['ranked', 'kept', 'left_out']).nullable().catch(null),
+  rank: z.number().int().positive().nullable().catch(null),
+});
+
+const runSchema = z.object({
+  model: z.string(),
+  turns: z.number(),
+  toolCalls: z.number(),
+  ms: z.number(),
+  read: z.object({ tokens: z.number(), loan: z.boolean() }),
+  checks: z.object({
+    picked: z.number(),
+    explained: z.number(),
+    replaced: z.number(),
+    restored: z.number(),
+    dropped: z.number(),
+  }),
+});
+
+export type TraceStep = z.infer<typeof traceStepSchema>;
+
 const analysisSchema = z.object({
   source: z.enum(['llm', 'heuristic']),
   note: z.string().nullable(),
@@ -48,12 +77,18 @@ const analysisSchema = z.object({
       intent: intentSchema.nullable(),
     }),
   ),
+  calledTools: z.array(z.string()).default([]),
+  trace: z.array(traceStepSchema).default([]),
+  run: runSchema.nullable().catch(null),
 });
 
 export type Analysis = {
   source: 'llm' | 'heuristic';
   note: string | null;
   recommendations: AccountRecommendation[];
+  calledTools: string[];
+  trace: TraceStep[];
+  run: z.infer<typeof runSchema> | null;
 };
 
 export async function runAnalysis(
@@ -77,4 +112,10 @@ export async function runAnalysis(
     ok: false,
     error: typeof error === 'string' ? error : `analysis failed (HTTP ${res.status})`,
   };
+}
+
+/** "claude-haiku-5-5" → "Claude Haiku 5.5"; any other id is shown as is. */
+export function modelName(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
+  return m ? `Claude ${m[1]!.charAt(0).toUpperCase()}${m[1]!.slice(1)} ${m[2]}.${m[3]}` : id;
 }
