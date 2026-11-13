@@ -336,3 +336,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Owner's local check found the action and the page did not share state: Next puts server actions in the
   `action-browser` layer and pages in `rsc`, each with its own module copy. The account cache and the rate-limit maps
   now live in `processWide` (`globalThis`); `test/setup.ts` clears them between tests.
+
+## 2026-11-13 — One-click actions from $1 (#120)
+
+- `MIN_ACTION_USD` 10 → 1; the idle-asset "skipped" note from $0.10 (D20). An $11 all-NEAR wallet now gets a
+  rebalance card of about $5.57.
+
+**Tests run:** `pnpm verify`; `portfolio-recommendations.test.ts` thresholds rewritten for $1.

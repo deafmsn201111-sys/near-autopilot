@@ -304,3 +304,13 @@ finality, before the new state was readable.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
   one below 4 significant digits) shows the note for the full ~15 s.
+
+## D20 — One-click actions start at $1
+
+**Context:** #120. #99 set a $10 minimum per card to stop "$0" actions; it hid every card on wallets under ~$20,
+the size a judge's test wallet usually is.
+**Decision:** `MIN_ACTION_USD` is $1 for rule-based cards and agent-sized deposits. Rebalances and idle assets under
+$1 are listed as skipped with a reason (idle ones from $0.10; less is dust and says nothing). A loan repay is at least
+$1 and at most the debt.
+**Consequences:** A $1–10 action costs a fraction of a cent in gas on NEAR, so it is still worth signing; the prepare
+caps and cascade validation are unchanged.

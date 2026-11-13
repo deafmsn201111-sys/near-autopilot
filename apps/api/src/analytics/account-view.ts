@@ -628,7 +628,7 @@ export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
     });
-  } else if (earning[0] && earning[0].usd >= 1) {
+  } else if (earning[0] && earning[0].usd >= 0.1) {
     const small = earning[0];
     skipped.push(
       `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
