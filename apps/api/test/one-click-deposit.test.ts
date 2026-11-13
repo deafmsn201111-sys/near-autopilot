@@ -38,6 +38,7 @@ function answer(over: { quoteRequest?: object; quote?: object } = {}) {
       depositType: 'ORIGIN_CHAIN',
       refundType: 'ORIGIN_CHAIN',
       recipientType: 'DESTINATION_CHAIN',
+      slippageTolerance: 100,
       ...over.quoteRequest,
     },
     quote: {
@@ -49,7 +50,7 @@ function answer(over: { quoteRequest?: object; quote?: object } = {}) {
       amountOut: '99750000',
       amountOutFormatted: '99.75',
       amountOutUsd: '99.74',
-      minAmountOut: '98750000',
+      minAmountOut: '98752500',
       deadline: '2026-11-13T10:10:00Z',
       timeWhenInactive: '2026-11-13T10:10:00Z',
       timeEstimate: 120,
@@ -97,7 +98,7 @@ describe('OneClickDepositClient.quote', () => {
       deadline: new Date('2026-11-13T10:10:00Z'),
       amountIn: 100_000_000n,
       amountOut: 99_750_000n,
-      minAmountOut: 98_750_000n,
+      minAmountOut: 98_752_500n,
       amountOutUsd: '99.74',
       timeEstimateSeconds: 120,
       correlationId: 'c0ffee',
@@ -133,6 +134,9 @@ describe('OneClickDepositClient.quote', () => {
     ['a past deadline', { quote: { deadline: '2026-11-13T09:59:59Z' } }],
     ['a deadline equal to now', { quote: { deadline: '2026-11-13T10:00:00Z' } }],
     ['a non-integer amount out', { quote: { amountOut: '1.5' } }],
+    ['another slippage', { quoteRequest: { slippageTolerance: 5000 } }],
+    ['a floor below the 1% slippage', { quote: { minAmountOut: '98752499' } }],
+    ['a floor above the estimate', { quote: { minAmountOut: '99750001' } }],
   ])('refuses a quote with %s', async (_, over) => {
     const { http } = stub(answer(over));
     await expect(new OneClickDepositClient({ http }).quote(request)).rejects.toBeInstanceOf(

@@ -32,6 +32,7 @@ export interface DepositQuote {
   readonly refundTo: string;
   readonly depositAddress: string;
   readonly deadline: string;
+  readonly expiresInSeconds: number;
   readonly timeEstimateSeconds: number;
 }
 export interface DepositForm {

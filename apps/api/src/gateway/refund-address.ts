@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { keccak_256 } from '@noble/hashes/sha3';
 import { base58, bech32, bech32m, createBase58check } from '@scure/base';
 
 /** 1Click `blockchain` ids a deposit may come from. No memo chains. */
@@ -45,13 +46,24 @@ function isBtcSegwit(address: string): boolean {
   });
 }
 
+// EIP-55: a mixed-case address carries a checksum in its letter case; all-lower or all-upper carries none.
+function isEvm(address: string): boolean {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return false;
+  const hex = address.slice(2);
+  if (hex === hex.toLowerCase() || hex === hex.toUpperCase()) return true;
+  const hash = Buffer.from(keccak_256(hex.toLowerCase())).toString('hex');
+  return [...hex].every((c, i) =>
+    /\d/.test(c) ? true : parseInt(hash[i] ?? '0', 16) >= 8 === (c === c.toUpperCase()),
+  );
+}
+
 /** Whether `address` is a mainnet address of `chain` that 1Click can refund to. Format and checksum only. */
 export function isRefundAddress(chain: DepositChain, address: string): boolean {
   switch (chain) {
     case 'eth':
     case 'base':
     case 'arb':
-      return /^0x[0-9a-fA-F]{40}$/.test(address);
+      return isEvm(address);
     case 'sol':
       return attempt(() => base58.decode(address).length === 32);
     case 'btc':

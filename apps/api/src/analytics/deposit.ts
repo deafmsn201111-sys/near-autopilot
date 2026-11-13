@@ -191,22 +191,28 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
 
     const feeBps = oneClickFeeBps(deps.authenticated, origin, destination);
     const id = newId();
-    await deps.store.save({
-      id,
-      createdAt: at,
-      accountId: body.account,
-      originAsset: origin.assetId,
-      destinationAsset: destination.assetId,
-      amountIn: q.amountIn.toString(),
-      amountOut: q.amountOut.toString(),
-      minAmountOut: q.minAmountOut.toString(),
-      refundTo: body.refundTo,
-      depositAddress: q.depositAddress,
-      deadline: q.deadline,
-      correlationId: q.correlationId,
-      signature: q.signature,
-      feeBps,
-    });
+    try {
+      await deps.store.save({
+        id,
+        createdAt: at,
+        accountId: body.account,
+        originAsset: origin.assetId,
+        destinationAsset: destination.assetId,
+        amountIn: q.amountIn.toString(),
+        amountOut: q.amountOut.toString(),
+        minAmountOut: q.minAmountOut.toString(),
+        refundTo: body.refundTo,
+        depositAddress: q.depositAddress,
+        deadline: q.deadline,
+        correlationId: q.correlationId,
+        signature: q.signature,
+        feeBps,
+      });
+    } catch (err) {
+      // Not shown unless stored; the correlation id lets 1Click find the quote that was minted.
+      req.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
+      return reply.code(500).send({ error: 'internal error' });
+    }
     return {
       id,
       chain: origin.blockchain,
@@ -220,15 +226,18 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
         value: q.amountOutUsd,
         provenance: 'protocol_reported' satisfies ProvenanceTier,
       },
+      // Our reading of 1Click's published schedule: a quote does not echo the fee it charges.
       fee: {
         bps: feeBps,
-        provenance: 'protocol_reported' satisfies ProvenanceTier,
+        provenance: 'calculated_estimate' satisfies ProvenanceTier,
         authenticated: deps.authenticated,
       },
       recipient: body.account,
       refundTo: body.refundTo,
       depositAddress: q.depositAddress,
       deadline: q.deadline.toISOString(),
+      // Counted down from the server clock, so a wrong browser clock cannot show time that is not there.
+      expiresInSeconds: Math.floor((q.deadline.getTime() - at.getTime()) / 1000),
       timeEstimateSeconds: q.timeEstimateSeconds,
     };
   });

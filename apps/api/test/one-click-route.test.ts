@@ -53,7 +53,7 @@ const quoted = (over: Partial<DepositQuote> = {}): DepositQuote => ({
   deadline: new Date('2026-11-13T10:10:00Z'),
   amountIn: 100_000_000n,
   amountOut: 99_750_000n,
-  minAmountOut: 98_750_000n,
+  minAmountOut: 98_752_500n,
   amountOutUsd: '99.74',
   timeEstimateSeconds: 120,
   correlationId: 'c0ffee',
@@ -178,13 +178,14 @@ describe('POST /v1/deposit/quote', () => {
       destination: { assetId: `nep141:${USDC_NEAR_ID}`, symbol: 'USDC', decimals: 6 },
       amountIn: '100000000',
       amountOut: '99750000',
-      minAmountOut: '98750000',
+      minAmountOut: '98752500',
       amountOutUsd: { value: '99.74', provenance: 'protocol_reported' },
-      fee: { bps: 25, provenance: 'protocol_reported', authenticated: false },
+      fee: { bps: 25, provenance: 'calculated_estimate', authenticated: false },
       recipient: 'alice.near',
       refundTo: REFUND,
       depositAddress: DEPOSIT,
       deadline: '2026-11-13T10:10:00.000Z',
+      expiresInSeconds: 600,
       timeEstimateSeconds: 120,
     });
     expect(saved).toEqual([
@@ -196,7 +197,7 @@ describe('POST /v1/deposit/quote', () => {
         destinationAsset: `nep141:${USDC_NEAR_ID}`,
         amountIn: '100000000',
         amountOut: '99750000',
-        minAmountOut: '98750000',
+        minAmountOut: '98752500',
         refundTo: REFUND,
         depositAddress: DEPOSIT,
         deadline: new Date('2026-11-13T10:10:00Z'),
@@ -256,6 +257,33 @@ describe('POST /v1/deposit/quote', () => {
     });
     expect(res.body).not.toContain('recipient');
     expect(saved).toHaveLength(0);
+  });
+
+  it('answers a store failure with a generic 500 and no deposit address', async () => {
+    const { app } = setup();
+    const res = await buildAnalyticsServer({
+      apiToken: API_TOKEN,
+      store: {} as CollectorStore,
+      intervalSeconds: 900,
+      now: () => NOW,
+      deposit: {
+        oneClick: { tokens: async () => TOKENS, quote: async () => quoted() },
+        store: {
+          save: async () => Promise.reject(new Error('db down')),
+          purge: async () => undefined,
+        },
+        destinationTokens: [USDC_NEAR_ID],
+        authenticated: false,
+      },
+    }).inject({
+      method: 'POST',
+      url: '/v1/deposit/quote',
+      headers: { authorization: `Bearer ${API_TOKEN}` },
+      payload: body,
+    });
+    await app.close();
+    expect(res.statusCode).toBe(500);
+    expect(res.body).not.toContain(DEPOSIT);
   });
 
   it('answers a 1Click failure with a generic message, without upstream text', async () => {

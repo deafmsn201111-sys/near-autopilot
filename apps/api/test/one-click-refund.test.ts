@@ -5,6 +5,11 @@ describe('isRefundAddress', () => {
   it.each(['eth', 'base', 'arb'] as const)('%s takes 0x + 40 hex only', (chain) => {
     expect(isRefundAddress(chain, '0x2527d02599ba641c19fea793cd0f167589a0f10d')).toBe(true);
     expect(isRefundAddress(chain, '0x2527D02599Ba641c19FEa793cD0F167589a0f10D')).toBe(true);
+    expect(isRefundAddress(chain, '0x2527D02599BA641C19FEA793CD0F167589A0F10D')).toBe(true);
+    // EIP-55 checksum: one letter's case flipped
+    expect(isRefundAddress(chain, '0x2527D02599Ba641c19FEa793cD0F167589a0f10d')).toBe(false);
+    expect(isRefundAddress(chain, '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed')).toBe(true);
+    expect(isRefundAddress(chain, '0x5aAeb6053f3E94C9b9A09f33669435E7Ef1BeAed')).toBe(false);
     expect(isRefundAddress(chain, '2527d02599ba641c19fea793cd0f167589a0f10d')).toBe(false);
     expect(isRefundAddress(chain, '0x2527d02599ba641c19fea793cd0f167589a0f10')).toBe(false);
     expect(isRefundAddress(chain, '0x2527d02599ba641c19fea793cd0f167589a0f10g')).toBe(false);

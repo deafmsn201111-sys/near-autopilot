@@ -72,6 +72,7 @@ const quoteResponse = z.object({
       amount: u128,
       refundTo: z.string(),
       recipient: z.string(),
+      slippageTolerance: z.number(),
     })
     .passthrough(),
   quote: z
@@ -91,7 +92,7 @@ const quoteResponse = z.object({
 type Http = Pick<HttpJsonClient, 'getJson' | 'postJson'>;
 
 export class OneClickDepositClient {
-  private cached: { at: number; tokens: OneClickToken[] } | null = null;
+  private cached: { at: number; tokens: Promise<OneClickToken[]> } | null = null;
 
   constructor(
     private readonly o: {
@@ -106,18 +107,25 @@ export class OneClickDepositClient {
     return this.o.jwt ? { authorization: `Bearer ${this.o.jwt}` } : {};
   }
 
-  /** `/v0/tokens`, malformed entries dropped, cached for 10 minutes. */
-  async tokens(): Promise<OneClickToken[]> {
+  /** `/v0/tokens`, malformed entries dropped, cached for 10 minutes; concurrent callers share one request. */
+  tokens(): Promise<OneClickToken[]> {
     const now = (this.o.now ?? Date.now)();
     if (this.cached && now - this.cached.at < TOKENS_TTL_MS) return this.cached.tokens;
+    const tokens = this.fetchTokens();
+    this.cached = { at: now, tokens };
+    tokens.catch(() => {
+      if (this.cached?.tokens === tokens) this.cached = null;
+    });
+    return tokens;
+  }
+
+  private async fetchTokens(): Promise<OneClickToken[]> {
     const raw = await this.o.http.getJson(`${ONE_CLICK_BASE_URL}/v0/tokens`, this.headers());
     if (!Array.isArray(raw)) throw new DepositQuoteRefused('1Click token list is not a list');
-    const tokens = raw.flatMap((t) => {
+    return raw.flatMap((t) => {
       const p = token.safeParse(t);
       return p.success ? [p.data] : [];
     });
-    this.cached = { at: now, tokens };
-    return tokens;
   }
 
   async quote(r: DepositQuoteRequest): Promise<DepositQuote> {
@@ -154,6 +162,11 @@ export class OneClickDepositClient {
       echo.recipient !== r.recipient && 'recipient',
       echo.refundTo !== r.refundTo && 'refundTo',
     ].filter(Boolean);
+    const amountOut = BigInt(q.amountOut);
+    const minAmountOut = BigInt(q.minAmountOut);
+    const floor = (amountOut * BigInt(10_000 - r.slippageBps)) / 10_000n;
+    if (echo.slippageTolerance !== r.slippageBps) mismatch.push('slippageTolerance');
+    if (minAmountOut > amountOut || minAmountOut < floor) mismatch.push('minAmountOut');
     if (mismatch.length)
       throw new DepositQuoteRefused(`1Click quote differs: ${mismatch.join(', ')}`);
     const deadline = new Date(q.deadline);
@@ -163,8 +176,8 @@ export class OneClickDepositClient {
       depositAddress: q.depositAddress,
       deadline,
       amountIn: BigInt(q.amountIn),
-      amountOut: BigInt(q.amountOut),
-      minAmountOut: BigInt(q.minAmountOut),
+      amountOut,
+      minAmountOut,
       amountOutUsd: q.amountOutUsd,
       timeEstimateSeconds: q.timeEstimate,
       correlationId,

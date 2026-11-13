@@ -47,20 +47,21 @@ function Qr({ text }: { text: string }) {
   );
 }
 
-function useNow(active: boolean) {
+function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!active) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [active]);
+  }, []);
   return now;
 }
 
 function QuoteView({ q, onBack }: { q: DepositQuote; onBack: () => void }) {
-  const now = useNow(true);
+  const now = useNow();
+  // The server's seconds-left, counted from when the answer arrived: the browser clock may be off.
+  const [expiresAt] = useState(() => Date.now() + q.expiresInSeconds * 1000);
   const [copied, setCopied] = useState(false);
-  const left = Math.max(0, Math.floor((new Date(q.deadline).getTime() - now) / 1000));
+  const left = Math.max(0, Math.floor((expiresAt - now) / 1000));
   const expired = left === 0;
   const send = `${formatUnits(q.amountIn, q.origin.decimals)} ${q.origin.symbol}`;
   const fee = describeProvenance(q.fee.provenance).label;
@@ -201,7 +202,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
       <button type="button" className="btn primary small" onClick={() => void open()}>
         {label}
       </button>
-      <dialog ref={ref} className="modal deposit" onClose={() => setQuote(null)}>
+      <dialog ref={ref} className="modal deposit">
         {quote ? (
           <QuoteView q={quote} onBack={() => setQuote(null)} />
         ) : (

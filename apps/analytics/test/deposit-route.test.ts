@@ -5,7 +5,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', forwardedFor]]),
 }));
-const apiPost = vi.fn(async (_path: string, _body?: unknown) => ({
+const apiPost = vi.fn(async (_path: string, _body?: unknown, _timeoutMs?: number) => ({
   status: 200,
   body: { id: 'dq_1' },
 }));
@@ -52,7 +52,7 @@ describe('POST /api/deposit/quote', () => {
       request('application/json', JSON.stringify({ ...fields, recipient: 'x.near' })),
     );
     expect(res.status).toBe(200);
-    expect(apiPost).toHaveBeenCalledWith('/v1/deposit/quote', fields);
+    expect(apiPost).toHaveBeenCalledWith('/v1/deposit/quote', fields, 40_000);
   });
 
   it('answers 400 to a body without the string fields', async () => {

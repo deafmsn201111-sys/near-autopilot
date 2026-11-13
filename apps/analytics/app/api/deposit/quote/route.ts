@@ -11,6 +11,8 @@ export const dynamic = 'force-dynamic';
 
 // Each quote mints a deposit address and a stored row: a person needs one or two, a bot is stopped here.
 const LIMIT = { perVisitor: 5, overall: 100, windowMs: 10 * 60_000 };
+// Above the API's worst case (token list + a real quote, 15 s each): a timeout here would hide a minted address.
+const TIMEOUT_MS = 40_000;
 const FIELDS = ['account', 'originAsset', 'destinationAsset', 'amount', 'refundTo'] as const;
 
 function isJson(req: Request): boolean {
@@ -39,6 +41,6 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
   const fields = Object.fromEntries(FIELDS.map((f) => [f, b[f]]));
-  const { status, body: out } = await apiPost('/v1/deposit/quote', fields);
+  const { status, body: out } = await apiPost('/v1/deposit/quote', fields, TIMEOUT_MS);
   return NextResponse.json(out, { status: status || 502 });
 }
