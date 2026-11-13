@@ -1,8 +1,8 @@
 import type { AccountId, TokenId } from '@near-autopilot/core';
 
 /**
- * A REAL NEAR account, read-only: native NEAR, the fungible tokens Burrow lists, and the Burrow position, valued at the
- * latest confirmed prices. Pure valuation here (tested); the reads are done by the caller with view calls only.
+ * A REAL NEAR account, read-only: native NEAR, every fungible token it holds, and the Burrow position, valued at the
+ * latest confirmed prices (an estimate for tokens outside our list). Pure valuation here (tested); the reads are done by the caller with view calls only.
  *
  * Burrow's health factor: sum(collateral_usd x vr) / sum(borrowed_usd / vr), vr = the asset's volatility ratio.
  * Burrow balances are in inner units: raw = inner / 10^extra_decimals.
@@ -26,6 +26,10 @@ export interface TokenFacts {
   /** Burrow: inner = raw x 10^extraDecimals; vr in [0, 1]. */
   readonly extraDecimals?: number;
   readonly vr?: number;
+  /** False for a token outside our list: shown only, never an action target, never in the LLM prompt. */
+  readonly verified?: boolean;
+  /** True when `usd` is an indexer estimate rather than a confirmed collector price. */
+  readonly estimate?: boolean;
 }
 
 export interface Holding {
@@ -34,7 +38,17 @@ export interface Holding {
   readonly symbol: string;
   readonly amount: number;
   readonly usd: number | null;
+  readonly verified: boolean;
+  readonly estimate: boolean;
+  /** Behind "show small balances": worth under $1, or an unpriced dust amount, or an unpriced unlisted token. */
+  readonly small: boolean;
 }
+
+/** Below this a row sits behind "show small balances". */
+export const SMALL_USD = 1;
+const DUST_AMOUNT = 0.005;
+export const isSmall = (usd: number | null, amount: number | null, verified: boolean) =>
+  usd !== null ? usd < SMALL_USD : !verified || (amount !== null && amount < DUST_AMOUNT);
 
 const WNEAR = 'wrap.near';
 const toAmount = (raw: bigint, decimals: number) => {
@@ -51,25 +65,34 @@ export function valueAccount(r: AccountReads, facts: ReadonlyMap<string, TokenFa
     const f = fact(token);
     if (!f || raw <= 0n) return;
     const amount = toAmount(raw, f.decimals);
-    if (f.usd === null) unpriced.push(f.symbol);
+    const verified = f.verified ?? true;
+    if (f.usd === null && verified) unpriced.push(f.symbol);
+    const usd = f.usd === null ? null : amount * f.usd;
     holdings.push({
       where,
       token,
       symbol: f.symbol,
       amount,
-      usd: f.usd === null ? null : amount * f.usd,
+      usd,
+      verified,
+      estimate: f.usd !== null && f.estimate === true,
+      small: isSmall(usd, amount, verified),
     });
   };
   // native NEAR counts as NEAR in the wallet (valued at the wNEAR price)
   if (r.nativeYocto > 0n) {
     const f = fact(WNEAR);
     const amount = toAmount(r.nativeYocto, 24);
+    const usd = f?.usd === null || f?.usd === undefined ? null : amount * f.usd;
     holdings.push({
       where: 'wallet',
       token: 'near',
       symbol: 'NEAR',
       amount,
-      usd: f?.usd === null || f?.usd === undefined ? null : amount * f.usd,
+      usd,
+      verified: true,
+      estimate: false,
+      small: isSmall(usd, amount, true),
     });
   }
   for (const [token, raw] of r.wallet) push('wallet', token, raw);
