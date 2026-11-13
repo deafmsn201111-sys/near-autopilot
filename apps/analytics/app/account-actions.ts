@@ -2,13 +2,13 @@
 import { cookies, headers } from 'next/headers';
 import { accountIdSchema } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE, OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
-import { forgetAccount } from '../lib/product';
+import { refreshAccountRead } from '../lib/product';
 
-export async function refreshAccount(account: unknown): Promise<void> {
+export async function refreshAccount(account: unknown): Promise<boolean> {
   const id = accountIdSchema.safeParse(
     typeof account === 'string' ? account.trim().toLowerCase() : account,
   );
-  if (id.success) await forgetAccount(id.data);
+  return id.success ? refreshAccountRead(id.data) : true;
 }
 
 /** Keeps the signed ownership proof in an HttpOnly cookie: page scripts can't read it, the API checks it. */

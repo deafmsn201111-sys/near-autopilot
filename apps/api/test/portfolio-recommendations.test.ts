@@ -187,9 +187,9 @@ describe('portfolioRecommendations', () => {
       expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
     });
 
-    it('skips balances under $10', () => {
+    it('skips balances under the action minimum', () => {
       const r = portfolioRecommendations(
-        ctx({ burrowBalances: [{ ...usdcBalance, collateral: 5 }] }),
+        ctx({ burrowBalances: [{ ...usdcBalance, collateral: 0.5 }] }),
       );
       expect(r.some((x) => x.kind === 'withdraw_from_burrow')).toBe(false);
     });
@@ -232,7 +232,7 @@ describe('portfolioRecommendations', () => {
       ctx({
         idleEarn: [
           { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 500, aprPct: 9 },
-          { token: 'small', symbol: 'S', usd: 5, aprPct: 9 }, // below $10, ignored
+          { token: 'small', symbol: 'S', usd: 0.5, aprPct: 9 }, // below $1, ignored
         ],
       }),
     );
@@ -265,27 +265,37 @@ describe('portfolioRecommendations', () => {
   });
 });
 
-describe('actions under the $10 minimum', () => {
-  it('skips a concentration rebalance that would move under $10 and says why', () => {
+describe('actions under the $1 minimum', () => {
+  it('skips a concentration rebalance that would move under $1 and says why', () => {
     const advice = portfolioAdvice(
       ctx({
         metrics: metrics({
-          totalAssetsUsd: 9,
+          totalAssetsUsd: 1.5,
           concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
         }),
       }),
     );
     expect(advice.recommendations).toEqual([]);
     expect(advice.skipped).toEqual([
-      '100% of your $9.00 portfolio is in NEAR. Rebalancing it would move only $4.50, under the $10 the agents act on, so they skip it until the portfolio grows.',
+      '100% of your $1.50 portfolio is in NEAR. Rebalancing it would move only $0.75, under the $1 the agents act on, so they skip it until the portfolio grows.',
     ]);
   });
 
-  it('keeps a concentration rebalance of exactly $10', () => {
+  it('keeps a concentration rebalance of exactly $1, and one on an $11 wallet', () => {
+    const rebalance = (totalAssetsUsd: number) =>
+      portfolioAdvice(
+        ctx({
+          metrics: metrics({
+            totalAssetsUsd,
+            concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
+          }),
+        }),
+      ).recommendations[0]?.intent;
+    expect(rebalance(11.13)).toEqual({ action: 'swap', fromToken: 'near', approxUsd: 5.57 });
     const advice = portfolioAdvice(
       ctx({
         metrics: metrics({
-          totalAssetsUsd: 20,
+          totalAssetsUsd: 2,
           concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
         }),
       }),
@@ -293,7 +303,7 @@ describe('actions under the $10 minimum', () => {
     expect(advice.recommendations[0]?.intent).toEqual({
       action: 'swap',
       fromToken: 'near',
-      approxUsd: 10,
+      approxUsd: 1,
     });
     expect(advice.skipped).toEqual([]);
   });
@@ -318,13 +328,13 @@ describe('actions under the $10 minimum', () => {
     expect(repay(0.001)).toBeUndefined();
   });
 
-  it('skips idle assets under $10 and says why', () => {
+  it('skips idle assets under $1 and says why', () => {
     const advice = portfolioAdvice(
-      ctx({ idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 9, aprPct: 2.1 }] }),
+      ctx({ idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 0.5, aprPct: 2.1 }] }),
     );
     expect(advice.recommendations).toEqual([]);
     expect(advice.skipped).toEqual([
-      '$9.00 of NEAR could earn about 2.1% a year on Burrow, but that is under the $10 the agents act on.',
+      '$0.50 of NEAR could earn about 2.1% a year on Burrow, but that is under the $1 the agents act on.',
     ]);
   });
 
@@ -358,7 +368,7 @@ describe('actions under the $10 minimum', () => {
         }),
         loan: scaledLoan(1),
         largestDebt: scaledDebt(1),
-        idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 1, aprPct: 2 }],
+        idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 0.5, aprPct: 2 }],
       }),
     );
     expect(advice.recommendations).toHaveLength(1);

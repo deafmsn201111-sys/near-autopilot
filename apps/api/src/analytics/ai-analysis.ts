@@ -37,7 +37,7 @@ import { analysisKey } from './analysis-key';
 export const MAX_TURNS = 6;
 /** Agent-sized actions worth less than this are not offered. */
 /** Smallest rule-based card or deposit; a repay sizes from the health factor, so only dust is dropped. */
-export const MIN_ACTION_USD = 10;
+export const MIN_ACTION_USD = 1;
 const MIN_REPAY_USD = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
