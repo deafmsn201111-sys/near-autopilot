@@ -362,6 +362,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </span>
       </div>
 
+      {isAccount && <AccountForm compact />}
+
       {isAccount && (
         <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
       )}

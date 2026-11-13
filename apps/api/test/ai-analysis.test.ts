@@ -888,6 +888,27 @@ describe('analyseAccount', () => {
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
   });
 
+  it("the guardian's wallet repay shows the loan's carry line, also with no rule-based loan card", async () => {
+    const carry = {
+      text: 'Loan costs 6.5% a year (≈ $0.21/month); your Burrow deposits earn ≈ $0.19/month.',
+      provenance: 'calculated_estimate' as const,
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'liquidation-guardian:repay:usdt.tether-token.near', why: 'Repay.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [],
+      checks: [],
+      loanCarry: carry,
+      ownerVerified: true,
+    });
+    expect(out.recommendations[0]?.intent?.action).toBe('repay');
+    expect(out.recommendations[0]?.carry).toEqual(carry);
+  });
+
   it('does not let digits of a raw amount vouch for a number in the why', async () => {
     let raw = '';
     const { llm } = fake([
