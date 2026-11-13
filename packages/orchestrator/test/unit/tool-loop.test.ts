@@ -54,6 +54,39 @@ describe('runToolLoop', () => {
     expect(sent[1]).toEqual([{ id: 'a', content: JSON.stringify({ ok: 1 }), isError: false }]);
   });
 
+  it('reports each result as it comes back, before the slower calls of the same turn', async () => {
+    let finishSlow = () => {};
+    const slow = {
+      ...echo,
+      spec: { ...echo.spec, name: 'slow' },
+      run: () => new Promise((r) => (finishSlow = () => r({ ok: 2 }))),
+    };
+    const { llm } = scripted([
+      {
+        kind: 'tool_calls',
+        calls: [
+          { id: 'a', name: 'slow', input: {} },
+          { id: 'b', name: 'echo', input: {} },
+        ],
+      },
+      { kind: 'final', text: 'done' },
+    ]);
+    const seen: string[] = [];
+    const out = runToolLoop({
+      llm,
+      system: 's',
+      prompt: 'p',
+      tools: [slow, echo],
+      maxTurns: 4,
+      onResult: (e) => {
+        seen.push(e.tool);
+        if (e.tool === 'echo') finishSlow();
+      },
+    });
+    expect((await out).trace.map((t) => t.tool)).toEqual(['slow', 'echo']);
+    expect(seen).toEqual(['echo', 'slow']);
+  });
+
   it('answers an unknown tool or invalid input with an error result instead of running anything', async () => {
     const { llm, sent } = scripted([
       {

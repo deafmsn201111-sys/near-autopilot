@@ -11,12 +11,22 @@ const apiPost = vi.fn(async () => ({
   status: 200,
   body: { source: 'llm', note: null, recommendations: [], calledTools: [] },
 }));
-vi.mock('../lib/api', () => ({ apiPost }));
+const apiPostStream = vi.fn(
+  async (): Promise<Response | null> =>
+    new Response('event: done\ndata: {}\n\n', {
+      headers: { 'content-type': 'text/event-stream' },
+    }),
+);
+vi.mock('../lib/api', () => ({ apiPost, apiPostStream }));
 
-function request(body: unknown, contentType = 'application/json'): Request {
+function request(
+  body: unknown,
+  contentType = 'application/json',
+  accept = 'application/json',
+): Request {
   return new Request('http://localhost/api/analysis', {
     method: 'POST',
-    headers: { 'content-type': contentType },
+    headers: { 'content-type': contentType, accept },
     body: JSON.stringify(body),
   });
 }
@@ -25,6 +35,7 @@ describe('POST /api/analysis', () => {
   beforeEach(() => {
     vi.resetModules();
     apiPost.mockClear();
+    apiPostStream.mockClear();
     proof = undefined;
     ip = '203.0.113.1';
   });
@@ -39,6 +50,40 @@ describe('POST /api/analysis', () => {
       60_000,
       {},
     );
+  });
+
+  it('passes an event stream through unbuffered when the browser asks for one', async () => {
+    proof = 'signed-proof';
+    const { POST } = await import('../app/api/analysis/route');
+    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    expect(apiPostStream).toHaveBeenCalledWith(
+      '/v1/analytics/account/alice.near/analysis',
+      { strategy: 'balanced' },
+      60_000,
+      { 'x-ownership-proof': 'signed-proof' },
+    );
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    expect(res.headers.get('cache-control')).toBe('no-cache, no-transform');
+    expect(res.headers.get('x-accel-buffering')).toBe('no');
+    expect(await res.text()).toBe('event: done\ndata: {}\n\n');
+  });
+
+  it('answers a stream request with the API error as JSON when the API sends no stream', async () => {
+    apiPostStream.mockResolvedValueOnce(
+      Response.json({ error: 'the chain read failed' }, { status: 502 }),
+    );
+    const { POST } = await import('../app/api/analysis/route');
+    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'the chain read failed' });
+  });
+
+  it('answers 502 when the API is unreachable for a stream', async () => {
+    apiPostStream.mockResolvedValueOnce(null);
+    const { POST } = await import('../app/api/analysis/route');
+    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    expect(res.status).toBe(502);
   });
 
   it('forwards the chosen strategy', async () => {

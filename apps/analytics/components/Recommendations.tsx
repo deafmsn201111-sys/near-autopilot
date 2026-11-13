@@ -1,7 +1,14 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useState } from 'react';
-import { modelName, runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
+import {
+  modelName,
+  pipelineOf,
+  runAnalysis,
+  type Analysis,
+  type Pipeline,
+  type TraceStep,
+} from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
@@ -32,6 +39,7 @@ export function Recommendations({
   const [running, setRunning] = useState(false);
   const [ai, setAi] = useState<{ analysis: Analysis; signature: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState<Pipeline | null>(null);
   const signature = portfolioSignature(initial, holdings);
   const analysis = ai?.signature === signature ? ai.analysis : null;
   const portfolioChanged = ai !== null && analysis === null;
@@ -40,9 +48,11 @@ export function Recommendations({
   async function analyse() {
     setRunning(true);
     setError(null);
-    const r = await runAnalysis(account, strategy);
+    setLive(null);
+    const r = await runAnalysis(account, strategy, setLive);
     if (r.ok) setAi({ analysis: r.analysis, signature });
     else setError(r.error);
+    setLive(null);
     setRunning(false);
   }
 
@@ -72,7 +82,17 @@ export function Recommendations({
           {analysis.note && <small> {analysis.note}</small>}
         </p>
       )}
-      {analysis && <AiTrace analysis={analysis} />}
+      {live ? (
+        <AiTrace pipeline={live} live />
+      ) : (
+        analysis && (
+          <AiTrace
+            pipeline={pipelineOf(analysis)}
+            ms={analysis.run?.ms ?? null}
+            calledTools={analysis.calledTools}
+          />
+        )
+      )}
       {portfolioChanged && (
         <p className="muted-note">Your portfolio changed — run the AI analysis again.</p>
       )}
@@ -139,36 +159,49 @@ export function Recommendations({
 
 /**
  * The run as a pipeline: what was read, what each agent returned (key number, its provenance, what became of its
- * card), what the model did, and what code checked before the user saw it.
+ * card), what the model did, and what code checked before the user saw it. Live, each part appears as its event
+ * arrives from the server.
  */
-function AiTrace({ analysis }: { analysis: Analysis }) {
-  const { trace, run } = analysis;
-  if (trace.length === 0) {
-    if (analysis.calledTools.length === 0) return null;
-    return <p className="muted-note">Agents called: {analysis.calledTools.join(', ')}</p>;
+function AiTrace({
+  pipeline,
+  live = false,
+  ms = null,
+  calledTools = [],
+}: {
+  pipeline: Pipeline;
+  live?: boolean;
+  ms?: number | null;
+  calledTools?: readonly string[];
+}) {
+  const { model, read, trace, turns, checks } = pipeline;
+  if (!live && trace.length === 0) {
+    if (calledTools.length === 0) return null;
+    return <p className="muted-note">Agents called: {calledTools.join(', ')}</p>;
   }
   return (
-    <section className="ai-trace" aria-label="How the AI got here">
+    <section className="ai-trace" aria-label="How the AI got here" aria-busy={live}>
       <header>
         <h3>How the AI got here</h3>
-        {run && (
+        {model && (
           <span className="muted-note">
-            {modelName(run.model)} · {(run.ms / 1000).toFixed(1)} s
+            {modelName(model)} · {ms === null ? 'running…' : `${(ms / 1000).toFixed(1)} s`}
           </span>
         )}
       </header>
       <ol className="ai-steps">
-        {run && (
+        {read && (
           <li>
             <strong>Read the wallet on-chain</strong>
             <span className="ai-step-note">
-              {plural(run.read.tokens, 'token')} held in the wallet or on Burrow
-              {run.read.loan ? ', and a Burrow loan' : ', no loan'}
+              {plural(read.tokens, 'token')} held in the wallet or on Burrow
+              {read.loan ? ', and a Burrow loan' : ', no loan'}
             </span>
           </li>
         )}
         <li>
-          <strong>{plural(trace.length, 'agent')} ran</strong>
+          <strong>
+            {trace.length === 0 ? 'Agents running…' : `${plural(trace.length, 'agent')} ran`}
+          </strong>
           <ul className="ai-agents">
             {trace.map((step) => {
               const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
@@ -191,32 +224,31 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
             })}
           </ul>
         </li>
-        {run && (
+        {model && turns !== null && (
           <li>
-            <strong>{modelName(run.model)} ranked them</strong>
+            <strong>{modelName(model)} ranked them</strong>
             <span className="ai-step-note">
-              {plural(run.checks.picked, 'card')} picked and explained in{' '}
-              {plural(run.turns, 'model turn')}
+              {checks && `${plural(checks.picked, 'card')} picked and explained in `}
+              {plural(turns, 'model turn')}
             </span>
           </li>
         )}
-        {run && (
+        {checks && (
           <li>
             <strong>Code checked the answer</strong>
             <ul className="ai-checks">
-              <li className={run.checks.replaced ? 'warn' : undefined}>
-                {explained(run.checks.explained, run.checks.explained + run.checks.replaced)}
-                {run.checks.replaced > 0 &&
-                  `; ${run.checks.replaced} replaced by the agent's own text`}
+              <li className={checks.replaced ? 'warn' : undefined}>
+                {explained(checks.explained, checks.explained + checks.replaced)}
+                {checks.replaced > 0 && `; ${checks.replaced} replaced by the agent's own text`}
               </li>
               <li>
-                {run.checks.restored > 0
-                  ? `${plural(run.checks.restored, 'warning')} the AI left out put back first`
+                {checks.restored > 0
+                  ? `${plural(checks.restored, 'warning')} the AI left out put back first`
                   : 'No warning was left out'}
               </li>
               <li>
-                {run.checks.dropped > 0
-                  ? `${plural(run.checks.dropped, 'made-up or repeated action')} dropped`
+                {checks.dropped > 0
+                  ? `${plural(checks.dropped, 'made-up or repeated action')} dropped`
                   : 'No made-up actions'}
               </li>
             </ul>

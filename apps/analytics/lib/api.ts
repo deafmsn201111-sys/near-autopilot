@@ -80,3 +80,30 @@ export async function apiPost(
     return { status: 0, body: { error: UNREACHABLE } };
   }
 }
+
+/** Server-side POST that asks for an event stream and returns the raw response to pass through, or null if unreachable. */
+export async function apiPostStream(
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+  extraHeaders: Record<string, string> = {},
+): Promise<Response | null> {
+  const env = getEnv();
+  try {
+    return await fetch(`${env.API_BASE_URL}${path}`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        ...extraHeaders,
+        authorization: `Bearer ${env.API_TOKEN}`,
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    console.error(`analytics API ${path} unreachable`, e);
+    return null;
+  }
+}

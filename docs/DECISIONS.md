@@ -379,3 +379,16 @@ caps and cascade validation are unchanged.
 - When all three presets give the same cards and loan label on an account, the API returns `strategyNote`, one
   sentence on why (no loan, the largest non-stablecoin's share), shown under the picker.
   **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.
+
+## D23 — The AI pipeline streams over Server-Sent Events through the site proxy
+
+**Context:** #113. The AI analysis takes several seconds and its pipeline appeared only at the end.
+**Decision:** The same `POST /v1/analytics/account/:id/analysis` answers `text/event-stream` when the request asks
+for it (`Accept`), else JSON as before. Events: `read`, `agent` (one per offered tool, in tool-result order, the
+server-built trace line without its pick), `ranked`, `checked`, `done` (the full analysis), `error`. Account and
+strategy errors are still plain JSON with their status, before any event. Ownership, kill switch, cache, daily cap,
+global limit and the 45 s deadline are the same code path. The Next.js route passes the body through with
+`cache-control: no-cache, no-transform` and `x-accel-buffering: no`; Caddy's `reverse_proxy` has
+`flush_interval -1`. SSE over a POST `fetch` stream rather than `EventSource` (GET only, no body, no custom headers).
+**Consequences:** If a stream breaks before `done`, the browser repeats the request as JSON, which may make a second
+model call (it counts against the same limits). A client that leaves keeps the server run going; its result is cached.
