@@ -244,3 +244,13 @@ no longer said what comes first.
 - UI: `apps/analytics/app/admin` (404 unless `ADMIN_UI=1`), server actions for the switch, cap and deposit.
 - Deploy: `analytics-admin` service on `127.0.0.1:3002`, Caddy 404 for `/admin*`, `setup.sh` and `quickstart.sh`
   add `ADMIN_API_TOKEN` to an existing `.env`.
+
+## 2026-11-12 — One priced-leg list for the account's totals, bar and concentration (#66)
+
+- `apps/api/src/analytics/account-view.ts`: `accountPortfolio` builds the legs (wallet, Burrow, Rhea v1 + DCL split
+  into tokens, liquid staking only when the wallet list does not already hold the token) and returns `metrics` and
+  `totals` from them. Net worth now includes LP; stNEAR is counted once; the concentration % and its rebalance amount
+  use the same total as the hero.
+- `apps/analytics/app/page.tsx`: a real account's allocation bar reads `metrics.byToken`; the holdings table adds one
+  row per LP position (and any staking token not in the wallet list), so it sums to "$X in assets". Demo portfolios
+  are unchanged.
