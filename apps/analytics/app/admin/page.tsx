@@ -136,7 +136,9 @@ export default async function AdminPage() {
           />
         </ControlForm>
         <ControlForm action={setDeposit} submit="Save balance">
-          <label htmlFor="depositUsd">Provider deposit balance now, USD</label>
+          <label htmlFor="depositUsd">
+            Anthropic credit balance now, USD (copy it from console.anthropic.com → Billing)
+          </label>
           <input
             id="depositUsd"
             name="depositUsd"
