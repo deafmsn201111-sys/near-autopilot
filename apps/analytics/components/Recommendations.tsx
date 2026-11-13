@@ -15,11 +15,13 @@ import { PrepareDialog } from './PrepareDialog';
 export function Recommendations({
   account,
   recommendations: initial,
+  skipped,
   holdings,
   signingEnabled,
 }: {
   account: string;
   recommendations: readonly AccountRecommendation[];
+  skipped: readonly string[];
   holdings: PortfolioView['holdings'];
   signingEnabled: boolean;
 }) {
@@ -75,11 +77,19 @@ export function Recommendations({
           AI analysis failed: {error}
         </div>
       )}
-      {recommendations.length === 0 ? (
+      {recommendations.length === 0 && skipped.length === 0 && (
         <p className="muted-note">
           Nothing to improve right now — the portfolio looks balanced at current prices.
         </p>
-      ) : (
+      )}
+      {skipped.length > 0 && (
+        <ul className="muted-note">
+          {skipped.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ul>
+      )}
+      {recommendations.length > 0 && (
         <div className="recs">
           {recommendations.map((r) => {
             const request = recommendationToPrepare(r.intent, account);

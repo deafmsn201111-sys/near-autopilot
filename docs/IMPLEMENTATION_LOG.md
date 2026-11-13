@@ -313,3 +313,11 @@ running window and listener removal.
   from the wallet when it cannot size a repayment. `run` summarises the model run (model, turns, tool calls, ms).
 - `run.read` (tokens held, loan or not) and `run.checks` (picked, explained, replaced, restored, dropped) let the UI
   show the run as a four-step pipeline: read → agents → model ranking → code checks.
+
+## 2026-11-13 — No $0 cards on small wallets (#99)
+
+- Reduce-concentration and put-idle-to-work cards (rule-based and the AI deposit) need an action of at least $10
+  (`MIN_ACTION_USD` in `apps/api/src/analytics/ai-analysis.ts`); amounts are in cents, never rounded to $0.
+- A low health factor always keeps its card: the repay is 30% of the debt, at least $10, at most the whole debt.
+- What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
+  dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.
