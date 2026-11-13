@@ -384,6 +384,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
 
+## 2026-11-13 — Loan cards show the carry; a safe profitable loan is left alone (#86)
+
+- `apps/api/src/analytics/account-view.ts`: the account read splits the monthly Burrow figure into what the loan costs
+  and what the deposits earn (`LoanCarry`, null when a $1+ position has no rate); the loan card carries
+  `carry: { text, provenance: 'calculated_estimate' }` ("Loan costs X% a year (≈ $Y/month); your Burrow deposits earn
+  ≈ $Z/month", or "rate unavailable"). `keepsProfitableLoan`: HF at or above the strategy's safe line and deposits
+  earning more than the loan costs drops the "Repay $N of your loan" action.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian's wallet repay card carries the same line; the system prompt
+  says the reason to repay is the health factor, never the loan itself.
+- `apps/analytics`: the line under the card's why, tagged with its provenance.
+
 ## 2026-11-13 — Idle supply sized the same on the AI path (#131)
 
 - `CapitalAllocatorAgent.proposeSupply` deposits the whole idle balance; the decision engine no longer applies
