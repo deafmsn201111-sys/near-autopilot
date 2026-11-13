@@ -93,7 +93,7 @@ missing-account page shows the short message, Caddy (local container) sends both
   (`lib/rate-limit.ts`, 10,000 keys, expired keys swept first) use it. The overall per-kind counts live in their own
   map, so a flood of new visitors on one route cannot evict another route's overall cap.
 - `AutoRefresh` and `AccountWatcher` poll through `lib/polling.ts`: no ticks while the tab is hidden, and they stop
-  after 30 minutes (a reload starts them again). 1Click status polling limits are in #29.
+  after 30 minutes (since #60, coming back to the tab starts them again). 1Click status polling limits are in #29.
 - `setup.sh` keeps `.env` at `chmod 600` on every run. The server README has the ufw rules (SSH, 80, 443 only), notes
   that Docker-published ports bypass ufw, and that a new secret goes only to the services that use it.
 
@@ -234,6 +234,17 @@ no longer said what comes first.
   kind being consumed and scanned all 10,000 keys per call once full. Visitors now live in one `BoundedMap` per kind
   (10,000 each), so LRU eviction alone bounds memory and never drops a live entry of one kind for another.
 
+## 2026-11-12 — Admin: Spend screen and kill switch (#31)
+
+- API: `/v1/admin/spend` and `/v1/admin/settings` behind `ADMIN_API_TOKEN` (D19); `spendSummary` gives today vs cap,
+  7 UTC days, model split, average per analysis and the deposit run-out estimate. Migration 0019 adds `llm_enabled`,
+  `deposit_micro_usd`, `deposit_set_at` to `llm_settings`.
+- `analyseAccount` reads the kill switch first: off → labelled rule-based list, code `kill_switch`, no model call, no
+  cached AI result.
+- UI: `apps/analytics/app/admin` (404 unless `ADMIN_UI=1`), server actions for the switch, cap and deposit.
+- Deploy: `analytics-admin` service on `127.0.0.1:3002`, Caddy 404 for `/admin*`, `setup.sh` and `quickstart.sh`
+  add `ADMIN_API_TOKEN` to an existing `.env`.
+
 ## 2026-11-12 — One priced-leg list for the account's totals, bar and concentration (#66)
 
 - `apps/api/src/analytics/account-view.ts`: `accountPortfolio` builds the legs (wallet, Burrow, Rhea v1 + DCL split
@@ -244,10 +255,77 @@ no longer said what comes first.
   row per LP position (and any staking token not in the wallet list), so it sums to "$X in assets". Demo portfolios
   are unchanged.
 
+## 2026-11-12 — AI ranking survives auto-refresh (#67)
+
+- The UI keeps the AI result while the card ids and holdings (4 significant digits, prices excluded) stay the same; the
+  15 s refresh no longer drops it. When they change, the rule-based list returns with "Your portfolio changed — run the
+  AI analysis again." (`apps/analytics/lib/portfolio-signature.ts`).
+
+## 2026-11-13 — Haiku vs Sonnet on real wallets (#16)
+
+- `apps/api/src/llm/compare-models.ts` (`pnpm --filter @near-autopilot/api llm:compare <account> …`): runs the real
+  analysis loop per model/effort config and prints cost, latency, outcome and picks. `registerAccountView` now returns
+  `analysisInputs`, which the analysis route also uses.
+- `AnthropicToolLlm` takes an optional `effort` (`output_config.effort`).
+- Result in D17: Haiku 5.5 at default effort stays; same answers as Sonnet 5.5 at 1/15 the cost.
+
+## 2026-11-13 — The account view reads the whole account and hides small balances (#73)
+
+- `apps/api/src/analytics/discovery.ts`: FastNEAR tokens + staking pools, Rhea v1 pool ids, Rhea indexer prices;
+  zod, caps, null on failure (D18).
+- `apps/api/src/analytics/account-view.ts`: wallet tokens beyond Burrow's list, v1 LP in any pool the account has
+  shares in, native staking (staked / unstaking rows). Every holding and position row carries `verified`, `estimate`,
+  `small`; actions, recommendations and the agents' observation use verified tokens only. `discovery.complete` tells
+  the page when it fell back to the allowlists.
+- `apps/analytics/app/page.tsx`: "What you hold" (top 7, "Show all"), "Unverified tokens", "Show small balances".
+- Test: `apps/api/test/account-full.test.ts` replays recorded mainnet reads of `npro-validator.near`.
+
+## 2026-11-13 — Portfolio mode label (#87)
+
+- `apps/analytics/lib/portfolio-mode.ts`: one label + one "what you can do here" line from `isAccount`, the
+  connected wallet (`np_account` cookie), the ownership proof and `MAINNET_WALLET_SIGNING`: demo / read-only (with a
+  "not your connected wallet" line on mismatch) / your wallet / ownership verified. Replaces the "Live" / "Simulated"
+  badge; the switch tab is now "Mainnet account" without the LIVE chip.
+- `WalletButton` writes the `np_account` cookie before the post-connect page load, so the first load already knows
+  the wallet.
+
+## 2026-11-13 — Polling restarts when the user comes back (#60)
+
+- `poll()` (`apps/analytics/lib/polling.ts`) still stops 30 minutes after start, but the tab becoming visible or
+  getting focus starts a fresh 30-minute window, with an immediate tick if polling had stopped. An unattended tab
+  still goes quiet (Security 7); a tab the user returns to updates again after signing. `stop()` removes the listeners.
+
+**Tests run:** `pnpm verify` (green); `polling.test.ts` covers the deadline, restart on visible/focus, extending a
+running window and listener removal.
+
+## 2026-11-13 — Reasoning trace in the UI (#26)
+
+- `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount` returns `trace`, one `{tool, agent, ok, text, provenance}`
+  per offered tool the model called (first-call order, made-up tool names dropped, `Failed` when every call failed).
+  Each tool writes its line from the numbers it returns to the model; raw outputs stay on the server. The market tool
+  also returns each held token's gap to the second price source. The heuristic fallback has an empty trace.
+- `packages/orchestrator/src/agents/market-intelligence.ts`: with no second price source and no volatility it answers
+  `insufficient_data` instead of `healthy`.
+- `apps/analytics`: the analysis schema accepts `trace` and `calledTools` (both optional for older replies); a "How the
+  AI got here" block under the badge, with the provenance label per line, or the plain list of called tools.
+- Each trace line also says what became of its card (`pick`: ranked / kept by code / left out, and `rank`); a card
+  the model left out still shows its number, labelled as left out. The guardian line names the debt token missing
+  from the wallet when it cannot size a repayment. `run` summarises the model run (model, turns, tool calls, ms).
+- `run.read` (tokens held, loan or not) and `run.checks` (picked, explained, replaced, restored, dropped) let the UI
+  show the run as a four-step pipeline: read → agents → model ranking → code checks.
+
+## 2026-11-13 — No $0 cards on small wallets (#99)
+
+- Reduce-concentration and put-idle-to-work cards (rule-based and the AI deposit) need an action of at least $10
+  (`MIN_ACTION_USD` in `apps/api/src/analytics/ai-analysis.ts`); amounts are in cents, never rounded to $0.
+- A low health factor always keeps its card: the repay is 30% of the debt, at least $10, at most the whole debt.
+- What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
+  dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.
+
 ## 2026-11-13 — Three strategy presets (#25)
 
 - `packages/core/src/strategy.ts`: Conservative / Balanced / Aggressive thresholds, the request schema and the cookie
-  name; shared by the API and the UI (D16).
+  name; shared by the API and the UI (D19).
 - `apps/api/src/analytics/account-view.ts`: `portfolioRecommendations` and `loanHealth` read the preset; the repay is
   sized to its target HF; concentration skips stablecoins; the cache holds the wallet read and the cards are computed
   per request; `?strategy=` on the account read and `{ strategy }` on the analysis, 400 on an unknown one.

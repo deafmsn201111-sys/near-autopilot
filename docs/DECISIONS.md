@@ -192,7 +192,7 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
-- Fallback codes (`off` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+- Fallback codes (`off`, `kill_switch` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
   `deadline`, `loop_limit` (too many turns or tool calls).
 
 ## D15 — Leaked secrets are rotated, history is not rewritten
@@ -212,7 +212,77 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   **Consequences:** The old FastNEAR key stays readable in history and must be dead before the repo goes public
   (owner step on #45). A new real finding turns CI red until it is rotated and listed.
 
-## D16 — Three strategy presets on "Your account"
+## D16 — Admin: own token, loopback-only service, Caddy 404
+
+**Context:** #31. With the LLM key on the public server the owner needs AI spend and a kill switch without a deploy,
+and a break-in to the public site container must not be able to change them.
+**Decision:**
+
+- `/v1/admin/*` (`apps/api/src/analytics/admin.ts`) accepts only `ADMIN_API_TOKEN`; `API_TOKEN` gets 401 there and
+  `ADMIN_API_TOKEN` gets 401 everywhere else. No admin token configured = every admin URL answers 401. The API refuses
+  to start when both tokens are equal.
+- The admin UI is the same Next image as the site with `ADMIN_UI=1` (service `analytics-admin`, `127.0.0.1:3002`,
+  no Caddy route), opened through an SSH tunnel. Without `ADMIN_UI=1`, `/admin` and the admin server actions answer
+  404 and never call the API. The public `analytics` container has no `ADMIN_API_TOKEN`. Caddy answers 404 for
+  `/admin` and `/admin/*` before proxying.
+- Kill switch, daily cap and the deposit balance the owner types in live on the single `llm_settings` row (migration
+  0019). The switch is read before the result cache on every analysis, so off means no model call and no cached AI
+  result (fallback code `kill_switch`); an unreadable switch counts as off. No confirm step: it is reversible.
+- Writes are zod-checked JSON: cap $0.01–$1000 per day, deposit $0.01–$1M.
+- Run-out estimate = (deposit − spend since it was entered) / 7-day daily average. Spend older than 7 days is purged,
+  so the screen asks to re-enter a balance older than 7 days.
+  **Consequences:** anyone with SSH to the server can open the admin; there is no login. Screens 2–4 (#33, #34) reuse
+  the token and service.
+
+## D17 — Haiku 5.5 at its default effort stays the analysis model
+
+**Context:** #16. Haiku 5.5 was the default by guess. Measured on the real tool-use loop (`analyseAccount`, code
+computes numbers, the model orders and explains) with `pnpm --filter @near-autopilot/api llm:compare`, 13 Nov 2026,
+3 runs per config on two mainnet wallets: `autopilot-test.near` (Burrow loan, HF 1.28, idle USDt) and the public
+`hodl13.near` (4 in-range Rhea DCL positions, 99% NEAR). Cost at list prices ($0.10/$0.50 Haiku, $2/$10 Sonnet per
+1M tokens); every run took 2 model turns and about 2.9K input tokens; total spend $0.11.
+
+| Wallet              | Config             | $ / analysis | p50 latency | AI answer, no fallback | "why" replaced | Loan warning first |
+| ------------------- | ------------------ | ------------ | ----------- | ---------------------- | -------------- | ------------------ |
+| autopilot-test.near | Haiku 5.5 (medium) | $0.0006      | 4.4 s       | 3/3                    | 0              | 3/3                |
+| autopilot-test.near | Sonnet 5.5 `low`   | $0.0089      | 3.9 s       | 3/3                    | 0              | 3/3                |
+| autopilot-test.near | Sonnet 5.5 (high)  | $0.0100      | 5.3 s       | 3/3                    | 0              | 3/3                |
+| hodl13.near         | Haiku 5.5 (medium) | $0.0005      | 2.6 s       | 3/3                    | 0              | n/a                |
+| hodl13.near         | Sonnet 5.5 `low`   | $0.0078      | 3.4 s       | 3/3                    | 0              | n/a                |
+| hodl13.near         | Sonnet 5.5 (high)  | $0.0082      | 3.9 s       | 3/3                    | 0              | n/a                |
+
+Ranking: every config put the loan first and said the same thing with the same numbers ("health factor 1.28 … repay
+about $11 of USDC"; "99% in NEAR … swap about $31"). The one difference: Haiku left out the $5 idle-USDt supply card
+(about 10% a year) on all 3 runs, Sonnet `low` kept it on 3/3, Sonnet high on 1/3. Raw picks are on #16.
+**Decision:** keep `claude-haiku-5-5` at its default effort (`medium`). It is as valid and as safe (loan first, no
+"why" rejected by the numbers check) at 1/15 the cost, so the $20 deposit lasts about 35K analyses instead of 2K.
+The adapter takes an optional effort (used by the comparison); no env setting is added since the default wins.
+**Consequences:** the AI list may leave out small idle-balance cards (info only; warnings are put back by code). Revisit
+with `llm:compare` if the prompt or tools change; a Sonnet → Haiku fallback step is not needed.
+
+## D18 — The account view reads indexers for discovery and prices unlisted tokens as estimates
+
+**Context:** #73. The NEAR RPC has no "list tokens" or "list pools of an account" call, so the account view only read
+allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $2.
+**Decision:**
+
+- Three new read-only external endpoints, all through `apps/api/src/analytics/discovery.ts`: FastNEAR
+  `api.fastnear.com/v1/account/{id}/full` (tokens and staking pools, no key), `api.ref.finance/liquidity-pools/{id}`
+  (Rhea v1 pool ids; `indexer.ref.finance/liquidity-pools` returns `[]` and is not used) and
+  `indexer.ref.finance/list-token-price` (prices, cached 5 minutes). Every answer is zod-checked, capped (4 MB, 60
+  tokens, 5 staking pools, 20 pools, 5 s timeout) and treated as a hint: pool shares and staked balances are read
+  on-chain, token metadata via `ft_metadata`.
+- "Verified" = listed by Burrow or named in our own label list (`apps/api/src/thesis/labels.ts`). Anything else is
+  display-only: symbol sanitised to `[A-Za-z0-9._-]{1,12}`, marked "Unverified", never in an action, a
+  recommendation or the agents' observation (#19). Swapping such tokens is #90. Wallet balances of tokens outside
+  Burrow's list come from FastNEAR as is (at most 30 per account, priced ones first).
+- An unlisted token's price is Rhea's indexer price, tagged "price estimate"; it counts in the totals and allocation.
+  A collector-confirmed price always wins, and actions and `prepare` only ever use confirmed prices.
+  **Consequences:** A thin pool can give a meme token an inflated estimate, so the total can overstate such an
+  account; the "Unverified · price estimate" label is the guard. An indexer outage shows a notice and the allowlisted
+  view. A read makes up to 3 more HTTP calls and a bounded number of view calls; the 60 s cache (D10) is unchanged.
+
+## D19 — Three strategy presets on "Your account"
 
 **Context:** #25. One fixed risk line (HF 1.5, concentration 60%) treated a cautious holder and a looper the same.
 **Decision:**
@@ -227,7 +297,7 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   | Aggressive   | 1.25         | 1.35        | 1.15            | 75% / 95% / 65%                       |
 
 - Concentration counts non-stable tokens only (the stablecoin list in `apps/api/src/thesis/labels.ts`).
-- The rule-based repay is sized to the target HF (`total debt × (1 − HF / target)`, capped at the largest debt), not a
+- The rule-based repay is sized to the target HF (`total debt × (1 − HF / target)`, at least the $10 action minimum, capped at the largest debt), not a
   fixed 30%. The guardian's `watchBelowBps` and `targetHealthFactorBps` follow the preset; the danger (1.1) and
   critical (1.05) lines stay the agents' defaults. The loop comparison keeps HF 1.6.
 - The API caches the wallet read without the preset and computes the cards and the loan label per request; the UI

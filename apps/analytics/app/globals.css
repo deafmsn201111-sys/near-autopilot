@@ -1455,6 +1455,162 @@ main.page {
   color: var(--muted);
   font-size: 13px;
 }
+.ai-trace {
+  margin: 8px 0 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--grid);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.ai-trace header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+.ai-trace h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+.ai-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.ai-steps > li {
+  position: relative;
+  padding: 0 0 14px 34px;
+  counter-increment: step;
+}
+.ai-steps > li:last-child {
+  padding-bottom: 0;
+}
+.ai-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  text-align: center;
+}
+.ai-steps > li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 10.5px;
+  top: 26px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--grid);
+}
+.ai-steps > li > strong {
+  display: block;
+  color: var(--ink);
+  line-height: 22px;
+}
+.ai-step-note {
+  display: block;
+}
+.ai-agents,
+.ai-checks {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ai-agents li {
+  display: grid;
+  grid-template-columns: minmax(150px, max-content) 1fr auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--grid);
+}
+.ai-agents li:first-child {
+  border-top: 0;
+}
+.ai-agent {
+  color: var(--ink);
+  font-weight: 600;
+}
+.ai-agent::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  vertical-align: 1px;
+}
+.ai-agents .pick-ranked .ai-agent::before,
+.ai-agents .pick-kept .ai-agent::before {
+  background: var(--good);
+}
+.ai-agents .failed .ai-agent::before {
+  background: var(--critical);
+}
+.ai-agents .failed .ai-number {
+  color: var(--critical);
+}
+.ai-number {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.ai-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.ai-tag {
+  padding: 1px 7px;
+  border: 1px solid var(--grid);
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ai-tag.pick {
+  border-color: transparent;
+  background: var(--accent-wash);
+  color: var(--good-text);
+}
+.ai-tag.pick.left_out {
+  background: transparent;
+  color: var(--muted);
+}
+.ai-checks li {
+  padding: 2px 0;
+}
+.ai-checks li::before {
+  content: '✓';
+  margin-right: 8px;
+  color: var(--good);
+  font-weight: 700;
+}
+.ai-checks li.warn::before {
+  content: '!';
+  color: var(--warning);
+}
+@media (max-width: 640px) {
+  .ai-agents li {
+    grid-template-columns: 1fr;
+  }
+  .ai-tags {
+    justify-content: flex-start;
+  }
+}
 .link {
   color: var(--accent);
   text-decoration: none;
@@ -2380,16 +2536,6 @@ main.page {
   color: var(--ink);
   box-shadow: inset 0 0 0 1px var(--grid);
 }
-.seg-live {
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #03140c;
-  background: var(--accent);
-  padding: 2px 7px;
-  border-radius: 20px;
-  line-height: 1.4;
-}
 
 /* ---- hero: two-column panels ---- */
 .hero {
@@ -3044,6 +3190,47 @@ main.page {
 .recs:has(> .rec:only-child) > .rec,
 .actions-list:has(> .action:only-child) > .action {
   flex: 1 1 auto;
+}
+
+/* ---- holdings: unverified badge, "show all" and "show small balances" ---- */
+.ht-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--grid);
+  vertical-align: middle;
+}
+.ht-more summary,
+.ht-small summary {
+  cursor: pointer;
+  padding: 14px 26px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.ht-more[open] summary {
+  border-bottom: 1px solid var(--grid);
+}
+.ht-small {
+  margin-top: 12px;
+}
+.ht-small summary {
+  padding: 8px 4px;
+}
+
+.hero-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 10px;
+}
+.hero-mode .hero-live {
+  margin-bottom: 0;
 }
 
 .strategy-picker {

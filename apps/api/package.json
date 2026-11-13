@@ -16,7 +16,8 @@
     "audit:replay": "node --import tsx src/evidence/cli.ts replay",
     "demo:attack": "node --import tsx src/demo/attack-main.ts",
     "thesis:fetch": "node --import tsx src/thesis/fetch.ts",
-    "thesis:rebuild": "node --import tsx src/thesis/rebuild.ts"
+    "thesis:rebuild": "node --import tsx src/thesis/rebuild.ts",
+    "llm:compare": "node --env-file-if-exists=../../.env --import tsx src/llm/compare-models.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

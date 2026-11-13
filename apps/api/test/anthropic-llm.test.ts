@@ -83,6 +83,18 @@ describe('AnthropicToolLlm', () => {
       caller: { type: 'direct' },
     }) as unknown as Anthropic.ToolUseBlock;
 
+  it('sends the configured effort, and no output_config without one', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue({ stop_reason: 'end_turn', content: [text('{"picks":[]}')] });
+    const sdk = { messages: { create } } as unknown as Anthropic;
+    const request = { system: 'sys', prompt: 'go', tools: [tool] };
+    await new AnthropicToolLlm(sdk, { ...config, effort: 'low' }).open(request).send(null);
+    await new AnthropicToolLlm(sdk, config).open(request).send(null);
+    expect(create.mock.calls[0]?.[0]).toMatchObject({ output_config: { effort: 'low' } });
+    expect(create.mock.calls[1]?.[0]).not.toHaveProperty('output_config');
+  });
+
   it('sends system, tools and the prompt, then replays the full assistant turn and the tool results', async () => {
     const create = vi
       .fn()

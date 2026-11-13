@@ -252,6 +252,11 @@ export const dashboardEnvSchema = z.object({
   /** Base URL of the API, reachable from the dashboard's server (not the browser). */
   API_BASE_URL: z.string().url(),
   API_TOKEN: z.string().min(32, 'must be at least 32 characters'),
+  /** Only the loopback admin site (ADMIN_UI=1) gets it; the public site has none. */
+  ADMIN_API_TOKEN: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(32, 'must be at least 32 characters').optional(),
+  ),
 });
 export type DashboardEnv = z.output<typeof dashboardEnvSchema>;
 

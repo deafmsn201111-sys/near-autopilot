@@ -5,6 +5,7 @@ import type { LlmClient, LlmToolTurn, ToolChat, ToolLlm } from '@near-autopilot/
 export interface AnthropicLlmConfig {
   readonly model: string;
   readonly maxTokens: number;
+  readonly effort?: Anthropic.OutputConfig['effort'];
 }
 
 /**
@@ -68,6 +69,7 @@ export class AnthropicToolLlm implements ToolLlm {
             system: request.system,
             tools,
             messages: [...messages],
+            ...(this.config.effort ? { output_config: { effort: this.config.effort } } : {}),
           },
           request.signal ? { signal: request.signal } : undefined,
         );

@@ -35,6 +35,12 @@ if [[ ! -f .env ]]; then
 fi
 
 chmod 600 .env
+# Keys added after the first run: an older .env gets a fresh value, never shown.
+if ! grep -q '^ADMIN_API_TOKEN=.' .env; then
+  sed -i.bak '/^ADMIN_API_TOKEN=/d' .env && rm -f .env.bak
+  echo "ADMIN_API_TOKEN=$(openssl rand -hex 24)" >>.env
+  echo "• ADMIN_API_TOKEN added to .env (not shown)"
+fi
 mkdir -p checkpoints
 # the containers run as the unprivileged `node` user (uid 1000)
 chown 1000:1000 checkpoints 2>/dev/null || chmod 777 checkpoints

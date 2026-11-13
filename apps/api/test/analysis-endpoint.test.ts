@@ -144,7 +144,11 @@ function server(
         llm,
         model: 'claude-haiku-5-5',
         maxTokens: 4096,
-        ledger: { remainingTodayMicro: async () => 10n ** 9n, record: async () => {} },
+        ledger: {
+          enabled: async () => true,
+          remainingTodayMicro: async () => 10n ** 9n,
+          record: async () => {},
+        },
         memo: analysisMemo(),
       },
     } as never,
@@ -257,7 +261,7 @@ describe('what the model is sent', () => {
   const POOL = `${USDT}|${WNEAR}|2000`;
   const node = rpc(
     {
-      [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset],
+      [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset, { ...usdtAsset, token_id: WNEAR }],
       [`${DCL}#list_liquidities`]: () => [
         {
           lpt_id: `${POOL}#1`,

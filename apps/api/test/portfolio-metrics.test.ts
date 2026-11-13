@@ -28,7 +28,7 @@ describe('portfolioMetrics', () => {
     expect(m.netUsd).toBe(600);
     // by token: wNEAR 900 (90%), USDt 100 (10%)
     expect(m.byToken.map((t) => [t.symbol, t.usd, t.pct])).toEqual([
-      ['wNEAR', 900, 90],
+      ['NEAR', 900, 90],
       ['USDt', 100, 10],
     ]);
     // by protocol: Wallet 600, Rhea DCL 300, Burrow 100
@@ -37,19 +37,24 @@ describe('portfolioMetrics', () => {
       ['Rhea DCL', 300],
       ['Burrow', 100],
     ]);
-    expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'wNEAR', pct: 90 });
+    expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'NEAR', pct: 90 });
   });
 
-  it('a stablecoin is never the concentrated asset: the largest other token is', () => {
+  it('counts native NEAR and wNEAR, wherever held, as one NEAR exposure', () => {
     const m = portfolioMetrics([
-      leg('usdt.tether-token.near', 'USDt', 'Wallet', 900),
-      leg('wrap.near', 'wNEAR', 'Wallet', 100),
+      leg('near', 'NEAR', 'Wallet', 500),
+      leg('wrap.near', 'wNEAR', 'Wallet', 400),
+      leg('wrap.near', 'wNEAR', 'Rhea DCL', 100),
+      leg('usdc', 'USDC', 'Wallet', 300),
     ]);
-    expect(m.byToken[0]?.symbol).toBe('USDt');
-    expect(m.concentration).toEqual({ token: 'wrap.near', symbol: 'wNEAR', pct: 10 });
-    expect(
-      portfolioMetrics([leg('usdt.tether-token.near', 'USDt', 'Wallet', 9)]).concentration,
-    ).toBeNull();
+    expect(m.byToken.map((t) => [t.token, t.symbol, t.usd])).toEqual([
+      ['wrap.near', 'NEAR', 1000],
+      ['usdc', 'USDC', 300],
+    ]);
+    expect(m.concentration?.token).toBe('wrap.near');
+    expect(m.concentration?.symbol).toBe('NEAR');
+    expect(m.concentration?.pct).toBeCloseTo(76.92, 2);
+    expect(m.concentration?.pct).toBe(m.byToken[0]?.pct);
   });
 
   it('is empty-safe', () => {
@@ -63,15 +68,17 @@ describe('portfolioMetrics', () => {
 describe('accountPortfolio', () => {
   const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
   const p = accountPortfolio({
-    holdings: [
-      { where: 'wallet', token: USDC, symbol: 'USDC', amount: 40, usd: 40 },
-      { where: 'wallet', token: 'near', symbol: 'NEAR', amount: 2, usd: 6 },
-      { where: 'wallet', token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 },
-      { where: 'deposited', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
-      { where: 'collateral', token: 'wrap.near', symbol: 'wNEAR', amount: 10, usd: 30 },
-      { where: 'borrowed', token: USDC, symbol: 'USDC', amount: 20, usd: 20 },
-      { where: 'wallet', token: 'unpriced.near', symbol: 'X', amount: 5, usd: null },
-    ],
+    holdings: (
+      [
+        { where: 'wallet', token: USDC, symbol: 'USDC', amount: 40, usd: 40 },
+        { where: 'wallet', token: 'near', symbol: 'NEAR', amount: 2, usd: 6 },
+        { where: 'wallet', token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 },
+        { where: 'deposited', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
+        { where: 'collateral', token: 'wrap.near', symbol: 'wNEAR', amount: 10, usd: 30 },
+        { where: 'borrowed', token: USDC, symbol: 'USDC', amount: 20, usd: 20 },
+        { where: 'wallet', token: 'unpriced.near', symbol: 'X', amount: 5, usd: null },
+      ] as const
+    ).map((h) => ({ ...h, verified: true, estimate: false, small: false })),
     staking: [{ token: 'meta-pool.near', symbol: 'stNEAR', amount: 1, usd: 4 }],
     v1Positions: [
       {
@@ -101,7 +108,7 @@ describe('accountPortfolio', () => {
   });
 
   it('lists each LP position once at its priced value, so the rows add up to the total', () => {
-    expect(p.positions).toEqual([
+    expect(p.positions).toMatchObject([
       { key: 'v1-4512', label: 'USDC/wNEAR', sub: 'Rhea liquidity', amount: null, usd: 16 },
       {
         key: 'dcl-lpt-1',
@@ -116,14 +123,9 @@ describe('accountPortfolio', () => {
     expect(rows.reduce((a, b) => a + b, 0)).toBe(p.totals.assetsUsd);
   });
 
-  it('the concentration % is the top non-stable token share of the same total', () => {
-    const wnear = p.metrics.byToken.find((t) => t.token === 'wrap.near');
-    expect(p.metrics.byToken[0]?.token).toBe(USDC);
-    expect(p.metrics.concentration).toEqual({
-      token: 'wrap.near',
-      symbol: 'wNEAR',
-      pct: wnear?.pct,
-    });
+  it('the concentration % is the top token share of the same total', () => {
+    expect(p.metrics.concentration).toEqual({ token: USDC, symbol: 'USDC', pct: (60 / 108) * 100 });
+    expect(p.metrics.byToken[0]?.pct).toBe(p.metrics.concentration?.pct);
   });
 
   it('lists an unpriced or negative leg without counting it', () => {
@@ -149,7 +151,7 @@ describe('accountPortfolio', () => {
       dclPositions: [],
     });
     expect(q.totals.assetsUsd).toBe(5);
-    expect(q.positions).toEqual([
+    expect(q.positions).toMatchObject([
       {
         key: 'staking-linear-protocol.near',
         label: 'LiNEAR',

@@ -93,6 +93,49 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     expect(await ledger(7n).remainingTodayMicro()).toBe(7n);
   });
 
+  it('reads LLM on and no settings before the row exists', async () => {
+    expect(await ledger().enabled()).toBe(true);
+    expect(await ledger().settings()).toEqual({
+      dailyCapMicroUsd: null,
+      llmEnabled: true,
+      depositMicroUsd: null,
+      depositSetAt: null,
+    });
+  });
+
+  it('saves the kill switch, cap and deposit, keeping the fields a patch leaves out', async () => {
+    await ledger().saveSettings({ llmEnabled: false });
+    expect(await ledger().enabled()).toBe(false);
+    await ledger().saveSettings({
+      dailyCapMicroUsd: 2_000_000n,
+      depositMicroUsd: 9_000_000n,
+      depositSetAt: NOW,
+    });
+    expect(await ledger().settings()).toEqual({
+      dailyCapMicroUsd: 2_000_000n,
+      llmEnabled: false,
+      depositMicroUsd: 9_000_000n,
+      depositSetAt: NOW,
+    });
+    expect(await ledger().remainingTodayMicro()).toBe(2_000_000n);
+    await ledger().saveSettings({ llmEnabled: true });
+    expect(await ledger().enabled()).toBe(true);
+  });
+
+  it('rejects a deposit of zero', async () => {
+    await expect(
+      ledger().saveSettings({ depositMicroUsd: 0n, depositSetAt: NOW }),
+    ).rejects.toThrow();
+  });
+
+  it('lists the calls since a time with model and cost', async () => {
+    await ledger().record(call({ costMicroUsd: 1_000n }));
+    await ledger().record(call({ at: new Date('2026-11-01T00:00:00Z') }));
+    expect(await ledger().recentCalls(new Date('2026-11-06T00:00:00Z'))).toEqual([
+      { at: NOW, model: 'claude-haiku-5-5', costMicroUsd: 1_000n },
+    ]);
+  });
+
   it('deletes calls older than 7 days', async () => {
     await ledger().record(call({ at: new Date('2026-11-05T09:59:59Z') }));
     await ledger().record(call({ at: new Date('2026-11-05T10:00:01Z') }));

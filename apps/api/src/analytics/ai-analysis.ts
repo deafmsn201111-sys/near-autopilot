@@ -5,6 +5,7 @@ import {
   STRATEGIES,
   type AccountId,
   type StrategyId,
+  type ProvenanceTier,
   type TokenId,
 } from '@near-autopilot/core';
 import { assessLendingPosition, tokenValueUsd } from '@near-autopilot/financial-engine';
@@ -15,7 +16,9 @@ import {
   LiquidationGuardianAgent,
   MarketIntelligenceAgent,
   orchestratorConfigSchema,
+  heldTokens,
   parseAgentOutput,
+  priceDivergenceBps,
   runToolLoop,
   stripFence,
   ToolLoopError,
@@ -24,6 +27,7 @@ import {
   type OrchestratorConfig,
   type ProposalAgent,
   type ToolLlm,
+  type ToolTraceEntry,
 } from '@near-autopilot/orchestrator';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
@@ -34,13 +38,16 @@ import { analysisKey } from './analysis-key';
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
 export const MAX_TURNS = 6;
 /** Agent-sized actions worth less than this are not offered. */
-const MIN_ACTION_USD = 1;
+/** Smallest rule-based card or deposit; a repay sizes from the health factor, so only dust is dropped. */
+export const MIN_ACTION_USD = 10;
+const MIN_REPAY_USD = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
 
 /** Why the rule-based list was shown instead of the AI ranking. */
 export type FallbackCode =
   | 'off'
+  | 'kill_switch'
   | 'not_owner'
   | 'cap'
   | 'busy'
@@ -50,8 +57,9 @@ export type FallbackCode =
   | 'deadline'
   | 'loop_limit';
 
-/** A run that reached the model ends in one of these; `off`, `not_owner` and `busy` never reach it. */
-export type CallOutcome = 'ok' | Exclude<FallbackCode, 'off' | 'not_owner' | 'busy'>;
+/** A run that reached the model ends in one of these; `off`, `kill_switch`, `not_owner` and `busy` never reach it. */
+export type CallOutcome =
+  'ok' | Exclude<FallbackCode, 'off' | 'kill_switch' | 'not_owner' | 'busy'>;
 
 /** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
 export interface LlmCallRecord {
@@ -67,6 +75,8 @@ export interface LlmCallRecord {
 }
 
 export interface LlmLedger {
+  /** The admin kill switch: false means no model call for anyone. */
+  enabled(): Promise<boolean>;
   /** Micro-USD the daily cap still allows today (UTC day); negative once over it. */
   remainingTodayMicro(): Promise<bigint>;
   record(call: LlmCallRecord): Promise<void>;
@@ -145,6 +155,8 @@ export interface AnalysisContext {
   readonly ownerVerified: boolean;
   /** Balanced when absent. */
   readonly strategy?: StrategyId;
+  /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
+  readonly concentration?: { readonly token: string; readonly pct: number } | null;
 }
 
 export interface Analysis {
@@ -153,7 +165,74 @@ export interface Analysis {
   readonly note: string | null;
   readonly recommendations: readonly PortfolioRecommendation[];
   readonly calledTools: readonly string[];
+  /** One line per agent the model called, in call order; empty for the rule-based list. */
+  readonly trace: readonly TraceStep[];
+  /** The model run behind an AI ranking; null for the rule-based list. */
+  readonly run: RunSummary | null;
 }
+
+export interface RunSummary {
+  readonly model: LlmModel;
+  /** Model calls. */
+  readonly turns: number;
+  readonly toolCalls: number;
+  readonly ms: number;
+  /** What the agents read: the tokens held in the wallet or on Burrow, and whether there is a loan. */
+  readonly read: { readonly tokens: number; readonly loan: boolean };
+  /** What code did to the model's answer before the user saw it. */
+  readonly checks: {
+    /** Cards the model ranked. */
+    readonly picked: number;
+    /** Model explanations shown: every number in them came from the tools. */
+    readonly explained: number;
+    /** Model explanations replaced by the code's own text for a number no tool returned. */
+    readonly replaced: number;
+    /** Warnings the model left out, put back first. */
+    readonly restored: number;
+    /** Picks naming an action no tool returned, or one already picked. */
+    readonly dropped: number;
+  };
+}
+
+/** A called agent's key number as a short line built on the server: raw tool output never reaches the browser. */
+export interface TraceStep {
+  readonly tool: string;
+  readonly agent: string;
+  readonly ok: boolean;
+  readonly text: string;
+  /** Null when the line carries no number. */
+  readonly provenance: ProvenanceTier | null;
+  /**
+   * What became of the card this line is about: ranked by the model, kept by code (a warning the model left out), or
+   * left out by the model. Null when the agent produced no card.
+   */
+  readonly pick: 'ranked' | 'kept' | 'left_out' | null;
+  /** The card's position in the list the user sees. */
+  readonly rank: number | null;
+}
+
+type StepLine = Pick<TraceStep, 'text' | 'provenance'>;
+const NO_PICK = { pick: null, rank: null } as const;
+/** Per tool: a line for each card it produced (the trace shows the one the model ranked highest), else `none`. */
+type Steps = Map<string, { none: StepLine; byCandidate: Map<string, StepLine> }>;
+
+/** The kind of card each tool's agent stands behind, whether the tool or the rule-based list produced it. */
+const KINDS: Readonly<Record<string, PortfolioRecommendation['kind']>> = {
+  liquidation_guardian: 'improve_loan_safety',
+  capital_allocator: 'put_idle_to_work',
+  portfolio_concentration: 'reduce_concentration',
+  liquidity_positions: 'reposition_dcl_position',
+};
+
+const AGENTS: Readonly<Record<string, string>> = {
+  liquidation_guardian: 'Liquidation Guardian',
+  capital_allocator: 'Capital Allocator',
+  market_intelligence: 'Market Intelligence',
+  portfolio_concentration: 'Portfolio Intelligence',
+  liquidity_positions: 'Liquidity Optimizer',
+};
+
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const bps = (hf: number) => Math.round(hf * 10_000);
 
@@ -206,7 +285,7 @@ const money = (n: number) =>
 const hfText = (wad: bigint | null) =>
   wad === null ? null : (Number(wad / 10n ** 14n) / 1e4).toFixed(2);
 /** prepare takes at most $1M as the approximate size; the exact amount carries the real size. */
-const approxUsdOf = (n: number) => Math.min(Math.round(n * 100) / 100, 1_000_000);
+export const approxUsdOf = (n: number) => Math.min(Math.round(n * 100) / 100, 1_000_000);
 const human = (raw: bigint, decimals: number) =>
   (Number(raw) / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
@@ -220,11 +299,11 @@ const rationales = (proposals: readonly { kind: string; rationale: string }[]) =
   proposals.filter((p) => p.kind === 'no_action').map((p) => p.rationale);
 
 /** Token names come from our own labels, never the token's ft_metadata (untrusted text a deployer chooses). */
-function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
+function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd: number) {
   const info = obs.snapshot.tokens.get(token);
   if (!info || !obs.snapshot.prices.has(token)) return null;
   const approxUsd = usd(tokenValueUsd(obs.snapshot.prices, token, amount));
-  if (!(approxUsd >= MIN_ACTION_USD)) return null;
+  if (!(approxUsd >= minUsd)) return null;
   return {
     symbol: modelTokenLabel(token),
     amount: human(amount, info.decimals),
@@ -235,6 +314,7 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
 function guardianTool(
   obs: AgentObservation,
   found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
 ): LoopTool {
   return {
     spec: {
@@ -249,15 +329,21 @@ function guardianTool(
       const hf = hfText(obs.risk.healthFactorWad);
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
+      const byCandidate = new Map<string, StepLine>();
       for (const p of proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
-        const view = tokenView(obs, p.token, p.amount);
+        const view = tokenView(obs, p.token, p.amount, MIN_REPAY_USD);
         const after = hfText(
           assessLendingPosition(afterRepay(model.model, p.token, p.amount)).healthFactorWad,
         );
         if (!view || !after) continue;
+        const id = `liquidation-guardian:repay:${p.token}`;
+        byCandidate.set(id, {
+          text: `Health factor ${hf} → ${after} after repaying ${view.amount} ${view.symbol}`,
+          provenance: 'calculated_estimate',
+        });
         candidates.push({
-          id: `liquidation-guardian:repay:${p.token}`,
+          id,
           kind: 'improve_loan_safety',
           agent: 'Liquidation Guardian',
           severity: 'warning',
@@ -272,6 +358,28 @@ function guardianTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
+      const debts = (obs.snapshot.lending?.borrowed ?? []).filter((b) => b.raw > 0n);
+      const hasDebt = debts.length > 0;
+      const safe = obs.risk.level === 'healthy' || obs.risk.level === 'none';
+      const inWallet = (token: TokenId) =>
+        obs.snapshot.walletBalances.some((b) => b.token === token && b.raw > 0n);
+      const noRepayWhy = debts.some((d) => inWallet(d.token))
+        ? 'no repayment from the wallet could be sized'
+        : `no ${debts.map((d) => modelTokenLabel(d.token)).join(' or ')} in the wallet to repay with`;
+      steps.set('liquidation_guardian', {
+        none:
+          hf === null
+            ? hasDebt
+              ? { text: 'Health factor unknown: a price is missing', provenance: null }
+              : { text: 'No Burrow loan; nothing to do', provenance: null }
+            : {
+                text: safe
+                  ? `Health factor ${hf}; nothing to do`
+                  : `Health factor ${hf} is below target; ${noRepayWhy}`,
+                provenance: 'calculated_estimate',
+              },
+        byCandidate,
+      });
       return {
         riskLevel: obs.risk.level,
         healthFactor: hf,
@@ -285,6 +393,7 @@ function guardianTool(
 function allocatorTool(
   obs: AgentObservation,
   found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
 ): LoopTool {
   return {
     spec: {
@@ -297,14 +406,20 @@ function allocatorTool(
     run: async () => {
       const proposals = await propose(new CapitalAllocatorAgent(), obs);
       const candidates: PortfolioRecommendation[] = [];
+      const byCandidate = new Map<string, StepLine>();
       for (const p of proposals) {
         if (p.kind !== 'lending.supply') continue;
-        const view = tokenView(obs, p.token, p.amount);
+        const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const aprPct = (Number(yieldWad / 10n ** 14n) / 100).toFixed(1);
+        const id = `capital-allocator:supply:${p.token}`;
+        byCandidate.set(id, {
+          text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
+          provenance: 'protocol_reported',
+        });
         candidates.push({
-          id: `capital-allocator:supply:${p.token}`,
+          id,
           kind: 'put_idle_to_work',
           agent: 'Capital Allocator',
           severity: 'info',
@@ -319,12 +434,35 @@ function allocatorTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
+      const supplyProposed = proposals.some((p) => p.kind === 'lending.supply');
+      steps.set('capital_allocator', {
+        none: {
+          text: supplyProposed
+            ? 'Idle tokens found, but no supply rate or price to size them'
+            : 'Nothing idle to put to work',
+          provenance: null,
+        },
+        byCandidate,
+      });
       return { candidates, notes: rationales(proposals) };
     },
   };
 }
 
-function marketTool(obs: AgentObservation): LoopTool {
+/** Each held token's gap between the snapshot price and the second source, largest first. */
+function priceGaps(obs: AgentObservation) {
+  return [...heldTokens(obs)]
+    .flatMap((token) => {
+      const price = obs.snapshot.prices.get(token);
+      const reference = obs.market?.referencePrices.get(token);
+      const bps = price && reference ? priceDivergenceBps(price, reference) : null;
+      return bps === null ? [] : [{ token: modelTokenLabel(token), bps: Number(bps) }];
+    })
+    .sort((a, b) => b.bps - a.bps)
+    .map(({ token, bps }) => ({ token, gapPct: (bps / 100).toFixed(2) }));
+}
+
+function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
   return {
     spec: {
       name: 'market_intelligence',
@@ -340,7 +478,25 @@ function marketTool(obs: AgentObservation): LoopTool {
           ? [{ token: p.token, signal: p.signal, severity: p.severity, detail: p.rationale }]
           : [],
       );
-      return { signals, notes: rationales(proposals) };
+      const gaps = priceGaps(obs);
+      const notes = rationales(proposals);
+      const [signal] = signals;
+      const [gap] = gaps;
+      steps.set('market_intelligence', {
+        byCandidate: new Map(),
+        none: signal
+          ? {
+              text: `${modelTokenLabel(signal.token)}: ${signal.detail}`,
+              provenance: 'external_market',
+            }
+          : gap
+            ? {
+                text: `Largest gap to a second price source: ${gap.gapPct}% (${gap.token})`,
+                provenance: 'external_market',
+              }
+            : { text: sentence(notes[0] ?? 'nothing to report'), provenance: null },
+      });
+      return { signals, gaps, notes };
     },
   };
 }
@@ -351,6 +507,8 @@ function walletTool(
   kind: PortfolioRecommendation['kind'],
   heuristics: readonly PortfolioRecommendation[],
   found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
+  line: (candidates: readonly PortfolioRecommendation[]) => StepLine,
 ): LoopTool {
   return {
     spec: { name, description, inputSchema: noInputSchema },
@@ -358,6 +516,8 @@ function walletTool(
     run: async () => {
       const candidates = heuristics.filter((h) => h.kind === kind);
       for (const c of candidates) found.set(c.id, c);
+      const l = line(candidates);
+      steps.set(name, { none: l, byCandidate: new Map(candidates.map((c) => [c.id, l])) });
       return { candidates };
     },
   };
@@ -391,6 +551,7 @@ function displayNumbers(value: unknown, key = ''): string[] {
 
 const NOTES: Record<FallbackCode, string> = {
   off: 'AI analysis is off on this server; showing the rule-based list.',
+  kill_switch: 'AI analysis is paused by the operator; showing the rule-based list.',
   not_owner:
     'Verify ownership of this account to get the AI analysis; showing the rule-based list.',
   cap: 'Paused: daily AI budget reached; showing the rule-based list.',
@@ -431,10 +592,15 @@ export async function analyseAccount(
     note: NOTES[code],
     recommendations: ctx.heuristics,
     calledTools: [],
+    trace: [],
+    run: null,
   });
   if (!ai) return fallback('off');
   const strategy = ctx.strategy ?? DEFAULT_STRATEGY;
   if (!ctx.ownerVerified) return fallback('not_owner');
+  // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
+  const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
+  if (!enabled) return fallback('kill_switch');
 
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };
@@ -571,17 +737,28 @@ export async function analyseAccount(
   };
 
   const found = new Map<string, PortfolioRecommendation>();
+  const steps: Steps = new Map();
   const run = async () => {
     const tools = [
-      guardianTool(obs, found),
-      allocatorTool(obs, found),
-      marketTool(obs),
+      guardianTool(obs, found, steps),
+      allocatorTool(obs, found, steps),
+      marketTool(obs, steps),
       walletTool(
         'portfolio_concentration',
         'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
         'reduce_concentration',
         ctx.checks,
         found,
+        steps,
+        ([top]) => {
+          const c = ctx.concentration;
+          if (top) return { text: top.title, provenance: 'calculated_estimate' };
+          if (!c) return { text: 'No priced token to measure', provenance: null };
+          return {
+            text: `${c.pct.toFixed(0)}% of your portfolio is in ${modelTokenLabel(c.token)}; no swap from the wallet suggested`,
+            provenance: 'calculated_estimate',
+          };
+        },
       ),
       walletTool(
         'liquidity_positions',
@@ -589,6 +766,14 @@ export async function analyseAccount(
         'reposition_dcl_position',
         ctx.checks,
         found,
+        steps,
+        ({ length: n }) =>
+          n > 0
+            ? {
+                text: `${n} position${n === 1 ? '' : 's'} out of range`,
+                provenance: 'on_chain_verified',
+              }
+            : { text: 'No position out of range; nothing to do', provenance: null },
       ),
     ].map(counted);
     return runToolLoop({
@@ -627,13 +812,19 @@ export async function analyseAccount(
     ),
   );
   const recommendations: PortfolioRecommendation[] = [];
+  const checks = { picked: 0, explained: 0, replaced: 0, restored: 0, dropped: 0 };
   for (const pick of parsed.data.picks) {
     const candidate = found.get(pick.id);
-    if (!candidate || recommendations.some((r) => r.id === pick.id)) continue;
+    if (!candidate || recommendations.some((r) => r.id === pick.id)) {
+      checks.dropped++;
+      continue;
+    }
     const own = new Set(displayNumbers(candidate));
     const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
+    checks[honest ? 'explained' : 'replaced']++;
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
+  checks.picked = recommendations.length;
   if (recommendations.length === 0) return failed('empty');
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
@@ -642,14 +833,63 @@ export async function analyseAccount(
       warnings.findIndex((o) => o.kind === w.kind) === i,
   );
   recommendations.unshift(...missing);
+  const kept = new Set(missing.map((m) => m.id));
+  checks.restored = missing.length;
   await record('ok');
   const analysis: Analysis = {
     source: 'llm',
     fallback: null,
     note: null,
     recommendations,
-    calledTools: [...new Set(trace.map((t) => t.tool))],
+    calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
+    trace: traceSteps(trace, steps, recommendations, kept),
+    run: {
+      model: ai.model,
+      turns: usage.calls,
+      toolCalls: trace.length,
+      ms: Date.now() - startedAt.getTime(),
+      read: {
+        tokens: heldTokens(obs).size,
+        loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+      },
+      checks,
+    },
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });
   return analysis;
+}
+
+/** The model may call a tool twice or name one we never offered: one line per offered tool, in first-call order. */
+function traceSteps(
+  trace: readonly ToolTraceEntry[],
+  steps: Steps,
+  shown: readonly PortfolioRecommendation[],
+  kept: ReadonlySet<string>,
+): TraceStep[] {
+  const line = (tool: string) => {
+    const entry = steps.get(tool);
+    if (!entry || !trace.some((t) => t.tool === tool && t.ok)) return undefined;
+    const rank = shown.findIndex((r) => entry.byCandidate.has(r.id) || r.kind === KINDS[tool]);
+    const card = shown[rank];
+    if (card)
+      return {
+        ...(entry.byCandidate.get(card.id) ?? entry.none),
+        pick: kept.has(card.id) ? ('kept' as const) : ('ranked' as const),
+        rank: rank + 1,
+      };
+    const [first] = entry.byCandidate.values();
+    return first
+      ? { ...first, pick: 'left_out' as const, rank: null }
+      : { ...entry.none, ...NO_PICK };
+  };
+  return [...new Set(trace.map((t) => t.tool))].flatMap((tool) => {
+    const agent = AGENTS[tool];
+    if (!agent) return [];
+    const step = line(tool);
+    return [
+      step
+        ? { tool, agent, ok: true, ...step }
+        : { tool, agent, ok: false, text: 'Failed', provenance: null, ...NO_PICK },
+    ];
+  });
 }

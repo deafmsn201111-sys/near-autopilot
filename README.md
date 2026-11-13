@@ -198,14 +198,28 @@ turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 
+Under **AI-ranked**, **How the AI got here** lists each agent the model called, one line each with its key number
+(health factor before and after the repayment, the supply rate, the largest gap between two price sources, the
+concentration share, positions out of range) and that number's provenance label, plus what became of its card
+(its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
+pipeline of the run: what was read on-chain, what each agent returned, what the model ranked, and what code checked
+before showing it (explanations whose numbers all came from the agents, explanations replaced, warnings put back,
+made-up actions dropped). The line is built on the server
+from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
+it says so; it never reports "healthy" without a comparison.
+
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
-page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `not_owner`,
+page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
 `cap`, `model_error`, `invalid_output`, `empty`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
 analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
 called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
 days are deleted (on start, then hourly).
+
+**Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
+answers 404) shows AI spend against the cap and has a kill switch and the cap field
+([deploy/public/README.md](deploy/public/README.md#admin-ai-spend-and-kill-switch), D16 in `docs/DECISIONS.md`).
 
 ## Repository layout
 
@@ -297,6 +311,15 @@ $5,000) are simulated and labelled as such.
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
+- **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from
+  FastNEAR's `/v1/account/{id}/full`), Burrow, Rhea v1 liquidity in any pool (pool ids from `api.ref.finance`, shares
+  read on-chain), Rhea DCL positions, liquid staking and NEAR staked with validator pools (balances read on-chain).
+  Tokens on our list are priced with the collector's confirmed prices; any other token is marked **Unverified**,
+  priced as an estimate from Rhea's indexer (or "no price", kept out of the totals), shown only and never used in a
+  suggestion or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
+  every unpriced unverified token, sits behind "Show small balances". When an indexer is down, the page says so and
+  shows the allowlisted tokens and pools only.
+
 - **Strategy** (on "Your account"): Conservative, Balanced or Aggressive. It changes when a loan or a position gets a
   card, how urgent the card is and how much it suggests repaying or swapping; the Liquidation Guardian and the AI
   prompt use the same lines. Stablecoins never count as a concentration. The choice is in the link (`&strategy=`) and
