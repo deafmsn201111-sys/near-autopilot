@@ -31,29 +31,23 @@ export class CapitalAllocatorAgent implements ProposalAgent {
 
   /**
    * Idle wallet tokens earn nothing; Burrow pays its supply rate on them. Proposes depositing the held allocation
-   * asset that earns the most in dollars a year (rate x deposit value), up to the per-action cap. The decision engine applies the same
-   * hurdle as for a swap (gas in and out against the yield over the horizon); the policy engine decides the rest.
+   * asset that earns the most in dollars a year (rate x deposit value), the whole held balance: the swap size limit
+   * does not apply to a deposit the user can withdraw (D23). The decision engine applies the same hurdle as for a swap
+   * (gas in and out against the yield over the horizon); the policy engine decides the rest.
    */
   private proposeSupply(obs: AgentObservation): Record<string, unknown> | null {
     const { snapshot, market, config } = obs;
     if (!market) return null;
-    const capUsd = usdToMicro(config.swap.maxSwapUsd);
     let best: { token: TokenId; amount: bigint; yieldWad: bigint; earns: bigint } | null = null;
     for (const a of config.allocation.assets) {
       const held = snapshot.walletBalances
         .filter((b) => b.token === a.token)
         .reduce((s, b) => s + b.raw, 0n);
       const y = market.estimatedYieldWad.get(a.token);
-      const price = snapshot.prices.get(a.token);
-      if (held <= 0n || y === undefined || y <= 0n || !price) continue;
-      const value = tokenValueUsd(snapshot.prices, a.token, held);
-      const amount = value > capUsd ? rawForValueUsd(capUsd, price) : held;
-      if (amount <= 0n) continue;
-      const deposit = amount > held ? held : amount;
+      if (held <= 0n || y === undefined || y <= 0n || !snapshot.prices.has(a.token)) continue;
       // Dollars a year, not the rate: a higher rate on dust must not beat a large idle balance.
-      const earns = tokenValueUsd(snapshot.prices, a.token, deposit) * y;
-      if (!best || earns > best.earns)
-        best = { token: a.token, amount: deposit, yieldWad: y, earns };
+      const earns = tokenValueUsd(snapshot.prices, a.token, held) * y;
+      if (!best || earns > best.earns) best = { token: a.token, amount: held, yieldWad: y, earns };
     }
     if (!best) return null;
     return {

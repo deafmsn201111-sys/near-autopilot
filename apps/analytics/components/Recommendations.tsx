@@ -79,7 +79,11 @@ export function Recommendations({
         <p className="muted-note">
           <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
             <i aria-hidden="true">{analysis.source === 'llm' ? '✓' : '!'}</i>
-            {analysis.source === 'llm' ? 'AI-ranked' : 'Heuristic (AI unavailable)'}
+            {analysis.source === 'heuristic'
+              ? 'Heuristic (AI unavailable)'
+              : analysis.recommendations.length
+                ? 'AI-ranked'
+                : 'AI-checked · nothing to act on'}
           </span>
           {analysis.note && <small> {analysis.note}</small>}
         </p>
@@ -138,6 +142,17 @@ export function Recommendations({
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>
+                {r.carry && (
+                  <p className="muted-note">
+                    {r.carry.text}{' '}
+                    <span
+                      className="ai-tag"
+                      title={PROVENANCE_TIER_INFO[r.carry.provenance].describe}
+                    >
+                      {PROVENANCE_TIER_INFO[r.carry.provenance].label}
+                    </span>
+                  </p>
+                )}
                 {r.intent &&
                 (r.intent.action === 'repay' || r.intent.action === 'repay_from_collateral') &&
                 r.intent.sizing ? (

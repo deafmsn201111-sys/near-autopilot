@@ -343,6 +343,14 @@ finality, before the new state was readable.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
   one below 4 significant digits) shows the note for the full ~15 s.
+  **Amendment (#117):** the watcher reads the native balance (`view_account`, still one RPC call per 6 s tick)
+  instead of the access-key nonces, so an incoming NEAR transfer triggers the same refresh; an own transaction moves
+  the balance too. Answers from an older block are dropped. Like the holdings check, it compares the balance at 4
+  significant digits, so gas refunds, dust and a contract's gas rewards do not trigger it. It stays quiet while a
+  refresh runs and for 10 s after one ends, so the refresh started after signing is not followed by a second one.
+  Not watched, shown only on a reload after the cache expires: incoming fungible tokens (no cheap per-account signal),
+  a balance move below 4 significant digits, a transfer in the 10 s quiet window, and one that landed before the page
+  mounted while its render came from the cache.
 
 ## D21 — One-click actions start at $1
 
@@ -380,7 +388,20 @@ caps and cascade validation are unchanged.
   sentence on why (no loan, the largest non-stablecoin's share), shown under the picker.
   **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.
 
-## D23 — The AI pipeline streams over Server-Sent Events through the site proxy
+## D23 — An idle-token supply is not capped at the swap size limit
+
+**Context:** #131. On a wallet with $507 of idle USDC the rule-based card supplied all of it, while the AI path's
+Capital Allocator capped the deposit at `swap.maxSwapUsd` ($100, the old autopilot's per-trade cap) and the card then
+called $100 "your idle USDC". The decision engine also rejected a larger supply as `EXCEEDS_ORCHESTRATOR_LIMIT`.
+**Decision:** `lending.supply` deposits the whole held balance of the chosen token; `maxSwapUsd` limits swaps only
+(agent and decision engine). A supply is not a trade (no price, no slippage), it can be withdrawn any time, and the
+user signs it. The policy engine's `maxActionUsd` on the dry-run autopilot path, the prepare caps and `validateCascade`
+are unchanged.
+**Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
+turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
+(fail-closed) instead of scaled down. The two paths can still pick different tokens when several are idle (#139).
+
+## D24 — The AI pipeline streams over Server-Sent Events through the site proxy
 
 **Context:** #113. The AI analysis takes several seconds and its pipeline appeared only at the end.
 **Decision:** The same `POST /v1/analytics/account/:id/analysis` answers `text/event-stream` when the request asks

@@ -10,7 +10,7 @@
 	reverse_proxy analytics:3000 {
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Real-IP {remote_host}
-		# The live AI pipeline is Server-Sent Events: pass each event on as it comes (D23).
+		# The live AI pipeline is Server-Sent Events: pass each event on as it comes (D24).
 		flush_interval -1
 	}
 

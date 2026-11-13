@@ -158,6 +158,8 @@ export interface AnalysisContext {
   readonly strategy?: StrategyId;
   /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
+  /** The loan's cost against the deposits' earnings, for every loan card the guardian returns. */
+  readonly loanCarry?: PortfolioRecommendation['carry'];
 }
 
 export interface Analysis {
@@ -270,7 +272,7 @@ export function walletAgentConfig(
 /** Our own enum and numbers only: safe to put in the prompt. */
 function strategyLine(id: StrategyId): string {
   const s = STRATEGIES[id];
-  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). Weigh the candidates for that strategy.`;
+  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). A loan is not a problem by itself: when you suggest a repayment, the reason is the health factor, never the loan. Weigh the candidates for that strategy.`;
 }
 
 const SYSTEM = [
@@ -336,6 +338,7 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd
 function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
+  carry: PortfolioRecommendation['carry'],
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
@@ -390,6 +393,7 @@ function guardianTool(
             amount: p.amount.toString(),
             ...sizingFor(loanCards, p.token),
           },
+          ...(carry && { carry }),
         });
       }
       candidates.push(...fromCollateral);
@@ -592,6 +596,9 @@ function displayNumbers(value: unknown, key = ''): string[] {
   return [];
 }
 
+/** Every tool that can propose a card; market_intelligence only reads. */
+const PROPOSING_TOOLS = Object.keys(AGENTS).filter((t) => t !== 'market_intelligence');
+
 const NOTES: Record<FallbackCode, string> = {
   off: 'AI analysis is off on this server; showing the rule-based list.',
   kill_switch: 'AI analysis is paused by the operator; showing the rule-based list.',
@@ -619,7 +626,9 @@ const parseJson = (text: string): unknown => {
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
- * out. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
+ * out. An empty answer counts as an AI result only when every proposing tool ran and neither they nor the rules
+ * found anything. No model, any
+ * other empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
  * rule-based list, labelled. An AI result is reused for 10 minutes while the wallet state is unchanged; only runs that
  * reach the model count against the global limit.
  */
@@ -804,7 +813,7 @@ export async function analyseAccount(
   };
   const run = async () => {
     const tools = [
-      guardianTool(obs, ctx.checks, found, steps),
+      guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
       allocatorTool(obs, found, steps),
       marketTool(obs, steps),
       walletTool(
@@ -904,7 +913,11 @@ export async function analyseAccount(
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
   checks.picked = recommendations.length;
-  if (recommendations.length === 0) return failed('empty');
+  const nothingToActOn =
+    found.size === 0 &&
+    ctx.heuristics.length === 0 &&
+    PROPOSING_TOOLS.every((name) => trace.some((t) => t.ok && t.tool === name));
+  if (recommendations.length === 0 && !nothingToActOn) return failed('empty');
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>

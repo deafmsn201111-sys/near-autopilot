@@ -52,6 +52,7 @@ import {
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
+import { signedMoney } from '../lib/format';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
@@ -310,6 +311,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </>
     );
   const t = data.totals;
+  const monthly = signedMoney(data.earnings.monthlyNetUsd);
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
 
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
@@ -361,6 +363,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           {isAccount ? 'Synced from mainnet · just now' : `Updated ${ago(data.asOf)}`}
         </span>
       </div>
+
+      {isAccount && <AccountForm compact />}
 
       {isAccount && (
         <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
@@ -415,13 +419,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <div className="hero-side">
           <div className="hero-stat">
             <span className="eyebrow">Monthly result now</span>
-            <div
-              className={`hero-num num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}
-            >
-              {data.earnings.monthlyNetUsd === null
-                ? '—'
-                : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
-            </div>
+            <div className={`hero-num num ${monthly.tone}`}>{monthly.text}</div>
             <span className="muted-note">{data.earnings.sentence}</span>
           </div>
           <div className="hero-stat">

@@ -445,6 +445,66 @@ describe('analyseAccount', () => {
     );
   });
 
+  const healthy = async () => {
+    const o = observation();
+    const snapshot = { ...o.snapshot, walletBalances: [], lending: null };
+    return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+  };
+
+  const checkAll: LlmToolTurn = {
+    kind: 'tool_calls',
+    calls: [...callAll.calls, { id: '6', name: 'burrow_withdrawals', input: {} }],
+  };
+
+  it('labels a run with nothing to act on as an AI result, not a fallback', async () => {
+    const { llm } = fake([() => checkAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(out.source).toBe('llm');
+    expect(out.fallback).toBeNull();
+    expect(out.recommendations).toEqual([]);
+    expect(out.note).toBeNull();
+    expect(out.calledTools.length).toBeGreaterThan(0);
+  });
+
+  it('still falls back when the model calls no tool and ranks nothing', async () => {
+    const { llm } = fake([() => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(out.fallback).toBe('empty');
+  });
+
+  it('still falls back when the model skipped a check', async () => {
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(out.fallback).toBe('empty');
+  });
+
+  it('still falls back when the model drops every real candidate', async () => {
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.source).toBe('heuristic');
+    expect(out.fallback).toBe('empty');
+    expect(out.recommendations).toEqual([heuristic]);
+  });
+
   it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
     const { llm } = fake([
       () => callAll,
@@ -683,6 +743,28 @@ describe('analyseAccount', () => {
     });
   });
 
+  it('supplies the whole idle balance like the rule-based card, past the $100 swap limit', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
+    ]);
+    const obs = observation();
+    const rich: AgentObservation = {
+      ...obs,
+      snapshot: { ...obs.snapshot, walletBalances: [{ token: USDT, raw: usdt(507.42) }] },
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => rich,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    const card = out.recommendations.find((r) => r.kind === 'put_idle_to_work');
+    expect(card?.intent).toMatchObject({ amount: usdt(507.42).toString() });
+    expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
+  });
+
   it.each([
     ['invalid JSON', (): LlmToolTurn => ({ kind: 'final', text: 'not json' })],
     ['a model error', (): Promise<LlmToolTurn> => Promise.reject(new Error('529'))],
@@ -887,6 +969,27 @@ describe('analyseAccount', () => {
       )
     ).recommendations[0];
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
+  });
+
+  it("the guardian's wallet repay shows the loan's carry line, also with no rule-based loan card", async () => {
+    const carry = {
+      text: 'Loan costs 6.5% a year (≈ $0.21/month); your Burrow deposits earn ≈ $0.19/month.',
+      provenance: 'calculated_estimate' as const,
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'liquidation-guardian:repay:usdt.tether-token.near', why: 'Repay.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [],
+      checks: [],
+      loanCarry: carry,
+      ownerVerified: true,
+    });
+    expect(out.recommendations[0]?.intent?.action).toBe('repay');
+    expect(out.recommendations[0]?.carry).toEqual(carry);
   });
 
   it('does not let digits of a raw amount vouch for a number in the why', async () => {

@@ -384,12 +384,45 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
 
+## 2026-11-13 — Incoming NEAR transfers refresh "Your account" (#117)
+
+- `apps/analytics/lib/account-signal.ts`: the watcher reads `view_account` (balance + block height) instead of the
+  access-key nonces; `watchStep` drops stale blocks, compares at 4 significant digits and stays quiet while a refresh
+  runs or for 10 s after (`recentlyRefreshed` in `portfolio-refresh.ts`). A received NEAR transfer now shows the
+  "Transaction seen" note and the new balance within one tick (D20 amendment).
+
+## 2026-11-13 — Loan cards show the carry; a safe profitable loan is left alone (#86)
+
+- `apps/api/src/analytics/account-view.ts`: the account read splits the monthly Burrow figure into what the loan costs
+  and what the deposits earn (`LoanCarry`, null when a $1+ position has no rate); the loan card carries
+  `carry: { text, provenance: 'calculated_estimate' }` ("Loan costs X% a year (≈ $Y/month); your Burrow deposits earn
+  ≈ $Z/month", or "rate unavailable"). `keepsProfitableLoan`: HF at or above the strategy's safe line and deposits
+  earning more than the loan costs drops the "Repay $N of your loan" action.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian's wallet repay card carries the same line; the system prompt
+  says the reason to repay is the health factor, never the loan itself.
+- `apps/analytics`: the line under the card's why, tagged with its provenance.
+
+## 2026-11-13 — AI "nothing to act on" is an AI result; $0.00 monthly is neutral (#130)
+
+- `analyseAccount`: an empty answer is an AI result (`source: 'llm'`) only when every proposing tool ran without error
+  and neither they nor the rule-based list produced a candidate. A model that drops a real candidate, or skips or
+  fails a check, still falls back with `empty`.
+- UI badge: "AI-checked · nothing to act on" for that case.
+- "Monthly result now" that rounds to $0.00 shows `$0.00` with no sign or colour (`signedMoney`), and the sentence
+  says the position roughly breaks even (`earningsSentence`) instead of "costs about $0.00".
+
+## 2026-11-13 — Idle supply sized the same on the AI path (#131)
+
+- `CapitalAllocatorAgent.proposeSupply` deposits the whole idle balance; the decision engine no longer applies
+  `maxSwapUsd` to `lending.supply` (D23). The AI card now says "Put $507.42 of your idle USDt to work", as the
+  rule-based card does.
+
 ## 2026-11-13 — Live AI pipeline over SSE (#113)
 
 - `packages/orchestrator/src/tool-loop.ts`: `onResult` reports each tool result as it comes back.
 - `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount(..., onEvent)` emits `read`, `agent`, `ranked`, `checked`
   from the same server-built lines as the trace; the JSON reply is unchanged.
-- `apps/api/src/analytics/account-view.ts`: the analysis endpoint streams when asked for `text/event-stream` (D23).
+- `apps/api/src/analytics/account-view.ts`: the analysis endpoint streams when asked for `text/event-stream` (D24).
 - `apps/analytics`: the `/api/analysis` proxy passes the stream through unbuffered; `runAnalysis` parses the events
   (zod, unknown ones ignored), falls back to JSON; "How the AI got here" fills in as events arrive.
 - `deploy/public/Caddyfile`: `flush_interval -1` on the reverse proxy.

@@ -397,7 +397,7 @@ export function decide(input: EvaluationInput): Decision {
       }
 
       case 'lending.supply': {
-        // Discretionary: idle wallet tokens into Burrow at the supply rate. Same gates and the same hurdle as a swap.
+        // Discretionary: idle wallet tokens into Burrow at the supply rate. Same gates and hurdle as a swap, no size limit (D23).
         if (RISK_RANK[risk.level] >= RISK_RANK.watch) {
           rejected.push(
             reject(
@@ -451,16 +451,6 @@ export function decide(input: EvaluationInput): Decision {
           break;
         }
         const value = tokenValueUsd(snapshot.prices, prop.token, prop.amount);
-        if (value > limits.maxSwapUsdMicro) {
-          rejected.push(
-            reject(
-              p,
-              'EXCEEDS_ORCHESTRATOR_LIMIT',
-              `value ${value} micro-USD exceeds ${limits.maxSwapUsdMicro}`,
-            ),
-          );
-          break;
-        }
         const y = input.market.estimatedYieldWad.get(prop.token);
         if (y === undefined || y <= 0n) {
           rejected.push(
