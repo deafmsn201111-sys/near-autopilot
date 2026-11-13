@@ -8,7 +8,7 @@ export type PortfolioId = (typeof PORTFOLIOS)[number]['id'];
 export const portfolioOf = (v: string | string[] | undefined): PortfolioId =>
   v === 'demo-500' ? 'demo-500' : 'demo-5000';
 
-/** Demo portfolios, and (on the Portfolio page) "Your account": any NEAR mainnet account, read-only. */
+/** Demo portfolios, and (on the Portfolio page) "Mainnet account": any NEAR mainnet account, read-only. */
 export function PortfolioSwitch({
   current,
   path,
@@ -18,7 +18,7 @@ export function PortfolioSwitch({
   current: PortfolioId | 'account';
   path: string;
   withAccount?: boolean;
-  /** The connected account id, so the "Your account" tab keeps working after navigating away. */
+  /** The connected account id, so the "Mainnet account" tab keeps working after navigating away. */
   account?: string;
 }) {
   return (
@@ -37,8 +37,7 @@ export function PortfolioSwitch({
           href={`${path}?p=account${account ? `&account=${encodeURIComponent(account)}` : ''}`}
           aria-current={current === 'account' ? 'true' : undefined}
         >
-          Your account
-          {current === 'account' && <span className="seg-live">LIVE</span>}
+          Mainnet account
         </Link>
       )}
     </nav>
