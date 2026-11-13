@@ -140,6 +140,9 @@ export interface PortfolioView {
     symbol: string;
     amount: number;
     usd: number | null;
+    verified?: boolean;
+    estimate?: boolean;
+    small?: boolean;
   }[];
   totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
   health: { healthFactor: number | null; level: Level; label: string; sentence: string };
@@ -154,7 +157,12 @@ export interface PortfolioView {
     sub: string;
     amount: number | null;
     usd: number | null;
+    verified?: boolean;
+    estimate?: boolean;
+    small?: boolean;
   }[];
+  /** A real account: false when an indexer was down and only the allowlisted tokens and pools were read. */
+  discovery?: { complete: boolean };
 }
 export interface AgentEntry {
   from: string;

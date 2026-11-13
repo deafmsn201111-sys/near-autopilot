@@ -3,9 +3,12 @@ import { cookies } from 'next/headers';
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
 
-/** Dust: worth under a cent (or, unpriced, under 0.005 tokens). Shown nowhere: it would read as "0 TOKEN". */
-const isDust = (h: { amount: number | null; usd: number | null }) =>
-  h.usd !== null ? h.usd < 0.01 : h.amount !== null && h.amount < 0.005;
+/** Rows shown before "Show all (N)". */
+const TOP_ROWS = 7;
+
+/** Behind "show small balances": the API's flag for a real account; a demo uses the same $1 rule. */
+const isSmall = (h: { amount: number | null; usd: number | null; small?: boolean }) =>
+  h.small ?? (h.usd !== null ? h.usd < 1 : h.amount !== null && h.amount < 0.005);
 
 /** Small amounts keep two significant digits (0.0042 BTC is not "0"); others two decimals. */
 const amountText = (n: number) =>
@@ -72,6 +75,91 @@ interface Row {
   sub: string | null;
   amount: number | null;
   usd: number | null;
+  verified?: boolean;
+  estimate?: boolean;
+  small?: boolean;
+}
+
+function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
+  const [bg, fg] = tokenVisual(r.symbol);
+  const isDebt = r.where === 'borrowed';
+  const kind =
+    r.sub ??
+    (r.where === 'wallet' || r.where === 'position'
+      ? (TOKEN_KIND[r.symbol.toUpperCase()] ?? 'Token')
+      : WHERE[r.where]);
+  const pct = isDebt ? 0 : (r.usd ?? 0) / assetsTotal;
+  return (
+    <div className="ht-row">
+      <div className="ht-asset">
+        <span className="coin" style={{ background: bg, color: fg }}>
+          {r.symbol.slice(0, 1)}
+        </span>
+        <div>
+          <div className="nm">
+            {r.symbol}
+            {r.verified === false && <span className="ht-badge">Unverified</span>}
+          </div>
+          <div className="sub">
+            {kind}
+            {r.estimate && ' · price estimate'}
+            {r.usd === null && ' · no price'}
+          </div>
+        </div>
+      </div>
+      <div className="ht-qty num">{r.amount === null ? '—' : amountText(r.amount)}</div>
+      <div className="ht-alloc">
+        {isDebt ? (
+          <span className="muted-note">Borrowed</span>
+        ) : (
+          <>
+            <span className="track">
+              <span className="fill" style={{ width: `${Math.min(100, pct * 100)}%` }} />
+            </span>
+            <span className="pc num">{(pct * 100).toFixed(1)}%</span>
+          </>
+        )}
+      </div>
+      <div className={`ht-val num r ${isDebt ? 'neg' : ''}`}>
+        {isDebt ? '−' : ''}
+        {money(r.usd, false)}
+      </div>
+    </div>
+  );
+}
+
+/** The largest rows first; the rest behind a native disclosure, so a long list costs no client JS. */
+function HoldingsTable({
+  rows,
+  assetsTotal,
+  top = TOP_ROWS,
+}: {
+  rows: readonly Row[];
+  assetsTotal: number;
+  top?: number;
+}) {
+  const rest = rows.slice(top);
+  return (
+    <div className="holdings-table">
+      <div className="ht-head">
+        <span>Asset</span>
+        <span>Balance</span>
+        <span>Allocation</span>
+        <span className="r">Value</span>
+      </div>
+      {rows.slice(0, top).map((r) => (
+        <HoldingRow key={r.key} r={r} assetsTotal={assetsTotal} />
+      ))}
+      {rest.length > 0 && (
+        <details className="ht-more">
+          <summary>Show all ({rows.length})</summary>
+          {rest.map((r) => (
+            <HoldingRow key={r.key} r={r} assetsTotal={assetsTotal} />
+          ))}
+        </details>
+      )}
+    </div>
+  );
 }
 
 const allocBySymbol = (assets: readonly Row[], total: number) => {
@@ -208,19 +296,20 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const t = data.totals;
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
 
-  // Holdings for the premium table (non-dust, highest value first) and the hero allocation bar. A real account's
-  // bar, totals and LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
-  const rows: Row[] = [
+  // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
+  // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
+  const allRows: Row[] = [
     ...data.holdings.map((h) => ({ ...h, key: `${h.where}-${h.token ?? h.symbol}`, sub: null })),
     ...(data.positions ?? []).map((r) => ({ ...r, where: 'position' as const, symbol: r.label })),
-  ]
-    .filter((h) => !isDust(h))
-    .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+  ].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+  const rows = allRows.filter((h) => !isSmall(h) && h.verified !== false);
+  const unverifiedRows = allRows.filter((h) => !isSmall(h) && h.verified === false);
+  const smallRows = allRows.filter(isSmall);
   const assetsTotal = t.assetsUsd || 1;
   const alloc = data.metrics
     ? data.metrics.byToken.map((b) => ({ symbol: b.symbol, pct: b.pct / 100 }))
     : allocBySymbol(
-        rows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
+        allRows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
         assetsTotal,
       );
   const allocTop = alloc.slice(0, 4);
@@ -337,58 +426,36 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <div className="block-head">
           <h2>What you hold</h2>
           <span className="muted-note">
-            {rows.length} {rows.length === 1 ? 'asset' : 'assets'} ·{' '}
+            {rows.length + unverifiedRows.length}{' '}
+            {rows.length + unverifiedRows.length === 1 ? 'asset' : 'assets'} ·{' '}
             {isAccount ? 'read just now' : `updated ${ago(data.asOf)}`}
           </span>
         </div>
-        <div className="holdings-table">
-          <div className="ht-head">
-            <span>Asset</span>
-            <span>Balance</span>
-            <span>Allocation</span>
-            <span className="r">Value</span>
+        {isAccount && data.discovery?.complete === false && (
+          <div className="callout warn" style={{ marginBottom: 12 }}>
+            A token or pool indexer did not answer, so only the tokens and pools on our list are
+            shown. Reload in a minute to read the whole account.
           </div>
-          {rows.map((r) => {
-            const [bg, fg] = tokenVisual(r.symbol);
-            const isDebt = r.where === 'borrowed';
-            const kind =
-              r.sub ??
-              (r.where === 'wallet' || r.where === 'position'
-                ? (TOKEN_KIND[r.symbol.toUpperCase()] ?? 'Token')
-                : WHERE[r.where]);
-            const pct = isDebt ? 0 : (r.usd ?? 0) / assetsTotal;
-            return (
-              <div className="ht-row" key={r.key}>
-                <div className="ht-asset">
-                  <span className="coin" style={{ background: bg, color: fg }}>
-                    {r.symbol.slice(0, 1)}
-                  </span>
-                  <div>
-                    <div className="nm">{r.symbol}</div>
-                    <div className="sub">{kind}</div>
-                  </div>
-                </div>
-                <div className="ht-qty num">{r.amount === null ? '—' : amountText(r.amount)}</div>
-                <div className="ht-alloc">
-                  {isDebt ? (
-                    <span className="muted-note">Borrowed</span>
-                  ) : (
-                    <>
-                      <span className="track">
-                        <span className="fill" style={{ width: `${Math.min(100, pct * 100)}%` }} />
-                      </span>
-                      <span className="pc num">{(pct * 100).toFixed(1)}%</span>
-                    </>
-                  )}
-                </div>
-                <div className={`ht-val num r ${isDebt ? 'neg' : ''}`}>
-                  {isDebt ? '−' : ''}
-                  {money(r.usd, false)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        )}
+        <HoldingsTable rows={rows} assetsTotal={assetsTotal} />
+        {unverifiedRows.length > 0 && (
+          <>
+            <div className="block-head" style={{ marginTop: 24 }}>
+              <h2>Unverified tokens</h2>
+              <span className="muted-note">
+                Not on our list: shown only, never used in a suggestion. Prices are estimates from
+                Rhea&apos;s indexer.
+              </span>
+            </div>
+            <HoldingsTable rows={unverifiedRows} assetsTotal={assetsTotal} />
+          </>
+        )}
+        {smallRows.length > 0 && (
+          <details className="ht-small">
+            <summary>Show small balances ({smallRows.length})</summary>
+            <HoldingsTable rows={smallRows} assetsTotal={assetsTotal} top={Infinity} />
+          </details>
+        )}
         <div className="ht-foot">
           <span className="muted-note">
             {isAccount
