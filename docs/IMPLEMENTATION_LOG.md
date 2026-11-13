@@ -243,3 +243,9 @@ no longer said what comes first.
 - `apps/analytics/app/page.tsx`: a real account's allocation bar reads `metrics.byToken`; the holdings table adds one
   row per LP position (and any staking token not in the wallet list), so it sums to "$X in assets". Demo portfolios
   are unchanged.
+
+## 2026-11-12 — AI ranking survives auto-refresh (#67)
+
+- The UI keeps the AI result while the card ids and holdings (4 significant digits, prices excluded) stay the same; the
+  15 s refresh no longer drops it. When they change, the rule-based list returns with "Your portfolio changed — run the
+  AI analysis again." (`apps/analytics/lib/portfolio-signature.ts`).

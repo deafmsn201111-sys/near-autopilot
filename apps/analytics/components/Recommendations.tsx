@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { runAnalysis, type Analysis } from '../lib/analysis-client';
-import type { AccountRecommendation } from '../lib/product';
+import { portfolioSignature } from '../lib/portfolio-signature';
+import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
 import { PrepareDialog } from './PrepareDialog';
 
@@ -13,27 +14,27 @@ import { PrepareDialog } from './PrepareDialog';
 export function Recommendations({
   account,
   recommendations: initial,
+  holdings,
   signingEnabled,
 }: {
   account: string;
   recommendations: readonly AccountRecommendation[];
+  holdings: PortfolioView['holdings'];
   signingEnabled: boolean;
 }) {
   const [running, setRunning] = useState(false);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [ai, setAi] = useState<{ analysis: Analysis; signature: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const signature = portfolioSignature(initial, holdings);
+  const analysis = ai?.signature === signature ? ai.analysis : null;
+  const portfolioChanged = ai !== null && analysis === null;
   const recommendations = analysis?.recommendations ?? initial;
-
-  // The page re-reads every 20 s with a new array; drop the AI result only when the cards themselves change (ids and
-  // headline numbers, e.g. after a signed transaction), not on every refresh.
-  const signature = initial.map((r) => `${r.id}:${r.title}`).join('|');
-  useEffect(() => setAnalysis(null), [signature]);
 
   async function analyse() {
     setRunning(true);
     setError(null);
     const r = await runAnalysis(account);
-    if (r.ok) setAnalysis(r.analysis);
+    if (r.ok) setAi({ analysis: r.analysis, signature });
     else setError(r.error);
     setRunning(false);
   }
@@ -63,6 +64,9 @@ export function Recommendations({
           </span>
           {analysis.note && <small> {analysis.note}</small>}
         </p>
+      )}
+      {portfolioChanged && (
+        <p className="muted-note">Your portfolio changed — run the AI analysis again.</p>
       )}
       {error && (
         <div className="callout warn" role="alert">
