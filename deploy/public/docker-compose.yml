@@ -143,7 +143,7 @@ services:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; setup.sh adds it)}
       ADMIN_UI: '1'
     ports:
-      - '127.0.0.1:3002:3000'
+      - '127.0.0.1:3003:3000'
 
   # With profile `caddy` (COMPOSE_PROFILES=caddy in .env): the only service reachable from the internet, ports 80/443,
   # with a Let's Encrypt certificate for SITE_ADDRESS. Needs inbound 80 and 443; behind a NAT use Tailscale Funnel.

@@ -46,7 +46,7 @@ replaced).
   ```
 
   Docker-published ports bypass ufw, so the compose file publishes nothing else: the dashboard is on
-  `127.0.0.1:3000`, the admin on `127.0.0.1:3002`, Postgres and the API have no published port. Never publish one on `0.0.0.0`.
+  `127.0.0.1:3000`, the admin on `127.0.0.1:3003`, Postgres and the API have no published port. Never publish one on `0.0.0.0`.
 
 - Docker starts on boot (`systemctl enable docker`); every service has `restart: unless-stopped`, so the site comes
   back after a reboot. `setup.sh` keeps `.env` at `chmod 600`.
@@ -113,7 +113,7 @@ backtest, show "not enough history yet" until they have them.
 
 ## Admin (AI spend and kill switch)
 
-The admin runs in its own container, `analytics-admin`, bound to `127.0.0.1:3002` on the server. Nothing public
+The admin runs in its own container, `analytics-admin`, bound to `127.0.0.1:3003` (3002 is taken by the old beta stack) on the server. Nothing public
 reaches it: the site and Caddy answer 404 for `/admin`, the port is bound to loopback (not to the public interface), and the API accepts admin
 calls only with `ADMIN_API_TOKEN`, a token that never reaches the browser. The only way in is an SSH tunnel, so only someone
 whose SSH key the server accepts can open it.
@@ -140,7 +140,7 @@ whose SSH key the server accepts can open it.
 
    It opens the tunnel and http://127.0.0.1:3012/admin in your browser, and keeps running. The local port is 3012
    (not 3002, which the local stack uses); change it with `ADMIN_LOCAL_PORT`. By hand, the same thing is
-   `ssh -N -L 3012:127.0.0.1:3002 near-autopilot` and then the URL above.
+   `ssh -N -L 3012:127.0.0.1:3003 near-autopilot` and then the URL above.
 
 3. **Host name.** Use `127.0.0.1` or `localhost`: any other host name gets 403 (protection against DNS rebinding).
 
