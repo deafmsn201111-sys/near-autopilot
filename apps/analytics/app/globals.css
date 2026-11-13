@@ -2661,6 +2661,8 @@ main.page {
 .repay-picker {
   display: grid;
   gap: 10px;
+}
+.repay-picker > :not(:last-child) {
   max-width: 420px;
 }
 .repay-amount {

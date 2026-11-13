@@ -91,6 +91,16 @@ describe('portfolioRecommendations', () => {
       expect(l?.why).toContain('USDC');
     });
 
+    it('never offers a repay from collateral that would lower the health factor (already liquidatable)', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          loan: { hasDebt: true, healthFactor: 0.9, collateralAdjUsd: 90, debtAdjUsd: 100 },
+          largestDebt: { ...demoDebt, vr: 0.98, amount: 98, usd: 98, collateral: 50 },
+        }),
+      );
+      expect(r.find((x) => x.kind === 'improve_loan_safety')?.intent).toBeNull();
+    });
+
     it('says nothing about the loan above the watch line', () => {
       const r = portfolioRecommendations(
         ctx({ loan: { ...demoLoan, healthFactor: 1.7 }, largestDebt: demoDebt }),

@@ -652,6 +652,13 @@ function loanSafety(
   const safeTokens = Math.min(Number(raw) / 10 ** debt.decimals, maxTokens);
   const after = hfAfterRepay(model, safeTokens, from);
   const usd = safeTokens * debt.usdPerToken;
+  // Repaying from collateral only helps while HF > vr²; below that (already liquidatable) it would lower the HF.
+  if (after !== null && after <= hf)
+    return {
+      ...card,
+      why: `${near}. Repaying from your ${debt.symbol} collateral would not raise it at this point; repaying from the wallet or adding collateral would.`,
+      intent: null,
+    };
   return {
     ...card,
     why: `${near}${from === 'collateral' ? `, and your wallet does not hold enough ${debt.symbol} to repay with` : ''}. Repaying ${tokenText(safeTokens)} ${debt.symbol} (about ${money0(usd)}) from your ${from === 'wallet' ? 'wallet' : `${debt.symbol} collateral on Burrow`} ${after === null ? 'repays the whole loan' : `raises it to ${after.toFixed(2)}`}.`,
@@ -1152,7 +1159,8 @@ export function registerAccountView(
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
     const loan = {
-      hasDebt: v.loan.hasDebt,
+      // any borrowed entry counts, priced or not: an unpriced loan must not read as "nothing borrowed"
+      hasDebt: v.holdings.some((h) => h.where === 'borrowed'),
       healthFactor: v.loan.healthFactor,
       collateralAdjUsd: v.loan.collateralAdjUsd,
       debtAdjUsd: v.loan.debtAdjUsd,
