@@ -112,6 +112,86 @@ describe('portfolioRecommendations', () => {
       expect(l?.why).toContain('USDC');
     });
 
+    describe('repay with another collateral (withdraw -> swap -> repay)', () => {
+      // 200 wNEAR collateral at $3 (vr 0.6), 250 USDC debt (vr 0.95), no USDC anywhere: HF 1.37.
+      const loan = {
+        hasDebt: true,
+        healthFactor: (200 * 3 * 0.6) / (250 / 0.95),
+        collateralAdjUsd: 200 * 3 * 0.6,
+        debtAdjUsd: 250 / 0.95,
+      };
+      const debt = { ...demoDebt, usd: 250, amount: 250, collateral: 0 };
+      const wnear = {
+        token: 'wrap.near',
+        symbol: 'wNEAR',
+        decimals: 24,
+        usdPerToken: 3,
+        vr: 0.6,
+        deposited: 0,
+        collateral: 200,
+        wallet: 0,
+        outPerIn: 2.985,
+        slippageBps: 50,
+      };
+      const card = (over: Partial<RecommendationContext>) =>
+        portfolioRecommendations(ctx({ loan, largestDebt: debt, swapRepay: wnear, ...over })).find(
+          (x) => x.kind === 'improve_loan_safety',
+        );
+      const hfOf = (wnearOut: number, usdcRepaid: number) =>
+        (600 * 0.6 - wnearOut * 3 * 0.6) / (250 / 0.95 - usdcRepaid / 0.95);
+
+      it('offers three transactions sized to the target, step 1 above the 1.15 floor', () => {
+        const l = card({});
+        const intent = l?.intent;
+        if (intent?.action !== 'repay_with_collateral')
+          throw new Error('expected repay_with_collateral');
+        expect(intent.token).toBe(USDC);
+        expect(intent.collateralToken).toBe('wrap.near');
+        expect(intent.maxSlippageBps).toBe(50);
+        const withdraw = Number(BigInt(intent.withdraw ?? '0') / 10n ** 18n) / 1e6;
+        const swapIn = Number(BigInt(intent.amount) / 10n ** 18n) / 1e6;
+        expect(withdraw).toBeCloseTo(swapIn, 6);
+        expect(hfOf(withdraw, swapIn * 2.985)).toBeGreaterThanOrEqual(1.599);
+        expect(intent.plan.hfAfterWithdraw).toBeGreaterThanOrEqual(1.15);
+        expect(intent.plan.hfAfterWithdraw).toBeCloseTo(hfOf(withdraw, 0), 4);
+        expect(intent.plan.hfAfterRepay).toBeCloseTo(1.6, 2);
+        expect(intent.plan.transactions).toBe(3);
+        expect(intent.approxUsd).toBeCloseTo(swapIn * 2.985, 1);
+        expect(l?.why).toMatch(/three transactions/i);
+        expect(l?.why).toContain('wNEAR');
+        expect(l?.why).toContain(intent.plan.hfAfterWithdraw.toFixed(2));
+        expect(l?.why).toContain('1.60');
+        expect(l?.why).toContain('1.15');
+      });
+
+      it('gives advice only when any withdrawal would take the health factor under 1.15', () => {
+        const low = { ...loan, debtAdjUsd: 320 / 0.95, healthFactor: 360 / (320 / 0.95) };
+        const l = card({ loan: low, largestDebt: { ...debt, usd: 320, amount: 320 } });
+        expect(l?.intent).toBeNull();
+        expect(l?.why).toContain('1.15');
+        expect(l?.why).toContain('wNEAR');
+      });
+
+      it('swaps the wNEAR already in the wallet first: no withdrawal, two transactions', () => {
+        const intent = card({ swapRepay: { ...wnear, wallet: 100 } })?.intent;
+        if (intent?.action !== 'repay_with_collateral')
+          throw new Error('expected repay_with_collateral');
+        expect(intent.withdraw).toBeUndefined();
+        expect(intent.plan.transactions).toBe(2);
+        expect(intent.plan.hfAfterWithdraw).toBeCloseTo(loan.healthFactor, 6);
+      });
+
+      it('prefers it to a partial repay from a wallet that holds too little USDC', () => {
+        const intent = card({ largestDebt: { ...debt, wallet: 20 } })?.intent;
+        expect(intent?.action).toBe('repay_with_collateral');
+      });
+
+      it('keeps the same-token repay from collateral when the debt token is collateral too', () => {
+        const intent = card({ largestDebt: { ...debt, collateral: 300 } })?.intent;
+        expect(intent?.action).toBe('repay_from_collateral');
+      });
+    });
+
     it('never offers a repay from collateral that would lower the health factor (already liquidatable)', () => {
       const r = portfolioRecommendations(
         ctx({

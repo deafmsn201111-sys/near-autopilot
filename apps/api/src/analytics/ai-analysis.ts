@@ -347,7 +347,7 @@ function guardianTool(
     spec: {
       name: 'liquidation_guardian',
       description:
-        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment that restores the target, from the wallet or, when the wallet holds too little, from the collateral of the same token.',
+        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment that restores the target, from the wallet or, when the wallet holds too little, from the collateral of the same token, or by withdrawing another collateral token, swapping it and repaying (the health factor stays above 1.15 after every step).',
       inputSchema: noInputSchema,
     },
     input: noInput,
@@ -357,8 +357,22 @@ function guardianTool(
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
-      const fromCollateral = loanCards.filter((c) => c.intent?.action === 'repay_from_collateral');
+      // A loan card the wallet cannot pay replaces the wallet repay: same-token collateral, or another collateral
+      // swapped into the debt token (#69).
+      const fromCollateral = loanCards.filter(
+        (c) =>
+          c.intent?.action === 'repay_from_collateral' ||
+          c.intent?.action === 'repay_with_collateral',
+      );
       for (const c of fromCollateral) {
+        if (c.intent?.action === 'repay_with_collateral') {
+          const { plan } = c.intent;
+          byCandidate.set(c.id, {
+            text: `Health factor ${hf} → ${plan.hfAfterWithdraw.toFixed(2)} after withdrawing collateral → ${plan.hfAfterRepay === null ? 'no debt' : plan.hfAfterRepay.toFixed(2)} after swapping it and repaying`,
+            provenance: 'calculated_estimate',
+          });
+          continue;
+        }
         const s = c.intent && 'sizing' in c.intent ? c.intent.sizing : undefined;
         const after = s && hfAfterRepay(s, s.safeTokens, 'collateral');
         if (s)

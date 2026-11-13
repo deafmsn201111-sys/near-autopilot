@@ -6,6 +6,8 @@ import {
   MissingPriceError,
   DEFAULT_STRATEGY,
   repayToReach,
+  SWAP_REPAY_FLOOR_HF,
+  swapRepayPlan,
   withdrawableToKeep,
   type RepaySizing,
   type RepaySource,
@@ -36,6 +38,7 @@ import { exactAmount, resolveBalancedLpAmounts, resolveIntentAmount } from '../w
 import { buildUnwrapNear } from '../wallet/wrap';
 import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
 import { validateCascade } from '../wallet/validate-cascade';
+import { prepareSwapRepay } from '../wallet/swap-repay';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
@@ -531,7 +534,36 @@ export type RecommendationIntent =
       /** Repay cards only: what the amount picker needs to recompute the health factor as the user changes it. */
       readonly sizing?: RepaySizing;
     }
-  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
+  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
+  | SwapRepayIntent;
+
+/**
+ * Repay a debt with another collateral token: withdraw it from Burrow (only what the wallet lacks), swap it on Rhea,
+ * repay with the swap's minimum output plus any of the debt token already in the wallet. Separate transactions,
+ * signed in order; the health factor never drops below SWAP_REPAY_FLOOR_HF after any of them (#69).
+ */
+export interface SwapRepayIntent {
+  readonly action: 'repay_with_collateral';
+  /** The debt token repaid. */
+  readonly token: string;
+  /** The collateral token withdrawn and swapped. */
+  readonly collateralToken: string;
+  /** USD of the repayment at the swap's minimum output. */
+  readonly approxUsd: number;
+  /** Collateral token to swap, base units (wallet first, then the withdrawal). */
+  readonly amount: string;
+  /** Collateral token to withdraw from Burrow, base units; absent when the wallet already holds enough. */
+  readonly withdraw?: string;
+  readonly maxSlippageBps: number;
+  /** The card's estimate of the health factor after each step; prepare recomputes it from a fresh read. */
+  readonly plan: {
+    readonly hfNow: number;
+    readonly hfAfterWithdraw: number;
+    readonly hfAfterRepay: number | null;
+    readonly floorHf: number;
+    readonly transactions: 2 | 3;
+  };
+}
 
 export interface PortfolioRecommendation {
   readonly id: string;
@@ -597,6 +629,19 @@ export interface RecommendationContext {
   })[];
   /** borrowAprPct is the debts' rate weighted by their USD value. */
   readonly carry?: LoanCarry;
+  /**
+   * Another Burrow token that can repay the largest debt through an allowlisted Rhea pool (whole tokens), with the
+   * swap rate at its minimum output from a live quote. Null without one.
+   */
+  readonly swapRepay?:
+    | (BurrowTokenFacts & {
+        readonly deposited: number;
+        readonly collateral: number;
+        readonly wallet: number;
+        readonly outPerIn: number;
+        readonly slippageBps: number;
+      })
+    | null;
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
     lptId: string;
@@ -658,7 +703,7 @@ export function portfolioAdvice(
     ctx.largestDebt.usd >= 0.01
   )
     recs.push({
-      ...loanSafety(ctx.loan, hf, ctx.largestDebt, strategy),
+      ...loanSafety(ctx.loan, hf, ctx.largestDebt, strategy, ctx.swapRepay ?? null),
       ...(ctx.carry && { carry: carryLine(ctx.carry) }),
     });
 
@@ -826,6 +871,9 @@ export function strategyNote(ctx: RecommendationContext, loan: LoanForHealth): s
   return `All three strategies give the same advice here: ${loanPart}, and ${tokenPart}. A strategy changes when a loan counts as safe and how much to repay, and from what share one token (${span((s) => s.concentrationInfoPct)}) needs rebalancing.`;
 }
 
+/** The swap-repay card's slippage limit: the prepare default. */
+const SWAP_REPAY_SLIPPAGE_BPS = 50;
+
 const tokenText = (n: number) => (n >= 1 ? n.toFixed(2) : n.toPrecision(3));
 
 /** Whole tokens -> base units at up to 6 decimals, rounded `up` or down; null when that is zero. */
@@ -845,6 +893,7 @@ function loanSafety(
   hf: number,
   debt: NonNullable<RecommendationContext['largestDebt']>,
   strategy: Strategy,
+  swap: NonNullable<RecommendationContext['swapRepay']> | null,
 ): PortfolioRecommendation {
   const targetHf = strategy.targetHealthFactor;
   const model = {
@@ -870,6 +919,11 @@ function loanSafety(
     severity: hf < strategy.warningBelow ? 'warning' : 'info',
     title: `Your loan's health factor is ${hf.toFixed(2)}`,
   } as const;
+  // The wallet cannot cover the repay and no collateral is the debt token: swap another collateral token instead.
+  if (swap && from !== 'collateral' && !(from === 'wallet' && debt.wallet >= walletNeed)) {
+    const swapCard = swapRepayCard(loan, hf, debt, strategy, swap);
+    if (swapCard.intent || !from) return { ...card, ...swapCard, why: `${near}${swapCard.why}` };
+  }
   const maxTokens = Math.min(from === 'wallet' ? debt.wallet : debt.collateral, debt.amount);
   const raw =
     from && rawOf(Math.min(repayToReach(model, targetHf, from), maxTokens), debt.decimals, true);
@@ -906,6 +960,79 @@ function loanSafety(
         safeTokens,
         maxTokens,
         wholeDebt: maxTokens >= debt.amount,
+      },
+    },
+  };
+}
+
+const ORDINAL = ['', 'one', 'two', 'three'] as const;
+
+/** The withdraw -> swap -> repay card (#69); its `why` continues the caller's first sentence. */
+function swapRepayCard(
+  loan: NonNullable<RecommendationContext['loan']>,
+  hf: number,
+  debt: NonNullable<RecommendationContext['largestDebt']>,
+  strategy: Strategy,
+  swap: NonNullable<RecommendationContext['swapRepay']>,
+): Pick<PortfolioRecommendation, 'why' | 'intent'> {
+  const plan = swapRepayPlan({
+    model: { collateralAdjUsd: loan.collateralAdjUsd, debtAdjUsd: loan.debtAdjUsd },
+    collateral: swap,
+    debt: { usdPerToken: debt.usdPerToken, vr: debt.vr, amount: debt.amount, wallet: debt.wallet },
+    outPerIn: swap.outPerIn,
+    target: strategy.targetHealthFactor,
+    floor: SWAP_REPAY_FLOOR_HF,
+  });
+  const lacks = `, and your wallet does not hold enough ${debt.symbol} to repay with`;
+  if (!plan.ok)
+    return {
+      why:
+        lacks +
+        (plan.reason === 'floor'
+          ? `. Repaying it with your ${swap.symbol} collateral would first withdraw some, which would take the health factor under ${SWAP_REPAY_FLOOR_HF.toFixed(2)}; add collateral or ${debt.symbol} to the wallet instead.`
+          : plan.reason === 'no_gain'
+            ? `. Swapping your ${swap.symbol} collateral into ${debt.symbol} to repay would not raise it at today's swap price.`
+            : `; none of your collateral can be swapped into ${debt.symbol} for it.`),
+      intent: null,
+    };
+  const swapRaw = rawOf(plan.swapIn, swap.decimals, false);
+  const withdrawRaw = plan.withdraw > 0 ? rawOf(plan.withdraw, swap.decimals, false) : null;
+  if (!swapRaw || plan.repay * debt.usdPerToken < 0.01)
+    return {
+      why: `${lacks}; the ${swap.symbol} swap that could repay it is too small.`,
+      intent: null,
+    };
+  const transactions = withdrawRaw ? 3 : 2;
+  const hf1 = plan.hfAfterWithdraw ?? hf;
+  const end =
+    plan.hfAfterRepay === null
+      ? 'repays the whole loan'
+      : `brings it to ${plan.hfAfterRepay.toFixed(2)}`;
+  const steps = [
+    ...(withdrawRaw
+      ? [
+          `withdraw ${tokenText(plan.withdraw)} ${swap.symbol} from your Burrow collateral (health factor ${hf.toFixed(2)} → ${hf1.toFixed(2)})`,
+        ]
+      : []),
+    `swap ${tokenText(plan.swapIn)} ${swap.symbol}${plan.fromWallet > 0 && withdrawRaw ? ` (${tokenText(plan.fromWallet)} of it already in your wallet)` : ''} for at least ${tokenText(plan.minOut)} ${debt.symbol} on Rhea`,
+    `repay ${tokenText(plan.repay)} ${debt.symbol}, which ${end}`,
+  ];
+  return {
+    why: `${lacks}. This repays it with your ${swap.symbol} in ${ORDINAL[transactions]} transactions, signed in order: ${steps.map((t, n) => `${n + 1}) ${t}`).join('; ')}. If you stop before the last one, the health factor stays at ${hf1.toFixed(2)}, never under ${SWAP_REPAY_FLOOR_HF.toFixed(2)}; prices can still move between the steps.`,
+    intent: {
+      action: 'repay_with_collateral',
+      token: debt.token,
+      collateralToken: swap.token,
+      approxUsd: Math.max(0.01, approxUsdOf(plan.repay * debt.usdPerToken)),
+      amount: swapRaw.toString(),
+      ...(withdrawRaw && { withdraw: withdrawRaw.toString() }),
+      maxSlippageBps: swap.slippageBps,
+      plan: {
+        hfNow: hf,
+        hfAfterWithdraw: hf1,
+        hfAfterRepay: plan.hfAfterRepay,
+        floorHf: SWAP_REPAY_FLOOR_HF,
+        transactions,
       },
     },
   };
@@ -1103,6 +1230,56 @@ export function registerAccountView(
       loanCarry: entry.checks.model.carry && carryLine(entry.checks.model.carry),
       concentration: entry.concentration,
     };
+  };
+
+  /**
+   * The Burrow token that could repay the largest debt through an allowlisted Rhea pool when the loan is under the
+   * most careful strategy's safe line and no collateral is the debt token (#69): the largest one, with the swap rate
+   * at its minimum output from a live quote sized near the debt. One quote per account read, only for such loans.
+   */
+  const swapRepayCandidate = async (
+    loan: { readonly healthFactor: number | null },
+    debt: RecommendationContext['largestDebt'],
+    balances: RecommendationContext['burrowBalances'],
+    walletOf: (token: string) => number,
+  ): Promise<RecommendationContext['swapRepay']> => {
+    const strictest = Math.max(...STRATEGY_IDS.map((id) => STRATEGIES[id].healthyAt));
+    if (
+      !debt ||
+      loan.healthFactor === null ||
+      loan.healthFactor >= strictest ||
+      debt.collateral > 0
+    )
+      return null;
+    const routed = (t: string) =>
+      deps.pools.some(
+        (p) =>
+          (p.tokenA === t && p.tokenB === debt.token) ||
+          (p.tokenB === t && p.tokenA === debt.token),
+      );
+    const best = balances
+      .filter((b) => b.token !== debt.token && b.vr > 0 && b.collateral > 0 && routed(b.token))
+      .map((b) => ({ ...b, wallet: walletOf(b.token) }))
+      .map((b) => ({ b, usd: (b.collateral + b.deposited + b.wallet) * b.usdPerToken }))
+      .filter((x) => x.usd >= MIN_ACTION_USD)
+      .sort((x, y) => y.usd - x.usd)[0]?.b;
+    if (!best) return null;
+    const tokensIn = Math.min(
+      best.collateral + best.deposited + best.wallet,
+      debt.usd / best.usdPerToken,
+    );
+    const amountIn = rawOf(tokensIn, best.decimals, false);
+    const tokenIn = accountIdSchema.safeParse(best.token);
+    const tokenOut = accountIdSchema.safeParse(debt.token);
+    if (!amountIn || !tokenIn.success || !tokenOut.success) return null;
+    const quote = await quoter
+      .quote({ tokenIn: tokenIn.data, tokenOut: tokenOut.data, amountIn })
+      .catch(() => null);
+    if (!quote || quote.amountOut <= 0n) return null;
+    const slippageBps = SWAP_REPAY_SLIPPAGE_BPS;
+    const out = Number(quote.amountOut) / 10 ** debt.decimals;
+    const inTokens = Number(amountIn) / 10 ** best.decimals;
+    return { ...best, outPerIn: ((out / inTokens) * (10_000 - slippageBps)) / 10_000, slippageBps };
   };
 
   const readAccount = async (
@@ -1526,6 +1703,9 @@ export function registerAccountView(
       collateralAdjUsd: v.loan.collateralAdjUsd,
       debtAdjUsd: v.loan.debtAdjUsd,
     };
+    const swapRepay = await swapRepayCandidate(loan, largestDebt, burrowBalances, (t) =>
+      held('wallet', t),
+    );
     // A NEAR swap wraps native NEAR first, so NEAR and wNEAR in the wallet are one liquid amount.
     const nearLike = new Set<string>([NATIVE_HOLDING, WNEAR]);
     const sameAsset = (t: string) =>
@@ -1541,6 +1721,7 @@ export function registerAccountView(
       largestDebt,
       burrowBalances,
       carry,
+      swapRepay,
       dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
@@ -1563,6 +1744,7 @@ export function registerAccountView(
       largestDebt: largestDebt && labelled(largestDebt),
       burrowBalances: burrowBalances.map(labelled),
       carry,
+      swapRepay: swapRepay && labelled(swapRepay),
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     };
 
@@ -1809,6 +1991,16 @@ export function registerAccountView(
             token: accountIdSchema,
             approxUsd: usd,
             amount,
+          }),
+          // Repay a debt with another collateral token: withdraw -> swap -> repay (#69).
+          z.object({
+            action: z.literal('repay_with_collateral'),
+            token: accountIdSchema,
+            collateralToken: accountIdSchema,
+            approxUsd: usd,
+            amount: amount.unwrap(),
+            withdraw: amount,
+            maxSlippageBps: slip,
           }),
         ]),
       })
@@ -2100,6 +2292,187 @@ export function registerAccountView(
             })),
           })),
           preview: cascade.preview,
+          signed: false,
+          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+        };
+      } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
+
+    if (intent.action === 'repay_with_collateral') {
+      try {
+        const [prices, meta, acct, deployment, assets] = await Promise.all([
+          latestPrices(),
+          store.tokenMetadata(),
+          burrow.getAccount(account),
+          burrowVerifier.verifyDeployment(),
+          burrow.listAssets(),
+        ]);
+        if (!acct) return reply.code(409).send({ error: `${account} has no Burrow account` });
+        const metaOf = (t: string) => meta.find((x) => x.token === t);
+        const assetOf = (t: string) => assets.find((a) => a.tokenId === t);
+        const facts = (t: string) => {
+          const a = assetOf(t);
+          const price = prices.get(t);
+          return a && price !== undefined && price > 0
+            ? {
+                decimals: metaOf(t)?.decimals ?? (t === WNEAR ? 24 : 18),
+                symbol: metaOf(t)?.symbol ?? t.slice(0, 10),
+                usdPerToken: price,
+                vr: a.volatilityRatioBps / 10_000,
+                extra: 10n ** BigInt(a.extraDecimals),
+              }
+            : null;
+        };
+        // The health factor's two sides at the latest confirmed prices, as the account view computes them.
+        let collateralAdjUsd = 0;
+        let debtAdjUsd = 0;
+        for (const [list, side] of [
+          [acct.collateral, 'collateral'],
+          [acct.borrowed, 'debt'],
+        ] as const)
+          for (const b of list) {
+            const f = facts(b.tokenId);
+            if (!f || (side === 'debt' && f.vr <= 0))
+              return reply
+                .code(409)
+                .send({ error: `no confirmed price or risk data for ${b.tokenId}` });
+            const usdValue = (Number(b.inner / f.extra) / 10 ** f.decimals) * f.usdPerToken;
+            if (side === 'collateral') collateralAdjUsd += usdValue * f.vr;
+            else debtAdjUsd += usdValue / f.vr;
+          }
+        const c = facts(intent.collateralToken);
+        const d = facts(intent.token);
+        if (!c || !d)
+          return reply
+            .code(409)
+            .send({ error: 'no confirmed price for the collateral or the debt token' });
+        const rawOn = (
+          list: readonly { tokenId: string; inner: bigint }[],
+          t: string,
+          extra: bigint,
+        ) => list.filter((b) => b.tokenId === t).reduce((sum, b) => sum + b.inner, 0n) / extra;
+        const [vColl, vDebt, collWallet, debtWallet, collRegistered, debtRegistered] =
+          await Promise.all([
+            burrowVerifier.verifyToken(deployment, intent.collateralToken, 'withdraw'),
+            burrowVerifier.verifyToken(deployment, intent.token, 'repay'),
+            tokens.getBalance(intent.collateralToken, account).catch(() => 0n),
+            tokens.getBalance(intent.token, account).catch(() => 0n),
+            tokens.isStorageRegistered(intent.collateralToken, account),
+            tokens.isStorageRegistered(intent.token, account),
+          ]);
+        const storageMin = async (t: AccountId, registered: boolean) =>
+          registered
+            ? null
+            : BigInt(
+                ((await viewer.view(t, 'storage_balance_bounds', {})) as { min?: string }).min ??
+                  '1250000000000000000000',
+              );
+        const assetIds = [
+          ...new Set<string>([
+            intent.collateralToken,
+            intent.token,
+            ...acct.collateral.map((b) => b.tokenId),
+            ...acct.borrowed.map((b) => b.tokenId),
+          ]),
+        ];
+        const now = clock.now();
+        const prepared = await prepareSwapRepay({
+          account,
+          rheaId: deps.rheaId,
+          requested: {
+            swapInRaw: BigInt(intent.amount),
+            withdrawRaw: BigInt(intent.withdraw ?? '0'),
+          },
+          collateral: {
+            token: intent.collateralToken,
+            symbol: c.symbol,
+            decimals: c.decimals,
+            usdPerToken: c.usdPerToken,
+            vr: c.vr,
+            walletRaw: collWallet,
+            suppliedRaw: rawOn(acct.supplied, intent.collateralToken, c.extra),
+            collateralRaw: rawOn(acct.collateral, intent.collateralToken, c.extra),
+            storageMin: await storageMin(intent.collateralToken, collRegistered),
+          },
+          debt: {
+            token: intent.token,
+            symbol: d.symbol,
+            decimals: d.decimals,
+            usdPerToken: d.usdPerToken,
+            vr: d.vr,
+            walletRaw: debtWallet,
+            debtRaw: rawOn(acct.borrowed, intent.token, d.extra),
+            storageMin: await storageMin(intent.token, debtRegistered),
+          },
+          model: { collateralAdjUsd, debtAdjUsd },
+          slippageBps: intent.maxSlippageBps,
+          floor: SWAP_REPAY_FLOOR_HF,
+          quote: (amountIn) =>
+            quoter.quote({ tokenIn: intent.collateralToken, tokenOut: intent.token, amountIn }),
+          withdrawTx: (rawAmount, fromCollateralRaw) =>
+            buildWithdraw({
+              deployment,
+              token: vColl,
+              now,
+              rawAmount,
+              fromCollateralRaw,
+              assetIds,
+            }),
+          repayTx: (rawAmount) => buildRepay({ deployment, token: vDebt, now, rawAmount }),
+        });
+        if (!prepared.ok) return reply.code(409).send({ error: prepared.error });
+        const cascade = assembleCascade(account, prepared.steps);
+        const check = validateCascade(cascade.transactions, {
+          signerId: account,
+          allowedReceivers: new Set<string>([
+            deployment.oracleId,
+            deps.burrowId,
+            deps.rheaId,
+            intent.collateralToken,
+            intent.token,
+          ]),
+        });
+        if (!check.ok)
+          return reply
+            .code(422)
+            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
+        const totalGas = cascade.transactions.reduce(
+          (sum, t) => sum + t.actions.reduce((g, a) => g + a.gas, 0n),
+          0n,
+        );
+        const { amounts } = prepared;
+        const of = (raw: bigint, f: { decimals: number; symbol: string }) => ({
+          raw: raw.toString(),
+          human: Number(raw) / 10 ** f.decimals,
+          symbol: f.symbol,
+        });
+        return {
+          account,
+          intent,
+          amount: of(amounts.repayRaw, d),
+          transactions: cascade.transactions.map((t) => ({
+            intentId: t.intentId,
+            receiverId: t.receiverId,
+            actions: t.actions.map((a) => ({
+              methodName: a.methodName,
+              args: a.args,
+              gas: a.gas.toString(),
+              deposit: a.deposit.toString(),
+            })),
+          })),
+          preview: cascade.preview,
+          cost: {
+            networkFeeMaxNear: Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6,
+            swap: {
+              slippageBps: intent.maxSlippageBps,
+              estReceived: of(amounts.estOutRaw, d),
+              minReceived: of(amounts.minOutRaw, d),
+              priceImpactPct: null,
+            },
+          },
+          healthFactor: prepared.hf,
           signed: false,
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
