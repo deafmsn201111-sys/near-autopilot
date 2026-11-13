@@ -1,42 +1,86 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readAccountSignal } from '../lib/account-signal';
+import { COOLDOWN_MS, readAccount, watchStep, type WatchState } from '../lib/account-signal';
 
-function stubChain(state: { nonces: (number | string)[]; amount: string } | 'down') {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (_url: string, init: { body: string }) => {
-      if (state === 'down') throw new Error('offline');
-      const { params } = JSON.parse(init.body) as { params: { request_type: string } };
-      const result =
-        params.request_type === 'view_account'
-          ? { amount: state.amount }
-          : { keys: state.nonces.map((nonce) => ({ access_key: { nonce } })) };
-      return new Response(JSON.stringify({ result }));
-    }),
-  );
+const start: WatchState = { last: null, firedAt: -Infinity };
+const at = (height: number, amount: string) => ({ height, amount });
+
+function run(readings: { r: ReturnType<typeof at> | null; t: number }[]) {
+  let state = start;
+  return readings.map(({ r, t }) => {
+    const step = watchStep(state, r, t);
+    state = step.state;
+    return step.fire;
+  });
 }
 
-describe('readAccountSignal', () => {
+describe('watchStep', () => {
+  it('fires once when the balance changes, never on the first reading', () => {
+    expect(
+      run([
+        { r: at(1, '1000'), t: 0 },
+        { r: at(2, '1000'), t: 6_000 },
+        { r: at(3, '3000'), t: 12_000 },
+        { r: at(4, '3000'), t: 18_000 },
+      ]),
+    ).toEqual([false, false, true, false]);
+  });
+
+  it('drops readings from an older or the same block', () => {
+    expect(
+      run([
+        { r: at(10, '1000'), t: 0 },
+        { r: at(9, '900'), t: 6_000 },
+        { r: at(10, '900'), t: 12_000 },
+        { r: at(11, '1000'), t: 18_000 },
+      ]),
+    ).toEqual([false, false, false, false]);
+  });
+
+  it('a gas refund right after a transaction does not start a second refresh, a later transfer does', () => {
+    expect(
+      run([
+        { r: at(1, '1000'), t: 0 },
+        { r: at(2, '900'), t: 6_000 },
+        { r: at(3, '910'), t: 12_000 },
+        { r: at(4, '910'), t: 18_000 },
+        { r: at(9, '5000'), t: 6_000 + COOLDOWN_MS },
+      ]),
+    ).toEqual([false, true, false, false, true]);
+  });
+
+  it('skips a failed read without losing the baseline', () => {
+    expect(
+      run([
+        { r: at(1, '1000'), t: 0 },
+        { r: null, t: 6_000 },
+        { r: at(3, '2000'), t: 12_000 },
+      ]),
+    ).toEqual([false, false, true]);
+  });
+});
+
+describe('readAccount', () => {
   afterEach(() => vi.unstubAllGlobals());
+  const stub = (res: Response | Error) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if (res instanceof Error) throw res;
+        return res;
+      }),
+    );
 
-  it('changes on an incoming transfer that leaves the nonces alone', async () => {
-    stubChain({ nonces: [5, 9], amount: '1000' });
-    const before = await readAccountSignal('alice.near');
-    stubChain({ nonces: [5, 9], amount: '3000' });
-    expect(await readAccountSignal('alice.near')).not.toBe(before);
+  it('reads the balance and its block', async () => {
+    stub(new Response(JSON.stringify({ result: { amount: '2038', block_height: 224 } })));
+    expect(await readAccount('alice.near')).toEqual({ height: 224, amount: '2038' });
   });
 
-  it('changes on an own transaction, including a relayed one that keeps the balance', async () => {
-    stubChain({ nonces: [9], amount: '1000' });
-    const before = await readAccountSignal('alice.near');
-    stubChain({ nonces: ['10'], amount: '1000' });
-    expect(await readAccountSignal('alice.near')).not.toBe(before);
-  });
-
-  it('is stable while nothing lands and null when the RPC is unreachable', async () => {
-    stubChain({ nonces: [9], amount: '1000' });
-    expect(await readAccountSignal('alice.near')).toBe(await readAccountSignal('alice.near'));
-    stubChain('down');
-    expect(await readAccountSignal('alice.near')).toBeNull();
+  it('is null on an RPC error, an HTTP error or no network', async () => {
+    stub(new Response(JSON.stringify({ error: { name: 'UNKNOWN_ACCOUNT' } })));
+    expect(await readAccount('alice.near')).toBeNull();
+    stub(new Response('slow down', { status: 429 }));
+    expect(await readAccount('alice.near')).toBeNull();
+    stub(new Error('offline'));
+    expect(await readAccount('alice.near')).toBeNull();
   });
 });
