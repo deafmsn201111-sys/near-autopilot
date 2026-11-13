@@ -1,7 +1,12 @@
 import {
   accountIdSchema,
   BoundedMap,
+  hfAfterRepay,
   MissingPriceError,
+  repayToReach,
+  withdrawableToKeep,
+  type RepaySizing,
+  type RepaySource,
   PreconditionError,
   UnsupportedIntentError,
   type AccountId,
@@ -16,6 +21,7 @@ import {
   buildBorrow,
   buildBurrowStorageDeposit,
   buildRepay,
+  buildRepayFromCollateral,
   buildSupply,
   buildWithdraw,
 } from '@near-autopilot/burrow-adapter';
@@ -446,33 +452,69 @@ export function accountPortfolio(p: AccountPositions) {
 export type RecommendationIntent =
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
   | {
-      readonly action: 'repay' | 'supply';
+      readonly action: 'repay' | 'repay_from_collateral' | 'supply' | 'withdraw';
       readonly token: string;
       readonly approxUsd: number;
-      /** Exact amount in token base units when an orchestrator agent sized it; prepare uses it as is (capped). */
+      /** Exact amount in token base units when code sized it; prepare uses it as is (capped). */
       readonly amount?: string;
+      /** Repay cards only: what the amount picker needs to recompute the health factor as the user changes it. */
+      readonly sizing?: RepaySizing;
     }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
 
 export interface PortfolioRecommendation {
   readonly id: string;
   readonly kind:
-    'reduce_concentration' | 'improve_loan_safety' | 'put_idle_to_work' | 'reposition_dcl_position';
+    | 'reduce_concentration'
+    | 'improve_loan_safety'
+    | 'put_idle_to_work'
+    | 'reposition_dcl_position'
+    | 'withdraw_from_burrow';
   /** Which agent produced it (the orchestrator's roles), so the dashboard can show who/why. */
   readonly agent: string;
   readonly severity: 'info' | 'warning';
   readonly title: string;
   readonly why: string;
-  /** The concrete, parameterised intent Phase 4 turns into a transaction the user signs. Amounts are USD estimates. */
-  readonly intent: RecommendationIntent;
+  /** The parameterised intent the transaction engine turns into a cascade to sign; null = advice with no button. */
+  readonly intent: RecommendationIntent | null;
+}
+
+/** A token's Burrow-side numbers in whole tokens, for sizing a repay or a withdrawal. */
+interface BurrowTokenFacts {
+  readonly token: string;
+  readonly symbol: string;
+  readonly decimals: number;
+  readonly usdPerToken: number;
+  readonly vr: number;
 }
 
 export interface RecommendationContext {
   readonly metrics: PortfolioMetrics;
-  readonly loan: { readonly hasDebt: boolean; readonly healthFactor: number | null } | null;
+  readonly loan: {
+    readonly hasDebt: boolean;
+    readonly healthFactor: number | null;
+    readonly collateralAdjUsd: number;
+    readonly debtAdjUsd: number;
+  } | null;
   /** Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage. */
   readonly idleEarn: readonly { token: string; symbol: string; usd: number; aprPct: number }[];
-  readonly largestDebt: { token: string; symbol: string; usd: number } | null;
+  /** The largest debt, with what the wallet and the collateral hold of the same token (whole tokens). */
+  readonly largestDebt:
+    | (BurrowTokenFacts & {
+        readonly usd: number;
+        readonly amount: number;
+        readonly wallet: number;
+        readonly collateral: number;
+      })
+    | null;
+  /** Priced Burrow supply per token (whole tokens): plain deposit and collateral. aprPct is null with no rate. */
+  readonly burrowBalances: readonly (BurrowTokenFacts & {
+    readonly deposited: number;
+    readonly collateral: number;
+    readonly aprPct: number | null;
+  })[];
+  /** USD the wallet holds per token id (native NEAR above the gas reserve counts toward wrap.near). */
+  readonly walletUsd: Readonly<Record<string, number>>;
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
     lptId: string;
@@ -494,31 +536,28 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
 
   // 1. Loan safety first: a low health factor is the most time-sensitive thing.
   const hf = ctx.loan?.healthFactor ?? null;
-  if (ctx.loan?.hasDebt && hf !== null && hf < 1.5 && ctx.largestDebt) {
-    const approxUsd = Math.round(ctx.largestDebt.usd * 0.3);
-    recs.push({
-      id: 'improve-loan-safety',
-      kind: 'improve_loan_safety',
-      agent: 'Liquidation Guardian',
-      severity: hf < 1.3 ? 'warning' : 'info',
-      title: `Your loan's health factor is ${hf.toFixed(2)}`,
-      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
-      intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
-    });
-  }
+  if (ctx.loan?.hasDebt && hf !== null && hf < WATCH_HF && ctx.largestDebt)
+    recs.push(loanSafety(ctx.loan, hf, ctx.largestDebt));
 
-  // 2. Reduce single-asset concentration.
+  // 2. Reduce single-asset concentration, swapping only what the wallet holds.
   const c = ctx.metrics.concentration;
   if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
-    const approxUsd = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+    const wanted = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+    const approxUsd = Math.min(wanted, Math.floor(ctx.walletUsd[c.token] ?? 0));
+    const where =
+      approxUsd < 1
+        ? ' None of it is in your wallet: it sits on Burrow or in liquidity, so withdraw it there first.'
+        : approxUsd < wanted
+          ? ` Your wallet holds ${money0(approxUsd)} of it, so this swaps that part; the rest sits on Burrow or in liquidity.`
+          : '';
     recs.push({
       id: 'reduce-concentration',
       kind: 'reduce_concentration',
       agent: 'Portfolio Intelligence',
       severity: c.pct >= 85 ? 'warning' : 'info',
       title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
-      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
-      intent: { action: 'swap', fromToken: c.token, approxUsd },
+      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(wanted)} of it into other assets brings the single-asset risk down toward half the portfolio.${where}`,
+      intent: approxUsd < 1 ? null : { action: 'swap', fromToken: c.token, approxUsd },
     });
   }
 
@@ -550,7 +589,138 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
     });
   }
 
+  // 5. Last: Burrow supply that can move to the wallet (all of it with no loan, else what keeps the HF at target).
+  const withdrawal = withdrawable(ctx);
+  if (withdrawal) recs.push(withdrawal);
+
   return recs;
+}
+
+const TARGET_HF = ORCH.risk.targetHealthFactorBps / 10_000;
+const WATCH_HF = ORCH.risk.watchBelowBps / 10_000;
+const tokenText = (n: number) => (n >= 1 ? n.toFixed(2) : n.toPrecision(3));
+
+/** Whole tokens -> base units at up to 6 decimals, rounded `up` or down; null when that is zero. */
+function rawOf(tokens: number, decimals: number, up: boolean): bigint | null {
+  const places = Math.min(decimals, 6);
+  const scaled = (up ? Math.ceil : Math.floor)(tokens * 10 ** places - (up ? 1e-6 : -1e-6));
+  return scaled > 0 ? BigInt(scaled) * 10n ** BigInt(decimals - places) : null;
+}
+
+/**
+ * Repay the largest debt down to the target health factor: from the wallet when it holds enough, otherwise from the
+ * collateral of the same token (Burrow repays from the account's own balance). The card carries the sizing so the
+ * user can pick another amount; with neither source it is advice only (a different-token unwind needs a swap).
+ */
+function loanSafety(
+  loan: NonNullable<RecommendationContext['loan']>,
+  hf: number,
+  debt: NonNullable<RecommendationContext['largestDebt']>,
+): PortfolioRecommendation {
+  const model = {
+    collateralAdjUsd: loan.collateralAdjUsd,
+    debtAdjUsd: loan.debtAdjUsd,
+    vr: debt.vr,
+    usdPerToken: debt.usdPerToken,
+  };
+  const walletNeed = repayToReach(model, TARGET_HF, 'wallet');
+  const from: RepaySource | null =
+    debt.wallet > 0 && debt.wallet >= walletNeed
+      ? 'wallet'
+      : debt.collateral > 0
+        ? 'collateral'
+        : debt.wallet > 0
+          ? 'wallet'
+          : null;
+  const near = `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line`;
+  const card = {
+    id: 'improve-loan-safety',
+    kind: 'improve_loan_safety',
+    agent: 'Liquidation Guardian',
+    severity: hf < 1.3 ? 'warning' : 'info',
+    title: `Your loan's health factor is ${hf.toFixed(2)}`,
+  } as const;
+  const maxTokens = Math.min(from === 'wallet' ? debt.wallet : debt.collateral, debt.amount);
+  const raw =
+    from && rawOf(Math.min(repayToReach(model, TARGET_HF, from), maxTokens), debt.decimals, true);
+  if (!from || !raw)
+    return {
+      ...card,
+      why: `${near}. Your wallet holds no ${debt.symbol} to repay with and none of your collateral is ${debt.symbol}; repaying it from another token needs a swap first.`,
+      intent: null,
+    };
+  const safeTokens = Math.min(Number(raw) / 10 ** debt.decimals, maxTokens);
+  const after = hfAfterRepay(model, safeTokens, from);
+  const usd = safeTokens * debt.usdPerToken;
+  return {
+    ...card,
+    why: `${near}${from === 'collateral' ? `, and your wallet does not hold enough ${debt.symbol} to repay with` : ''}. Repaying ${tokenText(safeTokens)} ${debt.symbol} (about ${money0(usd)}) from your ${from === 'wallet' ? 'wallet' : `${debt.symbol} collateral on Burrow`} ${after === null ? 'repays the whole loan' : `raises it to ${after.toFixed(2)}`}.`,
+    intent: {
+      action: from === 'wallet' ? 'repay' : 'repay_from_collateral',
+      token: debt.token,
+      approxUsd: Math.max(0.01, Math.round(usd * 100) / 100),
+      amount: raw.toString(),
+      sizing: {
+        ...model,
+        symbol: debt.symbol,
+        decimals: debt.decimals,
+        hfNow: hf,
+        targetHf: TARGET_HF,
+        safeTokens,
+        maxTokens,
+        wholeDebt: maxTokens >= debt.amount,
+      },
+    },
+  };
+}
+
+function withdrawable(ctx: RecommendationContext): PortfolioRecommendation | null {
+  const loan = ctx.loan?.hasDebt ? ctx.loan : null;
+  const best = ctx.burrowBalances
+    .map((b) => {
+      const room = loan
+        ? withdrawableToKeep(
+            {
+              collateralAdjUsd: loan.collateralAdjUsd,
+              debtAdjUsd: loan.debtAdjUsd,
+              vr: b.vr,
+              usdPerToken: b.usdPerToken,
+            },
+            TARGET_HF,
+          )
+        : Infinity;
+      const tokens = b.deposited + Math.min(b.collateral, room);
+      return { b, tokens, all: room >= b.collateral, usd: tokens * b.usdPerToken };
+    })
+    .filter((o) => o.usd >= 10)
+    .sort((x, y) => y.usd - x.usd)[0];
+  // ponytail: the whole balance is asked with a 0.1% margin; prepare caps it at the exact balance it reads on-chain
+  const raw =
+    best && rawOf(best.all ? best.tokens * 1.001 : best.tokens, best.b.decimals, best.all);
+  if (!best || !raw) return null;
+  const { b } = best;
+  const amount = `${tokenText(best.tokens)} ${b.symbol}`;
+  const earns = b.aprPct
+    ? ` Withdrawn, it stops earning about ${b.aprPct.toFixed(1)}% a year.`
+    : '';
+  return {
+    id: `withdraw-${b.token}`,
+    kind: 'withdraw_from_burrow',
+    agent: 'Liquidation Guardian',
+    severity: 'info',
+    title: `Withdraw ${amount} from Burrow`,
+    why:
+      (loan
+        ? `You can move ${amount} (about ${money0(best.usd)}) from Burrow to your wallet and keep the loan's health factor at ${TARGET_HF.toFixed(2)} or above.`
+        : `Nothing is borrowed, so the ${amount} (about ${money0(best.usd)}) you have on Burrow can move to your wallet, for example to rebalance.`) +
+      earns,
+    intent: {
+      action: 'withdraw',
+      token: b.token,
+      approxUsd: Math.max(0.01, Math.round(best.usd * 100) / 100),
+      amount: raw.toString(),
+    },
+  };
 }
 
 /** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
@@ -919,20 +1089,75 @@ export function registerAccountView(
     const debts = v.holdings
       .filter((h) => h.where === 'borrowed' && h.usd !== null)
       .sort((a, b) => (b.usd as number) - (a.usd as number));
-    const largestDebt = debts[0]
-      ? { token: debts[0].token, symbol: debts[0].symbol, usd: debts[0].usd as number }
-      : null;
+    const held = (where: Holding['where'], token: string) =>
+      v.holdings
+        .filter((h) => h.where === where && h.token === token)
+        .reduce((s, h) => s + h.amount, 0);
+    const burrowFacts = (token: string) => {
+      const f = facts.get(token);
+      return f && f.usd !== null && f.vr
+        ? { token, symbol: f.symbol, decimals: f.decimals, usdPerToken: f.usd, vr: f.vr }
+        : null;
+    };
+    const debtFacts = debts[0] && burrowFacts(debts[0].token);
+    const largestDebt =
+      debts[0] && debtFacts
+        ? {
+            ...debtFacts,
+            usd: debts[0].usd as number,
+            amount: debts[0].amount,
+            wallet: held('wallet', debts[0].token),
+            collateral: held('collateral', debts[0].token),
+          }
+        : null;
+    const burrowBalances = [
+      ...new Set(
+        v.holdings
+          .filter((h) => h.where === 'deposited' || h.where === 'collateral')
+          .map((h) => h.token),
+      ),
+    ].flatMap((token) => {
+      const f = burrowFacts(token);
+      const apr = rate(token, 'netSupplyApr');
+      return f
+        ? [
+            {
+              ...f,
+              deposited: held('deposited', token),
+              collateral: held('collateral', token),
+              aprPct: apr === null ? null : apr * 100,
+            },
+          ]
+        : [];
+    });
+    const walletUsd: Record<string, number> = {};
+    for (const h of v.holdings.filter((x) => x.where === 'wallet' && x.usd !== null)) {
+      const usd =
+        h.token === NATIVE_HOLDING
+          ? (Math.max(0, h.amount - NEAR_RESERVE) * (h.usd as number)) / h.amount
+          : (h.usd as number);
+      walletUsd[h.token] = (walletUsd[h.token] ?? 0) + usd;
+      // swapping wNEAR may wrap native NEAR first (prepare's swap branch)
+      if (h.token === NATIVE_HOLDING) walletUsd[WNEAR] = (walletUsd[WNEAR] ?? 0) + usd;
+    }
     const outOfRange = (pair: (d: DclPositionView) => string) =>
       dclPositions
         .filter((d) => !d.inRange)
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
-    const loan = { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor };
+    const loan = {
+      hasDebt: v.loan.hasDebt,
+      healthFactor: v.loan.healthFactor,
+      collateralAdjUsd: v.loan.collateralAdjUsd,
+      debtAdjUsd: v.loan.debtAdjUsd,
+    };
     const recommendations = portfolioRecommendations({
       metrics,
       loan,
       idleEarn,
       largestDebt,
+      burrowBalances,
+      walletUsd,
       dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
     });
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
@@ -948,6 +1173,8 @@ export function registerAccountView(
       loan,
       idleEarn: idleEarn.map(labelled),
       largestDebt: largestDebt && labelled(largestDebt),
+      burrowBalances: burrowBalances.map(labelled),
+      walletUsd,
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     });
 
@@ -1166,9 +1393,20 @@ export function registerAccountView(
           }),
           // unwrap: wNEAR -> native NEAR.
           z.object({ action: z.literal('unwrap'), approxUsd: usd }),
-          // Burrow borrow / withdraw — priced through the oracle.
+          // Burrow borrow / withdraw / repay from collateral — priced through the oracle.
           z.object({ action: z.literal('borrow'), token: accountIdSchema, approxUsd: usd }),
-          z.object({ action: z.literal('withdraw'), token: accountIdSchema, approxUsd: usd }),
+          z.object({
+            action: z.literal('withdraw'),
+            token: accountIdSchema,
+            approxUsd: usd,
+            amount,
+          }),
+          z.object({
+            action: z.literal('repay_from_collateral'),
+            token: accountIdSchema,
+            approxUsd: usd,
+            amount,
+          }),
         ]),
       })
       .safeParse(req.body);
@@ -1467,10 +1705,14 @@ export function registerAccountView(
       }
     }
 
-    // borrow / withdraw — priced Burrow actions routed through the verified oracle (oracle_call). No wallet balance
-    // is needed (you borrow what you do not hold; you withdraw what Burrow holds). Burrow re-checks, at fresh prices,
-    // that collateral still covers debt, or the call reverts on-chain.
-    if (intent.action === 'borrow' || intent.action === 'withdraw') {
+    // borrow / withdraw / repay from collateral — priced Burrow actions routed through the verified oracle
+    // (oracle_call). No wallet balance is needed (you borrow what you do not hold; you withdraw or repay from what
+    // Burrow holds). Burrow re-checks, at fresh prices, that collateral still covers debt, or the call reverts on-chain.
+    if (
+      intent.action === 'borrow' ||
+      intent.action === 'withdraw' ||
+      intent.action === 'repay_from_collateral'
+    ) {
       try {
         const [prices, meta, acct, deployment] = await Promise.all([
           latestPrices(),
@@ -1495,13 +1737,33 @@ export function registerAccountView(
             ...acct.borrowed.map((b) => b.tokenId),
           ]),
         ];
+        if (
+          intent.action === 'repay_from_collateral' &&
+          !acct.borrowed.some((b) => b.tokenId === intent.token)
+        )
+          return reply.code(409).send({ error: `you have no ${sym} debt on Burrow` });
         const verifiedToken = await burrowVerifier.verifyToken(
           deployment,
           intent.token,
-          intent.action,
+          intent.action === 'repay_from_collateral' ? 'repay' : intent.action,
         );
-        const { rawAmount, humanAmount } = resolveIntentAmount(intent.approxUsd, price, decimals);
+        const requested =
+          'amount' in intent && intent.amount !== undefined
+            ? BigInt(intent.amount)
+            : resolveIntentAmount(intent.approxUsd, price, decimals).rawAmount;
+        // Withdraw and repay draw on this token's Burrow balance: plain supply first, then collateral released for it.
+        const rawOfInner = (list: readonly { tokenId: string; inner: bigint }[]) =>
+          list.filter((b) => b.tokenId === intent.token).reduce((s, b) => s + b.inner, 0n) /
+          10n ** BigInt(verifiedToken.extraDecimals);
+        const suppliedRaw = rawOfInner(acct.supplied);
+        const available = suppliedRaw + rawOfInner(acct.collateral);
+        if (intent.action !== 'borrow' && available <= 0n)
+          return reply.code(409).send({ error: `you have no ${sym} on Burrow` });
+        const rawAmount =
+          intent.action === 'borrow' || requested < available ? requested : available;
         if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
+        const fromCollateralRaw = rawAmount > suppliedRaw ? rawAmount - suppliedRaw : 0n;
+        const humanAmount = Number(rawAmount) / 10 ** decimals;
         const human = humanAmount.toFixed(Math.min(6, decimals));
 
         const common = { deployment, token: verifiedToken, now: clock.now(), rawAmount, assetIds };
@@ -1514,13 +1776,21 @@ export function registerAccountView(
                   preview: `Borrow ${human} ${sym} from Burrow against your collateral and send it to your wallet (Burrow caps this at what your collateral safely allows).`,
                 },
               ]
-            : [
-                {
-                  intentId: 'withdraw',
-                  tx: buildWithdraw(common),
-                  preview: `Withdraw up to ${human} ${sym} from your Burrow balance to your wallet (capped at your available balance).`,
-                },
-              ];
+            : intent.action === 'withdraw'
+              ? [
+                  {
+                    intentId: 'withdraw',
+                    tx: buildWithdraw({ ...common, fromCollateralRaw }),
+                    preview: `Withdraw up to ${human} ${sym} from your Burrow balance to your wallet${fromCollateralRaw > 0n ? ', releasing collateral for it' : ''} (Burrow refuses it if the loan would become unsafe).`,
+                  },
+                ]
+              : [
+                  {
+                    intentId: 'repay-from-collateral',
+                    tx: buildRepayFromCollateral({ ...common, fromCollateralRaw }),
+                    preview: `Repay up to ${human} ${sym} of your Burrow loan from your ${sym} on Burrow (collateral and debt both fall by that amount; capped at the actual debt). Nothing leaves your wallet.`,
+                  },
+                ];
 
         const cascade = assembleCascade(account, steps);
         const check = validateCascade(cascade.transactions, {

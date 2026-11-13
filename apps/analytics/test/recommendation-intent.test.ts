@@ -73,8 +73,69 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('maps repay from collateral and withdraw with their exact amount, never the sizing', () => {
+    const sizing = {
+      collateralAdjUsd: 51,
+      debtAdjUsd: 40,
+      vr: 0.95,
+      usdPerToken: 1,
+      symbol: 'USDC',
+      decimals: 6,
+      hfNow: 1.28,
+      targetHf: 1.6,
+      safeTokens: 17.17,
+      maxTokens: 37.87,
+      wholeDebt: true,
+    };
+    const repay: RecommendationIntent = {
+      action: 'repay_from_collateral',
+      token: 'usdc',
+      approxUsd: 17.17,
+      amount: '17170000',
+      sizing,
+    };
+    expect(recommendationToPrepare(repay, ACC)?.intent).toEqual({
+      action: 'repay_from_collateral',
+      token: 'usdc',
+      approxUsd: 17.17,
+      amount: '17170000',
+    });
+    const withdraw: RecommendationIntent = {
+      action: 'withdraw',
+      token: 'usdc',
+      approxUsd: 16.7,
+      amount: '16716700',
+    };
+    expect(recommendationToPrepare(withdraw, ACC)?.intent).toEqual({
+      action: 'withdraw',
+      token: 'usdc',
+      approxUsd: 16.7,
+      amount: '16716700',
+    });
+  });
+
+  it('uses the amount the user picked instead of the suggested one', () => {
+    const repay: RecommendationIntent = {
+      action: 'repay',
+      token: 'usdc',
+      approxUsd: 17,
+      amount: '17000000',
+    };
+    expect(recommendationToPrepare(repay, ACC, '5000000')?.intent).toMatchObject({
+      amount: '5000000',
+    });
+  });
+
+  it('has no request for advice-only cards', () => {
+    expect(recommendationToPrepare(null, ACC)).toBeNull();
+  });
+
   it('gives each action a button label', () => {
     expect(actionLabel({ action: 'repay', token: 'x', approxUsd: 1 })).toMatch(/repay/i);
+    expect(actionLabel({ action: 'repay_from_collateral', token: 'x', approxUsd: 1 })).toMatch(
+      /collateral/i,
+    );
+    expect(actionLabel({ action: 'withdraw', token: 'x', approxUsd: 1 })).toMatch(/withdraw/i);
     expect(actionLabel({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toMatch(
       /reposition/i,
     );

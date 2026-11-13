@@ -213,15 +213,23 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
   };
 }
 
+/**
+ * The orchestrator agent sizes a repayment from the wallet. When the wallet cannot cover it, the account view's loan
+ * card repays from the collateral of the same token instead (Burrow repays from the account's own balance), so the
+ * tool offers that card: the AI path never shows a repay the wallet cannot pay. A wallet repay keeps the card's
+ * sizing for the amount picker.
+ */
 function guardianTool(
   obs: AgentObservation,
+  checks: readonly PortfolioRecommendation[],
   found: Map<string, PortfolioRecommendation>,
 ): LoopTool {
+  const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
   return {
     spec: {
       name: 'liquidation_guardian',
       description:
-        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment from the wallet that restores the target.',
+        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment that restores the target, from the wallet or, when the wallet holds too little, from the collateral of the same token.',
       inputSchema: noInputSchema,
     },
     input: noInput,
@@ -230,7 +238,8 @@ function guardianTool(
       const hf = hfText(obs.risk.healthFactorWad);
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
-      for (const p of proposals) {
+      const fromCollateral = loanCards.filter((c) => c.intent?.action === 'repay_from_collateral');
+      for (const p of fromCollateral.length > 0 ? [] : proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
         const view = tokenView(obs, p.token, p.amount);
         const after = hfText(
@@ -249,9 +258,11 @@ function guardianTool(
             token: p.token,
             approxUsd: view.approxUsd,
             amount: p.amount.toString(),
+            ...sizingFor(loanCards, p.token),
           },
         });
       }
+      candidates.push(...fromCollateral);
       for (const c of candidates) found.set(c.id, c);
       return {
         riskLevel: obs.risk.level,
@@ -261,6 +272,13 @@ function guardianTool(
       };
     },
   };
+}
+
+function sizingFor(cards: readonly PortfolioRecommendation[], token: string) {
+  for (const c of cards)
+    if (c.intent?.action === 'repay' && c.intent.token === token && c.intent.sizing)
+      return { sizing: c.intent.sizing };
+  return {};
 }
 
 function allocatorTool(
@@ -393,7 +411,7 @@ const parseJson = (text: string): unknown => {
 };
 
 /**
- * Architecture C: the central LLM calls the orchestrator agents and two wallet checks as tools, then only orders the
+ * Architecture C: the central LLM calls the orchestrator agents and three wallet checks as tools, then only orders the
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
@@ -557,7 +575,7 @@ export async function analyseAccount(
   const found = new Map<string, PortfolioRecommendation>();
   const run = async () => {
     const tools = [
-      guardianTool(obs, found),
+      guardianTool(obs, ctx.checks, found),
       allocatorTool(obs, found),
       marketTool(obs),
       walletTool(
@@ -571,6 +589,13 @@ export async function analyseAccount(
         'liquidity_positions',
         'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
         'reposition_dcl_position',
+        ctx.checks,
+        found,
+      ),
+      walletTool(
+        'burrow_withdrawals',
+        'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
+        'withdraw_from_burrow',
         ctx.checks,
         found,
       ),

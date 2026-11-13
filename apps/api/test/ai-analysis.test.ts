@@ -205,7 +205,7 @@ describe('analyseAccount', () => {
     expect(off.recommendations).toEqual([shown]);
   });
 
-  it('offers the three orchestrator agents and the two wallet checks as tools', async () => {
+  it('offers the three orchestrator agents and the three wallet checks as tools', async () => {
     const { llm, tools } = fake([() => final([])]);
     await analyseAccount(ai(llm), {
       accountId: ALICE,
@@ -220,7 +220,48 @@ describe('analyseAccount', () => {
       'market_intelligence',
       'portfolio_concentration',
       'liquidity_positions',
+      'burrow_withdrawals',
     ]);
+  });
+
+  it('the guardian offers the repay from collateral when the wallet cannot repay, never a dead end', async () => {
+    const fromCollateral: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.37",
+      why: 'Repaying 50.00 USDt (about $50) from your USDt collateral on Burrow raises it to 1.60.',
+      intent: { action: 'repay_from_collateral', token: USDT, approxUsd: 50, amount: '50000000' },
+    };
+    const noWalletUsdt = (): AgentObservation => {
+      const o = observation();
+      return {
+        ...o,
+        snapshot: {
+          ...o.snapshot,
+          walletBalances: o.snapshot.walletBalances.filter((b) => b.token !== USDT),
+        },
+      };
+    };
+    let guardianOutput: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        guardianOutput = JSON.parse(results?.[0]?.content ?? 'null');
+        return final([{ id: 'improve-loan-safety', why: 'Repay from collateral.' }]);
+      },
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => noWalletUsdt(),
+      heuristics: [fromCollateral],
+      checks: [fromCollateral],
+      ownerVerified: true,
+    });
+    expect(guardianOutput).toMatchObject({ candidates: [{ id: 'improve-loan-safety' }] });
+    expect(out.source).toBe('llm');
+    expect(out.recommendations.map((r) => r.intent?.action)).toEqual(['repay_from_collateral']);
   });
 
   it('builds the ranked list from tool candidates in the model order, numbers from code only', async () => {

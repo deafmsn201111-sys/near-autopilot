@@ -393,3 +393,94 @@ describe('prepare exact amount', () => {
     expect(transferred(res.json<Prepared>())).toBe('10000000');
   });
 });
+
+describe('prepare from the Burrow balance (repay from collateral, withdraw)', () => {
+  const inner = (raw: bigint) => (raw * 10n ** 12n).toString();
+  const balance = (raw: bigint) => ({ token_id: USDT, balance: inner(raw), shares: inner(raw) });
+  // 2 USDt plain supply, 53.87 USDt collateral, an optional USDt debt, and no USDt in the wallet.
+  const burrowAccount = (borrowed: bigint) =>
+    rpc({
+      [`${BURROW}#get_account`]: () => ({
+        account_id: 'alice.near',
+        supplied: [balance(2_000_000n)],
+        collateral: [balance(53_870_000n)],
+        borrowed: borrowed > 0n ? [balance(borrowed)] : [],
+      }),
+      [`${USDT}#ft_balance_of`]: () => '0',
+    });
+  const prepare = (node: NearRpcClient, intent: Record<string, unknown>) =>
+    server(node, store).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: { account: 'alice.near', intent },
+    });
+  interface Prepared {
+    readonly amount: { readonly raw: string };
+    readonly transactions: readonly {
+      readonly receiverId: string;
+      readonly actions: readonly {
+        readonly methodName: string;
+        readonly args: { readonly receiver_id?: string; readonly msg?: string };
+      }[];
+    }[];
+  }
+  const executed = (body: Prepared) => {
+    expect(body.transactions).toHaveLength(1);
+    const tx = body.transactions[0]!;
+    expect(tx.receiverId).toBe(ORACLE);
+    expect(tx.actions[0]?.methodName).toBe('oracle_call');
+    expect(tx.actions[0]?.args.receiver_id).toBe(BURROW);
+    return JSON.parse(tx.actions[0]?.args.msg ?? '{}') as unknown;
+  };
+
+  it('repays from collateral with an empty wallet: plain supply first, the rest released from collateral', async () => {
+    const res = await prepare(burrowAccount(37_870_000n), {
+      action: 'repay_from_collateral',
+      token: USDT,
+      approxUsd: 17.17,
+      amount: '17170000',
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Prepared>();
+    expect(body.amount.raw).toBe('17170000');
+    expect(executed(body)).toEqual({
+      Execute: {
+        actions: [
+          { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
+          { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
+        ],
+      },
+    });
+  });
+
+  it('refuses to repay from collateral when there is no debt in that token', async () => {
+    const res = await prepare(burrowAccount(0n), {
+      action: 'repay_from_collateral',
+      token: USDT,
+      approxUsd: 5,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'you have no USDt debt on Burrow' });
+  });
+
+  it('withdraws at most the Burrow balance, releasing collateral beyond the plain supply', async () => {
+    const res = await prepare(burrowAccount(0n), {
+      action: 'withdraw',
+      token: USDT,
+      approxUsd: 100,
+      amount: '99000000',
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Prepared>();
+    expect(body.amount.raw).toBe('55870000');
+    expect(executed(body)).toEqual({
+      Execute: {
+        actions: [
+          { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
+          { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
+        ],
+      },
+    });
+  });
+});

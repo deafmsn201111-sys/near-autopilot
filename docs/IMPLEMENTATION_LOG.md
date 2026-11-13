@@ -268,3 +268,19 @@ no longer said what comes first.
   `analysisInputs`, which the analysis route also uses.
 - `AnthropicToolLlm` takes an optional `effort` (`output_config.effort`).
 - Result in D17: Haiku 5.5 at default effort stays; same answers as Sonnet 5.5 at 1/15 the cost.
+
+## 2026-11-13 — Repay from collateral, withdraw from Burrow, no dead-end cards (#64)
+
+- `packages/burrow-adapter/src/builders.ts`: `buildRepayFromCollateral` (one priced `oracle_call` →
+  `Execute { [DecreaseCollateral?, Repay] }`); `buildWithdraw` takes `fromCollateralRaw` and releases collateral
+  first, since Burrow's `Withdraw` only draws on plain supply.
+- `packages/core/src/loan-math.ts`: health factor after a repay (wallet or collateral), the repay that reaches a
+  target, the withdrawal that keeps it; shared by the API and the UI amount picker.
+- `apps/api/src/analytics/account-view.ts`: the loan card repays to HF 1.6 (wallet if it holds enough, else from
+  collateral, else advice only) and carries `sizing`; a last "Withdraw from Burrow" card; the concentration swap is
+  capped at what the wallet holds (no button when it holds none). `POST /v1/wallet/prepare` gains
+  `repay_from_collateral` and an exact `amount` for `withdraw`; both draw plain supply first, then collateral.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns the repay-from-collateral card when the wallet
+  cannot repay; new `burrow_withdrawals` wallet check.
+- `apps/analytics/components/RepayPicker.tsx`: amount field + slider + "To safe" / "Whole debt", live HF in the
+  zone colours; prepares exactly the chosen amount.

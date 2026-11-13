@@ -5,6 +5,7 @@ import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
 import { PrepareDialog } from './PrepareDialog';
+import { RepayPicker } from './RepayPicker';
 
 /**
  * The agents' recommendations for the connected wallet, each a card: what (title), why (plain language), which agent,
@@ -91,7 +92,17 @@ export function Recommendations({
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>
-                {request ? (
+                {r.intent &&
+                (r.intent.action === 'repay' || r.intent.action === 'repay_from_collateral') &&
+                r.intent.sizing ? (
+                  <RepayPicker
+                    intent={{ ...r.intent, action: r.intent.action }}
+                    sizing={r.intent.sizing}
+                    account={account}
+                    label={actionLabel(r.intent)}
+                    signingEnabled={signingEnabled}
+                  />
+                ) : request && r.intent ? (
                   <PrepareDialog
                     request={request}
                     label={actionLabel(r.intent)}

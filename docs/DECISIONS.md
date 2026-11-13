@@ -137,10 +137,13 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the tokens the wallet holds (`SnapshotService`),
   priced with the collector's confirmed prices, the same ones the portfolio table uses. `priceoracle.near` returned no
   recent price on 11 Nov 2026, so it is only Market Intelligence's second source (empty when it has none). Yields
-  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus two
-  wallet checks: concentration and DCL out of range. The LP Optimizer waits for a 24 h volume source (separate issue).
+  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus three
+  wallet checks: concentration, DCL out of range and Burrow withdrawals (#64). The LP Optimizer waits for a 24 h volume source (separate issue).
 - Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
-  repay text states the health factor the repayment actually reaches. Allocator swaps (they would
+  repay text states the health factor the repayment actually reaches. When the account view's loan card repays from
+  collateral (the wallet cannot reach the target), the guardian tool returns that card instead of the agent's wallet
+  repay, so the AI path never offers a repay the wallet cannot pay (#64). Repayments are sized to HF 1.6, never the
+  whole debt by default; the user can pick another amount. Allocator swaps (they would
   move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
   dropped.
 - The LLM returns only `{picks: [{id, why}]}` (zod). Unknown ids are dropped; a "why" with a number that neither its own
