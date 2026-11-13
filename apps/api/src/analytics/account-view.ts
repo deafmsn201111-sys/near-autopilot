@@ -44,6 +44,7 @@ import { toWad } from '../yield/math';
 import {
   analyseAccount,
   MIN_ACTION_USD,
+  approxUsdOf,
   walletAgentConfig,
   type AnalysisContext,
   type ToolLlmDeps,
@@ -546,7 +547,6 @@ export interface RecommendationContext {
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
 const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const cents = (usd: number) => Math.round(usd * 100) / 100;
 
 const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
 
@@ -575,7 +575,7 @@ export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
     ctx.largestDebt.usd >= 0.01
   ) {
     const debt = ctx.largestDebt.usd;
-    const approxUsd = cents(Math.min(debt, Math.max(debt * 0.3, MIN_ACTION_USD)));
+    const approxUsd = approxUsdOf(Math.min(debt, Math.max(debt * 0.3, MIN_ACTION_USD)));
     recs.push({
       id: 'improve-loan-safety',
       kind: 'improve_loan_safety',
@@ -591,11 +591,11 @@ export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
   const c = ctx.metrics.concentration;
   const target = c ? (ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100 : 0;
   if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
-    const approxUsd = cents(Math.min(target, ctx.concentrationLiquidUsd ?? Infinity));
+    const approxUsd = approxUsdOf(Math.min(target, ctx.concentrationLiquidUsd ?? Infinity));
     if (approxUsd < MIN_ACTION_USD) {
-      if (target < MIN_ACTION_USD)
+      if (target < MIN_ACTION_USD && ctx.metrics.totalAssetsUsd >= 1)
         skipped.push(
-          `${c.pct.toFixed(0)}% of your ${money2(ctx.metrics.totalAssetsUsd)} portfolio is in ${c.symbol}. Rebalancing it would move only ${money2(cents(target))}, ${UNDER_MIN}, so they skip it until the portfolio grows.`,
+          `${c.pct.toFixed(0)}% of your ${money2(ctx.metrics.totalAssetsUsd)} portfolio is in ${c.symbol}. Rebalancing it would move only ${money2(target)}, ${UNDER_MIN}, so they skip it until the portfolio grows.`,
         );
     } else {
       recs.push({
@@ -621,9 +621,9 @@ export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
-      intent: { action: 'supply', token: idle.token, approxUsd: Math.round(idle.usd) },
+      intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
     });
-  } else if (earning[0]) {
+  } else if (earning[0] && earning[0].usd >= 1) {
     const small = earning[0];
     skipped.push(
       `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,

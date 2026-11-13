@@ -173,6 +173,27 @@ describe('actions under the $10 minimum', () => {
     ]);
   });
 
+  it('says nothing about dust and never sizes a card past the $1M prepare limit', () => {
+    expect(
+      portfolioAdvice(ctx({ idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 0.004, aprPct: 5 }] }))
+        .skipped,
+    ).toEqual([]);
+    const whale = portfolioAdvice(
+      ctx({
+        metrics: metrics({
+          totalAssetsUsd: 3_000_000,
+          concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
+        }),
+        loan: { hasDebt: true, healthFactor: 1.2 },
+        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 4_000_000 },
+        idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 2_000_000, aprPct: 5 }],
+      }),
+    );
+    expect(whale.recommendations.map((r) => 'approxUsd' in r.intent && r.intent.approxUsd)).toEqual(
+      [1_000_000, 1_000_000, 1_000_000],
+    );
+  });
+
   it('never returns an intent of $0', () => {
     const advice = portfolioAdvice(
       ctx({
