@@ -261,7 +261,7 @@ no longer said what comes first.
   15 s refresh no longer drops it. When they change, the rule-based list returns with "Your portfolio changed — run the
   AI analysis again." (`apps/analytics/lib/portfolio-signature.ts`).
 
-## 13 Nov 2026 — Haiku vs Sonnet on real wallets (#16)
+## 2026-11-13 — Haiku vs Sonnet on real wallets (#16)
 
 - `apps/api/src/llm/compare-models.ts` (`pnpm --filter @near-autopilot/api llm:compare <account> …`): runs the real
   analysis loop per model/effort config and prints cost, latency, outcome and picks. `registerAccountView` now returns
