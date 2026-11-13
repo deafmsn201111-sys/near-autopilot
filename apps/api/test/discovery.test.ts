@@ -25,7 +25,7 @@ describe('httpDiscovery', () => {
     const { fetchImpl } = fake({
       [FULL]: () =>
         json({
-          pools: [{ pool_id: 'npro.poolv1.near' }],
+          pools: [{ pool_id: 'npro.poolv1.near' }, { pool_id: 'npro.poolv1.near' }],
           tokens: [
             { contract_id: 'wrap.near', balance: '413417671877902700000000000' },
             { contract_id: 'empty.near', balance: '0' },

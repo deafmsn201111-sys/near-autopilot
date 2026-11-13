@@ -527,6 +527,8 @@ export interface PortfolioRecommendation {
 
 export interface RecommendationContext {
   readonly metrics: PortfolioMetrics;
+  /** USD of the concentration token sitting in the wallet: the most a swap can move (staked or pooled is locked). */
+  readonly concentrationLiquidUsd?: number;
   readonly loan: { readonly hasDebt: boolean; readonly healthFactor: number | null } | null;
   /** Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage. */
   readonly idleEarn: readonly { token: string; symbol: string; usd: number; aprPct: number }[];
@@ -567,8 +569,9 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
 
   // 2. Reduce single-asset concentration.
   const c = ctx.metrics.concentration;
-  if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
-    const approxUsd = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+  const target = c ? (ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100 : 0;
+  const approxUsd = Math.round(Math.min(target, ctx.concentrationLiquidUsd ?? Infinity));
+  if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0 && approxUsd >= 1) {
     recs.push({
       id: 'reduce-concentration',
       kind: 'reduce_concentration',
@@ -1044,12 +1047,23 @@ export function registerAccountView(
       : null;
     const outOfRange = (pair: (d: DclPositionView) => string) =>
       dclPositions
-        .filter((d) => !d.inRange)
+        .filter(
+          (d) =>
+            !d.inRange && [d.tokenX, d.tokenY].every((t) => verified.has(t) && !trust(t).estimate),
+        )
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
     const loan = { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor };
+    // A NEAR swap wraps native NEAR first, so NEAR and wNEAR in the wallet are one liquid amount.
+    const nearLike = new Set<string>([NATIVE_HOLDING, WNEAR]);
+    const sameAsset = (t: string) =>
+      t === top?.token || (nearLike.has(t) && nearLike.has(top?.token ?? ''));
+    const concentrationLiquidUsd = v.holdings
+      .filter((h) => h.where === 'wallet' && sameAsset(h.token))
+      .reduce((sum, h) => sum + (h.usd ?? 0), 0);
     const recommendations = portfolioRecommendations({
       metrics: actionable,
+      concentrationLiquidUsd,
       loan,
       idleEarn,
       largestDebt,
@@ -1065,6 +1079,7 @@ export function registerAccountView(
         ...actionable,
         concentration: actionable.concentration && labelled(actionable.concentration),
       },
+      concentrationLiquidUsd,
       loan,
       idleEarn: idleEarn.map(labelled),
       largestDebt: largestDebt && labelled(largestDebt),

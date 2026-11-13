@@ -241,7 +241,7 @@ describe('what the model is sent', () => {
   const POOL = `${USDT}|${WNEAR}|2000`;
   const node = rpc(
     {
-      [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset],
+      [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset, { ...usdtAsset, token_id: WNEAR }],
       [`${DCL}#list_liquidities`]: () => [
         {
           lpt_id: `${POOL}#1`,

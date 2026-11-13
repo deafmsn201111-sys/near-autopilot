@@ -62,9 +62,9 @@ export function httpDiscovery(fetchImpl: typeof fetch = fetch, now = Date.now): 
           .map((t) => ({ token: t.contract_id, raw: BigInt(t.balance) }))
           .filter((t) => t.raw > 0n)
           .slice(0, MAX_DISCOVERED.tokens),
-        stakingPools: valid(stakingSchema, body.data.pools)
-          .map((p) => p.pool_id)
-          .slice(0, MAX_DISCOVERED.stakingPools),
+        stakingPools: [
+          ...new Set(valid(stakingSchema, body.data.pools).map((p) => p.pool_id)),
+        ].slice(0, MAX_DISCOVERED.stakingPools),
       };
     },
     async v1PoolIds(id) {
