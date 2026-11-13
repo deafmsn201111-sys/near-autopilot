@@ -1080,7 +1080,11 @@ export function registerAccountView(
     const forModel = portfolioRecommendations({
       metrics: {
         ...actionable,
-        concentration: actionable.concentration && labelled(actionable.concentration),
+        concentration:
+          actionable.concentration &&
+          (actionable.concentration.token === WNEAR
+            ? actionable.concentration
+            : labelled(actionable.concentration)),
       },
       concentrationLiquidUsd,
       loan,
