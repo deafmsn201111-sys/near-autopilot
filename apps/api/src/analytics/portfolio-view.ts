@@ -141,21 +141,30 @@ export function buildPortfolioView(i: {
   const near = i.prices.get(NEAR_TOKEN) ?? null;
   const usdt = i.prices.get(USDT_TOKEN) ?? null;
   const amt = (raw: bigint, dec: number) => Number(raw / 10n ** BigInt(Math.max(0, dec - 6))) / 1e6;
-  const row = (where: string, symbol: string, amount: number, price: number | null) => ({
+  const row = (
+    where: string,
+    token: string,
+    symbol: string,
+    amount: number,
+    price: number | null,
+  ) => ({
     where,
+    token,
     symbol,
     amount,
     usd: price === null ? null : amount * price,
   });
   const holdings = [
-    row('wallet', 'NEAR', amt(p.wallet.near, 24), near),
-    row('wallet', 'USDt', amt(p.wallet.usdt, 6), usdt),
-    row('collateral', 'NEAR', amt(p.collateral.near, 24), near),
-    ...(p.supplied.usdt > 0n ? [row('deposited', 'USDt', amt(p.supplied.usdt, 6), usdt)] : []),
-    ...((p.supplied.near ?? 0n) > 0n
-      ? [row('deposited', 'NEAR', amt(p.supplied.near ?? 0n, 24), near)]
+    row('wallet', 'near', 'NEAR', amt(p.wallet.near, 24), near),
+    row('wallet', USDT_TOKEN, 'USDt', amt(p.wallet.usdt, 6), usdt),
+    row('collateral', NEAR_TOKEN, 'NEAR', amt(p.collateral.near, 24), near),
+    ...(p.supplied.usdt > 0n
+      ? [row('deposited', USDT_TOKEN, 'USDt', amt(p.supplied.usdt, 6), usdt)]
       : []),
-    row('borrowed', 'USDt', amt(p.borrowed.usdt, 6), usdt),
+    ...((p.supplied.near ?? 0n) > 0n
+      ? [row('deposited', NEAR_TOKEN, 'NEAR', amt(p.supplied.near ?? 0n, 24), near)]
+      : []),
+    row('borrowed', USDT_TOKEN, 'USDt', amt(p.borrowed.usdt, 6), usdt),
   ];
   const sum = (f: (h: (typeof holdings)[number]) => boolean) =>
     holdings.filter(f).reduce((s, h) => s + (h.usd ?? NaN), 0);
