@@ -260,3 +260,14 @@ no longer said what comes first.
 - The UI keeps the AI result while the card ids and holdings (4 significant digits, prices excluded) stay the same; the
   15 s refresh no longer drops it. When they change, the rule-based list returns with "Your portfolio changed — run the
   AI analysis again." (`apps/analytics/lib/portfolio-signature.ts`).
+
+## 2026-11-13 — Reasoning trace in the UI (#26)
+
+- `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount` returns `trace`, one `{tool, agent, ok, text, provenance}`
+  per offered tool the model called (first-call order, made-up tool names dropped, `Failed` when every call failed).
+  Each tool writes its line from the numbers it returns to the model; raw outputs stay on the server. The market tool
+  also returns each held token's gap to the second price source. The heuristic fallback has an empty trace.
+- `packages/orchestrator/src/agents/market-intelligence.ts`: with no second price source and no volatility it answers
+  `insufficient_data` instead of `healthy`.
+- `apps/analytics`: the analysis schema accepts `trace` and `calledTools` (both optional for older replies); a "How the
+  AI got here" block under the badge, with the provenance label per line, or the plain list of called tools.

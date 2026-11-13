@@ -1,4 +1,5 @@
 'use client';
+import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useState } from 'react';
 import { runAnalysis, type Analysis } from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
@@ -65,6 +66,7 @@ export function Recommendations({
           {analysis.note && <small> {analysis.note}</small>}
         </p>
       )}
+      {analysis && <AiTrace analysis={analysis} />}
       {portfolioChanged && (
         <p className="muted-note">Your portfolio changed — run the AI analysis again.</p>
       )}
@@ -108,5 +110,33 @@ export function Recommendations({
         </div>
       )}
     </>
+  );
+}
+
+/** Which agents the model called and the key number each returned, with where that number came from. */
+function AiTrace({ analysis }: { analysis: Analysis }) {
+  if (analysis.trace.length === 0) {
+    if (analysis.calledTools.length === 0) return null;
+    return <p className="muted-note">Agents called: {analysis.calledTools.join(', ')}</p>;
+  }
+  return (
+    <div className="ai-trace">
+      <h3>How the AI got here</h3>
+      <ul>
+        {analysis.trace.map((step) => {
+          const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
+          return (
+            <li key={step.tool} className={step.ok ? undefined : 'failed'}>
+              <strong>{step.agent}</strong> — {step.text}
+              {info && (
+                <span className="badge neutral" title={info.describe}>
+                  {info.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

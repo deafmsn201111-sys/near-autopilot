@@ -1,5 +1,10 @@
 import type { LlmModel } from '@near-autopilot/config';
-import { BoundedMap, type AccountId, type TokenId } from '@near-autopilot/core';
+import {
+  BoundedMap,
+  type AccountId,
+  type ProvenanceTier,
+  type TokenId,
+} from '@near-autopilot/core';
 import { assessLendingPosition, tokenValueUsd } from '@near-autopilot/financial-engine';
 import {
   afterRepay,
@@ -9,6 +14,7 @@ import {
   MarketIntelligenceAgent,
   orchestratorConfigSchema,
   parseAgentOutput,
+  priceDivergenceBps,
   runToolLoop,
   stripFence,
   ToolLoopError,
@@ -17,6 +23,7 @@ import {
   type OrchestratorConfig,
   type ProposalAgent,
   type ToolLlm,
+  type ToolTraceEntry,
 } from '@near-autopilot/orchestrator';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
@@ -150,7 +157,32 @@ export interface Analysis {
   readonly note: string | null;
   readonly recommendations: readonly PortfolioRecommendation[];
   readonly calledTools: readonly string[];
+  /** One line per agent the model called, in call order; empty for the rule-based list. */
+  readonly trace: readonly TraceStep[];
 }
+
+/** A called agent's key number as a short line built on the server: raw tool output never reaches the browser. */
+export interface TraceStep {
+  readonly tool: string;
+  readonly agent: string;
+  readonly ok: boolean;
+  readonly text: string;
+  /** Null when the line carries no number. */
+  readonly provenance: ProvenanceTier | null;
+}
+
+type StepLine = Pick<TraceStep, 'text' | 'provenance'>;
+type Steps = Map<string, StepLine>;
+
+const AGENTS: Readonly<Record<string, string>> = {
+  liquidation_guardian: 'Liquidation Guardian',
+  capital_allocator: 'Capital Allocator',
+  market_intelligence: 'Market Intelligence',
+  portfolio_concentration: 'Portfolio Intelligence',
+  liquidity_positions: 'Liquidity Optimizer',
+};
+
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The orchestrator config the agents run with on a wallet: idle supply on, every priced Burrow token allowed. */
 export function walletAgentConfig(tokens: readonly TokenId[]): OrchestratorConfig {
@@ -216,6 +248,7 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint) {
 function guardianTool(
   obs: AgentObservation,
   found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
 ): LoopTool {
   return {
     spec: {
@@ -230,6 +263,7 @@ function guardianTool(
       const hf = hfText(obs.risk.healthFactorWad);
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
+      let step: StepLine | null = null;
       for (const p of proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
         const view = tokenView(obs, p.token, p.amount);
@@ -237,6 +271,10 @@ function guardianTool(
           assessLendingPosition(afterRepay(model.model, p.token, p.amount)).healthFactorWad,
         );
         if (!view || !after) continue;
+        step ??= {
+          text: `Health factor ${hf} → ${after} after repaying ${view.amount} ${view.symbol}`,
+          provenance: 'calculated_estimate',
+        };
         candidates.push({
           id: `liquidation-guardian:repay:${p.token}`,
           kind: 'improve_loan_safety',
@@ -253,6 +291,13 @@ function guardianTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
+      steps.set(
+        'liquidation_guardian',
+        step ??
+          (hf === null
+            ? { text: 'No Burrow loan; nothing to do', provenance: null }
+            : { text: `Health factor ${hf}; nothing to do`, provenance: 'calculated_estimate' }),
+      );
       return {
         riskLevel: obs.risk.level,
         healthFactor: hf,
@@ -266,6 +311,7 @@ function guardianTool(
 function allocatorTool(
   obs: AgentObservation,
   found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
 ): LoopTool {
   return {
     spec: {
@@ -278,12 +324,17 @@ function allocatorTool(
     run: async () => {
       const proposals = await propose(new CapitalAllocatorAgent(), obs);
       const candidates: PortfolioRecommendation[] = [];
+      let step: StepLine | null = null;
       for (const p of proposals) {
         if (p.kind !== 'lending.supply') continue;
         const view = tokenView(obs, p.token, p.amount);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const aprPct = (Number(yieldWad / 10n ** 14n) / 100).toFixed(1);
+        step ??= {
+          text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
+          provenance: 'protocol_reported',
+        };
         candidates.push({
           id: `capital-allocator:supply:${p.token}`,
           kind: 'put_idle_to_work',
@@ -300,12 +351,35 @@ function allocatorTool(
         });
       }
       for (const c of candidates) found.set(c.id, c);
+      steps.set(
+        'capital_allocator',
+        step ?? { text: 'Nothing idle to put to work', provenance: null },
+      );
       return { candidates, notes: rationales(proposals) };
     },
   };
 }
 
-function marketTool(obs: AgentObservation): LoopTool {
+/** Each held token's gap between the snapshot price and the second source, largest first. */
+function priceGaps(obs: AgentObservation) {
+  const lending = obs.snapshot.lending;
+  const held = new Set([
+    ...obs.snapshot.walletBalances.filter((b) => b.raw > 0n).map((b) => b.token),
+    ...(lending?.collateral ?? []).map((b) => b.token),
+    ...(lending?.borrowed ?? []).map((b) => b.token),
+  ]);
+  return [...held]
+    .flatMap((token) => {
+      const price = obs.snapshot.prices.get(token);
+      const reference = obs.market?.referencePrices.get(token);
+      const bps = price && reference ? priceDivergenceBps(price, reference) : null;
+      return bps === null ? [] : [{ token: modelTokenLabel(token), bps: Number(bps) }];
+    })
+    .sort((a, b) => b.bps - a.bps)
+    .map(({ token, bps }) => ({ token, gapPct: (bps / 100).toFixed(2) }));
+}
+
+function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
   return {
     spec: {
       name: 'market_intelligence',
@@ -321,7 +395,25 @@ function marketTool(obs: AgentObservation): LoopTool {
           ? [{ token: p.token, signal: p.signal, severity: p.severity, detail: p.rationale }]
           : [],
       );
-      return { signals, notes: rationales(proposals) };
+      const gaps = priceGaps(obs);
+      const notes = rationales(proposals);
+      const [signal] = signals;
+      const [gap] = gaps;
+      steps.set(
+        'market_intelligence',
+        signal
+          ? {
+              text: `${modelTokenLabel(signal.token)}: ${signal.detail}`,
+              provenance: 'external_market',
+            }
+          : gap
+            ? {
+                text: `Largest gap to a second price source: ${gap.gapPct}% (${gap.token})`,
+                provenance: 'external_market',
+              }
+            : { text: sentence(notes[0] ?? 'nothing to report'), provenance: null },
+      );
+      return { signals, gaps, notes };
     },
   };
 }
@@ -332,6 +424,8 @@ function walletTool(
   kind: PortfolioRecommendation['kind'],
   heuristics: readonly PortfolioRecommendation[],
   found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
+  line: (candidates: readonly PortfolioRecommendation[]) => StepLine,
 ): LoopTool {
   return {
     spec: { name, description, inputSchema: noInputSchema },
@@ -339,6 +433,7 @@ function walletTool(
     run: async () => {
       const candidates = heuristics.filter((h) => h.kind === kind);
       for (const c of candidates) found.set(c.id, c);
+      steps.set(name, line(candidates));
       return { candidates };
     },
   };
@@ -413,6 +508,7 @@ export async function analyseAccount(
     note: NOTES[code],
     recommendations: ctx.heuristics,
     calledTools: [],
+    trace: [],
   });
   if (!ai) return fallback('off');
   if (!ctx.ownerVerified) return fallback('not_owner');
@@ -555,17 +651,23 @@ export async function analyseAccount(
   };
 
   const found = new Map<string, PortfolioRecommendation>();
+  const steps: Steps = new Map();
   const run = async () => {
     const tools = [
-      guardianTool(obs, found),
-      allocatorTool(obs, found),
-      marketTool(obs),
+      guardianTool(obs, found, steps),
+      allocatorTool(obs, found, steps),
+      marketTool(obs, steps),
       walletTool(
         'portfolio_concentration',
         'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
         'reduce_concentration',
         ctx.checks,
         found,
+        steps,
+        ([top]) =>
+          top
+            ? { text: top.title, provenance: 'calculated_estimate' }
+            : { text: 'No single token dominates; nothing to do', provenance: null },
       ),
       walletTool(
         'liquidity_positions',
@@ -573,6 +675,14 @@ export async function analyseAccount(
         'reposition_dcl_position',
         ctx.checks,
         found,
+        steps,
+        ({ length: n }) =>
+          n > 0
+            ? {
+                text: `${n} position${n === 1 ? '' : 's'} out of range`,
+                provenance: 'on_chain_verified',
+              }
+            : { text: 'No position out of range; nothing to do', provenance: null },
       ),
     ].map(counted);
     return runToolLoop({
@@ -633,7 +743,22 @@ export async function analyseAccount(
     note: null,
     recommendations,
     calledTools: [...new Set(trace.map((t) => t.tool))],
+    trace: traceSteps(trace, steps),
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });
   return analysis;
+}
+
+/** The model may call a tool twice or name one we never offered: one line per offered tool, in first-call order. */
+function traceSteps(trace: readonly ToolTraceEntry[], steps: Steps): TraceStep[] {
+  return [...new Set(trace.map((t) => t.tool))].flatMap((tool) => {
+    const agent = AGENTS[tool];
+    if (!agent) return [];
+    const step = trace.some((t) => t.tool === tool && t.ok) ? steps.get(tool) : undefined;
+    return [
+      step
+        ? { tool, agent, ok: true, ...step }
+        : { tool, agent, ok: false, text: 'Failed', provenance: null },
+    ];
+  });
 }

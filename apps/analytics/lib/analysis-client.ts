@@ -1,4 +1,5 @@
 'use client';
+import { PROVENANCE_TIERS, type ProvenanceTier } from '@near-autopilot/core';
 import { z } from 'zod';
 import type { AccountRecommendation } from './product';
 
@@ -33,12 +34,34 @@ const analysisSchema = z.object({
       intent: intentSchema,
     }),
   ),
+  calledTools: z.array(z.string()).default([]),
+  trace: z
+    .array(
+      z.object({
+        tool: z.string(),
+        agent: z.string(),
+        ok: z.boolean(),
+        text: z.string(),
+        provenance: z.enum(PROVENANCE_TIERS).nullable(),
+      }),
+    )
+    .default([]),
 });
+
+export type TraceStep = {
+  tool: string;
+  agent: string;
+  ok: boolean;
+  text: string;
+  provenance: ProvenanceTier | null;
+};
 
 export type Analysis = {
   source: 'llm' | 'heuristic';
   note: string | null;
   recommendations: AccountRecommendation[];
+  calledTools: string[];
+  trace: TraceStep[];
 };
 
 export async function runAnalysis(

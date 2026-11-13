@@ -1455,6 +1455,27 @@ main.page {
   color: var(--muted);
   font-size: 13px;
 }
+.ai-trace {
+  margin: 4px 0 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.ai-trace h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.ai-trace ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+.ai-trace .badge {
+  margin-left: 6px;
+}
+.ai-trace .failed {
+  color: var(--critical);
+}
 .link {
   color: var(--accent);
   text-decoration: none;

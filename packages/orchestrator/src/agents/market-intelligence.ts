@@ -45,10 +45,12 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       ...(obs.snapshot.lending?.borrowed ?? []).map((b) => b.token),
     ]);
     const proposals: Array<Record<string, unknown> & { severity: number }> = [];
+    let compared = false;
     for (const token of [...tokens].sort()) {
       const oracle = obs.snapshot.prices.get(token);
       const reference = market.referencePrices.get(token);
       if (oracle && reference) {
+        compared = true;
         const bps = priceDivergenceBps(oracle, reference);
         const severity =
           bps === null
@@ -72,6 +74,7 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       }
       const vol = market.volatility24hBps.get(token);
       if (vol !== undefined) {
+        compared = true;
         const severity = severityFor(BigInt(vol), [
           [1500n, 3],
           [3000n, 4],
@@ -95,10 +98,11 @@ export class MarketIntelligenceAgent implements ProposalAgent {
       .sort((a, b) => b.p.severity - a.p.severity || a.i - b.i)
       .slice(0, MAX_PROPOSALS_PER_OUTPUT)
       .map(({ p }) => p);
-    return envelope(
-      this.id,
-      obs,
-      kept.length > 0 ? kept : [noAction('healthy', 'no abnormal conditions found')],
-    );
+    if (kept.length > 0) return envelope(this.id, obs, kept);
+    return envelope(this.id, obs, [
+      compared
+        ? noAction('healthy', 'no abnormal conditions found')
+        : noAction('insufficient_data', 'no second price source or volatility to compare'),
+    ]);
   }
 }

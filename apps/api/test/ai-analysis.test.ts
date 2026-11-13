@@ -152,6 +152,7 @@ const callAll: LlmToolTurn = {
     { id: '5', name: 'liquidity_positions', input: {} },
   ],
 };
+const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
 const final = (picks: unknown): LlmToolTurn => ({ kind: 'final', text: JSON.stringify({ picks }) });
 
 describe('analyseAccount', () => {
@@ -166,6 +167,7 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('heuristic');
     expect(out.recommendations).toEqual([heuristic]);
     expect(out.calledTools).toEqual([]);
+    expect(out.trace).toEqual([]);
   });
 
   it('does not call the model for a visitor who has not proved ownership', async () => {
@@ -262,6 +264,115 @@ describe('analyseAccount', () => {
     expect(intent.approxUsd).toBeCloseTo(Number(intent.amount) / 1e6, 1);
   });
 
+  it('traces each called agent once, in call order, with its key number and provenance', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => ({ kind: 'tool_calls', calls: [{ id: '6', name: 'liquidation_guardian', input: {} }] }),
+      () => final([{ id: REPAY, why: 'Repay first.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace).toEqual([
+      {
+        tool: 'liquidation_guardian',
+        agent: 'Liquidation Guardian',
+        ok: true,
+        text: 'Health factor 1.37 → 1.60 after repaying 33.125 USDt',
+        provenance: 'calculated_estimate',
+      },
+      {
+        tool: 'capital_allocator',
+        agent: 'Capital Allocator',
+        ok: true,
+        text: 'Supply 100 USDt at about 8.0% a year',
+        provenance: 'protocol_reported',
+      },
+      {
+        tool: 'market_intelligence',
+        agent: 'Market Intelligence',
+        ok: true,
+        text: 'Largest gap to a second price source: 0.00% (wNEAR)',
+        provenance: 'external_market',
+      },
+      {
+        tool: 'portfolio_concentration',
+        agent: 'Portfolio Intelligence',
+        ok: true,
+        text: heuristic.title,
+        provenance: 'calculated_estimate',
+      },
+      {
+        tool: 'liquidity_positions',
+        agent: 'Liquidity Optimizer',
+        ok: true,
+        text: 'No position out of range; nothing to do',
+        provenance: null,
+      },
+    ]);
+    const card = out.recommendations.find((r) => r.id === REPAY);
+    expect(card?.title).toContain('1.37');
+  });
+
+  it('traces a failed agent as failed and leaves out tools the model made up', async () => {
+    const { llm } = fake([
+      () => ({
+        kind: 'tool_calls',
+        calls: [
+          { id: '1', name: 'liquidation_guardian', input: { x: 1 } },
+          { id: '2', name: 'sign_everything', input: {} },
+          { id: '3', name: 'portfolio_concentration', input: {} },
+        ],
+      }),
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace).toEqual([
+      {
+        tool: 'liquidation_guardian',
+        agent: 'Liquidation Guardian',
+        ok: false,
+        text: 'Failed',
+        provenance: null,
+      },
+      {
+        tool: 'portfolio_concentration',
+        agent: 'Portfolio Intelligence',
+        ok: true,
+        text: heuristic.title,
+        provenance: 'calculated_estimate',
+      },
+    ]);
+  });
+
+  it('says when no second price source was there to compare', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const bare = async () => {
+      const o = observation();
+      return { ...o, market: { ...o.market!, referencePrices: new Map() } };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: bare,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'market_intelligence')).toMatchObject({
+      ok: true,
+      text: 'No second price source or volatility to compare',
+      provenance: null,
+    });
+  });
+
   it('keeps the code explanation when the model writes a number no tool returned', async () => {
     const { llm } = fake([
       () => callAll,
@@ -288,7 +399,6 @@ describe('analyseAccount', () => {
     });
     return out.recommendations.find((r) => r.id === id)?.why;
   };
-  const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
 
   it.each([
     ['full-width digits', 'Repay １００ USDt now.'],
