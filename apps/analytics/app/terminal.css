@@ -1546,6 +1546,9 @@ main.page {
     grid-column: 1 / -1;
     padding: 0 0 20px;
   }
+  .hero-side {
+    grid-column: 1 / -1;
+  }
   .hero-stat {
     padding: 15px 14px 0 0;
     border-left: 0;
