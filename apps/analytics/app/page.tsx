@@ -41,6 +41,7 @@ const TOKEN_KIND: Record<string, string> = {
 /** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
 const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
 import Link from 'next/link';
+import Image from 'next/image';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {
@@ -59,6 +60,7 @@ import { AccountForm } from '../components/AccountForm';
 import { DepositDialog } from '../components/DepositDialog';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
+import { tokenIcon } from '../lib/token-icons';
 import {
   savedStrategy,
   STRATEGY_COOKIE,
@@ -80,6 +82,7 @@ const WHERE = {
 interface Row {
   key: string;
   where: keyof typeof WHERE | 'position';
+  token?: string;
   symbol: string;
   sub: string | null;
   amount: number | null;
@@ -91,6 +94,7 @@ interface Row {
 
 function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
   const [bg, fg] = tokenVisual(r.symbol);
+  const icon = tokenIcon(r.token, r.symbol, r.verified);
   const isDebt = r.where === 'borrowed';
   const kind =
     r.sub ??
@@ -101,8 +105,12 @@ function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
   return (
     <div className="ht-row">
       <div className="ht-asset">
-        <span className="coin" style={{ background: bg, color: fg }}>
-          {r.symbol.slice(0, 1)}
+        <span className={`coin${icon ? ' has-logo' : ''}`} style={{ background: bg, color: fg }}>
+          {icon ? (
+            <Image src={icon} alt="" aria-hidden="true" width={38} height={38} unoptimized />
+          ) : (
+            r.symbol.slice(0, 1)
+          )}
         </span>
         <div>
           <div className="nm">
