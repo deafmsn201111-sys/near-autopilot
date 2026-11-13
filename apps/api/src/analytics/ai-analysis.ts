@@ -579,6 +579,9 @@ function displayNumbers(value: unknown, key = ''): string[] {
   return [];
 }
 
+/** Every tool that can propose a card; market_intelligence only reads. */
+const PROPOSING_TOOLS = Object.keys(AGENTS).filter((t) => t !== 'market_intelligence');
+
 const NOTES: Record<FallbackCode, string> = {
   off: 'AI analysis is off on this server; showing the rule-based list.',
   kill_switch: 'AI analysis is paused by the operator; showing the rule-based list.',
@@ -606,7 +609,8 @@ const parseJson = (text: string): unknown => {
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
- * out. An empty answer counts as an AI result only when neither the tools nor the rules found anything. No model, any
+ * out. An empty answer counts as an AI result only when every proposing tool ran and neither they nor the rules
+ * found anything. No model, any
  * other empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
  * rule-based list, labelled. An AI result is reused for 10 minutes while the wallet state is unchanged; only runs that
  * reach the model count against the global limit.
@@ -868,7 +872,10 @@ export async function analyseAccount(
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
   checks.picked = recommendations.length;
-  const nothingToActOn = trace.length > 0 && found.size === 0 && ctx.heuristics.length === 0;
+  const nothingToActOn =
+    found.size === 0 &&
+    ctx.heuristics.length === 0 &&
+    PROPOSING_TOOLS.every((name) => trace.some((t) => t.ok && t.tool === name));
   if (recommendations.length === 0 && !nothingToActOn) return failed('empty');
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
@@ -883,9 +890,7 @@ export async function analyseAccount(
   const analysis: Analysis = {
     source: 'llm',
     fallback: null,
-    note: recommendations.length
-      ? null
-      : 'The AI checked the wallet with the agents and found nothing to act on.',
+    note: null,
     recommendations,
     calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
     trace: traceSteps(trace, steps, recommendations, kept),

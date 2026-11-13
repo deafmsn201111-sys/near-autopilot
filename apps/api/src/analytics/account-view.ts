@@ -601,7 +601,7 @@ export function earningsSentence(
   noRate: readonly string[],
 ): string {
   if (!hasPosition) return 'Nothing is deposited on Burrow: the tokens in the wallet earn nothing.';
-  const cents = Math.round(monthly * 100);
+  const cents = Math.sign(monthly) * Math.round(Math.abs(monthly) * 100);
   const main =
     cents === 0
       ? "Your Burrow position roughly breaks even at today's rates: under $0.01 a month either way."

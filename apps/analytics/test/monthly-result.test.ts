@@ -9,6 +9,7 @@ describe('signedMoney', () => {
 
   it('colours a cent or more by its sign', () => {
     expect(signedMoney(-0.01)).toEqual({ text: '−$0.01', tone: 'neg' });
+    expect(signedMoney(-0.005)).toEqual({ text: '−$0.01', tone: 'neg' });
     expect(signedMoney(1.5)).toEqual({ text: '+$1.50', tone: 'pos' });
   });
 

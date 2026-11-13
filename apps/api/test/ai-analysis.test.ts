@@ -450,8 +450,13 @@ describe('analyseAccount', () => {
     return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
   };
 
+  const checkAll: LlmToolTurn = {
+    kind: 'tool_calls',
+    calls: [...callAll.calls, { id: '6', name: 'burrow_withdrawals', input: {} }],
+  };
+
   it('labels a run with nothing to act on as an AI result, not a fallback', async () => {
-    const { llm } = fake([() => callAll, () => final([])]);
+    const { llm } = fake([() => checkAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
       observe: healthy,
@@ -461,12 +466,23 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('llm');
     expect(out.fallback).toBeNull();
     expect(out.recommendations).toEqual([]);
-    expect(out.note).toMatch(/nothing to act on/);
+    expect(out.note).toBeNull();
     expect(out.calledTools.length).toBeGreaterThan(0);
   });
 
   it('still falls back when the model calls no tool and ranks nothing', async () => {
     const { llm } = fake([() => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(out.fallback).toBe('empty');
+  });
+
+  it('still falls back when the model skipped a check', async () => {
+    const { llm } = fake([() => callAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
       observe: healthy,

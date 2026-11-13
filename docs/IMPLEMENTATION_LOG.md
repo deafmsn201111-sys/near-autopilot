@@ -386,9 +386,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 ## 2026-11-13 — AI "nothing to act on" is an AI result; $0.00 monthly is neutral (#130)
 
-- `analyseAccount`: an empty answer is an AI result (`source: 'llm'`, note "found nothing to act on") only when the
-  model called the tools and neither the tools nor the rule-based list produced a candidate. A model that drops a
-  real candidate, or calls no tool, still falls back with `empty`.
+- `analyseAccount`: an empty answer is an AI result (`source: 'llm'`) only when every proposing tool ran without error
+  and neither they nor the rule-based list produced a candidate. A model that drops a real candidate, or skips or
+  fails a check, still falls back with `empty`.
 - UI badge: "AI-checked · nothing to act on" for that case.
 - "Monthly result now" that rounds to $0.00 shows `$0.00` with no sign or colour (`signedMoney`), and the sentence
   says the position roughly breaks even (`earningsSentence`) instead of "costs about $0.00".
