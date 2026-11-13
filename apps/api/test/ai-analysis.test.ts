@@ -888,20 +888,10 @@ describe('analyseAccount', () => {
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
   });
 
-  it("the guardian's wallet repay shows the loan's carry line from the account view's loan card", async () => {
+  it("the guardian's wallet repay shows the loan's carry line, also with no rule-based loan card", async () => {
     const carry = {
       text: 'Loan costs 6.5% a year (≈ $0.21/month); your Burrow deposits earn ≈ $0.19/month.',
       provenance: 'calculated_estimate' as const,
-    };
-    const loanCard: PortfolioRecommendation = {
-      id: 'improve-loan-safety',
-      kind: 'improve_loan_safety',
-      agent: 'Liquidation Guardian',
-      severity: 'warning',
-      title: "Your loan's health factor is 1.37",
-      why: 'A health factor of 1.37 is under the 1.50 your Balanced strategy counts as safe.',
-      intent: null,
-      carry,
     };
     const { llm } = fake([
       () => callAll,
@@ -911,7 +901,8 @@ describe('analyseAccount', () => {
       accountId: ALICE,
       observe: async () => observation(),
       heuristics: [],
-      checks: [loanCard],
+      checks: [],
+      loanCarry: carry,
       ownerVerified: true,
     });
     expect(out.recommendations[0]?.intent?.action).toBe('repay');

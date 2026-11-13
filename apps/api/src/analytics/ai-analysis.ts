@@ -158,6 +158,8 @@ export interface AnalysisContext {
   readonly strategy?: StrategyId;
   /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
+  /** The loan's cost against the deposits' earnings, for every loan card the guardian returns. */
+  readonly loanCarry?: PortfolioRecommendation['carry'];
 }
 
 export interface Analysis {
@@ -323,11 +325,11 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd
 function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
+  carry: PortfolioRecommendation['carry'],
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
   const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
-  const carry = checks.find((c) => c.kind === 'improve_loan_safety')?.carry;
   return {
     spec: {
       name: 'liquidation_guardian',
@@ -772,7 +774,7 @@ export async function analyseAccount(
   const steps: Steps = new Map();
   const run = async () => {
     const tools = [
-      guardianTool(obs, ctx.checks, found, steps),
+      guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
       allocatorTool(obs, found, steps),
       marketTool(obs, steps),
       walletTool(

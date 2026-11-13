@@ -1082,6 +1082,7 @@ export function registerAccountView(
         strategyNote: strategyNote(entry.checks.user, entry.loan),
       },
       forModel: portfolioAdvice(entry.checks.model, strategy).recommendations,
+      loanCarry: entry.checks.model.carry && carryLine(entry.checks.model.carry),
       concentration: entry.concentration,
     };
   };
@@ -1096,6 +1097,7 @@ export function registerAccountView(
         status: 200;
         body: AccountBody;
         forModel: readonly PortfolioRecommendation[];
+        loanCarry: PortfolioRecommendation['carry'];
         concentration: Concentration;
       }
     | { status: 404 | 502; body: { error: string } }
@@ -1390,13 +1392,18 @@ export function registerAccountView(
     for (const h of v.holdings) {
       if (h.where === 'wallet') continue;
       const borrowed = h.where === 'borrowed';
-      if (h.usd === null) unknownOn.add(borrowed ? 'borrowed' : 'supplied');
-      // dust (under $1) in dead markets would only block the figure; larger positions without a rate are named
-      if (h.usd === null || h.usd < 1) continue;
+      const side = borrowed ? 'borrowed' : 'supplied';
+      if (h.usd === null) {
+        unknownOn.add(side);
+        continue;
+      }
       const r = rate(h.token, borrowed ? 'borrowApr' : 'netSupplyApr');
       if (r === null) {
-        noRate.push(h.symbol);
-        unknownOn.add(borrowed ? 'borrowed' : 'supplied');
+        // dust (under $1) in dead markets would only block the figure; larger positions without a rate are named
+        if (h.usd >= 1) {
+          noRate.push(h.symbol);
+          unknownOn.add(side);
+        }
       } else if (borrowed) {
         loanMonthly += h.usd * r * H;
         loanUsd += h.usd;
@@ -1693,6 +1700,7 @@ export function registerAccountView(
         ),
       heuristics: view.body.recommendations,
       checks: view.forModel,
+      loanCarry: view.loanCarry,
       concentration: view.concentration,
       strategy,
     };
