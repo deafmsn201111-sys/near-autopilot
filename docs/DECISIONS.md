@@ -298,6 +298,9 @@ finality, before the new state was readable.
   from the visitor's last read (holding and position amounts to 4 significant digits, so Burrow interest and gas do
   not count as a change), and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per account
   at a time.
+- Next bundles server actions apart from page rendering, each with its own copy of a module, so the account read
+  cache and the rate-limit counters live once per process (`apps/analytics/lib/process-state.ts`). Before this, the
+  action dropped and refilled a cache the page never read, and its reads had a limit of their own.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
   one below 4 significant digits) shows the note for the full ~15 s.

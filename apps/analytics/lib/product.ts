@@ -2,6 +2,7 @@ import { BoundedMap } from '@near-autopilot/core';
 import { ACCOUNT_LIMIT, consume, RATE_LIMITED, MAX_TRACKED_KEYS, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
+import { processWide } from './process-state';
 import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import type { RecommendationIntent } from './recommendation-intent';
@@ -203,8 +204,14 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecis
 type AccountResult = { data: AccountRead | null; error: string | null };
 
 const ACCOUNT_TTL_MS = 60_000;
-const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
-const lastHoldings = new BoundedMap<string, string>(MAX_TRACKED_KEYS);
+const accountReads = processWide(
+  'accountReads',
+  () => new Map<string, { at: number; read: Promise<AccountResult> }>(),
+);
+const lastHoldings = processWide(
+  'lastHoldings',
+  () => new BoundedMap<string, string>(MAX_TRACKED_KEYS),
+);
 
 // ponytail: 4 significant digits hide Burrow interest and gas; an action smaller than that waits out the retries
 const holdingsOf = (r: AccountResult) =>

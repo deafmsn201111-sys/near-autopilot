@@ -120,6 +120,19 @@ describe('account read cache', () => {
     expect(reads).toHaveBeenCalledTimes(3);
   });
 
+  it('Next runs server actions on a separate copy of the module: a refresh there is what the page reads', async () => {
+    const page = await load();
+    await page.accountView('alice.near');
+    vi.resetModules();
+    const action = await load();
+    expect(await action.refreshAccountRead('alice.near')).toBe(false);
+    nearInWallet = 0.5;
+    expect(await action.refreshAccountRead('alice.near')).toBe(true);
+    expect((await page.accountView('alice.near')).data?.holdings[0]?.amount).toBe(0.5);
+    for (let i = 0; i < 27; i++) await action.refreshAccountRead('alice.near');
+    expect((await page.accountView('bob.near')).error).not.toBeNull();
+  });
+
   it('a refresh counts toward the visitor limit and stops once it is spent', async () => {
     const p = await load();
     for (let i = 0; i < 30; i++) await p.refreshAccountRead('alice.near');

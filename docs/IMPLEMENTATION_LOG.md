@@ -332,3 +332,7 @@ running window and listener removal.
 
 **Tests run:** `pnpm verify`; `account-full.test.ts` (fresh flag and its 5 s gap), `account-cache.test.ts` (fresh
 read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries stop, early stop, shared run).
+
+- Owner's local check found the action and the page did not share state: Next puts server actions in the
+  `action-browser` layer and pages in `rsc`, each with its own module copy. The account cache and the rate-limit maps
+  now live in `processWide` (`globalThis`); `test/setup.ts` clears them between tests.
