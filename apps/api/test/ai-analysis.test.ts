@@ -958,7 +958,9 @@ describe('analyseAccount', () => {
         { ...deps, llm: again.llm },
         { ...ctx, observe: async () => later(), heuristics: [heuristic], checks: [heuristic] },
       );
-      expect(second).toEqual(first);
+      expect(first.cachedAt).toBeNull();
+      expect(second).toEqual({ ...first, cachedAt: expect.any(String) as unknown });
+      expect(Date.parse(second.cachedAt!)).toBeLessThanOrEqual(Date.now());
       expect(again.tools).toEqual([]);
       expect(l.rows).toHaveLength(1);
     });
@@ -1609,11 +1611,22 @@ describe('progress events', () => {
     const { out, events } = await live(llm);
     expect(events.map((e) => e.type)).toEqual([
       'read',
+      'asked',
       ...Array<string>(5).fill('agent'),
       'ranked',
       'checked',
     ]);
     expect(events[0]).toEqual({ type: 'read', model: 'claude-haiku-5-5', ...out.run?.read });
+    expect(events[1]).toEqual({
+      type: 'asked',
+      agents: [
+        { tool: 'liquidation_guardian', agent: 'Liquidation Guardian' },
+        { tool: 'capital_allocator', agent: 'Capital Allocator' },
+        { tool: 'market_intelligence', agent: 'Market Intelligence' },
+        { tool: 'portfolio_concentration', agent: 'Portfolio Intelligence' },
+        { tool: 'liquidity_positions', agent: 'Liquidity Optimizer' },
+      ],
+    });
     const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step] : []));
     expect(agents).toEqual(
       expect.arrayContaining(out.trace.map((t) => ({ ...t, pick: null, rank: null }))),
@@ -1636,6 +1649,13 @@ describe('progress events', () => {
       () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
     ]);
     const { events } = await live(llm);
+    expect(events.find((e) => e.type === 'asked')).toEqual({
+      type: 'asked',
+      agents: [
+        { tool: 'liquidation_guardian', agent: 'Liquidation Guardian' },
+        { tool: 'portfolio_concentration', agent: 'Portfolio Intelligence' },
+      ],
+    });
     const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step] : []));
     expect(agents.map((s) => [s.tool, s.ok, s.text])).toEqual([
       ['liquidation_guardian', false, 'Failed'],

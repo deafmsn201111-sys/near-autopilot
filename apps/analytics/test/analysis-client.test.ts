@@ -44,7 +44,13 @@ describe('runAnalysis', () => {
     const r = await runAnalysis('alice.near', 'balanced');
     expect(r).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run },
+      analysis: {
+        ...base,
+        calledTools: ['liquidation_guardian', 'capital_allocator'],
+        trace,
+        run,
+        cachedAt: null,
+      },
     });
   });
 
@@ -52,8 +58,14 @@ describe('runAnalysis', () => {
     reply(base);
     expect(await runAnalysis('alice.near', 'balanced')).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: [], trace: [], run: null },
+      analysis: { ...base, calledTools: [], trace: [], run: null, cachedAt: null },
     });
+  });
+
+  it('keeps when a reused result was computed', async () => {
+    reply({ ...base, cachedAt: '2026-11-14T10:00:00.000Z' });
+    const r = await runAnalysis('alice.near', 'balanced');
+    expect(r.ok && r.analysis.cachedAt).toBe('2026-11-14T10:00:00.000Z');
   });
 
   it('drops a provenance tier it does not know but keeps the analysis', async () => {
@@ -106,6 +118,7 @@ describe('runAnalysis as a stream', () => {
     serve(
       stream(
         frame('read', { model: 'claude-haiku-5-5', tokens: 7, loan: true }) +
+          frame('asked', { agents: [{ tool: step.tool, agent: step.agent }] }) +
           frame('agent', { step }) +
           frame('ranked', { turns: 2 }) +
           frame('checked', { checks }) +
@@ -114,36 +127,18 @@ describe('runAnalysis as a stream', () => {
     );
     const seen: unknown[] = [];
     const r = await runAnalysis('alice.near', 'balanced', (p) => seen.push(p));
-    expect(r).toMatchObject({ ok: true, analysis: { source: 'llm', trace: done.trace } });
+    expect(r).toMatchObject({
+      ok: true,
+      analysis: { source: 'llm', trace: done.trace, cachedAt: null },
+    });
+    const read = { model: 'claude-haiku-5-5', read: { tokens: 7, loan: true } };
+    const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
-      {
-        model: 'claude-haiku-5-5',
-        read: { tokens: 7, loan: true },
-        trace: [],
-        turns: null,
-        checks: null,
-      },
-      {
-        model: 'claude-haiku-5-5',
-        read: { tokens: 7, loan: true },
-        trace: [step],
-        turns: null,
-        checks: null,
-      },
-      {
-        model: 'claude-haiku-5-5',
-        read: { tokens: 7, loan: true },
-        trace: [step],
-        turns: 2,
-        checks: null,
-      },
-      {
-        model: 'claude-haiku-5-5',
-        read: { tokens: 7, loan: true },
-        trace: [step],
-        turns: 2,
-        checks,
-      },
+      { ...read, asked: [], trace: [], turns: null, checks: null },
+      { ...read, asked, trace: [], turns: null, checks: null },
+      { ...read, asked, trace: [step], turns: null, checks: null },
+      { ...read, asked, trace: [step], turns: 2, checks: null },
+      { ...read, asked, trace: [step], turns: 2, checks },
     ]);
   });
 

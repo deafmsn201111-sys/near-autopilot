@@ -83,6 +83,7 @@ const analysisSchema = z.object({
   calledTools: z.array(z.string()).default([]),
   trace: z.array(traceStepSchema).default([]),
   run: runSchema.nullable().catch(null),
+  cachedAt: z.string().nullable().catch(null).default(null),
 });
 
 export type Analysis = {
@@ -92,12 +93,15 @@ export type Analysis = {
   calledTools: string[];
   trace: TraceStep[];
   run: z.infer<typeof runSchema> | null;
+  cachedAt: string | null;
 };
 
 /** The run so far, as the "How the AI got here" pipeline shows it; a part is null until its event arrives. */
 export type Pipeline = {
   model: string | null;
   read: z.infer<typeof readSchema> | null;
+  /** Agents the model called whose answer has not come back yet, plus those that have. */
+  asked: AskedAgent[];
   trace: TraceStep[];
   turns: number | null;
   checks: z.infer<typeof checksSchema> | null;
@@ -106,12 +110,17 @@ export type Pipeline = {
 export const pipelineOf = ({ run, trace }: Analysis): Pipeline => ({
   model: run?.model ?? null,
   read: run?.read ?? null,
+  asked: trace.map(({ tool, agent }) => ({ tool, agent })),
   trace,
   turns: run?.turns ?? null,
   checks: run?.checks ?? null,
 });
 
+const askedSchema = z.object({ tool: z.string(), agent: z.string() });
+type AskedAgent = z.infer<typeof askedSchema>;
+
 const eventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('asked'), agents: z.array(askedSchema).max(20) }),
   readSchema.extend({ type: z.literal('read'), model: z.string() }),
   z.object({ type: z.literal('agent'), step: traceStepSchema }),
   z.object({ type: z.literal('ranked'), turns: z.number() }),
@@ -138,6 +147,11 @@ function parseFrame(frame: string): LiveEvent | null {
 
 function apply(p: Pipeline, e: LiveEvent): Pipeline {
   if (e.type === 'read') return { ...p, model: e.model, read: { tokens: e.tokens, loan: e.loan } };
+  if (e.type === 'asked')
+    return {
+      ...p,
+      asked: [...p.asked, ...e.agents.filter((a) => !p.asked.some((b) => b.tool === a.tool))],
+    };
   if (e.type === 'agent')
     return { ...p, trace: [...p.trace.filter((s) => s.tool !== e.step.tool), e.step] };
   if (e.type === 'ranked') return { ...p, turns: e.turns };
@@ -150,7 +164,14 @@ async function readStream(
   onProgress: (p: Pipeline | null) => void,
 ): Promise<Analysis | null> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let live: Pipeline = { model: null, read: null, trace: [], turns: null, checks: null };
+  let live: Pipeline = {
+    model: null,
+    read: null,
+    asked: [],
+    trace: [],
+    turns: null,
+    checks: null,
+  };
   let buffer = '';
   try {
     for (;;) {

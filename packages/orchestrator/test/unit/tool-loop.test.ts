@@ -87,6 +87,24 @@ describe('runToolLoop', () => {
     expect(seen).toEqual(['echo', 'slow']);
   });
 
+  it('reports the tools the model asked for before running them', async () => {
+    const { llm } = scripted([
+      { kind: 'tool_calls', calls: [{ id: 'a', name: 'echo', input: {} }] },
+      { kind: 'final', text: 'done' },
+    ]);
+    const seen: string[] = [];
+    await runToolLoop({
+      llm,
+      system: 's',
+      prompt: 'p',
+      tools: [echo],
+      maxTurns: 4,
+      onCalls: (names) => seen.push(`asked ${names.join()}`),
+      onResult: (e) => seen.push(`got ${e.tool}`),
+    });
+    expect(seen).toEqual(['asked echo', 'got echo']);
+  });
+
   it('answers an unknown tool or invalid input with an error result instead of running anything', async () => {
     const { llm, sent } = scripted([
       {
