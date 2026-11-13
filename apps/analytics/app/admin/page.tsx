@@ -4,8 +4,10 @@ import { adminApi, type Spend } from '../../lib/admin';
 import { setDailyCap, setDeposit, setLlmEnabled } from './actions';
 import { ControlForm } from './ControlForm';
 
-const money = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+const money = (n: number) => {
+  const digits = n > 0 && n < 1 ? 4 : 2;
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: 4 })}`;
+};
 const STALE_DEPOSIT_DAYS = 7;
 
 function runOut(d: NonNullable<Spend['deposit']>) {
