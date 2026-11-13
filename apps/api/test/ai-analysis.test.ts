@@ -430,6 +430,53 @@ describe('analyseAccount', () => {
     });
   });
 
+  it('states the concentration share even when there is no card to move it', async () => {
+    const { llm } = fake([() => callAll, () => final([{ id: REPAY, why: 'Repay first.' }])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [],
+      checks: [],
+      concentration: { token: USDT, pct: 70.7 },
+    });
+    expect(out.trace.find((t) => t.tool === 'portfolio_concentration')).toMatchObject({
+      text: '71% of your portfolio is in USDt; no swap from the wallet suggested',
+      provenance: 'calculated_estimate',
+      pick: null,
+    });
+  });
+
+  it("links an agent's line to the rule-based card of its kind the user sees", async () => {
+    const ruleRepay: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.37",
+      why: 'Repay about $69 of your USDt debt.',
+      intent: { action: 'repay', token: USDT, approxUsd: 69 },
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const empty = async () => {
+      const o = observation();
+      const snapshot = { ...o.snapshot, walletBalances: [] };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: empty,
+      heuristics: [ruleRepay, heuristic],
+      checks: [ruleRepay, heuristic],
+    });
+    expect(out.recommendations[0]?.id).toBe('improve-loan-safety');
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')).toMatchObject({
+      pick: 'kept',
+      rank: 1,
+    });
+  });
+
   it('summarises the run: model, turns, tool calls and time', async () => {
     const { llm } = fake([
       () => callAll,

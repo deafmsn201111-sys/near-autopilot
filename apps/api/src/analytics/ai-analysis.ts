@@ -150,6 +150,8 @@ export interface AnalysisContext {
   /** A NEP-413 proof from a full-access key of this account (D12): only its owner may spend a model call. */
   readonly ownerVerified: boolean;
   readonly preset?: string;
+  /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
+  readonly concentration?: { readonly token: string; readonly pct: number } | null;
 }
 
 export interface Analysis {
@@ -193,6 +195,14 @@ type StepLine = Pick<TraceStep, 'text' | 'provenance'>;
 const NO_PICK = { pick: null, rank: null } as const;
 /** Per tool: a line for each card it produced (the trace shows the one the model ranked highest), else `none`. */
 type Steps = Map<string, { none: StepLine; byCandidate: Map<string, StepLine> }>;
+
+/** The kind of card each tool's agent stands behind, whether the tool or the rule-based list produced it. */
+const KINDS: Readonly<Record<string, PortfolioRecommendation['kind']>> = {
+  liquidation_guardian: 'improve_loan_safety',
+  capital_allocator: 'put_idle_to_work',
+  portfolio_concentration: 'reduce_concentration',
+  liquidity_positions: 'reposition_dcl_position',
+};
 
 const AGENTS: Readonly<Record<string, string>> = {
   liquidation_guardian: 'Liquidation Guardian',
@@ -703,10 +713,15 @@ export async function analyseAccount(
         ctx.checks,
         found,
         steps,
-        ([top]) =>
-          top
-            ? { text: top.title, provenance: 'calculated_estimate' }
-            : { text: 'No single token dominates; nothing to do', provenance: null },
+        ([top]) => {
+          const c = ctx.concentration;
+          if (top) return { text: top.title, provenance: 'calculated_estimate' };
+          if (!c) return { text: 'No priced token to measure', provenance: null };
+          return {
+            text: `${c.pct.toFixed(0)}% of your portfolio is in ${modelTokenLabel(c.token)}; no swap from the wallet suggested`,
+            provenance: 'calculated_estimate',
+          };
+        },
       ),
       walletTool(
         'liquidity_positions',
@@ -805,11 +820,11 @@ function traceSteps(
   const line = (tool: string) => {
     const entry = steps.get(tool);
     if (!entry || !trace.some((t) => t.tool === tool && t.ok)) return undefined;
-    const rank = shown.findIndex((r) => entry.byCandidate.has(r.id));
+    const rank = shown.findIndex((r) => entry.byCandidate.has(r.id) || r.kind === KINDS[tool]);
     const card = shown[rank];
     if (card)
       return {
-        ...entry.byCandidate.get(card.id)!,
+        ...(entry.byCandidate.get(card.id) ?? entry.none),
         pick: kept.has(card.id) ? ('kept' as const) : ('ranked' as const),
         rank: rank + 1,
       };

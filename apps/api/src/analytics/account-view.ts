@@ -542,6 +542,8 @@ export interface RecommendationContext {
   }[];
 }
 
+type Concentration = { readonly token: string; readonly pct: number } | null;
+
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
 
 /**
@@ -663,7 +665,12 @@ export function registerAccountView(
   );
   const cache = new BoundedMap<
     string,
-    { at: number; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+    {
+      at: number;
+      body: AccountBody;
+      forModel: readonly PortfolioRecommendation[];
+      concentration: Concentration;
+    }
   >(ACCOUNT_CACHE_MAX);
   const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrowOptions);
@@ -712,7 +719,12 @@ export function registerAccountView(
     id: AccountId,
     log: FastifyRequest['log'],
   ): Promise<
-    | { status: 200; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+    | {
+        status: 200;
+        body: AccountBody;
+        forModel: readonly PortfolioRecommendation[];
+        concentration: Concentration;
+      }
     | { status: 404 | 502; body: { error: string } }
   > => {
     const hit = cache.get(id);
@@ -1142,8 +1154,12 @@ export function registerAccountView(
             },
       actions,
     };
-    cache.set(id, { at: Date.now(), body, forModel });
-    return { status: 200, body, forModel };
+    const concentration = actionable.concentration && {
+      token: actionable.concentration.token,
+      pct: actionable.concentration.pct,
+    };
+    cache.set(id, { at: Date.now(), body, forModel, concentration });
+    return { status: 200, body, forModel, concentration };
   };
 
   app.get('/v1/analytics/account/:id', async (req, reply) => {
@@ -1248,6 +1264,7 @@ export function registerAccountView(
         ]),
       heuristics: view.body.recommendations,
       checks: view.forModel,
+      concentration: view.concentration,
     };
   };
 

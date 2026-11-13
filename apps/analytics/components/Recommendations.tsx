@@ -1,7 +1,7 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useState } from 'react';
-import { runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
+import { modelName, runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
@@ -124,8 +124,8 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
       <h3>How the AI got here</h3>
       {analysis.run && (
         <p className="muted-note">
-          {analysis.run.model} · {analysis.run.toolCalls} agent calls · {analysis.run.turns} model
-          turns · {(analysis.run.ms / 1000).toFixed(1)} s
+          {modelName(analysis.run.model)} · {analysis.run.toolCalls} agent calls ·{' '}
+          {analysis.run.turns} model turns · {(analysis.run.ms / 1000).toFixed(1)} s
         </p>
       )}
       <ul>
