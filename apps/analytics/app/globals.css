@@ -2840,6 +2840,47 @@ main.page {
   line-height: 1.6;
   max-width: 62ch;
 }
+.repay-picker {
+  display: grid;
+  gap: 10px;
+}
+.repay-picker > :not(:last-child) {
+  max-width: 420px;
+}
+.repay-amount {
+  display: grid;
+  gap: 4px;
+}
+.repay-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.repay-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: 8px;
+}
+.repay-picker input[type='range'] {
+  width: 100%;
+}
+.repay-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.repay-after {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
 
 /* ---- buttons: luminous mint primary ---- */
 .btn {

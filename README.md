@@ -191,15 +191,24 @@ in Postgres and visible on the site.
 
 **Run AI analysis** on a connected wallet calls `POST /v1/analytics/account/:id/analysis`. The server reads a fresh
 Burrow snapshot of that wallet (balances and loan, priced with the same confirmed prices as the portfolio table) and
-gives the central LLM five tools:
+gives the central LLM six tools:
 
-| Tool                      | What runs                                                                                            |
-| ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6               |
-| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate |
-| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices      |
-| `portfolio_concentration` | Wallet check: share of the portfolio in one token                                                    |
-| `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                        |
+| Tool                      | What runs                                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6, from the wallet, or from the collateral of the same token when the wallet holds too little |
+| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate                                                                               |
+| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices                                                                                    |
+| `portfolio_concentration` | Wallet check: share of the portfolio in one token; the swap uses only what the wallet holds                                                                                        |
+| `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                                                                                                      |
+| `burrow_withdrawals`      | Wallet check: Burrow supply that can move to the wallet (all of it with no loan, else what keeps HF 1.6)                                                                           |
+
+**Loans.** A loan below HF 1.5 gets a card that repays down to HF 1.6, not the whole debt (a loop that earns more than
+it costs is the user's call to close). When the wallet lacks the debt token, it repays from the collateral of the same
+token in one priced Burrow call (`DecreaseCollateral` + `Repay`), so nothing has to be in the wallet. The card has an
+amount field, a slider and "To safe (1.6)" / "Whole debt" buttons; the health factor after the chosen amount updates
+live in the loan-safety colours, and the button prepares exactly that amount. A card with no action that can be built
+(the debt token is neither in the wallet nor the collateral, or the concentrated token is not in the wallet) is advice
+without a button.
 
 The model sees only numbers and token names from our own list: a token's own `ft_metadata` symbol never reaches it (an
 unknown token appears as its shortened contract id, on the AI-ranked cards too), and the prompt does not carry the
@@ -366,7 +375,7 @@ costs), or why the autopilot would not do it.
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
 | Wallet connection and signing                                                       | HOT Connector; unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)                          |
 | Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
-| AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and two wallet checks as tools (architecture C above); rule-based fallback, labelled    |
+| AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and three wallet checks as tools (architecture C above); rule-based fallback, labelled  |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 

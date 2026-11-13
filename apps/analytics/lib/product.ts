@@ -18,7 +18,7 @@ export interface AccountRecommendation {
   severity: 'info' | 'warning';
   title: string;
   why: string;
-  intent: RecommendationIntent;
+  intent: RecommendationIntent | null;
 }
 export interface Opportunity {
   id: string;

@@ -77,7 +77,8 @@ export type PrepareResult =
  */
 export type PrepareRequestIntent =
   | {
-      readonly action: 'supply' | 'repay' | 'borrow' | 'withdraw' | 'unwrap';
+      readonly action:
+        'supply' | 'repay' | 'repay_from_collateral' | 'borrow' | 'withdraw' | 'unwrap';
       readonly token: string;
       readonly approxUsd: number;
       readonly amount?: string;

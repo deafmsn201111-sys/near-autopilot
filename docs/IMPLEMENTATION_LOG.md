@@ -353,3 +353,20 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/analytics`: `/api/deposit/*` proxies (`deposit-quote` limit 5/100 per 10 min), `DepositDialog` (form → deposit
   address, QR, deadline countdown, fee) in the header and on the portfolio.
 - D19.
+
+## 2026-11-13 — Repay from collateral, withdraw from Burrow, no dead-end cards (#64)
+
+- `packages/burrow-adapter/src/builders.ts`: `buildRepayFromCollateral` (one priced `oracle_call` →
+  `Execute { [DecreaseCollateral?, Repay] }`); `buildWithdraw` takes `fromCollateralRaw` and releases collateral
+  first, since Burrow's `Withdraw` only draws on plain supply.
+- `packages/core/src/loan-math.ts`: health factor after a repay (wallet or collateral), the repay that reaches a
+  target, the withdrawal that keeps it; shared by the API and the UI amount picker.
+- `apps/api/src/analytics/account-view.ts`: the loan card repays to HF 1.6 (wallet if it holds enough, else from
+  collateral, else advice only) and carries `sizing`; a last "Withdraw from Burrow" card; the concentration swap is
+  capped at what the wallet holds (no button when it holds none). `POST /v1/wallet/prepare` gains
+  `repay_from_collateral` and an exact `amount` for `withdraw`; both draw plain supply first, then collateral.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns the repay-from-collateral card when the wallet
+  cannot repay; new `burrow_withdrawals` wallet check.
+- `apps/analytics/components/RepayPicker.tsx`: amount field + slider + "To safe" / "Whole debt", live HF in the
+  zone colours; prepares exactly the chosen amount.
+- Supersedes #99's "repay 30% of the debt, at least $10": the loan card now repays to HF 1.6.
