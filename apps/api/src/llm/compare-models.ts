@@ -78,6 +78,7 @@ let spentMicro = 0n;
 let calls: LlmCallRecord[] = [];
 const budgetLeft = () => BigInt(MAX_SPEND_USD * 1e6) - spentMicro;
 const ledger = {
+  enabled: async () => true,
   remainingTodayMicro: async () => budgetLeft(),
   record: async (call: LlmCallRecord) => {
     spentMicro += call.costMicroUsd;
