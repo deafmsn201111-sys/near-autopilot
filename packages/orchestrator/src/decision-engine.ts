@@ -397,7 +397,7 @@ export function decide(input: EvaluationInput): Decision {
       }
 
       case 'lending.supply': {
-        // Discretionary: idle wallet tokens into Burrow at the supply rate. Same gates and hurdle as a swap, no size limit.
+        // Discretionary: idle wallet tokens into Burrow at the supply rate. Same gates and hurdle as a swap, no size limit (D23).
         if (RISK_RANK[risk.level] >= RISK_RANK.watch) {
           rejected.push(
             reject(
@@ -450,7 +450,6 @@ export function decide(input: EvaluationInput): Decision {
           );
           break;
         }
-        // No size limit: a deposit is not a trade and the user can withdraw it (D23).
         const value = tokenValueUsd(snapshot.prices, prop.token, prop.amount);
         const y = input.market.estimatedYieldWad.get(prop.token);
         if (y === undefined || y <= 0n) {

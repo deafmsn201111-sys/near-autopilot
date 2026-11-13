@@ -389,4 +389,6 @@ called $100 "your idle USDC". The decision engine also rejected a larger supply 
 (agent and decision engine). A supply is not a trade (no price, no slippage), it can be withdrawn any time, and the
 user signs it. The policy engine's `maxActionUsd` on the dry-run autopilot path, the prepare caps and `validateCascade`
 are unchanged.
-**Consequences:** The AI and rule-based idle-supply cards name the same amount.
+**Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
+turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
+(fail-closed) instead of scaled down. The two paths can still pick different tokens when several are idle (#139).
