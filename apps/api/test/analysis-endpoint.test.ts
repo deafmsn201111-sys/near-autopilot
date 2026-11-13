@@ -454,6 +454,17 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     });
   });
 
+  it('never releases more collateral than the debt (plus 0.1% for accrued interest)', async () => {
+    const res = await prepare(burrowAccount(37_870_000n), {
+      action: 'repay_from_collateral',
+      token: USDT,
+      approxUsd: 50,
+      amount: '50000000',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<Prepared>().amount.raw).toBe('37907870');
+  });
+
   it('refuses to repay from collateral when there is no debt in that token', async () => {
     const res = await prepare(burrowAccount(0n), {
       action: 'repay_from_collateral',

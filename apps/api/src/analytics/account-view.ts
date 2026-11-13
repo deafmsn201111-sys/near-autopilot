@@ -1759,8 +1759,14 @@ export function registerAccountView(
         const available = suppliedRaw + rawOfInner(acct.collateral);
         if (intent.action !== 'borrow' && available <= 0n)
           return reply.code(409).send({ error: `you have no ${sym} on Burrow` });
-        const rawAmount =
-          intent.action === 'borrow' || requested < available ? requested : available;
+        // Released collateral must not exceed the repayment, or it would weaken the loans in other tokens; the 0.1%
+        // covers interest accrued since the read (Repay itself stops at the debt).
+        const debtRaw = rawOfInner(acct.borrowed);
+        const cap =
+          intent.action === 'repay_from_collateral' && debtRaw + debtRaw / 1000n < available
+            ? debtRaw + debtRaw / 1000n
+            : available;
+        const rawAmount = intent.action === 'borrow' || requested < cap ? requested : cap;
         if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
         const fromCollateralRaw = rawAmount > suppliedRaw ? rawAmount - suppliedRaw : 0n;
         const humanAmount = Number(rawAmount) / 10 ** decimals;
@@ -1781,7 +1787,7 @@ export function registerAccountView(
                   {
                     intentId: 'withdraw',
                     tx: buildWithdraw({ ...common, fromCollateralRaw }),
-                    preview: `Withdraw up to ${human} ${sym} from your Burrow balance to your wallet${fromCollateralRaw > 0n ? ', releasing collateral for it' : ''} (Burrow refuses it if the loan would become unsafe).`,
+                    preview: `Withdraw up to ${human} ${sym} from your Burrow balance to your wallet${fromCollateralRaw > 0n ? ', releasing collateral for it' : ''} (with a loan, Burrow refuses it only below its liquidation line, so check the health factor first).`,
                   },
                 ]
               : [
