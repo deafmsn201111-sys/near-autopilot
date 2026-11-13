@@ -32,7 +32,14 @@ describe('runAnalysis', () => {
         rank: null,
       },
     ];
-    const run = { model: 'claude-haiku-5-5', turns: 2, toolCalls: 5, ms: 6200 };
+    const run = {
+      model: 'claude-haiku-5-5',
+      turns: 2,
+      toolCalls: 5,
+      ms: 6200,
+      read: { tokens: 7, loan: true },
+      checks: { picked: 2, explained: 2, replaced: 0, restored: 1, dropped: 0 },
+    };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
     const r = await runAnalysis('alice.near');
     expect(r).toEqual({

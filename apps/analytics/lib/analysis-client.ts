@@ -36,6 +36,14 @@ const runSchema = z.object({
   turns: z.number(),
   toolCalls: z.number(),
   ms: z.number(),
+  read: z.object({ tokens: z.number(), loan: z.boolean() }),
+  checks: z.object({
+    picked: z.number(),
+    explained: z.number(),
+    replaced: z.number(),
+    restored: z.number(),
+    dropped: z.number(),
+  }),
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;

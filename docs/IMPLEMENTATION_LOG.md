@@ -302,3 +302,5 @@ no longer said what comes first.
 - Each trace line also says what became of its card (`pick`: ranked / kept by code / left out, and `rank`); a card
   the model left out still shows its number, labelled as left out. The guardian line names the debt token missing
   from the wallet when it cannot size a repayment. `run` summarises the model run (model, turns, tool calls, ms).
+- `run.read` (tokens held, loan or not) and `run.checks` (picked, explained, replaced, restored, dropped) let the UI
+  show the run as a four-step pipeline: read → agents → model ranking → code checks.

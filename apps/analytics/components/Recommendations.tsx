@@ -113,42 +113,100 @@ export function Recommendations({
   );
 }
 
-/** Which agents the model called and the key number each returned, with where that number came from. */
+/**
+ * The run as a pipeline: what was read, what each agent returned (key number, its provenance, what became of its
+ * card), what the model did, and what code checked before the user saw it.
+ */
 function AiTrace({ analysis }: { analysis: Analysis }) {
-  if (analysis.trace.length === 0) {
+  const { trace, run } = analysis;
+  if (trace.length === 0) {
     if (analysis.calledTools.length === 0) return null;
     return <p className="muted-note">Agents called: {analysis.calledTools.join(', ')}</p>;
   }
   return (
-    <div className="ai-trace">
-      <h3>How the AI got here</h3>
-      {analysis.run && (
-        <p className="muted-note">
-          {modelName(analysis.run.model)} · {analysis.run.toolCalls} agent calls ·{' '}
-          {analysis.run.turns} model turns · {(analysis.run.ms / 1000).toFixed(1)} s
-        </p>
-      )}
-      <ul>
-        {analysis.trace.map((step) => {
-          const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
-          return (
-            <li key={step.tool} className={step.ok ? undefined : 'failed'}>
-              <strong>{step.agent}</strong> — {step.text}
-              {info && (
-                <span className="badge neutral" title={info.describe}>
-                  {info.label}
-                </span>
-              )}
-              {step.pick && <span className={`ai-pick ${step.pick}`}>{pickLabel(step)}</span>}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <section className="ai-trace" aria-label="How the AI got here">
+      <header>
+        <h3>How the AI got here</h3>
+        {run && (
+          <span className="muted-note">
+            {modelName(run.model)} · {(run.ms / 1000).toFixed(1)} s
+          </span>
+        )}
+      </header>
+      <ol className="ai-steps">
+        {run && (
+          <li>
+            <strong>Read the wallet on-chain</strong>
+            <span className="ai-step-note">
+              {plural(run.read.tokens, 'token')} held in the wallet or on Burrow
+              {run.read.loan ? ', and a Burrow loan' : ', no loan'}
+            </span>
+          </li>
+        )}
+        <li>
+          <strong>{plural(trace.length, 'agent')} ran</strong>
+          <ul className="ai-agents">
+            {trace.map((step) => {
+              const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
+              return (
+                <li key={step.tool} className={step.ok ? `pick-${step.pick ?? 'none'}` : 'failed'}>
+                  <span className="ai-agent">{step.agent}</span>
+                  <span className="ai-number">{step.text}</span>
+                  <span className="ai-tags">
+                    {info && (
+                      <span className="ai-tag" title={info.describe}>
+                        {info.label}
+                      </span>
+                    )}
+                    {step.pick && (
+                      <span className={`ai-tag pick ${step.pick}`}>{pickLabel(step)}</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </li>
+        {run && (
+          <li>
+            <strong>{modelName(run.model)} ranked them</strong>
+            <span className="ai-step-note">
+              {plural(run.checks.picked, 'card')} picked and explained in{' '}
+              {plural(run.turns, 'model turn')}
+            </span>
+          </li>
+        )}
+        {run && (
+          <li>
+            <strong>Code checked the answer</strong>
+            <ul className="ai-checks">
+              <li className={run.checks.replaced ? 'warn' : undefined}>
+                {run.checks.explained} of {run.checks.explained + run.checks.replaced} AI
+                explanations use only numbers the agents returned
+                {run.checks.replaced > 0 &&
+                  `; ${run.checks.replaced} replaced by the agent's own text`}
+              </li>
+              <li>
+                {run.checks.restored > 0
+                  ? `${plural(run.checks.restored, 'warning')} the AI left out put back first`
+                  : 'No warning was left out'}
+              </li>
+              <li>
+                {run.checks.dropped > 0
+                  ? `${plural(run.checks.dropped, 'made-up or repeated action')} dropped`
+                  : 'No made-up actions'}
+              </li>
+            </ul>
+          </li>
+        )}
+      </ol>
+    </section>
   );
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 function pickLabel({ pick, rank }: TraceStep): string {
   if (pick === 'left_out') return 'left out by the AI';
-  return pick === 'kept' ? `#${rank} · kept by code` : `#${rank} in the AI ranking`;
+  return pick === 'kept' ? `#${rank} · put back by code` : `#${rank} in the AI ranking`;
 }

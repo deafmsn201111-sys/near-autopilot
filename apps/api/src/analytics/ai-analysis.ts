@@ -172,6 +172,21 @@ export interface RunSummary {
   readonly turns: number;
   readonly toolCalls: number;
   readonly ms: number;
+  /** What the agents read: the tokens held in the wallet or on Burrow, and whether there is a loan. */
+  readonly read: { readonly tokens: number; readonly loan: boolean };
+  /** What code did to the model's answer before the user saw it. */
+  readonly checks: {
+    /** Cards the model ranked. */
+    readonly picked: number;
+    /** Model explanations shown: every number in them came from the tools. */
+    readonly explained: number;
+    /** Model explanations replaced by the code's own text for a number no tool returned. */
+    readonly replaced: number;
+    /** Warnings the model left out, put back first. */
+    readonly restored: number;
+    /** Picks naming an action no tool returned, or one already picked. */
+    readonly dropped: number;
+  };
 }
 
 /** A called agent's key number as a short line built on the server: raw tool output never reaches the browser. */
@@ -775,13 +790,19 @@ export async function analyseAccount(
     ),
   );
   const recommendations: PortfolioRecommendation[] = [];
+  const checks = { picked: 0, explained: 0, replaced: 0, restored: 0, dropped: 0 };
   for (const pick of parsed.data.picks) {
     const candidate = found.get(pick.id);
-    if (!candidate || recommendations.some((r) => r.id === pick.id)) continue;
+    if (!candidate || recommendations.some((r) => r.id === pick.id)) {
+      checks.dropped++;
+      continue;
+    }
     const own = new Set(displayNumbers(candidate));
     const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
+    checks[honest ? 'explained' : 'replaced']++;
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
+  checks.picked = recommendations.length;
   if (recommendations.length === 0) return failed('empty');
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
@@ -791,6 +812,7 @@ export async function analyseAccount(
   );
   recommendations.unshift(...missing);
   const kept = new Set(missing.map((m) => m.id));
+  checks.restored = missing.length;
   await record('ok');
   const analysis: Analysis = {
     source: 'llm',
@@ -804,6 +826,11 @@ export async function analyseAccount(
       turns: usage.calls,
       toolCalls: trace.length,
       ms: Date.now() - startedAt.getTime(),
+      read: {
+        tokens: heldTokens(obs).size,
+        loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+      },
+      checks,
     },
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });

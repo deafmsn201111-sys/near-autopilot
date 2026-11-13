@@ -254,6 +254,13 @@ describe('analyseAccount', () => {
       'reduce-concentration',
       'liquidation-guardian:repay:usdt.tether-token.near',
     ]);
+    expect(out.run?.checks).toEqual({
+      picked: 2,
+      explained: 2,
+      replaced: 0,
+      restored: 0,
+      dropped: 1,
+    });
     expect(out.recommendations[0]?.why).toBe('wNEAR is 84% of the portfolio.');
     const repay = out.recommendations[1];
     expect(repay?.agent).toBe('Liquidation Guardian');
@@ -492,6 +499,8 @@ describe('analyseAccount', () => {
       turns: 2,
       toolCalls: 5,
       ms: expect.any(Number) as number,
+      read: { tokens: 2, loan: true },
+      checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
     });
     const off = await analyseAccount(null, {
       ...ctx,
@@ -537,6 +546,30 @@ describe('analyseAccount', () => {
       ok: true,
       text: 'No second price source or volatility to compare',
       provenance: null,
+    });
+  });
+
+  it('counts an explanation replaced for a number no tool returned', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () =>
+        final([
+          { id: REPAY, why: 'Repay first.' },
+          { id: 'reduce-concentration', why: 'Sell $999,999 of wNEAR now.' },
+          { id: REPAY, why: 'Again.' },
+        ]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.run?.checks).toEqual({
+      picked: 2,
+      explained: 1,
+      replaced: 1,
+      restored: 0,
+      dropped: 1,
     });
   });
 
