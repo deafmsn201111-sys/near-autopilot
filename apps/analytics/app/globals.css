@@ -3341,3 +3341,143 @@ main.page {
   background: var(--accent-wash);
   font-size: 13px;
 }
+
+/* ---- strategy and repayment controls: integrated into the account terminal ---- */
+.account-form.compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+.account-form.compact label {
+  min-width: 0;
+}
+.account-form.compact input[name='account'] {
+  min-height: 42px;
+  background: var(--page);
+}
+.account-form.compact .btn {
+  min-height: 42px;
+}
+
+.strategy-picker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  margin: 0 0 18px;
+  border: 1px solid var(--grid);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.strategy-picker > .eyebrow {
+  margin: 0;
+}
+.strategy-picker > .segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.strategy-picker .segmented a {
+  min-width: 0;
+  justify-content: center;
+  padding: 9px 8px;
+  text-align: center;
+}
+.strategy-picker .segmented a[aria-current='true'] {
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.strategy-lines {
+  display: block;
+  max-width: 18ch;
+  line-height: 1.35;
+  white-space: normal;
+}
+.strategy-picker > .muted-note,
+.strategy-picker > .strategy-note {
+  grid-column: 1 / -1;
+}
+.strategy-picker > .muted-note {
+  margin: 0;
+  max-width: 88ch;
+}
+.strategy-note {
+  padding: 10px 12px;
+  border-left-width: 2px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.repay-picker {
+  max-width: 560px;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--grid);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+.repay-picker > :not(:last-child) {
+  max-width: none;
+}
+.repay-amount > .eyebrow {
+  margin: 0;
+}
+.repay-input input {
+  min-height: 42px;
+  border-color: var(--grid);
+  background: var(--page);
+}
+.repay-picker input[type='range'] {
+  max-width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.repay-presets .btn {
+  min-height: 36px;
+}
+.repay-after {
+  padding: 9px 11px;
+  border: 1px solid var(--grid);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .account-form.compact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .account-form.compact .btn {
+    width: 100%;
+  }
+  .strategy-picker {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    padding: 12px;
+  }
+  .strategy-picker > .segmented,
+  .strategy-picker > .muted-note,
+  .strategy-picker > .strategy-note {
+    grid-column: 1;
+  }
+  .strategy-picker .segmented a {
+    padding: 8px 5px;
+  }
+  .strategy-lines {
+    font-size: 10px;
+  }
+  .repay-picker {
+    padding: 12px;
+  }
+}
