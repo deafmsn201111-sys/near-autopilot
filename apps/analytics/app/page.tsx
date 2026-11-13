@@ -56,6 +56,7 @@ import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
+import { DepositDialog } from '../components/DepositDialog';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 
 export const dynamic = 'force-dynamic';
@@ -370,6 +371,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           <span className="muted-note">
             {money(t.assetsUsd, false)} in assets − {money(t.debtUsd, false)} borrowed
           </span>
+          {isAccount && accountParam && accountParam === cookieAccount && (
+            <div>
+              <DepositDialog account={accountParam} label="Fund from another chain" />
+            </div>
+          )}
           {allocSegs.length > 0 && (
             <>
               <div className="alloc-bar" aria-hidden="true">

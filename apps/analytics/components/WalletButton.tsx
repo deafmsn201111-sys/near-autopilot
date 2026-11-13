@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { clearOwnershipProof } from '../app/account-actions';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
+import { DepositDialog } from './DepositDialog';
 
 const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
 
@@ -49,6 +50,7 @@ export function WalletButton() {
         >
           {account.length > 20 ? `${account.slice(0, 8)}…${account.slice(-6)}` : account}
         </Link>
+        <DepositDialog account={account} />
         <button
           type="button"
           className="btn secondary small"

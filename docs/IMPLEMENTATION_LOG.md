@@ -321,3 +321,13 @@ running window and listener removal.
 - A low health factor always keeps its card: the repay is 30% of the debt, at least $10, at most the whole debt.
 - What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
   dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.
+
+## 2026-11-13 — Deposit from another chain through 1Click (#27)
+
+- `apps/api/src/gateway/one-click-deposit.ts`: real-quote client (hard-coded URL, optional JWT, cached token list,
+  every echoed field verified). `refund-address.ts`: per-chain refund address check.
+- `apps/api/src/analytics/deposit.ts`: `GET /v1/deposit/assets`, `POST /v1/deposit/quote`; `deposit-store.ts` +
+  migration 0020 `deposit_quotes` (30-day purge).
+- `apps/analytics`: `/api/deposit/*` proxies (`deposit-quote` limit 5/100 per 10 min), `DepositDialog` (form → deposit
+  address, QR, deadline countdown, fee) in the header and on the portfolio.
+- D19.
