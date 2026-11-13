@@ -268,3 +268,10 @@ no longer said what comes first.
   `analysisInputs`, which the analysis route also uses.
 - `AnthropicToolLlm` takes an optional `effort` (`output_config.effort`).
 - Result in D17: Haiku 5.5 at default effort stays; same answers as Sonnet 5.5 at 1/15 the cost.
+
+## 2026-11-13 — No $0 cards on small wallets (#99)
+
+- Rule-based cards (repay, reduce concentration, put idle to work) need an action of at least $10
+  (`MIN_ACTION_USD` in `apps/api/src/analytics/account-view.ts`); amounts are in cents, never rounded to $0.
+- What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
+  dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.

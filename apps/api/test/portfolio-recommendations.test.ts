@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { modelTokenLabel } from '../src/thesis/labels';
 import {
-  portfolioRecommendations,
+  portfolioAdvice,
   type PortfolioMetrics,
   type RecommendationContext,
 } from '../src/analytics/account-view';
@@ -23,6 +23,8 @@ const ctx = (over: Partial<RecommendationContext>): RecommendationContext => ({
   dclOutOfRange: [],
   ...over,
 });
+
+const portfolioRecommendations = (c: RecommendationContext) => portfolioAdvice(c).recommendations;
 
 describe('portfolioRecommendations', () => {
   it('flags high single-asset concentration with a swap intent to cut it toward half', () => {
@@ -87,6 +89,79 @@ describe('portfolioRecommendations', () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('actions under the $10 minimum', () => {
+  it('skips a concentration rebalance that would move under $10 and says why', () => {
+    const advice = portfolioAdvice(
+      ctx({
+        metrics: metrics({
+          totalAssetsUsd: 9,
+          concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
+        }),
+      }),
+    );
+    expect(advice.recommendations).toEqual([]);
+    expect(advice.skipped).toEqual([
+      '100% of your $9.00 portfolio is in NEAR. Rebalancing it would move only $4.50, under the $10 the agents act on, so they skip it until the portfolio grows.',
+    ]);
+  });
+
+  it('keeps a concentration rebalance of exactly $10', () => {
+    const advice = portfolioAdvice(
+      ctx({
+        metrics: metrics({
+          totalAssetsUsd: 20,
+          concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
+        }),
+      }),
+    );
+    expect(advice.recommendations[0]?.intent).toEqual({
+      action: 'swap',
+      fromToken: 'near',
+      approxUsd: 10,
+    });
+    expect(advice.skipped).toEqual([]);
+  });
+
+  it('skips a repayment under $10 and says why', () => {
+    const advice = portfolioAdvice(
+      ctx({
+        loan: { hasDebt: true, healthFactor: 1.2 },
+        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 20 },
+      }),
+    );
+    expect(advice.recommendations).toEqual([]);
+    expect(advice.skipped).toEqual([
+      "Your loan's health factor is 1.20. Repaying 30% of the USDt debt would be only $6.00, under the $10 the agents act on. Below 1.0 the collateral can be liquidated.",
+    ]);
+  });
+
+  it('skips idle assets under $10 and says why', () => {
+    const advice = portfolioAdvice(
+      ctx({ idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 9, aprPct: 2.1 }] }),
+    );
+    expect(advice.recommendations).toEqual([]);
+    expect(advice.skipped).toEqual([
+      '$9.00 of NEAR could earn about 2.1% a year on Burrow, but that is under the $10 the agents act on: the first deposit locks 0.1 NEAR for Burrow registration.',
+    ]);
+  });
+
+  it('never returns an intent of $0', () => {
+    const advice = portfolioAdvice(
+      ctx({
+        metrics: metrics({
+          totalAssetsUsd: 1,
+          concentration: { token: 'near', symbol: 'NEAR', pct: 100 },
+        }),
+        loan: { hasDebt: true, healthFactor: 1.1 },
+        largestDebt: { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 1 },
+        idleEarn: [{ token: 'near', symbol: 'NEAR', usd: 1, aprPct: 2 }],
+      }),
+    );
+    expect(advice.recommendations).toEqual([]);
+    expect(advice.skipped).toHaveLength(3);
   });
 });
 

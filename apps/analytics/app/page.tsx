@@ -327,6 +327,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             key={accountParam}
             account={accountParam}
             recommendations={recs.recommendations}
+            skipped={recs.skipped ?? []}
             holdings={data.holdings}
             signingEnabled={signingEnabled}
           />

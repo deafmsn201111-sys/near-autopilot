@@ -483,47 +483,74 @@ export interface RecommendationContext {
 }
 
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
+const money2 = (usd: number) =>
+  `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const cents = (usd: number) => Math.round(usd * 100) / 100;
+
+/** Smallest action a heuristic card offers: under it a swap or repay is noise and a first Burrow deposit locks 0.1 NEAR. */
+const MIN_ACTION_USD = 10;
+const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
+
+export interface PortfolioAdvice {
+  readonly recommendations: PortfolioRecommendation[];
+  /** Plain-language reasons for actions the agents saw but skipped as too small, so a small wallet still gets a read. */
+  readonly skipped: string[];
+}
 
 /**
  * Portfolio-health recommendations derived from the real portfolio (brief: the agents analyse it and say what/why).
  * Each carries a concrete intent for the one-click transaction engine. Deterministic, explainable, ordered by urgency,
  * and never an instruction — the user decides and signs.
  */
-export function portfolioRecommendations(ctx: RecommendationContext): PortfolioRecommendation[] {
+export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
   const recs: PortfolioRecommendation[] = [];
+  const skipped: string[] = [];
 
   // 1. Loan safety first: a low health factor is the most time-sensitive thing.
   const hf = ctx.loan?.healthFactor ?? null;
   if (ctx.loan?.hasDebt && hf !== null && hf < 1.5 && ctx.largestDebt) {
-    const approxUsd = Math.round(ctx.largestDebt.usd * 0.3);
-    recs.push({
-      id: 'improve-loan-safety',
-      kind: 'improve_loan_safety',
-      agent: 'Liquidation Guardian',
-      severity: hf < 1.3 ? 'warning' : 'info',
-      title: `Your loan's health factor is ${hf.toFixed(2)}`,
-      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
-      intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
-    });
+    const approxUsd = cents(ctx.largestDebt.usd * 0.3);
+    if (approxUsd < MIN_ACTION_USD) {
+      skipped.push(
+        `Your loan's health factor is ${hf.toFixed(2)}. Repaying 30% of the ${ctx.largestDebt.symbol} debt would be only ${money2(approxUsd)}, ${UNDER_MIN}. Below 1.0 the collateral can be liquidated.`,
+      );
+    } else {
+      recs.push({
+        id: 'improve-loan-safety',
+        kind: 'improve_loan_safety',
+        agent: 'Liquidation Guardian',
+        severity: hf < 1.3 ? 'warning' : 'info',
+        title: `Your loan's health factor is ${hf.toFixed(2)}`,
+        why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
+        intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
+      });
+    }
   }
 
   // 2. Reduce single-asset concentration.
   const c = ctx.metrics.concentration;
   if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
-    const approxUsd = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
-    recs.push({
-      id: 'reduce-concentration',
-      kind: 'reduce_concentration',
-      agent: 'Portfolio Intelligence',
-      severity: c.pct >= 85 ? 'warning' : 'info',
-      title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
-      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
-      intent: { action: 'swap', fromToken: c.token, approxUsd },
-    });
+    const approxUsd = cents((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
+    if (approxUsd < MIN_ACTION_USD) {
+      skipped.push(
+        `${c.pct.toFixed(0)}% of your ${money2(ctx.metrics.totalAssetsUsd)} portfolio is in ${c.symbol}. Rebalancing it would move only ${money2(approxUsd)}, ${UNDER_MIN}, so they skip it until the portfolio grows.`,
+      );
+    } else {
+      recs.push({
+        id: 'reduce-concentration',
+        kind: 'reduce_concentration',
+        agent: 'Portfolio Intelligence',
+        severity: c.pct >= 85 ? 'warning' : 'info',
+        title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
+        why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
+        intent: { action: 'swap', fromToken: c.token, approxUsd },
+      });
+    }
   }
 
   // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
-  const idle = ctx.idleEarn.filter((a) => a.aprPct >= 1 && a.usd >= 10)[0];
+  const earning = ctx.idleEarn.filter((a) => a.aprPct >= 1);
+  const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
   if (idle) {
     recs.push({
       id: 'put-idle-to-work',
@@ -534,6 +561,11 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
       intent: { action: 'supply', token: idle.token, approxUsd: Math.round(idle.usd) },
     });
+  } else if (earning[0]) {
+    const small = earning[0];
+    skipped.push(
+      `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}: the first deposit locks 0.1 NEAR for Burrow registration.`,
+    );
   }
 
   // 4. DCL positions that have drifted out of range earn no fees until repositioned.
@@ -550,7 +582,7 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
     });
   }
 
-  return recs;
+  return { recommendations: recs, skipped };
 }
 
 /** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
@@ -907,7 +939,7 @@ export function registerAccountView(
       v1Positions,
     });
     const idleEarn = v.holdings
-      .filter((h) => h.where === 'wallet' && h.usd !== null && h.usd >= 10)
+      .filter((h) => h.where === 'wallet' && h.usd !== null)
       .map((h) => ({
         token: h.token,
         symbol: h.symbol,
@@ -928,7 +960,7 @@ export function registerAccountView(
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
     const loan = { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor };
-    const recommendations = portfolioRecommendations({
+    const { recommendations, skipped } = portfolioAdvice({
       metrics,
       loan,
       idleEarn,
@@ -940,7 +972,7 @@ export function registerAccountView(
       ...x,
       symbol: modelTokenLabel(x.token),
     });
-    const forModel = portfolioRecommendations({
+    const { recommendations: forModel } = portfolioAdvice({
       metrics: {
         ...metrics,
         concentration: metrics.concentration && labelled(metrics.concentration),
@@ -974,6 +1006,7 @@ export function registerAccountView(
       staking,
       metrics,
       recommendations,
+      skipped,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {

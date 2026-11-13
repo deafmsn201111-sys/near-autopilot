@@ -185,6 +185,8 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
 type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
   accountId: string;
   recommendations: AccountRecommendation[];
+  /** Actions the agents saw but skipped as too small, in plain language. */
+  skipped?: string[];
   /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
   ownerVerified: boolean;
 };
