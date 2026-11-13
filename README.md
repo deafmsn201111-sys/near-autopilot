@@ -230,6 +230,14 @@ made-up actions dropped). The line is built on the server
 from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
 it says so; it never reports "healthy" without a comparison.
 
+The pipeline fills in live while the analysis runs: the browser asks for `text/event-stream` and the API sends one
+event per real step (`read`, `asked` when the model picks the agents to call, an `agent` event as each tool result
+comes back, `ranked`, `checked`), then `done` with the same analysis the JSON reply carries. All four stages show
+from the first event: the current one pulses, later ones are dimmed, each agent the model asked for waits on a
+placeholder until its result arrives, and a clock runs until the end. The events are the same server-built lines, never raw tool output. A cached result or a rule-based list arrives as a single `done`, so it appears at once (a cached one is labelled
+"from a run N min ago"); a stream that breaks falls back
+to the plain JSON request.
+
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the

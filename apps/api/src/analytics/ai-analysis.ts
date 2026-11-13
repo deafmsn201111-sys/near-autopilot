@@ -172,6 +172,8 @@ export interface Analysis {
   readonly trace: readonly TraceStep[];
   /** The model run behind an AI ranking; null for the rule-based list. */
   readonly run: RunSummary | null;
+  /** When the reused AI result was computed; null for a fresh run or the rule-based list. */
+  readonly cachedAt: string | null;
 }
 
 export interface RunSummary {
@@ -213,6 +215,17 @@ export interface TraceStep {
   /** The card's position in the list the user sees. */
   readonly rank: number | null;
 }
+
+/** What a run reports while it goes, built from the same server-side lines as the trace. */
+export type AnalysisEvent =
+  | ({ readonly type: 'read'; readonly model: LlmModel } & RunSummary['read'])
+  | {
+      readonly type: 'asked';
+      readonly agents: readonly { readonly tool: string; readonly agent: string }[];
+    }
+  | { readonly type: 'agent'; readonly step: TraceStep }
+  | { readonly type: 'ranked'; readonly turns: number }
+  | { readonly type: 'checked'; readonly checks: RunSummary['checks'] };
 
 type StepLine = Pick<TraceStep, 'text' | 'provenance'>;
 const NO_PICK = { pick: null, rank: null } as const;
@@ -624,6 +637,7 @@ export async function analyseAccount(
   ctx: AnalysisContext,
   onError: (e: unknown) => void = () => {},
   deadlineMs: number = DEADLINE_MS,
+  onEvent: (e: AnalysisEvent) => void = () => {},
 ): Promise<Analysis> {
   const fallback = (code: FallbackCode): Analysis => ({
     source: 'heuristic',
@@ -633,6 +647,7 @@ export async function analyseAccount(
     calledTools: [],
     trace: [],
     run: null,
+    cachedAt: null,
   });
   if (!ai) return fallback('off');
   const strategy = ctx.strategy ?? DEFAULT_STRATEGY;
@@ -678,10 +693,16 @@ export async function analyseAccount(
   }
   const key = analysisKey(obs, ctx.heuristics, strategy);
   const hit = ai.memo.results.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return early(hit.analysis);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS)
+    return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));
+  const read = {
+    tokens: heldTokens(obs).size,
+    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+  };
+  onEvent({ type: 'read', model: ai.model, ...read });
 
   // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
   // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
@@ -777,6 +798,19 @@ export async function analyseAccount(
 
   const found = new Map<string, PortfolioRecommendation>();
   const steps: Steps = new Map();
+  const succeeded = new Set<string>();
+  const report = ({ tool, ok }: ToolTraceEntry) => {
+    const agent = AGENTS[tool];
+    if (!agent || succeeded.has(tool)) return;
+    if (ok) succeeded.add(tool);
+    onEvent({ type: 'agent', step: { tool, agent, ...stepLine(steps, tool, ok), ...NO_PICK } });
+  };
+  const asked = (names: readonly string[]) => {
+    const agents = [...new Set(names)]
+      .filter((tool) => AGENTS[tool] && !succeeded.has(tool))
+      .map((tool) => ({ tool, agent: AGENTS[tool]! }));
+    if (agents.length > 0) onEvent({ type: 'asked', agents });
+  };
   const run = async () => {
     const tools = [
       guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
@@ -834,6 +868,8 @@ export async function analyseAccount(
       tools,
       maxTurns: MAX_TURNS,
       signal: abort.signal,
+      onCalls: asked,
+      onResult: report,
     });
   };
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
@@ -849,6 +885,7 @@ export async function analyseAccount(
     return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
   }
   const { text, trace } = reply;
+  onEvent({ type: 'ranked', turns: usage.calls });
   const parsed = picksSchema.safeParse(parseJson(stripFence(text)));
   if (!parsed.success) {
     onError(parsed.error);
@@ -890,6 +927,7 @@ export async function analyseAccount(
   recommendations.unshift(...missing);
   const kept = new Set(missing.map((m) => m.id));
   checks.restored = missing.length;
+  onEvent({ type: 'checked', checks });
   await record('ok');
   const analysis: Analysis = {
     source: 'llm',
@@ -903,15 +941,20 @@ export async function analyseAccount(
       turns: usage.calls,
       toolCalls: trace.length,
       ms: Date.now() - startedAt.getTime(),
-      read: {
-        tokens: heldTokens(obs).size,
-        loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
-      },
+      read,
       checks,
     },
+    cachedAt: null,
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });
   return analysis;
+}
+
+function stepLine(steps: Steps, tool: string, ok: boolean): StepLine & { ok: boolean } {
+  const entry = steps.get(tool);
+  if (!ok || !entry) return { ok: false, text: 'Failed', provenance: null };
+  const [first] = entry.byCandidate.values();
+  return { ok: true, ...(first ?? entry.none) };
 }
 
 /** The model may call a tool twice or name one we never offered: one line per offered tool, in first-call order. */

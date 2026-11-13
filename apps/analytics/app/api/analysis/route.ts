@@ -3,7 +3,7 @@ import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { strategySchema } from '@near-autopilot/core/strategy';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { apiPost } from '../../../lib/api';
+import { apiPost, apiPostStream } from '../../../lib/api';
 import { ACCOUNT_LIMIT, consume } from '../../../lib/rate-limit';
 
 /**
@@ -22,7 +22,7 @@ function isJson(req: Request): boolean {
   return type === 'application/json';
 }
 
-export async function POST(req: Request): Promise<NextResponse> {
+export async function POST(req: Request): Promise<Response> {
   if (!isJson(req)) {
     return NextResponse.json({ error: 'content-type must be application/json' }, { status: 415 });
   }
@@ -52,11 +52,33 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   // The API calls the model only for the account's proven owner (D12); everyone else gets the rule-based list.
   const proof = (await cookies()).get(OWNERSHIP_COOKIE)?.value;
+  const path = `/v1/analytics/account/${encodeURIComponent(account.data)}/analysis`;
+  const forward: Record<string, string> = proof ? { 'x-ownership-proof': proof } : {};
+  if (req.headers.get('accept')?.includes('text/event-stream')) {
+    return stream(await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward));
+  }
   const { status, body: out } = await apiPost(
-    `/v1/analytics/account/${encodeURIComponent(account.data)}/analysis`,
+    path,
     { strategy: strategy.data },
     LLM_TIMEOUT_MS,
-    proof ? { 'x-ownership-proof': proof } : {},
+    forward,
   );
   return NextResponse.json(out, { status: status || 502 });
+}
+
+/** The live pipeline (#113): the API's events pass through as they come; `no-transform` keeps compression off it. */
+async function stream(res: Response | null): Promise<Response> {
+  if (!res)
+    return NextResponse.json({ error: 'the analytics service is unreachable' }, { status: 502 });
+  if (res.ok && res.body && res.headers.get('content-type')?.startsWith('text/event-stream')) {
+    return new Response(res.body, {
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache, no-transform',
+        'x-accel-buffering': 'no',
+      },
+    });
+  }
+  const out: unknown = await res.json().catch(() => ({}));
+  return NextResponse.json(out, { status: res.status || 502 });
 }

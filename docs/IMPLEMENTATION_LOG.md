@@ -416,3 +416,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `CapitalAllocatorAgent.proposeSupply` deposits the whole idle balance; the decision engine no longer applies
   `maxSwapUsd` to `lending.supply` (D23). The AI card now says "Put $507.42 of your idle USDt to work", as the
   rule-based card does.
+
+## 2026-11-13 — Live AI pipeline over SSE (#113)
+
+- `packages/orchestrator/src/tool-loop.ts`: `onResult` reports each tool result as it comes back.
+- `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount(..., onEvent)` emits `read`, `agent`, `ranked`, `checked`
+  from the same server-built lines as the trace; the JSON reply is unchanged.
+- `apps/api/src/analytics/account-view.ts`: the analysis endpoint streams when asked for `text/event-stream` (D24).
+- `apps/analytics`: the `/api/analysis` proxy passes the stream through unbuffered; `runAnalysis` parses the events
+  (zod, unknown ones ignored), falls back to JSON; "How the AI got here" fills in as events arrive.
+- `deploy/public/Caddyfile`: `flush_interval -1` on the reverse proxy.
+- UI design pass: all four stages from the first event (current one pulses, later ones dimmed, the rail fills as
+  they complete), placeholders for the agents the model asked for (`asked` event, `onCalls` in the tool loop), a
+  running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
+  `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.

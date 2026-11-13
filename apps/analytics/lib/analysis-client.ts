@@ -47,19 +47,21 @@ const traceStepSchema = z.object({
   rank: z.number().int().positive().nullable().catch(null),
 });
 
+const readSchema = z.object({ tokens: z.number(), loan: z.boolean() });
+const checksSchema = z.object({
+  picked: z.number(),
+  explained: z.number(),
+  replaced: z.number(),
+  restored: z.number(),
+  dropped: z.number(),
+});
 const runSchema = z.object({
   model: z.string(),
   turns: z.number(),
   toolCalls: z.number(),
   ms: z.number(),
-  read: z.object({ tokens: z.number(), loan: z.boolean() }),
-  checks: z.object({
-    picked: z.number(),
-    explained: z.number(),
-    replaced: z.number(),
-    restored: z.number(),
-    dropped: z.number(),
-  }),
+  read: readSchema,
+  checks: checksSchema,
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;
@@ -85,6 +87,7 @@ const analysisSchema = z.object({
   calledTools: z.array(z.string()).default([]),
   trace: z.array(traceStepSchema).default([]),
   run: runSchema.nullable().catch(null),
+  cachedAt: z.string().nullable().catch(null).default(null),
 });
 
 export type Analysis = {
@@ -94,19 +97,132 @@ export type Analysis = {
   calledTools: string[];
   trace: TraceStep[];
   run: z.infer<typeof runSchema> | null;
+  cachedAt: string | null;
 };
 
+/** The run so far, as the "How the AI got here" pipeline shows it; a part is null until its event arrives. */
+export type Pipeline = {
+  model: string | null;
+  read: z.infer<typeof readSchema> | null;
+  /** Agents the model called whose answer has not come back yet, plus those that have. */
+  asked: AskedAgent[];
+  trace: TraceStep[];
+  turns: number | null;
+  checks: z.infer<typeof checksSchema> | null;
+};
+
+export const pipelineOf = ({ run, trace }: Analysis): Pipeline => ({
+  model: run?.model ?? null,
+  read: run?.read ?? null,
+  asked: trace.map(({ tool, agent }) => ({ tool, agent })),
+  trace,
+  turns: run?.turns ?? null,
+  checks: run?.checks ?? null,
+});
+
+const askedSchema = z.object({ tool: z.string(), agent: z.string() });
+type AskedAgent = z.infer<typeof askedSchema>;
+
+const eventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('asked'), agents: z.array(askedSchema).max(20) }),
+  readSchema.extend({ type: z.literal('read'), model: z.string() }),
+  z.object({ type: z.literal('agent'), step: traceStepSchema }),
+  z.object({ type: z.literal('ranked'), turns: z.number() }),
+  z.object({ type: z.literal('checked'), checks: checksSchema }),
+  z.object({ type: z.literal('error') }),
+  analysisSchema.extend({ type: z.literal('done') }),
+]);
+type LiveEvent = z.infer<typeof eventSchema>;
+
+function parseFrame(frame: string): LiveEvent | null {
+  let type = '';
+  let data = '';
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event: ')) type = line.slice('event: '.length);
+    else if (line.startsWith('data: ')) data += line.slice('data: '.length);
+  }
+  try {
+    const parsed = eventSchema.safeParse({ ...(JSON.parse(data) as object), type });
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function apply(p: Pipeline, e: LiveEvent): Pipeline {
+  if (e.type === 'read') return { ...p, model: e.model, read: { tokens: e.tokens, loan: e.loan } };
+  if (e.type === 'asked')
+    return {
+      ...p,
+      asked: [...p.asked, ...e.agents.filter((a) => !p.asked.some((b) => b.tool === a.tool))],
+    };
+  if (e.type === 'agent')
+    return { ...p, trace: [...p.trace.filter((s) => s.tool !== e.step.tool), e.step] };
+  if (e.type === 'ranked') return { ...p, turns: e.turns };
+  if (e.type === 'checked') return { ...p, checks: e.checks };
+  return p;
+}
+
+async function readStream(
+  res: Response,
+  onProgress: (p: Pipeline | null) => void,
+): Promise<Analysis | null> {
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let live: Pipeline = {
+    model: null,
+    read: null,
+    asked: [],
+    trace: [],
+    turns: null,
+    checks: null,
+  };
+  let buffer = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return null;
+      const frames = (buffer + value).split('\n\n');
+      buffer = frames.pop() ?? '';
+      for (const frame of frames) {
+        const event = parseFrame(frame);
+        if (!event) continue;
+        if (event.type === 'error') return null;
+        if (event.type === 'done') {
+          const { type: _, ...analysis } = event;
+          return analysis;
+        }
+        live = apply(live, event);
+        onProgress(live);
+      }
+    }
+  } catch {
+    return null;
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+}
+
+/** Streams the run when it can; a stream that breaks falls back to the plain JSON reply. */
 export async function runAnalysis(
   account: string,
   strategy: StrategyId,
+  onProgress: (p: Pipeline | null) => void = () => {},
 ): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string }> {
-  let res: Response;
-  try {
-    res = await fetch('/api/analysis', {
+  const post = (accept: string) =>
+    fetch('/api/analysis', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', accept },
       body: JSON.stringify({ account, strategy }),
     });
+  let res: Response;
+  try {
+    res = await post('text/event-stream');
+    if (res.ok && res.body && res.headers.get('content-type')?.startsWith('text/event-stream')) {
+      const analysis = await readStream(res, onProgress);
+      if (analysis) return { ok: true, analysis };
+      onProgress(null);
+      res = await post('application/json');
+    }
   } catch {
     return { ok: false, error: 'network error' };
   }
