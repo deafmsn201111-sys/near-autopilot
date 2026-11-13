@@ -2,7 +2,8 @@ export interface PortfolioModeInput {
   isAccount: boolean;
   account: string;
   connected: string;
-  verified: boolean;
+  /** null when the ownership state is unknown (recommendations did not load). */
+  verified: boolean | null;
   signingEnabled: boolean;
 }
 
@@ -42,7 +43,7 @@ export function portfolioMode({
     ? { label: 'Your wallet · ownership verified', note: `${act}${ai}`, mine: true }
     : {
         label: 'Your wallet',
-        note: `${act} Verify ownership to unlock AI analysis.`,
+        note: verified === null ? act : `${act} Verify ownership to unlock AI analysis.`,
         mine: true,
       };
 }

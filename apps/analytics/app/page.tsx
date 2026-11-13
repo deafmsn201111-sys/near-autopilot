@@ -328,7 +328,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     isAccount,
     account: accountParam,
     connected: cookieAccount,
-    verified: recs?.ownerVerified === true,
+    verified: recs ? recs.ownerVerified === true : null,
     signingEnabled,
   });
   return (

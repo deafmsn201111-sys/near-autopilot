@@ -52,6 +52,12 @@ describe('portfolioMode', () => {
     expect(m.mine).toBe(true);
   });
 
+  it('the connected wallet does not point to a verify step when the ownership state is unknown', () => {
+    const m = portfolioMode({ ...base, connected: 'alice.near', verified: null });
+    expect(m.label).toBe('Your wallet');
+    expect(m.note).not.toMatch(/verify ownership/i);
+  });
+
   it('the connected wallet with signing off on this server is prepare only', () => {
     const m = portfolioMode({ ...base, connected: 'alice.near', signingEnabled: false });
     expect(m.label).toBe('Your wallet');
