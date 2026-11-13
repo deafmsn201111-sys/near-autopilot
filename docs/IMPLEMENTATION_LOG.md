@@ -410,3 +410,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - UI badge: "AI-checked · nothing to act on" for that case.
 - "Monthly result now" that rounds to $0.00 shows `$0.00` with no sign or colour (`signedMoney`), and the sentence
   says the position roughly breaks even (`earningsSentence`) instead of "costs about $0.00".
+
+## 2026-11-13 — Idle supply sized the same on the AI path (#131)
+
+- `CapitalAllocatorAgent.proposeSupply` deposits the whole idle balance; the decision engine no longer applies
+  `maxSwapUsd` to `lending.supply` (D23). The AI card now says "Put $507.42 of your idle USDt to work", as the
+  rule-based card does.

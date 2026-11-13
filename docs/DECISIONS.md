@@ -387,3 +387,16 @@ caps and cascade validation are unchanged.
 - When all three presets give the same cards and loan label on an account, the API returns `strategyNote`, one
   sentence on why (no loan, the largest non-stablecoin's share), shown under the picker.
   **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.
+
+## D23 — An idle-token supply is not capped at the swap size limit
+
+**Context:** #131. On a wallet with $507 of idle USDC the rule-based card supplied all of it, while the AI path's
+Capital Allocator capped the deposit at `swap.maxSwapUsd` ($100, the old autopilot's per-trade cap) and the card then
+called $100 "your idle USDC". The decision engine also rejected a larger supply as `EXCEEDS_ORCHESTRATOR_LIMIT`.
+**Decision:** `lending.supply` deposits the whole held balance of the chosen token; `maxSwapUsd` limits swaps only
+(agent and decision engine). A supply is not a trade (no price, no slippage), it can be withdrawn any time, and the
+user signs it. The policy engine's `maxActionUsd` on the dry-run autopilot path, the prepare caps and `validateCascade`
+are unchanged.
+**Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
+turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
+(fail-closed) instead of scaled down. The two paths can still pick different tokens when several are idle (#139).
