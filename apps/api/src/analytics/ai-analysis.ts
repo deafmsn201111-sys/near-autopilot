@@ -161,6 +161,8 @@ export interface AnalysisContext {
   readonly strategy?: StrategyId;
   /** The largest confirmed-price token's share of the portfolio, also when no card proposes moving it. */
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
+  /** The loan's cost against the deposits' earnings, for every loan card the guardian returns. */
+  readonly loanCarry?: PortfolioRecommendation['carry'];
 }
 
 export interface Analysis {
@@ -260,7 +262,7 @@ export function walletAgentConfig(
 /** Our own enum and numbers only: safe to put in the prompt. */
 function strategyLine(id: StrategyId): string {
   const s = STRATEGIES[id];
-  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). Weigh the candidates for that strategy.`;
+  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). A loan is not a problem by itself: when you suggest a repayment, the reason is the health factor, never the loan. Weigh the candidates for that strategy.`;
 }
 
 const SYSTEM = [
@@ -326,6 +328,7 @@ function tokenView(obs: AgentObservation, token: TokenId, amount: bigint, minUsd
 function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
+  carry: PortfolioRecommendation['carry'],
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
@@ -380,6 +383,7 @@ function guardianTool(
             amount: p.amount.toString(),
             ...sizingFor(loanCards, p.token),
           },
+          ...(carry && { carry }),
         });
       }
       candidates.push(...fromCollateral);
@@ -612,7 +616,8 @@ const parseJson = (text: string): unknown => {
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
- * out. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
+ * out. With no card from the rules or the tools (run first as plain code), no model is called: the agents' lines are
+ * returned under `nothing_to_rank`. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
  * rule-based list, labelled. An AI result is reused for 10 minutes while the wallet state is unchanged; only runs that
  * reach the model count against the global limit.
  */
@@ -674,7 +679,7 @@ export async function analyseAccount(
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
-    guardianTool(obs, ctx.checks, found, steps),
+    guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
     allocatorTool(obs, found, steps),
     marketTool(obs, steps),
     walletTool(
@@ -728,9 +733,16 @@ export async function analyseAccount(
   // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
   if (ctx.heuristics.length === 0) {
     const offered = new Map<string, PortfolioRecommendation>();
-    const dryRun = await Promise.allSettled(toolsFor(offered, new Map()).map((t) => t.run({})));
-    if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled'))
-      return early(fallback('nothing_to_rank'));
+    const checked: Steps = new Map();
+    const tools = toolsFor(offered, checked);
+    const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
+    if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
+      const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
+      return early({
+        ...fallback('nothing_to_rank'),
+        trace: traceSteps(ran, checked, [], new Set()),
+      });
+    }
   }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));

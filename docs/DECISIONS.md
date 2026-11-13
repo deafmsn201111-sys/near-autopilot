@@ -343,6 +343,14 @@ finality, before the new state was readable.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
   one below 4 significant digits) shows the note for the full ~15 s.
+  **Amendment (#117):** the watcher reads the native balance (`view_account`, still one RPC call per 6 s tick)
+  instead of the access-key nonces, so an incoming NEAR transfer triggers the same refresh; an own transaction moves
+  the balance too. Answers from an older block are dropped. Like the holdings check, it compares the balance at 4
+  significant digits, so gas refunds, dust and a contract's gas rewards do not trigger it. It stays quiet while a
+  refresh runs and for 10 s after one ends, so the refresh started after signing is not followed by a second one.
+  Not watched, shown only on a reload after the cache expires: incoming fungible tokens (no cheap per-account signal),
+  a balance move below 4 significant digits, a transfer in the 10 s quiet window, and one that landed before the page
+  mounted while its render came from the cache.
 
 ## D21 — One-click actions start at $1
 

@@ -444,6 +444,39 @@ describe('analyseAccount', () => {
     );
   });
 
+  const healthy = async () => {
+    const o = observation();
+    const snapshot = { ...o.snapshot, walletBalances: [], lending: null };
+    return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+  };
+
+  it('shows what each agent checked on a wallet with nothing to act on, without a model call', async () => {
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: healthy,
+      heuristics: [],
+      checks: [],
+    });
+    expect(tools).toEqual([]);
+    expect(out).toMatchObject({ fallback: 'nothing_to_rank', recommendations: [], run: null });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'No Burrow loan; nothing to do',
+    );
+  });
+
+  it('still falls back when the model drops every real candidate', async () => {
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.source).toBe('heuristic');
+    expect(out.fallback).toBe('empty');
+    expect(out.recommendations).toEqual([heuristic]);
+  });
+
   it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
     const { llm } = fake([
       () => callAll,
@@ -834,8 +867,17 @@ describe('analyseAccount', () => {
     });
     expect(tools).toEqual([]);
     expect(l.rows).toEqual([]);
-    expect(out).toMatchObject({ source: 'heuristic', fallback: 'nothing_to_rank' });
+    expect(out).toMatchObject({ source: 'heuristic', fallback: 'nothing_to_rank', run: null });
     expect(out.note).toMatch(/^Nothing to rank/);
+    expect(out.trace.map((t) => t.tool)).toEqual([
+      'liquidation_guardian',
+      'capital_allocator',
+      'market_intelligence',
+      'portfolio_concentration',
+      'liquidity_positions',
+      'burrow_withdrawals',
+    ]);
+    expect(out.trace.every((t) => t.ok && t.pick === null)).toBe(true);
   });
 
   it('does not offer a supply under 1% a year, the same floor as the rule-based card', async () => {
@@ -920,6 +962,27 @@ describe('analyseAccount', () => {
       )
     ).recommendations[0];
     expect(code?.why).toMatch(/raises the health factor from 1\.37 to 1\.\d\d/);
+  });
+
+  it("the guardian's wallet repay shows the loan's carry line, also with no rule-based loan card", async () => {
+    const carry = {
+      text: 'Loan costs 6.5% a year (≈ $0.21/month); your Burrow deposits earn ≈ $0.19/month.',
+      provenance: 'calculated_estimate' as const,
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'liquidation-guardian:repay:usdt.tether-token.near', why: 'Repay.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [],
+      checks: [],
+      loanCarry: carry,
+      ownerVerified: true,
+    });
+    expect(out.recommendations[0]?.intent?.action).toBe('repay');
+    expect(out.recommendations[0]?.carry).toEqual(carry);
   });
 
   it('does not let digits of a raw amount vouch for a number in the why', async () => {

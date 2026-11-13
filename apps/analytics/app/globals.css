@@ -2061,6 +2061,10 @@ table.mini tr.total td {
   background: var(--page);
   color: var(--ink);
 }
+.account-form.compact {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
 .account-form .muted-note {
   flex-basis: 100%;
   margin: 0;

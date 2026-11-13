@@ -117,6 +117,17 @@ export function Recommendations({
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>
+                {r.carry && (
+                  <p className="muted-note">
+                    {r.carry.text}{' '}
+                    <span
+                      className="ai-tag"
+                      title={PROVENANCE_TIER_INFO[r.carry.provenance].describe}
+                    >
+                      {PROVENANCE_TIER_INFO[r.carry.provenance].label}
+                    </span>
+                  </p>
+                )}
                 {r.intent &&
                 (r.intent.action === 'repay' || r.intent.action === 'repay_from_collateral') &&
                 r.intent.sizing ? (
@@ -158,9 +169,12 @@ function AiTrace({ analysis }: { analysis: Analysis }) {
     return <p className="muted-note">Agents called: {analysis.calledTools.join(', ')}</p>;
   }
   return (
-    <section className="ai-trace" aria-label="How the AI got here">
+    <section
+      className="ai-trace"
+      aria-label={run ? 'How the AI got here' : 'What the agents checked'}
+    >
       <header>
-        <h3>How the AI got here</h3>
+        <h3>{run ? 'How the AI got here' : 'What the agents checked'}</h3>
         {run && (
           <span className="muted-note">
             {modelName(run.model)} · {(run.ms / 1000).toFixed(1)} s

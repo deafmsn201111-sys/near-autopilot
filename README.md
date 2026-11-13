@@ -193,14 +193,14 @@ in Postgres and visible on the site.
 Burrow snapshot of that wallet (balances and loan, priced with the same confirmed prices as the portfolio table) and
 gives the central LLM six tools:
 
-| Tool                      | What runs                                                                                                                                                                          |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6, from the wallet, or from the collateral of the same token when the wallet holds too little |
-| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate                                                                               |
-| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices                                                                                    |
-| `portfolio_concentration` | Wallet check: share of the portfolio in one token; the swap uses only what the wallet holds                                                                                        |
-| `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                                                                                                      |
-| `burrow_withdrawals`      | Wallet check: Burrow supply that can move to the wallet (all of it with no loan, else what keeps HF 1.6)                                                                           |
+| Tool                      | What runs                                                                                                                                                                                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6, from the wallet, or from the collateral of the same token when the wallet holds too little; the card shows the loan rate and what the Burrow deposits earn per month, and a safe loan that earns more than it costs gets no repay offer |
+| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate                                                                                                                                                                                                                            |
+| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices                                                                                                                                                                                                                                 |
+| `portfolio_concentration` | Wallet check: share of the portfolio in one token; the swap uses only what the wallet holds                                                                                                                                                                                                                                     |
+| `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                                                                                                                                                                                                                                                   |
+| `burrow_withdrawals`      | Wallet check: Burrow supply that can move to the wallet (all of it with no loan, else what keeps HF 1.6)                                                                                                                                                                                                                        |
 
 **Loans.** A loan below HF 1.5 gets a card that repays down to HF 1.6, not the whole debt (a loop that earns more than
 it costs is the user's call to close). When the wallet lacks the debt token, it repays from the collateral of the same
@@ -216,8 +216,8 @@ account id. The model only orders the candidates the tools returned and writes a
 transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
 by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
 turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
-**AI-ranked**. When the agents find no action worth $1 or more, no model is called and the page says **Nothing for
-the AI to rank**. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
+**AI-ranked**. When neither the rules nor the agents find an action worth $1 or more, no model is called: the page says
+**Nothing for the AI to rank** and lists what each agent checked. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 

@@ -184,3 +184,22 @@ export function tone(status: string | null | undefined): 'ok' | 'warn' | 'bad' |
   if (/(unavailable|failed|invalid|DATA_INVALID)/i.test(status)) return 'bad';
   return 'warn';
 }
+
+/** $1,234 / $12.34 with a real minus sign. */
+export const money = (v: number | null | undefined, cents?: boolean): string => {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const c = cents ?? Math.abs(v) < 100;
+  const s = Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: c ? 2 : 0,
+    maximumFractionDigits: c ? 2 : 0,
+  });
+  return `${v < 0 && Number(s.replace(/,/g, '')) !== 0 ? '−' : ''}$${s}`;
+};
+
+/** A monthly or per-period result with its sign and colour; one that rounds to $0.00 is neutral. */
+export const signedMoney = (v: number | null): { text: string; tone: '' | 'pos' | 'neg' } => {
+  if (v === null || !Number.isFinite(v)) return { text: '—', tone: '' };
+  const cents = Math.sign(v) * Math.round(Math.abs(v) * 100);
+  if (cents === 0) return { text: '$0.00', tone: '' };
+  return { text: `${cents > 0 ? '+' : ''}${money(v, true)}`, tone: cents > 0 ? 'pos' : 'neg' };
+};
