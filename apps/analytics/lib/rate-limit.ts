@@ -1,13 +1,17 @@
 import 'server-only';
 import { BoundedMap } from '@near-autopilot/core';
 import { headers } from 'next/headers';
+import { processWide } from './process-state';
 
 // One map per kind, so each holds one window and its least recently hit visitor is also its most expired one. Past the
 // cap that visitor is dropped: a flood of live visitors resets the least recent one's count, while the overall cap still
 // holds. The overall counts, one per kind, live apart so no flood can evict them.
 export const MAX_TRACKED_KEYS = 10_000;
-const visitors = new Map<string, BoundedMap<string, number[]>>();
-const overall = new Map<string, number[]>();
+const visitors = processWide(
+  'rateLimitVisitors',
+  () => new Map<string, BoundedMap<string, number[]>>(),
+);
+const overall = processWide('rateLimitOverall', () => new Map<string, number[]>());
 export const trackedKeys = () => [...visitors.values()].reduce((n, m) => n + m.size, 0);
 
 function take(

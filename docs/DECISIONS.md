@@ -90,7 +90,8 @@ limit in about 7 minutes, because the 15 s auto-refresh re-read the account on e
   (`apps/analytics/lib/product.ts`). Re-renders and the auto-refresh reuse it; only a real read spends the limit.
   Concurrent renders share one read; failed reads are not cached.
 - After a new transaction from the wallet (`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops
-  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it.
+  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it. It also
+  skips the API cache (D20).
 - The 15 s auto-refresh stays on every page, so prices and the health factor keep updating (at most once a minute
   on the account view).
 - `MAINNET_READ_RPC_URL` must be the FastNEAR URL whenever `MAINNET_READ_RPC_API_KEY` is set; the public NEAR RPC
@@ -317,3 +318,35 @@ receives real money.
 - No NEAR transaction is built, so `validateCascade` and its allowlists are untouched.
   **Consequences:** 1Click sets the deadline itself (a live quote gave about 3 days, not the 10 minutes we ask for);
   the page counts down from the server's seconds-left. Status tracking is #29. The analytics API now makes outbound calls to 1Click and writes rows.
+
+## D20 — A fresh account read after a transaction
+
+**Context:** #65. After signing, the portfolio caught up only after 2–3 minutes: `refreshAccount` dropped the UI's
+cached read, but the API kept its own 60 s cache per account (D10), and the watcher refreshed once, at `optimistic`
+finality, before the new state was readable.
+**Decision:**
+
+- `GET /v1/analytics/account/:id?fresh=1` replaces the API's cached read for that account, at most once per account
+  every 5 s; any other request in that gap gets the cache as before. The ownership cache is untouched.
+- Only the `refreshAccount` server action asks for it (after a signed cascade in `PrepareDialog`, or a nonce bump in
+  `AccountWatcher`). Each fresh read is a normal account read: it spends one of the visitor's 30 reads (D10).
+- The page retries up to 4 reads, 5 s apart (`apps/analytics/lib/portfolio-refresh.ts`), until the holdings differ
+  from the visitor's last read (holding and position amounts to 4 significant digits, so Burrow interest and gas do
+  not count as a change), and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per account
+  at a time.
+- Next bundles server actions apart from page rendering, each with its own copy of a module, so the account read
+  cache and the rate-limit counters live once per process (`apps/analytics/lib/process-state.ts`). Before this, the
+  action dropped and refilled a cache the page never read, and its reads had a limit of their own.
+  **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
+  limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
+  one below 4 significant digits) shows the note for the full ~15 s.
+
+## D21 — One-click actions start at $1
+
+**Context:** #120. #99 set a $10 minimum per card to stop "$0" actions; it hid every card on wallets under ~$20,
+the size a judge's test wallet usually is.
+**Decision:** `MIN_ACTION_USD` is $1 for rule-based cards and agent-sized deposits. Rebalances and idle assets under
+$1 are listed as skipped with a reason (idle ones from $0.10; less is dust and says nothing). A loan repay is at least
+$1 and at most the debt.
+**Consequences:** A $1–10 action costs a fraction of a cent in gas on NEAR, so it is still worth signing; the prepare
+caps and cascade validation are unchanged.

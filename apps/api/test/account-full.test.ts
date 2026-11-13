@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { AccountDiscovery } from '../src/analytics/discovery';
@@ -179,5 +179,48 @@ describe('GET /v1/analytics/account/:id reads the whole account', () => {
   it('keeps the per-read call count bounded', async () => {
     const { calls } = await read('6253046288164419544382378');
     expect(calls.length).toBeLessThan(20);
+  });
+});
+
+describe('GET /v1/analytics/account/:id?fresh=1 after a transaction', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const app = () => {
+    const rpc = node('6253046288164419544382378');
+    const server = buildAnalyticsServer({
+      apiToken: TOKEN,
+      store,
+      intervalSeconds: 900,
+      mainnet: {
+        rpc: rpc as unknown as NearRpcClient,
+        burrowId: 'contract.main.burrow.near',
+        rheaId: 'v2.ref-finance.near',
+        pools: [],
+        discovery,
+      } as never,
+    });
+    const get = async (query = '') => {
+      const before = rpc.calls.length;
+      const res = await server.inject({
+        method: 'GET',
+        url: `/v1/analytics/account/${ACCOUNT}${query}`,
+        headers,
+      });
+      expect(res.statusCode).toBe(200);
+      return rpc.calls.length > before;
+    };
+    return get;
+  };
+
+  it('replaces the cached read, at most once per account every 5 s', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const get = app();
+    expect(await get()).toBe(true);
+    expect(await get()).toBe(false);
+    expect(await get('?fresh=1')).toBe(true);
+    expect(await get('?fresh=1')).toBe(false);
+    vi.advanceTimersByTime(5_000);
+    expect(await get('?fresh=1')).toBe(true);
+    expect(await get()).toBe(false);
   });
 });
