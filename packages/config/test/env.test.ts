@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EnvValidationError, llmEnvSchema, loadApiEnv, loadDashboardEnv } from '../src';
+import {
+  EnvValidationError,
+  llmEnvSchema,
+  loadApiEnv,
+  loadDashboardEnv,
+  oneClickEnvSchema,
+} from '../src';
 
 const valid = {
   API_TOKEN: 'x'.repeat(32),
@@ -146,5 +152,19 @@ describe('llmEnvSchema', () => {
       LLM_DAILY_CAP_USD: 5,
     });
     expect(llmEnvSchema.safeParse({ ANTHROPIC_MAX_TOKENS: '0' }).success).toBe(false);
+  });
+});
+
+describe('oneClickEnvSchema', () => {
+  it('treats unset and empty ONE_CLICK_JWT as no JWT', () => {
+    expect(oneClickEnvSchema.parse({}).ONE_CLICK_JWT).toBeUndefined();
+    expect(oneClickEnvSchema.parse({ ONE_CLICK_JWT: '' }).ONE_CLICK_JWT).toBeUndefined();
+  });
+
+  it('takes a JWT and refuses anything that could break the header', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl';
+    expect(oneClickEnvSchema.parse({ ONE_CLICK_JWT: jwt }).ONE_CLICK_JWT).toBe(jwt);
+    for (const bad of ['short', `${jwt}\r\nx-evil: 1`, `${jwt} `])
+      expect(oneClickEnvSchema.safeParse({ ONE_CLICK_JWT: bad }).success).toBe(false);
   });
 });

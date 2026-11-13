@@ -1,7 +1,9 @@
 'use client';
+import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { runAnalysis, type Analysis } from '../lib/analysis-client';
-import type { AccountRecommendation } from '../lib/product';
+import { modelName, runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
+import { portfolioSignature } from '../lib/portfolio-signature';
+import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
 import { PrepareDialog } from './PrepareDialog';
 
@@ -13,19 +15,26 @@ import { PrepareDialog } from './PrepareDialog';
 export function Recommendations({
   account,
   recommendations: initial,
+  skipped,
+  holdings,
   signingEnabled,
 }: {
   account: string;
   recommendations: readonly AccountRecommendation[];
+  skipped: readonly string[];
+  holdings: PortfolioView['holdings'];
   signingEnabled: boolean;
 }) {
   const [running, setRunning] = useState(false);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [ai, setAi] = useState<{ analysis: Analysis; signature: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(0);
   const [canMoveBack, setCanMoveBack] = useState(false);
   const [canMoveForward, setCanMoveForward] = useState(false);
+  const signature = portfolioSignature(initial, holdings);
+  const analysis = ai?.signature === signature ? ai.analysis : null;
+  const portfolioChanged = ai !== null && analysis === null;
   const recommendations = analysis?.recommendations ?? initial;
 
   const measureRail = useCallback(() => {
@@ -89,16 +98,11 @@ export function Recommendations({
     });
   };
 
-  // The page re-reads every 20 s with a new array; drop the AI result only when the cards themselves change (ids and
-  // headline numbers, e.g. after a signed transaction), not on every refresh.
-  const signature = initial.map((r) => `${r.id}:${r.title}`).join('|');
-  useEffect(() => setAnalysis(null), [signature]);
-
   async function analyse() {
     setRunning(true);
     setError(null);
     const r = await runAnalysis(account);
-    if (r.ok) setAnalysis(r.analysis);
+    if (r.ok) setAi({ analysis: r.analysis, signature });
     else setError(r.error);
     setRunning(false);
   }
@@ -129,16 +133,28 @@ export function Recommendations({
           {analysis.note && <small> {analysis.note}</small>}
         </p>
       )}
+      {analysis && <AiTrace analysis={analysis} />}
+      {portfolioChanged && (
+        <p className="muted-note">Your portfolio changed — run the AI analysis again.</p>
+      )}
       {error && (
         <div className="callout warn" role="alert">
           AI analysis failed: {error}
         </div>
       )}
-      {recommendations.length === 0 ? (
+      {recommendations.length === 0 && skipped.length === 0 && (
         <p className="muted-note">
           Nothing to improve right now — the portfolio looks balanced at current prices.
         </p>
-      ) : (
+      )}
+      {skipped.length > 0 && (
+        <ul className="muted-note">
+          {skipped.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ul>
+      )}
+      {recommendations.length > 0 && (
         <>
           <div className="recommendation-controls" aria-label="Recommendation navigation">
             <span aria-live="polite">
@@ -236,4 +252,104 @@ export function Recommendations({
       )}
     </>
   );
+}
+
+/**
+ * The run as a pipeline: what was read, what each agent returned (key number, its provenance, what became of its
+ * card), what the model did, and what code checked before the user saw it.
+ */
+function AiTrace({ analysis }: { analysis: Analysis }) {
+  const { trace, run } = analysis;
+  if (trace.length === 0) {
+    if (analysis.calledTools.length === 0) return null;
+    return <p className="muted-note">Agents called: {analysis.calledTools.join(', ')}</p>;
+  }
+  return (
+    <details className="ai-trace">
+      <summary>
+        <strong>How the AI got here</strong>
+        {run && (
+          <span className="muted-note">
+            {modelName(run.model)} · {(run.ms / 1000).toFixed(1)} s
+          </span>
+        )}
+      </summary>
+      <ol className="ai-steps">
+        {run && (
+          <li>
+            <strong>Read the wallet on-chain</strong>
+            <span className="ai-step-note">
+              {plural(run.read.tokens, 'token')} held in the wallet or on Burrow
+              {run.read.loan ? ', and a Burrow loan' : ', no loan'}
+            </span>
+          </li>
+        )}
+        <li>
+          <strong>{plural(trace.length, 'agent')} ran</strong>
+          <ul className="ai-agents">
+            {trace.map((step) => {
+              const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
+              return (
+                <li key={step.tool} className={step.ok ? `pick-${step.pick ?? 'none'}` : 'failed'}>
+                  <span className="ai-agent">{step.agent}</span>
+                  <span className="ai-number">{step.text}</span>
+                  <span className="ai-tags">
+                    {info && (
+                      <span className="ai-tag" title={info.describe}>
+                        {info.label}
+                      </span>
+                    )}
+                    {step.pick && (
+                      <span className={`ai-tag pick ${step.pick}`}>{pickLabel(step)}</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </li>
+        {run && (
+          <li>
+            <strong>{modelName(run.model)} ranked them</strong>
+            <span className="ai-step-note">
+              {plural(run.checks.picked, 'card')} picked and explained in{' '}
+              {plural(run.turns, 'model turn')}
+            </span>
+          </li>
+        )}
+        {run && (
+          <li>
+            <strong>Code checked the answer</strong>
+            <ul className="ai-checks">
+              <li className={run.checks.replaced ? 'warn' : undefined}>
+                {explained(run.checks.explained, run.checks.explained + run.checks.replaced)}
+                {run.checks.replaced > 0 &&
+                  `; ${run.checks.replaced} replaced by the agent's own text`}
+              </li>
+              <li>
+                {run.checks.restored > 0
+                  ? `${plural(run.checks.restored, 'warning')} the AI left out put back first`
+                  : 'No warning was left out'}
+              </li>
+              <li>
+                {run.checks.dropped > 0
+                  ? `${plural(run.checks.dropped, 'made-up or repeated action')} dropped`
+                  : 'No made-up actions'}
+              </li>
+            </ul>
+          </li>
+        )}
+      </ol>
+    </details>
+  );
+}
+
+const explained = (ok: number, all: number) =>
+  `${ok} of ${all} AI ${all === 1 ? 'explanation uses' : 'explanations use'} only numbers the agents returned`;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function pickLabel({ pick, rank }: TraceStep): string {
+  if (pick === 'left_out') return 'left out by the AI';
+  return pick === 'kept' ? `#${rank} · put back by code` : `#${rank} in the AI ranking`;
 }

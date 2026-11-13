@@ -37,8 +37,9 @@ everywhere in this repository:
 | **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                     |
 | **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                     |
 
-The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet, and NEAR
-Intents 1Click is used for dry quotes only.
+The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
+Intents 1Click gives dry quotes for route comparison, and real quotes only for depositing into your account from
+another chain (you send from your own wallet there; the server builds no transaction).
 
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
@@ -96,7 +97,8 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 ### DeFi track: protect the position, refuse value-losing actions
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
-1Click API is called with `dry: true`, which is a constant in the client.
+route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
+from another chain (below), in a separate client.
 
 **What works**
 
@@ -121,6 +123,17 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 4. Press **Connect wallet** and sign in with a NEAR wallet (checked with HOT). You see your own mainnet account:
    holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
    them in your wallet or cancel.
+
+5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
+   on the portfolio. Pick the token and chain you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), the
+   amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
+   checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
+   a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
+   partner key, `ONE_CLICK_JWT`, gives the partner schedule). Send exactly that amount from your wallet on that chain;
+   1Click delivers to your NEAR account, or refunds to your address if the swap fails. Tracking the deposit's status
+   is not on the page yet. What we keep: one `deposit_quotes` row per address shown (your NEAR account, the tokens
+   and amounts, your refund address on the other chain, the deposit address, deadline, fee and 1Click's id and
+   signature), deleted after 30 days; no IP address.
 
 **Not done**
 
@@ -198,14 +211,28 @@ turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 
+Under **AI-ranked**, **How the AI got here** lists each agent the model called, one line each with its key number
+(health factor before and after the repayment, the supply rate, the largest gap between two price sources, the
+concentration share, positions out of range) and that number's provenance label, plus what became of its card
+(its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
+pipeline of the run: what was read on-chain, what each agent returned, what the model ranked, and what code checked
+before showing it (explanations whose numbers all came from the agents, explanations replaced, warnings put back,
+made-up actions dropped). The line is built on the server
+from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
+it says so; it never reports "healthy" without a comparison.
+
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
-page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `not_owner`,
+page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
 `cap`, `model_error`, `invalid_output`, `empty`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
 analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
 called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
 days are deleted (on start, then hourly).
+
+**Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
+answers 404) shows AI spend against the cap and has a kill switch and the cap field
+([deploy/public/README.md](deploy/public/README.md#admin-ai-spend-and-kill-switch), D16 in `docs/DECISIONS.md`).
 
 ## Repository layout
 
@@ -297,6 +324,14 @@ $5,000) are simulated and labelled as such.
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
+- **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from
+  FastNEAR's `/v1/account/{id}/full`), Burrow, Rhea v1 liquidity in any pool (pool ids from `api.ref.finance`, shares
+  read on-chain), Rhea DCL positions, liquid staking and NEAR staked with validator pools (balances read on-chain).
+  Tokens on our list are priced with the collector's confirmed prices; any other token is marked **Unverified**,
+  priced as an estimate from Rhea's indexer (or "no price", kept out of the totals), shown only and never used in a
+  suggestion or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
+  every unpriced unverified token, sits behind "Show small balances". When an indexer is down, the page says so and
+  shows the allowlisted tokens and pools only.
 - **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
   site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs
   money per run) is only for a visitor who signs a short NEP-413 message in the wallet. It is not a transaction:

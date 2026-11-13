@@ -41,7 +41,14 @@ import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
 import { toWad } from '../yield/math';
-import { analyseAccount, walletAgentConfig, type ToolLlmDeps } from './ai-analysis';
+import {
+  analyseAccount,
+  MIN_ACTION_USD,
+  approxUsdOf,
+  walletAgentConfig,
+  type AnalysisContext,
+  type ToolLlmDeps,
+} from './ai-analysis';
 import {
   RheaPoolReader,
   RheaSwapQuoter,
@@ -61,11 +68,12 @@ import {
 } from '@near-autopilot/rhea-dcl-adapter';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
-import { valueAccount, type AccountReads, type TokenFacts } from './account';
+import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
+import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { consensus } from './series';
-import { modelTokenLabel } from '../thesis/labels';
+import { isKnownToken, modelTokenLabel } from '../thesis/labels';
 
 /**
  * YOUR ACCOUNT, read-only: any mainnet account id -> what it holds, how safe its Burrow loan is, and what could be done
@@ -81,6 +89,8 @@ export interface MainnetReadDeps {
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
   /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
   readonly dclId?: AccountId | null;
+  /** Indexers that find what the account holds outside the allowlists. Null or absent: only the allowlists are read. */
+  readonly discovery?: AccountDiscovery | null;
   /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
   readonly ai?: ToolLlmDeps | null;
 }
@@ -161,6 +171,36 @@ async function readStaking(
   return out.sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
 }
 
+interface NativeStakeView {
+  readonly pool: string;
+  readonly kind: 'staked' | 'unstaked';
+  readonly amount: number;
+  readonly usd: number | null;
+}
+
+/** NEAR delegated to validator pools: staked and unstaked (waiting to be withdrawn) balances, read on-chain. */
+async function readNativeStaking(
+  viewer: NearContractViewer,
+  pools: readonly string[],
+  accountId: AccountId,
+  nearUsd: number | null,
+): Promise<NativeStakeView[]> {
+  const yocto = z.string().regex(/^\d{1,39}$/);
+  const read = async (pool: string, kind: NativeStakeView['kind']) => {
+    const method =
+      kind === 'staked' ? 'get_account_staked_balance' : 'get_account_unstaked_balance';
+    const raw = await viewer
+      .view(accountIdSchema.parse(pool), method, { account_id: accountId })
+      .catch(() => null);
+    const parsed = yocto.safeParse(raw);
+    if (!parsed.success || BigInt(parsed.data) <= 0n) return [];
+    const amount = Number(BigInt(parsed.data) / 10n ** 18n) / 1e6;
+    return [{ pool, kind, amount, usd: nearUsd === null ? null : amount * nearUsd }];
+  };
+  const out = await Promise.all(pools.flatMap((p) => [read(p, 'staked'), read(p, 'unstaked')]));
+  return out.flat();
+}
+
 interface V1PositionView {
   readonly poolId: number;
   readonly tokens: readonly string[];
@@ -177,25 +217,26 @@ interface V1PositionView {
  */
 async function readV1Positions(
   reader: RheaPoolReader,
-  pools: readonly { poolId: number }[],
+  poolIds: readonly number[],
   accountId: AccountId,
-  tokenMeta: ReadonlyMap<string, { symbol: string; decimals: number }>,
+  metaOf: (token: string) => Promise<{ symbol: string; decimals: number } | undefined>,
   prices: ReadonlyMap<string, number>,
 ): Promise<V1PositionView[]> {
   const out: V1PositionView[] = [];
   await Promise.all(
-    pools.map(async (pl) => {
-      const shares = await reader.getPoolShares(pl.poolId, accountId).catch(() => 0n);
+    poolIds.map(async (poolId) => {
+      const shares = await reader.getPoolShares(poolId, accountId).catch(() => 0n);
       if (shares <= 0n) return;
-      const pool = await reader.getPool(pl.poolId).catch(() => null);
+      const pool = await reader.getPool(poolId).catch(() => null);
       if (!pool || pool.sharesTotalSupply <= 0n) return;
+      const metas = await Promise.all(pool.tokens.map(metaOf));
       const symbols: string[] = [];
       const amounts: number[] = [];
       const usdPerToken: (number | null)[] = [];
       let usd: number | null = 0;
       pool.tokens.forEach((t, i) => {
         const raw = ((pool.reserves[i] ?? 0n) * shares) / pool.sharesTotalSupply;
-        const f = tokenMeta.get(t);
+        const f = metas[i];
         const human = Number(raw) / 10 ** (f?.decimals ?? 24);
         amounts.push(human);
         symbols.push(f?.symbol ?? t.slice(0, 10));
@@ -206,7 +247,7 @@ async function readV1Positions(
         else usd = null;
       });
       out.push({
-        poolId: pl.poolId,
+        poolId,
         tokens: [...pool.tokens],
         symbols,
         amounts,
@@ -227,7 +268,7 @@ async function readV1Positions(
 async function readDclPositions(
   dcl: RheaDclClient,
   accountId: AccountId,
-  tokenMeta: ReadonlyMap<string, { symbol: string; decimals: number }>,
+  metaOf: (token: string) => Promise<{ symbol: string; decimals: number } | undefined>,
   prices: ReadonlyMap<string, number>,
 ): Promise<DclPositionView[]> {
   const positions: DclPosition[] = await dcl.listPositions(accountId).catch(() => []);
@@ -244,8 +285,7 @@ async function readDclPositions(
     const pool = pools.get(pos.pool_id);
     if (!pool || pos.amount <= 0n) continue;
     const { x, y } = dclPositionAmounts(pos, pool.current_point);
-    const fx = tokenMeta.get(pool.token_x);
-    const fy = tokenMeta.get(pool.token_y);
+    const [fx, fy] = await Promise.all([metaOf(pool.token_x), metaOf(pool.token_y)]);
     const amountX = Number(x) / 10 ** (fx?.decimals ?? 24);
     const amountY = Number(y) / 10 ** (fy?.decimals ?? 24);
     const px = prices.get(pool.token_x) ?? null;
@@ -282,6 +322,8 @@ const GAS = ORCH.swap.estimatedGasUsd;
 const HORIZON = ORCH.swap.horizonDays;
 const H = HORIZON / 365;
 const WNEAR = 'wrap.near' as TokenId;
+/** At most this many tokens outside Burrow's list are read per account (each costs an `ft_metadata` view call). */
+const MAX_UNLISTED_TOKENS = 30;
 /** Native NEAR left untouched for gas and storage when proposing to use the rest. */
 const NEAR_RESERVE = 1;
 
@@ -315,9 +357,12 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
 
   const byTokenMap = new Map<string, { token: string; symbol: string; usd: number }>();
   for (const l of assets) {
-    const e = byTokenMap.get(l.token) ?? { token: l.token, symbol: l.symbol, usd: 0 };
+    // Native NEAR and wNEAR are one price exposure; grouped under wrap.near, the token a swap intent can sell.
+    const isNear = l.token === NATIVE_HOLDING || l.token === WNEAR;
+    const token = isNear ? WNEAR : l.token;
+    const e = byTokenMap.get(token) ?? { token, symbol: isNear ? 'NEAR' : l.symbol, usd: 0 };
     e.usd += l.usd;
-    byTokenMap.set(l.token, e);
+    byTokenMap.set(token, e);
   }
   const byToken = [...byTokenMap.values()]
     .map((e) => ({ ...e, pct: pct(e.usd) }))
@@ -337,6 +382,127 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
     byToken,
     byProtocol,
     concentration: top ? { token: top.token, symbol: top.symbol, pct: top.pct } : null,
+  };
+}
+
+export interface AccountPositions {
+  readonly holdings: readonly Holding[];
+  readonly staking: readonly Pick<StakingView, 'token' | 'symbol' | 'amount' | 'usd'>[];
+  readonly dclPositions: readonly Pick<
+    DclPositionView,
+    'lptId' | 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY' | 'usdX' | 'usdY'
+  >[];
+  readonly v1Positions: readonly Pick<
+    V1PositionView,
+    'poolId' | 'tokens' | 'symbols' | 'usdPerToken'
+  >[];
+  readonly nativeStaking?: readonly NativeStakeView[];
+  /** Whether a token is on our list and whether its price is an estimate. Absent: every token is listed and confirmed. */
+  readonly trust?: (token: string) => { verified: boolean; estimate: boolean };
+}
+
+/** A holdings-table row beside the wallet and Burrow holdings: an LP position, or staking the wallet list lacks. */
+export interface PositionRow {
+  readonly key: string;
+  readonly label: string;
+  readonly sub: string;
+  readonly amount: number | null;
+  /** Null when no leg has a price; then the row is listed but adds nothing to the totals. */
+  readonly usd: number | null;
+  /** False when any leg is a token outside our list. */
+  readonly verified: boolean;
+  /** True when any priced leg uses an indexer estimate. */
+  readonly estimate: boolean;
+  readonly small: boolean;
+}
+
+/**
+ * The one list of priced legs behind every total and percentage of the account view: wallet and Burrow holdings, Rhea
+ * v1 + DCL liquidity split into its tokens, and liquid staking. A staking token is a wallet balance, so it counts
+ * once: only when the wallet list does not already hold it. `positions` are the same legs grouped per LP position,
+ * so the holdings and positions together add up to `totals.assetsUsd`.
+ */
+export function accountPortfolio(p: AccountPositions) {
+  const legs: PortfolioLeg[] = [];
+  const positions: PositionRow[] = [];
+  const trust = p.trust ?? (() => ({ verified: true, estimate: false }));
+  const position = (
+    row: Omit<PositionRow, 'usd' | 'verified' | 'estimate' | 'small'>,
+    parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
+    protocol: string,
+  ) => {
+    let usd: number | null = null;
+    let estimate = false;
+    for (const x of parts)
+      if (x.usd !== null && x.usd !== undefined && x.usd > 0) {
+        legs.push({ token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind: 'asset' });
+        usd = (usd ?? 0) + x.usd;
+        estimate ||= trust(x.token).estimate;
+      }
+    const verified = parts.every((x) => trust(x.token).verified);
+    positions.push({ ...row, usd, verified, estimate, small: isSmall(usd, row.amount, verified) });
+  };
+  for (const h of p.holdings) {
+    if (h.usd === null || h.usd <= 0) continue;
+    legs.push({
+      token: h.token,
+      symbol: h.symbol,
+      protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
+      usd: h.usd,
+      kind: h.where === 'borrowed' ? 'debt' : 'asset',
+    });
+  }
+  for (const v of p.v1Positions)
+    position(
+      { key: `v1-${v.poolId}`, label: v.symbols.join('/'), sub: 'Rhea liquidity', amount: null },
+      v.tokens.map((t, i) => ({ token: t, symbol: v.symbols[i] ?? t, usd: v.usdPerToken[i] })),
+      'Rhea v1',
+    );
+  for (const d of p.dclPositions)
+    position(
+      {
+        key: `dcl-${d.lptId}`,
+        label: `${d.symbolX}/${d.symbolY}`,
+        sub: 'Rhea concentrated liquidity',
+        amount: null,
+      },
+      [
+        { token: d.tokenX, symbol: d.symbolX, usd: d.usdX },
+        { token: d.tokenY, symbol: d.symbolY, usd: d.usdY },
+      ],
+      'Rhea DCL',
+    );
+  const inWallet = new Set(p.holdings.filter((h) => h.where === 'wallet').map((h) => h.token));
+  for (const s of p.staking.filter((x) => !inWallet.has(x.token)))
+    position(
+      { key: `staking-${s.token}`, label: s.symbol, sub: 'Liquid staking', amount: s.amount },
+      [s],
+      'Staking',
+    );
+  for (const s of p.nativeStaking ?? [])
+    position(
+      {
+        key: `${s.kind}-${s.pool}`,
+        label: 'NEAR',
+        sub: s.kind === 'staked' ? `Staked with ${s.pool}` : `Unstaking from ${s.pool}`,
+        amount: s.amount,
+      },
+      [{ token: NATIVE_HOLDING, symbol: 'NEAR', usd: s.usd }],
+      'Staking',
+    );
+  const metrics = portfolioMetrics(legs);
+  const idleUsd = p.holdings
+    .filter((h) => h.where === 'wallet')
+    .reduce((s, h) => s + (h.usd ?? 0), 0);
+  return {
+    metrics,
+    positions,
+    totals: {
+      assetsUsd: metrics.totalAssetsUsd,
+      debtUsd: metrics.totalDebtUsd,
+      netWorthUsd: metrics.netUsd,
+      idleUsd,
+    },
   };
 }
 
@@ -366,6 +532,8 @@ export interface PortfolioRecommendation {
 
 export interface RecommendationContext {
   readonly metrics: PortfolioMetrics;
+  /** USD of the concentration token sitting in the wallet: the most a swap can move (staked or pooled is locked). */
+  readonly concentrationLiquidUsd?: number;
   readonly loan: { readonly hasDebt: boolean; readonly healthFactor: number | null } | null;
   /** Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage. */
   readonly idleEarn: readonly { token: string; symbol: string; usd: number; aprPct: number }[];
@@ -379,48 +547,77 @@ export interface RecommendationContext {
   }[];
 }
 
+type Concentration = { readonly token: string; readonly pct: number } | null;
+
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
+const money2 = (usd: number) =>
+  `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
+
+export interface PortfolioAdvice {
+  readonly recommendations: PortfolioRecommendation[];
+  /** Plain-language reasons for actions the agents saw but skipped as too small, so a small wallet still gets a read. */
+  readonly skipped: string[];
+}
 
 /**
  * Portfolio-health recommendations derived from the real portfolio (brief: the agents analyse it and say what/why).
  * Each carries a concrete intent for the one-click transaction engine. Deterministic, explainable, ordered by urgency,
  * and never an instruction — the user decides and signs.
  */
-export function portfolioRecommendations(ctx: RecommendationContext): PortfolioRecommendation[] {
+export function portfolioAdvice(ctx: RecommendationContext): PortfolioAdvice {
   const recs: PortfolioRecommendation[] = [];
+  const skipped: string[] = [];
 
   // 1. Loan safety first: a low health factor is the most time-sensitive thing.
   const hf = ctx.loan?.healthFactor ?? null;
-  if (ctx.loan?.hasDebt && hf !== null && hf < 1.5 && ctx.largestDebt) {
-    const approxUsd = Math.round(ctx.largestDebt.usd * 0.3);
+  if (
+    ctx.loan?.hasDebt &&
+    hf !== null &&
+    hf < 1.5 &&
+    ctx.largestDebt &&
+    ctx.largestDebt.usd >= 0.01
+  ) {
+    const debt = ctx.largestDebt.usd;
+    const approxUsd = approxUsdOf(Math.min(debt, Math.max(debt * 0.3, MIN_ACTION_USD)));
     recs.push({
       id: 'improve-loan-safety',
       kind: 'improve_loan_safety',
       agent: 'Liquidation Guardian',
       severity: hf < 1.3 ? 'warning' : 'info',
       title: `Your loan's health factor is ${hf.toFixed(2)}`,
-      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money0(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
+      why: `A health factor of ${hf.toFixed(2)} is close to the 1.0 liquidation line. Repaying about ${money2(approxUsd)} of your ${ctx.largestDebt.symbol} debt restores a safer buffer.`,
       intent: { action: 'repay', token: ctx.largestDebt.token, approxUsd },
     });
   }
 
   // 2. Reduce single-asset concentration.
   const c = ctx.metrics.concentration;
+  const target = c ? (ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100 : 0;
   if (c && c.pct >= 60 && ctx.metrics.totalAssetsUsd > 0) {
-    const approxUsd = Math.round((ctx.metrics.totalAssetsUsd * (c.pct - 50)) / 100);
-    recs.push({
-      id: 'reduce-concentration',
-      kind: 'reduce_concentration',
-      agent: 'Portfolio Intelligence',
-      severity: c.pct >= 85 ? 'warning' : 'info',
-      title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
-      why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
-      intent: { action: 'swap', fromToken: c.token, approxUsd },
-    });
+    const approxUsd = approxUsdOf(Math.min(target, ctx.concentrationLiquidUsd ?? Infinity));
+    if (approxUsd < MIN_ACTION_USD) {
+      if (target < MIN_ACTION_USD && ctx.metrics.totalAssetsUsd >= 1)
+        skipped.push(
+          `${c.pct.toFixed(0)}% of your ${money2(ctx.metrics.totalAssetsUsd)} portfolio is in ${c.symbol}. Rebalancing it would move only ${money2(target)}, ${UNDER_MIN}, so they skip it until the portfolio grows.`,
+        );
+    } else {
+      recs.push({
+        id: 'reduce-concentration',
+        kind: 'reduce_concentration',
+        agent: 'Portfolio Intelligence',
+        severity: c.pct >= 85 ? 'warning' : 'info',
+        title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
+        why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(approxUsd)} of it into other assets brings the single-asset risk down toward half the portfolio.`,
+        intent: { action: 'swap', fromToken: c.token, approxUsd },
+      });
+    }
   }
 
   // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
-  const idle = ctx.idleEarn.filter((a) => a.aprPct >= 1 && a.usd >= 10)[0];
+  const earning = ctx.idleEarn.filter((a) => a.aprPct >= 1);
+  const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
   if (idle) {
     recs.push({
       id: 'put-idle-to-work',
@@ -429,8 +626,13 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
-      intent: { action: 'supply', token: idle.token, approxUsd: Math.round(idle.usd) },
+      intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
     });
+  } else if (earning[0] && earning[0].usd >= 0.1) {
+    const small = earning[0];
+    skipped.push(
+      `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
+    );
   }
 
   // 4. DCL positions that have drifted out of range earn no fees until repositioned.
@@ -447,19 +649,21 @@ export function portfolioRecommendations(ctx: RecommendationContext): PortfolioR
     });
   }
 
-  return recs;
+  return { recommendations: recs, skipped };
 }
 
 /** The fields of the account view the analysis reuses; the rest of the body is passed through untyped. */
 interface AccountBody {
   readonly recommendations: readonly PortfolioRecommendation[];
-  readonly holdings: readonly { readonly token: string }[];
+  readonly holdings: readonly { readonly token: string; readonly verified: boolean }[];
   readonly [field: string]: unknown;
 }
 
 const ACCOUNT_CACHE_MAX = 500;
 const ACCOUNT_CACHE_TTL_MS = 60_000;
 const OWNER_CACHE_TTL_MS = ACCOUNT_CACHE_TTL_MS;
+const FRESH_READ_GAP_MS = 5_000;
+const freshQuery = z.object({ fresh: z.literal('1').optional() });
 
 const REQUEST_PROBLEMS = [RangeError, MissingPriceError, PreconditionError, UnsupportedIntentError];
 
@@ -475,7 +679,7 @@ export function registerAccountView(
   app: FastifyInstance,
   store: CollectorStore,
   deps: MainnetReadDeps,
-): void {
+) {
   const viewer = new NearContractViewer(deps.rpc);
   const tokens = new NearTokenReader(viewer);
   const native = new NearAccountReader(deps.rpc);
@@ -499,8 +703,20 @@ export function registerAccountView(
   );
   const cache = new BoundedMap<
     string,
-    { at: number; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+    {
+      at: number;
+      body: AccountBody;
+      forModel: readonly PortfolioRecommendation[];
+      concentration: Concentration;
+    }
   >(ACCOUNT_CACHE_MAX);
+  const freshReads = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
+  const mayReadFresh = (id: string) => {
+    const at = freshReads.get(id);
+    if (at !== undefined && Date.now() - at < FRESH_READ_GAP_MS) return false;
+    freshReads.set(id, Date.now());
+    return true;
+  };
   const burrowOptions = { contractId: deps.burrowId, oracleId: ORACLE_ID };
   const lending = new BurrowLendingReader(viewer, burrowOptions);
   const burrowOracle = new BurrowPriceOracle(viewer, burrowOptions);
@@ -547,12 +763,19 @@ export function registerAccountView(
   const readAccount = async (
     id: AccountId,
     log: FastifyRequest['log'],
+    fresh = false,
   ): Promise<
-    | { status: 200; body: AccountBody; forModel: readonly PortfolioRecommendation[] }
+    | {
+        status: 200;
+        body: AccountBody;
+        forModel: readonly PortfolioRecommendation[];
+        concentration: Concentration;
+      }
     | { status: 404 | 502; body: { error: string } }
   > => {
     const hit = cache.get(id);
-    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS) return { status: 200, ...hit };
+    if (hit && Date.now() - hit.at < ACCOUNT_CACHE_TTL_MS && !(fresh && mayReadFresh(id)))
+      return { status: 200, ...hit };
     cache.delete(id);
 
     let nativeYocto: bigint;
@@ -565,13 +788,17 @@ export function registerAccountView(
       log.error({ err: e, account: id }, 'account read failed');
       return { status: 502, body: { error: 'could not read the account from NEAR right now' } };
     }
-    const [assets, markets, meta, prices, account] = await Promise.all([
-      burrow.listAssets(),
-      store.markets(),
-      store.tokenMetadata(),
-      latestPrices(),
-      burrow.getAccount(id).catch(() => null),
-    ]);
+    const [assets, markets, meta, prices, account, found, foundPools, estimates] =
+      await Promise.all([
+        burrow.listAssets(),
+        store.markets(),
+        store.tokenMetadata(),
+        latestPrices(),
+        burrow.getAccount(id).catch(() => null),
+        deps.discovery?.account(id) ?? null,
+        deps.discovery?.v1PoolIds(id) ?? null,
+        deps.discovery?.prices() ?? null,
+      ]);
     // Wallet balances of every token Burrow lists (the tokens an action could use), read in parallel.
     const wallet = new Map<TokenId, bigint>();
     await Promise.all(
@@ -580,7 +807,34 @@ export function registerAccountView(
         if (raw > 0n) wallet.set(a.tokenId, raw);
       }),
     );
-    const symbol = new Map(meta.map((m) => [m.token, m] as const));
+    const symbol = new Map<string, { symbol: string; decimals: number }>(
+      meta.map((m) => [m.token, m] as const),
+    );
+    // Our list: what Burrow lists and the tokens we name ourselves. Anything else is display-only.
+    const burrowListed = new Set<string>(assets.map((a) => a.tokenId));
+    const verified = { has: (t: string) => burrowListed.has(t) || isKnownToken(t) };
+    // Display prices: the confirmed price, else the indexer's estimate. Actions only ever use `prices`.
+    const shown = new Map(prices);
+    for (const [t, usd] of estimates ?? []) if (!shown.has(t)) shown.set(t, usd);
+    const trust = (t: string) => ({
+      verified: verified.has(t),
+      estimate: !prices.has(t) && shown.has(t),
+    });
+    const pending = new Map<string, Promise<{ symbol: string; decimals: number } | undefined>>();
+    const metaOf = (t: string) => {
+      const known = symbol.get(t);
+      if (known) return Promise.resolve(known);
+      const id = accountIdSchema.safeParse(t);
+      if (!id.success) return Promise.resolve(undefined);
+      const read =
+        pending.get(t) ??
+        tokens.getMetadata(id.data).then(
+          (m) => ({ symbol: displaySymbol(m.symbol, t), decimals: m.decimals }),
+          () => undefined,
+        );
+      pending.set(t, read);
+      return read;
+    };
     const facts = new Map<string, TokenFacts>();
     for (const a of assets) {
       const m = symbol.get(a.tokenId);
@@ -592,6 +846,25 @@ export function registerAccountView(
         vr: a.volatilityRatioBps / 10_000,
       });
     }
+    // Tokens the indexer found beyond Burrow's list: its balance, on-chain metadata, a confirmed or estimated price.
+    await Promise.all(
+      (found?.tokens ?? [])
+        .filter((t) => !wallet.has(t.token as TokenId) && !facts.has(t.token))
+        // ponytail: priced tokens first, then a hard cap on ft_metadata reads; a spam-heavy account loses its tail
+        .sort((x, y) => Number(shown.has(y.token)) - Number(shown.has(x.token)))
+        .slice(0, MAX_UNLISTED_TOKENS)
+        .map(async (t) => {
+          const m = await metaOf(t.token);
+          if (!m) return;
+          wallet.set(t.token as TokenId, t.raw);
+          facts.set(t.token, {
+            decimals: m.decimals,
+            symbol: m.symbol,
+            usd: shown.get(t.token) ?? null,
+            ...trust(t.token),
+          });
+        }),
+    );
     const reads: AccountReads = {
       accountId: id,
       nativeYocto,
@@ -629,7 +902,7 @@ export function registerAccountView(
       });
     };
     const walletHoldings = v.holdings.filter(
-      (h) => h.where === 'wallet' && h.usd !== null && h.usd >= 1,
+      (h) => h.where === 'wallet' && h.verified && !h.estimate && h.usd !== null && h.usd >= 1,
     );
     // 1. repay a loan with the same token sitting idle in the wallet
     for (const debt of v.holdings.filter((h) => h.where === 'borrowed' && h.usd !== null)) {
@@ -791,65 +1064,30 @@ export function registerAccountView(
       else monthly += (h.where === 'borrowed' ? -1 : 1) * h.usd * r * H;
     }
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
-    const [dclPositions, v1Positions, staking] = await Promise.all([
-      dcl ? readDclPositions(dcl, id, symbol, prices) : Promise.resolve([]),
-      readV1Positions(poolReader, deps.pools, id, symbol, prices),
+    const v1PoolIds = [...new Set([...deps.pools.map((p) => p.poolId), ...(foundPools ?? [])])];
+    const [dclPositions, v1Positions, staking, nativeStaking] = await Promise.all([
+      dcl ? readDclPositions(dcl, id, metaOf, shown) : Promise.resolve([]),
+      readV1Positions(poolReader, v1PoolIds, id, metaOf, shown),
       readStaking(tokens, id, symbol, prices),
+      readNativeStaking(viewer, found?.stakingPools ?? [], id, prices.get(WNEAR) ?? null),
     ]);
 
-    const legs: PortfolioLeg[] = [];
-    for (const h of v.holdings) {
-      if (h.usd === null || h.usd <= 0) continue;
-      legs.push({
-        token: h.token,
-        symbol: h.symbol,
-        protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
-        usd: h.usd,
-        kind: h.where === 'borrowed' ? 'debt' : 'asset',
-      });
-    }
-    for (const s of staking)
-      if (s.usd !== null)
-        legs.push({
-          token: s.token,
-          symbol: s.symbol,
-          protocol: 'Staking',
-          usd: s.usd,
-          kind: 'asset',
-        });
-    for (const d of dclPositions) {
-      if (d.usdX !== null)
-        legs.push({
-          token: d.tokenX,
-          symbol: d.symbolX,
-          protocol: 'Rhea DCL',
-          usd: d.usdX,
-          kind: 'asset',
-        });
-      if (d.usdY !== null)
-        legs.push({
-          token: d.tokenY,
-          symbol: d.symbolY,
-          protocol: 'Rhea DCL',
-          usd: d.usdY,
-          kind: 'asset',
-        });
-    }
-    for (const p of v1Positions)
-      p.tokens.forEach((t, i) => {
-        const u = p.usdPerToken[i];
-        if (u !== null && u !== undefined)
-          legs.push({
-            token: t,
-            symbol: p.symbols[i] ?? t,
-            protocol: 'Rhea v1',
-            usd: u,
-            kind: 'asset',
-          });
-      });
-    const metrics = portfolioMetrics(legs);
+    const { metrics, totals, positions } = accountPortfolio({
+      holdings: v.holdings,
+      staking,
+      dclPositions,
+      v1Positions,
+      nativeStaking,
+      trust,
+    });
+    // Recommendations only ever name a confirmed-price token on our list (#19); swapping an unlisted token is #90.
+    const top = metrics.byToken.find((b) => verified.has(b.token) && !trust(b.token).estimate);
+    const actionable = {
+      ...metrics,
+      concentration: top ? { token: top.token, symbol: top.symbol, pct: top.pct } : null,
+    };
     const idleEarn = v.holdings
-      .filter((h) => h.where === 'wallet' && h.usd !== null && h.usd >= 10)
+      .filter((h) => h.where === 'wallet' && h.verified && !h.estimate && h.usd !== null)
       .map((h) => ({
         token: h.token,
         symbol: h.symbol,
@@ -866,12 +1104,23 @@ export function registerAccountView(
       : null;
     const outOfRange = (pair: (d: DclPositionView) => string) =>
       dclPositions
-        .filter((d) => !d.inRange)
+        .filter(
+          (d) =>
+            !d.inRange && [d.tokenX, d.tokenY].every((t) => verified.has(t) && !trust(t).estimate),
+        )
         .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
         .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
     const loan = { hasDebt: v.loan.hasDebt, healthFactor: v.loan.healthFactor };
-    const recommendations = portfolioRecommendations({
-      metrics,
+    // A NEAR swap wraps native NEAR first, so NEAR and wNEAR in the wallet are one liquid amount.
+    const nearLike = new Set<string>([NATIVE_HOLDING, WNEAR]);
+    const sameAsset = (t: string) =>
+      t === top?.token || (nearLike.has(t) && nearLike.has(top?.token ?? ''));
+    const concentrationLiquidUsd = v.holdings
+      .filter((h) => h.where === 'wallet' && sameAsset(h.token))
+      .reduce((sum, h) => sum + (h.usd ?? 0), 0);
+    const { recommendations, skipped } = portfolioAdvice({
+      metrics: actionable,
+      concentrationLiquidUsd,
       loan,
       idleEarn,
       largestDebt,
@@ -882,11 +1131,16 @@ export function registerAccountView(
       ...x,
       symbol: modelTokenLabel(x.token),
     });
-    const forModel = portfolioRecommendations({
+    const { recommendations: forModel } = portfolioAdvice({
       metrics: {
-        ...metrics,
-        concentration: metrics.concentration && labelled(metrics.concentration),
+        ...actionable,
+        concentration:
+          actionable.concentration &&
+          (actionable.concentration.token === WNEAR
+            ? actionable.concentration
+            : labelled(actionable.concentration)),
       },
+      concentrationLiquidUsd,
       loan,
       idleEarn: idleEarn.map(labelled),
       largestDebt: largestDebt && labelled(largestDebt),
@@ -907,14 +1161,20 @@ export function registerAccountView(
       network: 'mainnet',
       readOnly: true,
       asOf: new Date().toISOString(),
+      // False: an indexer was down, so only the allowlisted tokens and pools were read.
+      ...(deps.discovery && {
+        discovery: { complete: found !== null && foundPools !== null && estimates !== null },
+      }),
       holdings: v.holdings,
       unpriced: v.unpriced,
-      totals: v.totals,
+      totals,
+      positions,
       dclPositions,
       v1Positions,
       staking,
       metrics,
       recommendations,
+      skipped,
       loan: v.loan,
       health: !v.loan.hasDebt
         ? {
@@ -944,8 +1204,12 @@ export function registerAccountView(
             },
       actions,
     };
-    cache.set(id, { at: Date.now(), body, forModel });
-    return { status: 200, body, forModel };
+    const concentration = actionable.concentration && {
+      token: actionable.concentration.token,
+      pct: actionable.concentration.pct,
+    };
+    cache.set(id, { at: Date.now(), body, forModel, concentration });
+    return { status: 200, body, forModel, concentration };
   };
 
   app.get('/v1/analytics/account/:id', async (req, reply) => {
@@ -953,7 +1217,8 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const out = await readAccount(parsed.data, req.log);
+    const fresh = freshQuery.safeParse(req.query).data?.fresh === '1';
+    const out = await readAccount(parsed.data, req.log, fresh);
     if (out.status !== 200) return reply.code(out.status).send(out.body);
     return { ...out.body, ownerVerified: await ownerVerified };
   });
@@ -1031,29 +1296,39 @@ export function registerAccountView(
     };
   };
 
+  const analysisInputs = async (
+    id: AccountId,
+    log: FastifyRequest['log'],
+  ): Promise<Omit<AnalysisContext, 'ownerVerified'> | { status: 404 | 502; error: string }> => {
+    const view = await readAccount(id, log);
+    if (view.status !== 200) return { status: view.status, error: view.body.error };
+    const { holdings } = view.body;
+    return {
+      accountId: id,
+      observe: () =>
+        observe(id, [
+          ...new Set(
+            holdings
+              .filter((h) => h.token !== NATIVE_HOLDING && h.verified)
+              .map((h) => accountIdSchema.parse(h.token)),
+          ),
+        ]),
+      heuristics: view.body.recommendations,
+      checks: view.forModel,
+      concentration: view.concentration,
+    };
+  };
+
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
-    const view = await readAccount(parsed.data, req.log);
-    if (view.status !== 200) return reply.code(view.status).send(view.body);
+    const inputs = await analysisInputs(parsed.data, req.log);
+    if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
     return analyseAccount(
       deps.ai ?? null,
-      {
-        accountId: parsed.data,
-        observe: () =>
-          observe(parsed.data, [
-            ...new Set(
-              view.body.holdings
-                .filter((h) => h.token !== NATIVE_HOLDING)
-                .map((h) => accountIdSchema.parse(h.token)),
-            ),
-          ]),
-        heuristics: view.body.recommendations,
-        checks: view.forModel,
-        ownerVerified: await ownerVerified,
-      },
+      { ...inputs, ownerVerified: await ownerVerified },
       (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
     );
   });
@@ -1724,4 +1999,5 @@ export function registerAccountView(
       return prepareFailure(req, reply, e);
     }
   });
+  return { analysisInputs };
 }

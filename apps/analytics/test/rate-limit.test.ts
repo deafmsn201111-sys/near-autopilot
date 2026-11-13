@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { consume as Consume, Limit } from '../lib/rate-limit';
 
 // The guard reads the visitor's address from the request headers; here each test sets it.
 let forwardedFor = '203.0.113.1';
@@ -94,5 +95,48 @@ describe('overall cap', () => {
     }
     forwardedFor = '192.0.2.2';
     expect(await consume('prepare', limit, now)).toBe(false);
+  });
+});
+
+describe('limiter kinds with different windows', () => {
+  beforeEach(() => vi.resetModules());
+
+  const short: Limit = { perVisitor: 1, overall: 1_000_000, windowMs: 60_000 };
+  const long: Limit = { perVisitor: 1, overall: 1_000_000, windowMs: 10 * 60_000 };
+  const fill = async (consume: typeof Consume, count: number, now: number) => {
+    for (let i = 0; i < count; i++) {
+      forwardedFor = `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`;
+      await consume('short', short, now);
+    }
+  };
+
+  it('never drops a live entry of one kind for another kind', async () => {
+    const { consume, MAX_TRACKED_KEYS } = await import('../lib/rate-limit');
+    const now = 1_000_000;
+    forwardedFor = '192.0.2.1';
+    expect(await consume('long', long, now)).toBe(true);
+    await fill(consume, MAX_TRACKED_KEYS + 1, now + 1_000);
+    forwardedFor = '192.0.2.2';
+    await consume('short', short, now + 2 * 60_000);
+    forwardedFor = '192.0.2.1';
+    expect(await consume('long', long, now + 2 * 60_000)).toBe(false);
+  });
+
+  it('does not scan the whole map on each call when it is full', async () => {
+    const { consume, MAX_TRACKED_KEYS } = await import('../lib/rate-limit');
+    const now = 1_000_000;
+    await fill(consume, MAX_TRACKED_KEYS, now);
+    const scans = ([Symbol.iterator, 'forEach', 'entries', 'values'] as const).map((m) =>
+      vi.spyOn(Map.prototype, m),
+    );
+    const evictions = vi.spyOn(Map.prototype, 'keys');
+    try {
+      forwardedFor = '192.0.2.1';
+      await consume('short', short, now);
+      for (const scan of scans) expect(scan).not.toHaveBeenCalled();
+      expect(evictions).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

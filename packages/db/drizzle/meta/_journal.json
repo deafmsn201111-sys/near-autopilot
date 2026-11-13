@@ -134,6 +134,20 @@
       "when": 1794030000000,
       "tag": "0018_llm_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794040000000,
+      "tag": "0019_llm_admin_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794050000000,
+      "tag": "0020_deposit_quotes",
+      "breakpoints": true
     }
   ]
 }

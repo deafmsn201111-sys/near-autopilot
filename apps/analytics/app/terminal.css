@@ -1357,6 +1357,69 @@ main.page {
   box-shadow: none;
 }
 
+/* Keep the full-screen account summary balanced after adding the portfolio mode and deposit actions. */
+.hero {
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.8fr);
+  align-items: stretch;
+}
+.hero-main {
+  grid-column: auto;
+}
+.hero-side {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+.ai-trace {
+  margin: 8px 0 16px;
+  padding: 0 16px;
+  border: 1px solid var(--grid);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.ai-trace > summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.ai-trace > summary::-webkit-details-marker {
+  display: none;
+}
+.ai-trace > summary::after {
+  content: '+';
+  color: var(--accent);
+  font-size: 18px;
+}
+.ai-trace[open] > summary::after {
+  content: '−';
+}
+.ai-trace > summary strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.ai-trace[open] > .ai-steps {
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--grid);
+}
+
+@media (max-width: 760px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .hero-main {
+    grid-column: auto;
+  }
+  .hero-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+}
+
 @media (max-width: 1040px) {
   main.page {
     padding-right: 28px;

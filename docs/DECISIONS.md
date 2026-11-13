@@ -90,11 +90,14 @@ limit in about 7 minutes, because the 15 s auto-refresh re-read the account on e
   (`apps/analytics/lib/product.ts`). Re-renders and the auto-refresh reuse it; only a real read spends the limit.
   Concurrent renders share one read; failed reads are not cached.
 - After a new transaction from the wallet (`AccountWatcher`, `PrepareDialog`) the `refreshAccount` server action drops
-  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it.
+  the caller's own cached read, so the page shows the new state at once. Another visitor cannot drop it. It also
+  skips the API cache (D20).
 - The 15 s auto-refresh stays on every page, so prices and the health factor keep updating (at most once a minute
   on the account view).
 - `MAINNET_READ_RPC_URL` must be the FastNEAR URL whenever `MAINNET_READ_RPC_API_KEY` is set; the public NEAR RPC
   ignores the key and answers 429 under load.
+- The live demo uses FastNEAR's free key, not a paid plan (owner, 12 Nov, #41): the limits above and the 60 s cache
+  keep our load small; a paid plan is the fallback if the live 429 check fails.
   **Consequences:** An open account tab spends about 10 of its 30 reads per 10 minutes. Changes made without a
   transaction from the wallet (prices, incoming transfers) show within about 75 s. Limits and the cache live in one
   Next.js process: a restart resets them, and several instances would need a shared store. Raising a limit or the TTL
@@ -176,18 +179,21 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   Anything else fails the analytics API at start.
 - Daily cap per UTC day: the `llm_settings` row (#31's admin field) when set, else `LLM_DAILY_CAP_USD`, default $5.
   Before each model call: spent today + this run so far + one worst-case call (100K input, `ANTHROPIC_MAX_TOKENS`
-  output) must fit, else no call and fallback code `cap`.
+  output) must fit, else no call and fallback code `cap`. A request whose input could go over 100K tokens (Haiku's
+  long-context rate) is never sent: the bound is the last reply's input + output tokens + the UTF-8 bytes of the new
+  tool results + 2K overhead; over it, fallback `loop_limit` (#85).
 - In the analytics API's memory (one process), each model call in flight holds one worst-case call, taken before the
   budget is read, and a run holds its actual spend until its row is written; parallel analyses therefore cannot all
   pass the same check (near the cap both may stop: fail closed). A run whose row fails to write keeps its cost held
   for that UTC day. An unreadable budget counts as spent (`cap`). The row is stamped with the time the run ends.
 - Usage comes from every reply through `ToolLlm.open({ onUsage })`, before the reply is checked, so a billed
   `max_tokens` or `refusal` reply is counted. SDK `maxRetries: 0`, so no billed retry goes unseen. A call aborted on
-  the deadline returns no usage and is not counted (the worst-case check covers it).
+  the deadline or cut by a dropped connection may still be billed but returns no usage, so it is recorded at one
+  worst-case call (#85).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
-- Fallback codes (`off` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+- Fallback codes (`off`, `kill_switch` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
   `deadline`, `loop_limit` (too many turns or tool calls).
 
 ## D15 — Leaked secrets are rotated, history is not rewritten
@@ -206,3 +212,141 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
   says how to install them. The other third-party skills keep their licences next to them.
   **Consequences:** The old FastNEAR key stays readable in history and must be dead before the repo goes public
   (owner step on #45). A new real finding turns CI red until it is rotated and listed.
+
+## D16 — Admin: own token, loopback-only service, Caddy 404
+
+**Context:** #31. With the LLM key on the public server the owner needs AI spend and a kill switch without a deploy,
+and a break-in to the public site container must not be able to change them.
+**Decision:**
+
+- `/v1/admin/*` (`apps/api/src/analytics/admin.ts`) accepts only `ADMIN_API_TOKEN`; `API_TOKEN` gets 401 there and
+  `ADMIN_API_TOKEN` gets 401 everywhere else. No admin token configured = every admin URL answers 401. The API refuses
+  to start when both tokens are equal.
+- The admin UI is the same Next image as the site with `ADMIN_UI=1` (service `analytics-admin`, `127.0.0.1:3003` on the server, 3002 locally,
+  no Caddy route), opened through an SSH tunnel. Without `ADMIN_UI=1`, `/admin` and the admin server actions answer
+  404 and never call the API. The public `analytics` container has no `ADMIN_API_TOKEN`. Caddy answers 404 for
+  `/admin` and `/admin/*` before proxying.
+- Kill switch, daily cap and the deposit balance the owner types in live on the single `llm_settings` row (migration
+  0019). The switch is read before the result cache on every analysis, so off means no model call and no cached AI
+  result (fallback code `kill_switch`); an unreadable switch counts as off. No confirm step: it is reversible.
+- Writes are zod-checked JSON: cap $0.01–$1000 per day, deposit $0.01–$1M.
+- Run-out estimate = (deposit − spend since it was entered) / 7-day daily average. Spend older than 7 days is purged,
+  so the screen asks to re-enter a balance older than 7 days.
+  **Consequences:** anyone with SSH to the server can open the admin; there is no login. Screens 2–4 (#33, #34) reuse
+  the token and service.
+
+## D17 — Haiku 5.5 at its default effort stays the analysis model
+
+**Context:** #16. Haiku 5.5 was the default by guess. Measured on the real tool-use loop (`analyseAccount`, code
+computes numbers, the model orders and explains) with `pnpm --filter @near-autopilot/api llm:compare`, 13 Nov 2026,
+3 runs per config on two mainnet wallets: `autopilot-test.near` (Burrow loan, HF 1.28, idle USDt) and the public
+`hodl13.near` (4 in-range Rhea DCL positions, 99% NEAR). Cost at list prices ($0.10/$0.50 Haiku, $2/$10 Sonnet per
+1M tokens); every run took 2 model turns and about 2.9K input tokens; total spend $0.11.
+
+| Wallet              | Config             | $ / analysis | p50 latency | AI answer, no fallback | "why" replaced | Loan warning first |
+| ------------------- | ------------------ | ------------ | ----------- | ---------------------- | -------------- | ------------------ |
+| autopilot-test.near | Haiku 5.5 (medium) | $0.0006      | 4.4 s       | 3/3                    | 0              | 3/3                |
+| autopilot-test.near | Sonnet 5.5 `low`   | $0.0089      | 3.9 s       | 3/3                    | 0              | 3/3                |
+| autopilot-test.near | Sonnet 5.5 (high)  | $0.0100      | 5.3 s       | 3/3                    | 0              | 3/3                |
+| hodl13.near         | Haiku 5.5 (medium) | $0.0005      | 2.6 s       | 3/3                    | 0              | n/a                |
+| hodl13.near         | Sonnet 5.5 `low`   | $0.0078      | 3.4 s       | 3/3                    | 0              | n/a                |
+| hodl13.near         | Sonnet 5.5 (high)  | $0.0082      | 3.9 s       | 3/3                    | 0              | n/a                |
+
+Ranking: every config put the loan first and said the same thing with the same numbers ("health factor 1.28 … repay
+about $11 of USDC"; "99% in NEAR … swap about $31"). The one difference: Haiku left out the $5 idle-USDt supply card
+(about 10% a year) on all 3 runs, Sonnet `low` kept it on 3/3, Sonnet high on 1/3. Raw picks are on #16.
+**Decision:** keep `claude-haiku-5-5` at its default effort (`medium`). It is as valid and as safe (loan first, no
+"why" rejected by the numbers check) at 1/15 the cost, so the $20 deposit lasts about 35K analyses instead of 2K.
+The adapter takes an optional effort (used by the comparison); no env setting is added since the default wins.
+**Consequences:** the AI list may leave out small idle-balance cards (info only; warnings are put back by code). Revisit
+with `llm:compare` if the prompt or tools change; a Sonnet → Haiku fallback step is not needed.
+
+## D18 — The account view reads indexers for discovery and prices unlisted tokens as estimates
+
+**Context:** #73. The NEAR RPC has no "list tokens" or "list pools of an account" call, so the account view only read
+allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $2.
+**Decision:**
+
+- Three new read-only external endpoints, all through `apps/api/src/analytics/discovery.ts`: FastNEAR
+  `api.fastnear.com/v1/account/{id}/full` (tokens and staking pools, no key), `api.ref.finance/liquidity-pools/{id}`
+  (Rhea v1 pool ids; `indexer.ref.finance/liquidity-pools` returns `[]` and is not used) and
+  `indexer.ref.finance/list-token-price` (prices, cached 5 minutes). Every answer is zod-checked, capped (4 MB, 60
+  tokens, 5 staking pools, 20 pools, 5 s timeout) and treated as a hint: pool shares and staked balances are read
+  on-chain, token metadata via `ft_metadata`.
+- "Verified" = listed by Burrow or named in our own label list (`apps/api/src/thesis/labels.ts`). Anything else is
+  display-only: symbol sanitised to `[A-Za-z0-9._-]{1,12}`, marked "Unverified", never in an action, a
+  recommendation or the agents' observation (#19). Swapping such tokens is #90. Wallet balances of tokens outside
+  Burrow's list come from FastNEAR as is (at most 30 per account, priced ones first).
+- An unlisted token's price is Rhea's indexer price, tagged "price estimate"; it counts in the totals and allocation.
+  A collector-confirmed price always wins, and actions and `prepare` only ever use confirmed prices.
+  **Consequences:** A thin pool can give a meme token an inflated estimate, so the total can overstate such an
+  account; the "Unverified · price estimate" label is the guard. An indexer outage shows a notice and the allowlisted
+  view. A read makes up to 3 more HTTP calls and a bounded number of view calls; the 60 s cache (D10) is unchanged.
+
+## D19 — Deposits from another chain: real 1Click quotes, verified on the server, no NEAR transaction
+
+**Context:** #27 (security items 4 and 5 of HACKATHON_PLAN). A user with funds on Ethereum, Base, Arbitrum, Solana or
+Bitcoin should be able to fund their NEAR account from the site. A real 1Click quote returns a deposit address that
+receives real money.
+**Decision:**
+
+- A separate client (`apps/api/src/gateway/one-click-deposit.ts`) posts `dry: false` quotes to the hard-coded
+  `https://1click.chaindefuser.com`; it never reads `ONE_CLICK_URL`. The dry client (`one-click.ts`) is unchanged. No
+  retries: every real quote mints a new address and the user must see exactly one.
+- Origin tokens: every `/v0/tokens` entry on `eth`, `base`, `arb`, `sol`, `btc` (zod-parsed, cached 10 minutes; asset
+  ids and decimals taken from that list, never built by hand). No memo chains. Destination: a token from
+  `config/market.json` `policy.allowedTokens` (wNEAR, USDC, USDT), never user input; recipient = the connected
+  account, delivered to the NEAR chain.
+- The refund address is checked on the server before 1Click is called: EVM `0x` + 40 hex (EIP-55 when mixed case);
+  Solana base58 decoding to 32 bytes; Bitcoin mainnet base58check P2PKH/P2SH, bech32 v0 (20/32 bytes) or bech32m v1
+  taproot (32 bytes), with checksum (`@scure/base`). Burn addresses (zero EVM address, all-zero Solana key) and
+  witness versions that are not spendable today are refused.
+- The answer is zod-parsed and verified: `dry: false`, `EXACT_INPUT`, `ORIGIN_CHAIN` deposit and refund,
+  `DESTINATION_CHAIN` recipient, `originAsset`, `destinationAsset`, `amount`, `quote.amountIn`, `recipient`,
+  `refundTo`, `slippageTolerance`; `amountOut` above 0 and `minAmountOut` within the 1% slippage; fees at most 1%; no
+  `customRecipientMsg` or virtual-chain recipient; a deposit address that is a valid address of the origin chain; no
+  memo; a deadline in the next 7 days. Any mismatch: no address is shown, a generic error, the reason logged.
+- Stored in `deposit_quotes` (migration 0020) with our id, deleted after 30 days. The UI gets our id and read-only
+  fields.
+- Gate: a connected account plus the proxy limit (5 quotes per visitor, 100 overall per 10 minutes), no NEP-413
+  proof. A quote costs nothing; someone naming another account as recipient only sends their own money there.
+- `ONE_CLICK_JWT` is optional, only in the `analytics-api` service, sent as `Authorization: Bearer` to 1Click only,
+  never logged or returned. The fee shown is the sum 1Click echoes in `quoteRequest.appFees` of that quote (a live
+  keyless USDC→USDC quote echoed 1 bp, not the 25 bps of the published table), tagged protocol-reported; "not
+  reported" when it echoes none. It is already taken off `amountOut`.
+- QR: `qrcode-generator` (MIT, no dependencies) drawn as inline SVG; no external QR service.
+- No NEAR transaction is built, so `validateCascade` and its allowlists are untouched.
+  **Consequences:** 1Click sets the deadline itself (a live quote gave about 3 days, not the 10 minutes we ask for);
+  the page counts down from the server's seconds-left. Status tracking is #29. The analytics API now makes outbound calls to 1Click and writes rows.
+
+## D20 — A fresh account read after a transaction
+
+**Context:** #65. After signing, the portfolio caught up only after 2–3 minutes: `refreshAccount` dropped the UI's
+cached read, but the API kept its own 60 s cache per account (D10), and the watcher refreshed once, at `optimistic`
+finality, before the new state was readable.
+**Decision:**
+
+- `GET /v1/analytics/account/:id?fresh=1` replaces the API's cached read for that account, at most once per account
+  every 5 s; any other request in that gap gets the cache as before. The ownership cache is untouched.
+- Only the `refreshAccount` server action asks for it (after a signed cascade in `PrepareDialog`, or a nonce bump in
+  `AccountWatcher`). Each fresh read is a normal account read: it spends one of the visitor's 30 reads (D10).
+- The page retries up to 4 reads, 5 s apart (`apps/analytics/lib/portfolio-refresh.ts`), until the holdings differ
+  from the visitor's last read (holding and position amounts to 4 significant digits, so Burrow interest and gas do
+  not count as a change), and shows "Transaction seen, updating your portfolio…" meanwhile. One refresh per account
+  at a time.
+- Next bundles server actions apart from page rendering, each with its own copy of a module, so the account read
+  cache and the rate-limit counters live once per process (`apps/analytics/lib/process-state.ts`). Before this, the
+  action dropped and refilled a cache the page never read, and its reads had a limit of their own.
+  **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
+  limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
+  one below 4 significant digits) shows the note for the full ~15 s.
+
+## D21 — One-click actions start at $1
+
+**Context:** #120. #99 set a $10 minimum per card to stop "$0" actions; it hid every card on wallets under ~$20,
+the size a judge's test wallet usually is.
+**Decision:** `MIN_ACTION_USD` is $1 for rule-based cards and agent-sized deposits. Rebalances and idle assets under
+$1 are listed as skipped with a reason (idle ones from $0.10; less is dust and says nothing). A loan repay is at least
+$1 and at most the debt.
+**Consequences:** A $1–10 action costs a fraction of a cent in gas on NEAR, so it is still worth signing; the prepare
+caps and cascade validation are unchanged.

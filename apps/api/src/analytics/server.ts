@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { SHADOW_BANNER } from '../collector/model';
 import type { CollectorStore } from '../collector/store';
 import type { EvidenceStore } from '../evidence/store';
+import { registerAdmin, type AdminDeps } from './admin';
+import { registerDeposit, type DepositDeps } from './deposit';
 import { registerEvidence } from './evidence';
 import { registerSeries } from './series';
 import { registerActivity } from './activity';
@@ -32,6 +34,10 @@ export interface AnalyticsDeps {
   readonly checkpoints?: { readonly publicKey: string; readonly file?: string | undefined };
   /** Read-only mainnet access for "your account" (view calls only). Absent: the route is not served. */
   readonly mainnet?: MainnetReadDeps;
+  /** Spend and LLM controls under /v1/admin/*, behind their own token. Absent: every admin URL answers 401. */
+  readonly admin?: AdminDeps;
+  /** Real 1Click quotes for deposits from other chains (D19). Absent: /v1/deposit/* is not served. */
+  readonly deposit?: DepositDeps;
 }
 
 const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
@@ -63,12 +69,19 @@ export function buildAnalyticsServer(
     if (status === 500) req.log.error({ err }, 'unhandled error');
     return reply.code(status).send({ error });
   });
+  const adminExpected = deps.admin?.token ? digest(deps.admin.token) : null;
   app.addHook('onRequest', async (req, reply) => {
-    if (!req.url.startsWith('/v1/')) return;
+    // Decided on the matched route as well as the raw URL: the router decodes "/%761/..." to "/v1/...".
+    const route = req.routeOptions.url ?? '';
+    if (!req.url.startsWith('/v1/') && !route.startsWith('/v1/')) return;
     const h = req.headers.authorization ?? '';
-    const token = h.startsWith('Bearer ') ? h.slice(7) : '';
-    if (!timingSafeEqual(digest(token), expected))
-      await reply.code(401).send({ error: 'unauthorized' });
+    const token = digest(h.startsWith('Bearer ') ? h.slice(7) : '');
+    // Admin routes take ADMIN_API_TOKEN only: the public site holds API_TOKEN and must not reach them.
+    const admin = req.url.startsWith('/v1/admin') || route.startsWith('/v1/admin');
+    const ok = admin
+      ? adminExpected !== null && timingSafeEqual(token, adminExpected)
+      : timingSafeEqual(token, expected);
+    if (!ok) await reply.code(401).send({ error: 'unauthorized' });
   });
   app.get('/health', async () => ({ ok: true }));
   if (deps.evidence)
@@ -81,6 +94,8 @@ export function buildAnalyticsServer(
   registerActivity(app, deps.store, deps.store.db, deps.intervalSeconds, now);
   registerPortfolioView(app, deps.store);
   if (deps.mainnet) registerAccountView(app, deps.store, deps.mainnet);
+  if (deps.admin?.token) registerAdmin(app, deps.admin, now);
+  if (deps.deposit) registerDeposit(app, deps.deposit, now);
 
   /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */
   app.get('/v1/analytics/freshness', async () => {

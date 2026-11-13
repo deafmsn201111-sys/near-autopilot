@@ -252,6 +252,11 @@ export const dashboardEnvSchema = z.object({
   /** Base URL of the API, reachable from the dashboard's server (not the browser). */
   API_BASE_URL: z.string().url(),
   API_TOKEN: z.string().min(32, 'must be at least 32 characters'),
+  /** Only the loopback admin site (ADMIN_UI=1) gets it; the public site has none. */
+  ADMIN_API_TOKEN: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().min(32, 'must be at least 32 characters').optional(),
+  ),
 });
 export type DashboardEnv = z.output<typeof dashboardEnvSchema>;
 
@@ -284,6 +289,23 @@ export const llmEnvSchema = z.object({
   LLM_DAILY_CAP_USD: z.preprocess(unsetIfEmpty, z.coerce.number().min(0).max(1_000).default(5)),
 });
 export type LlmEnv = z.output<typeof llmEnvSchema>;
+
+/**
+ * 1Click partner JWT for real deposit quotes (D19). Unset = 1Click's keyless fee schedule. Read from the local .env only,
+ * sent only to 1Click as a bearer header; never logged, never in a response.
+ */
+export const oneClickEnvSchema = z.object({
+  ONE_CLICK_JWT: z.preprocess(
+    unsetIfEmpty,
+    z
+      .string()
+      .regex(/^[\w-]+\.[\w-]+\.[\w-]+$/, 'must be a JWT (three base64url parts)')
+      .min(16)
+      .max(4096)
+      .optional(),
+  ),
+});
+export type OneClickEnv = z.output<typeof oneClickEnvSchema>;
 
 export const databaseEnvSchema = z.object({ DATABASE_URL: z.string().url() });
 export type DatabaseEnv = z.output<typeof databaseEnvSchema>;

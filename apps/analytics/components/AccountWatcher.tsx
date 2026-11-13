@@ -1,14 +1,15 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { refreshAccount } from '../app/account-actions';
 import { poll, POLL_FOR_MS, tabHidden } from '../lib/polling';
+import { refreshing, refreshPortfolio, subscribe } from '../lib/portfolio-refresh';
 
 /**
  * The on-chain watcher: for the connected account it polls the access-key nonces on NEAR mainnet and, the moment a new
- * transaction from this wallet lands (any nonce goes up), SILENTLY re-renders the page from fresh data (router.refresh,
- * no reload). That re-reads the real portfolio and re-forms the agents' recommendations, while the tab is visible and for at most 30 minutes — so after the user signs an
- * action (or moves funds elsewhere) the portfolio, allocation and suggestions update on their own, quietly.
+ * transaction from this wallet lands (any nonce goes up), re-reads the real portfolio past every cache and re-renders
+ * the page (router.refresh, no reload), retrying for a few seconds until the new state shows. It watches while the tab
+ * is visible and for 30 minutes after the user last came back to it, and says so on the page while it updates.
  */
 const RPC = 'https://rpc.mainnet.fastnear.com';
 
@@ -49,6 +50,11 @@ async function maxNonce(account: string): Promise<bigint | null> {
 export function AccountWatcher({ account, seconds = 6 }: { account: string; seconds?: number }) {
   const router = useRouter();
   const last = useRef<bigint | null>(null);
+  const updating = useSyncExternalStore(
+    subscribe,
+    () => refreshing(account),
+    () => false,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -61,9 +67,7 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
         void maxNonce(account).then((n) => {
           if (!alive || n === null) return;
           if (last.current !== null && n > last.current)
-            void refreshAccount(account)
-              .catch(() => undefined)
-              .then(() => router.refresh());
+            void refreshPortfolio(account, refreshAccount, () => router.refresh());
           last.current = n;
         }),
       { everyMs: seconds * 1000, forMs: POLL_FOR_MS, hidden: tabHidden },
@@ -74,5 +78,9 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
     };
   }, [account, seconds, router]);
 
-  return null;
+  return updating ? (
+    <div className="callout" role="status" style={{ marginBottom: 12 }}>
+      Transaction seen, updating your portfolio…
+    </div>
+  ) : null;
 }

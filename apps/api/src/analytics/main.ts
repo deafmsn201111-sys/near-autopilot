@@ -1,13 +1,17 @@
 import { readFileSync } from 'node:fs';
-import { llmEnvSchema } from '@near-autopilot/config';
+import { llmEnvSchema, oneClickEnvSchema } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
 import { NearRpcClient } from '@near-autopilot/near-adapter';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
 import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
+import { OneClickDepositClient } from '../gateway/one-click-deposit';
+import { HttpJsonClient } from '../market-data/http';
 import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
 import { analysisMemo } from './ai-analysis';
+import { DrizzleDepositQuoteStore } from './deposit-store';
+import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
 
@@ -31,7 +35,10 @@ const env = z
     MAINNET_READ_RPC_URL: z.string().url().optional(),
     MAINNET_READ_RPC_API_KEY: z.string().optional(),
     MARKET_CONFIG_FILE: z.string().optional(),
+    /** Only the loopback admin site holds it; unset or empty = the admin routes answer 401. */
+    ADMIN_API_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
   })
+  .refine((e) => e.ADMIN_API_TOKEN !== e.API_TOKEN, 'ADMIN_API_TOKEN must differ from API_TOKEN')
   .parse(process.env);
 // Parsed on every start, so a model outside the allowlist stops the API even when the wallet path is off.
 const llmEnv = llmEnvSchema.parse(process.env);
@@ -39,19 +46,21 @@ const llmEnv = llmEnvSchema.parse(process.env);
 const database = createDatabase(env.DATABASE_URL, { max: 4 });
 // The only process that migrates: the collector waits for this API to be healthy before it starts.
 await runMigrations(database.db);
-const llmLedger = new DrizzleLlmLedger(
-  database.db,
-  BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6)),
-);
+const defaultCapMicro = BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6));
+const llmLedger = new DrizzleLlmLedger(database.db, defaultCapMicro);
 const toolLlm = anthropicToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
-const pools = env.MARKET_CONFIG_FILE
-  ? ((
-      JSON.parse(readFileSync(env.MARKET_CONFIG_FILE, 'utf8')) as {
-        rhea?: { pools?: { poolId: number; tokenA: string; tokenB: string }[] };
-      }
-    ).rhea?.pools ?? [])
-  : [];
+const market = env.MARKET_CONFIG_FILE
+  ? (JSON.parse(readFileSync(env.MARKET_CONFIG_FILE, 'utf8')) as {
+      rhea?: { pools?: { poolId: number; tokenA: string; tokenB: string }[] };
+      policy?: { allowedTokens?: string[] };
+    })
+  : {};
+const pools = market.rhea?.pools ?? [];
+const { ONE_CLICK_JWT } = oneClickEnvSchema.parse(process.env);
+const depositQuotes = new DrizzleDepositQuoteStore(database.db);
+// The tokens a deposit may arrive as: our own allowlist, never user input.
+const destinationTokens = market.policy?.allowedTokens ?? [];
 const mainnet = env.MAINNET_READ_RPC_URL
   ? {
       rpc: new NearRpcClient({
@@ -70,6 +79,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
         tokenA: accountId(p.tokenA),
         tokenB: accountId(p.tokenB),
       })),
+      discovery: httpDiscovery(),
       ai: toolLlm
         ? {
             llm: toolLlm,
@@ -88,6 +98,28 @@ const app = buildAnalyticsServer(
     evidence: new EvidenceStore(database.db),
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
     ...(mainnet ? { mainnet } : {}),
+    ...(env.ADMIN_API_TOKEN
+      ? {
+          admin: {
+            token: env.ADMIN_API_TOKEN,
+            store: llmLedger,
+            defaultCapMicro,
+          },
+        }
+      : {}),
+    ...(destinationTokens.length
+      ? {
+          deposit: {
+            // No retry: every real quote mints a new deposit address, and the user must see exactly one.
+            oneClick: new OneClickDepositClient({
+              http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 15_000 }),
+              jwt: ONE_CLICK_JWT,
+            }),
+            store: depositQuotes,
+            destinationTokens,
+          },
+        }
+      : {}),
     ...(env.AUDIT_CHECKPOINT_PUBLIC_KEY
       ? {
           checkpoints: {
@@ -100,7 +132,12 @@ const app = buildAnalyticsServer(
   { logger: true },
 );
 const purge = () =>
-  llmLedger.purge().catch((err: unknown) => app.log.warn({ err }, 'llm_calls purge failed'));
+  Promise.all([
+    llmLedger.purge().catch((err: unknown) => app.log.warn({ err }, 'llm_calls purge failed')),
+    depositQuotes
+      .purge()
+      .catch((err: unknown) => app.log.warn({ err }, 'deposit_quotes purge failed')),
+  ]);
 await purge();
 const purgeTimer = setInterval(() => void purge(), 60 * 60 * 1000);
 const stop = async () => {

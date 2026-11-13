@@ -4,6 +4,7 @@ import { NearTokenReader, type NearRpcClient } from '@near-autopilot/near-adapte
 import { RheaPoolReader } from '@near-autopilot/rhea-adapter';
 import { RheaDclClient } from '@near-autopilot/rhea-dcl-adapter';
 import type { Decimal } from '../market-data/decimal';
+import { failureKind } from '../public-text';
 import { burrowEstimates, type YieldLimits } from './burrow';
 import type {
   BlockRef,
@@ -103,6 +104,11 @@ export class YieldService implements YieldDataProvider {
     return { source, contract, health, detail, marketsRead };
   }
 
+  private failed(what: string, error: unknown): string {
+    this.o.onError?.(`yield ${what} failed: ${errorMessage(error)}`);
+    return `failed: ${failureKind(error)}`;
+  }
+
   private async fetch(
     pinned: BlockRef | null,
     origin: YieldReport['origin'],
@@ -113,7 +119,7 @@ export class YieldService implements YieldDataProvider {
     try {
       block ??= await finalBlock(this.o.rpc);
     } catch (error) {
-      const detail = `final block unreadable: ${errorMessage(error)}`;
+      const detail = this.failed('final block', error);
       runs = [
         {
           status: this.status('burrow', this.o.burrowContract, 'unavailable', detail, 0),
@@ -204,7 +210,7 @@ export class YieldService implements YieldDataProvider {
       return { status: this.status('burrow', contract, 'ok', null, assets.length), estimates };
     } catch (error) {
       return {
-        status: this.status('burrow', contract, 'unavailable', errorMessage(error), 0),
+        status: this.status('burrow', contract, 'unavailable', this.failed('burrow', error), 0),
         estimates: [],
       };
     }
@@ -291,7 +297,7 @@ export class YieldService implements YieldDataProvider {
       };
     } catch (error) {
       return {
-        status: this.status('rhea_v1', contract, 'unavailable', errorMessage(error), 0),
+        status: this.status('rhea_v1', contract, 'unavailable', this.failed('rhea_v1', error), 0),
         estimates: [],
       };
     }
@@ -345,7 +351,7 @@ export class YieldService implements YieldDataProvider {
       };
     } catch (error) {
       return {
-        status: this.status('rhea_dcl', contract, 'unavailable', errorMessage(error), 0),
+        status: this.status('rhea_dcl', contract, 'unavailable', this.failed('rhea_dcl', error), 0),
         estimates: [],
       };
     }

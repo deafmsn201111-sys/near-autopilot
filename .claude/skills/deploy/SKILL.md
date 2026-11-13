@@ -52,7 +52,9 @@ cd near-autopilot-public-<sha> && ./setup.sh
 ```
 
 `.env` must be copied before `setup.sh`: without it, `setup.sh` creates a new database password that does not match
-the kept database. The compose project name is fixed, so the database volume carries over.
+the kept database. The compose project name is fixed, so the database volume carries over. `setup.sh` appends a generated
+`ADMIN_API_TOKEN` to the copied `.env` if it has none (it is kept from then on), for `analytics-api` and the
+loopback `analytics-admin`.
 
 ## 5. Check — roll back on failure
 
@@ -75,6 +77,8 @@ On `$SITE`, no wallet, with `claude-in-chrome`; screenshot each:
   `success` with no `HTTP 429` before it. 429s mean the RPC URL and key do not match: `MAINNET_READ_RPC_URL` must be
   the FastNEAR URL when `MAINNET_READ_RPC_API_KEY` is set.
 - `curl -sI $SITE` has `Strict-Transport-Security`; `curl -s -o /dev/null -w '%{http_code}' $SITE/admin` is `404`.
+- `ssh near-autopilot "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3003/admin"` is `200` (the admin,
+  loopback only; the owner opens it through the tunnel in `deploy/public/README.md`).
 
 A failure here (health was fine) does not roll back by itself: report it with the screenshot and ask the owner
 whether to roll back. Always list for the owner: "connect a wallet with HOT on `$SITE`, the portfolio loads".

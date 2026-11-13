@@ -1,6 +1,8 @@
-import { ACCOUNT_LIMIT, consume, RATE_LIMITED, visitor } from './rate-limit';
+import { BoundedMap } from '@near-autopilot/core';
+import { ACCOUNT_LIMIT, consume, RATE_LIMITED, MAX_TRACKED_KEYS, visitor } from './rate-limit';
 import 'server-only';
 import { tryApi } from './api';
+import { processWide } from './process-state';
 import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import type { RecommendationIntent } from './recommendation-intent';
@@ -136,9 +138,13 @@ export interface PortfolioView {
   asOf: string | null;
   holdings: {
     where: 'wallet' | 'collateral' | 'deposited' | 'borrowed';
+    token?: string;
     symbol: string;
     amount: number;
     usd: number | null;
+    verified?: boolean;
+    estimate?: boolean;
+    small?: boolean;
   }[];
   totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
   health: { healthFactor: number | null; level: Level; label: string; sentence: string };
@@ -146,6 +152,19 @@ export interface PortfolioView {
   actions: PortfolioAction[];
   lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
   simulatedChanges?: { count: number; since: string | null } | null;
+  metrics?: { byToken: { symbol: string; usd: number; pct: number }[] };
+  positions?: {
+    key: string;
+    label: string;
+    sub: string;
+    amount: number | null;
+    usd: number | null;
+    verified?: boolean;
+    estimate?: boolean;
+    small?: boolean;
+  }[];
+  /** A real account: false when an indexer was down and only the allowlisted tokens and pools were read. */
+  discovery?: { complete: boolean };
 }
 export interface AgentEntry {
   from: string;
@@ -176,6 +195,8 @@ export const money = (v: number | null | undefined, cents?: boolean): string => 
 type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
   accountId: string;
   recommendations: AccountRecommendation[];
+  /** Actions the agents saw but skipped as too small, in plain language. */
+  skipped?: string[];
   /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
   ownerVerified: boolean;
 };
@@ -183,40 +204,69 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecis
 type AccountResult = { data: AccountRead | null; error: string | null };
 
 const ACCOUNT_TTL_MS = 60_000;
-const accountReads = new Map<string, { at: number; read: Promise<AccountResult> }>();
+const accountReads = processWide(
+  'accountReads',
+  () => new Map<string, { at: number; read: Promise<AccountResult> }>(),
+);
+const lastHoldings = processWide(
+  'lastHoldings',
+  () => new BoundedMap<string, string>(MAX_TRACKED_KEYS),
+);
+
+// ponytail: 4 significant digits hide Burrow interest and gas; an action smaller than that waits out the retries
+const holdingsOf = (r: AccountResult) =>
+  r.data
+    ? JSON.stringify([
+        ...r.data.holdings.map((h) => [h.where, h.token, Number(h.amount.toPrecision(4))]),
+        ...(r.data.positions ?? []).map((x) => [
+          x.key,
+          x.amount && Number(x.amount.toPrecision(4)),
+        ]),
+      ])
+    : null;
 
 const ownershipProof = async () => (await cookies()).get(OWNERSHIP_COOKIE)?.value ?? '';
 
 const readKey = async (id: string, proof: string) =>
   `${await visitor()}:${id.trim().toLowerCase()}:${proof}`;
 
-const fetchAccount = async (id: string, proof: string): Promise<AccountResult> => {
+const fetchAccount = async (id: string, proof: string, fresh: boolean): Promise<AccountResult> => {
   if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
   return tryApi<AccountRead>(
-    `/v1/analytics/account/${encodeURIComponent(id)}`,
+    `/v1/analytics/account/${encodeURIComponent(id)}${fresh ? '?fresh=1' : ''}`,
     proof ? { 'x-ownership-proof': proof } : {},
   );
 };
 
-const readAccount = async (id: string): Promise<AccountResult> => {
+const readAccount = async (id: string, fresh = false): Promise<AccountResult> => {
   const proof = await ownershipProof();
   const key = await readKey(id, proof);
   const now = Date.now();
   for (const [k, entry] of accountReads)
     if (now - entry.at >= ACCOUNT_TTL_MS) accountReads.delete(k);
   const cached = accountReads.get(key);
-  if (cached) return cached.read;
-  const entry = { at: Infinity, read: fetchAccount(id, proof) };
+  if (cached && !fresh) return cached.read;
+  const entry = { at: Infinity, read: fetchAccount(id, proof, fresh) };
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
   if (r.error) accountReads.delete(key);
   else entry.at = Date.now();
+  const holdings = holdingsOf(r);
+  if (holdings) lastHoldings.set(key, holdings);
   return r;
 };
 
-export const forgetAccount = async (id: string) => {
-  accountReads.delete(await readKey(id, await ownershipProof()));
+/**
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
+ * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
+ * stops retrying.
+ */
+export const refreshAccountRead = async (id: string): Promise<boolean> => {
+  const normalized = id.trim().toLowerCase();
+  const before = lastHoldings.get(await readKey(normalized, await ownershipProof()));
+  const after = holdingsOf(await readAccount(normalized, true));
+  return before === undefined || after === null || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

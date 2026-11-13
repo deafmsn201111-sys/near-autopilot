@@ -93,7 +93,7 @@ missing-account page shows the short message, Caddy (local container) sends both
   (`lib/rate-limit.ts`, 10,000 keys, expired keys swept first) use it. The overall per-kind counts live in their own
   map, so a flood of new visitors on one route cannot evict another route's overall cap.
 - `AutoRefresh` and `AccountWatcher` poll through `lib/polling.ts`: no ticks while the tab is hidden, and they stop
-  after 30 minutes (a reload starts them again). 1Click status polling limits are in #29.
+  after 30 minutes (since #60, coming back to the tab starts them again). 1Click status polling limits are in #29.
 - `setup.sh` keeps `.env` at `chmod 600` on every run. The server README has the ufw rules (SSH, 80, 443 only), notes
   that Docker-published ports bypass ufw, and that a new secret goes only to the services that use it.
 
@@ -212,3 +212,144 @@ no longer said what comes first.
   entries) without a model call or `llm_calls` row.
 - Global limit moved from the Next route to the API: 60 model runs per 10 minutes, fallback `busy`; the route keeps
   5 per visitor.
+
+## 2026-11-12 — Aborted and long-context LLM calls count toward the daily cap (#85)
+
+- A model call cut off (deadline, dropped connection) before its reply reported usage is recorded at one worst-case call
+  (100K input + `ANTHROPIC_MAX_TOKENS` output), so the next run sees it against the cap.
+- No request is sent whose input could pass 100K tokens (Haiku's 5x long-context rate): the bound is the last
+  reply's input + output tokens + UTF-8 bytes of the new tool results + 2K overhead; over it, fallback `loop_limit`.
+
+## 2026-11-12 — Fixed phrases for yield sources and orchestrator escalations (#82)
+
+- `apps/api/src/yield/service.ts`: a failed source (final block, Burrow, Rhea v1, DCL) stores `failed: <kind>`
+  (`failureKind`); the full error goes to `onError` (the logger). The agents' market notes inherit the clean detail.
+- `packages/orchestrator`: `CYCLE_ABORTED` / `AUDIT_UNAVAILABLE`, `IN_DOUBT_EXECUTION` and `EXECUTION_FAILED`
+  escalation messages and the aborted cycle detail (served as `portfolios[].outcome`) no longer carry the thrown or
+  executor error; it is logged instead.
+
+## 2026-11-12 — Rate limiter: no shared sweep (#59)
+
+- `apps/analytics/lib/rate-limit.ts`: removed `sweep`, which dropped every visitor entry older than the window of the
+  kind being consumed and scanned all 10,000 keys per call once full. Visitors now live in one `BoundedMap` per kind
+  (10,000 each), so LRU eviction alone bounds memory and never drops a live entry of one kind for another.
+
+## 2026-11-12 — Admin: Spend screen and kill switch (#31)
+
+- API: `/v1/admin/spend` and `/v1/admin/settings` behind `ADMIN_API_TOKEN` (D16); `spendSummary` gives today vs cap,
+  7 UTC days, model split, average per analysis and the deposit run-out estimate. Migration 0019 adds `llm_enabled`,
+  `deposit_micro_usd`, `deposit_set_at` to `llm_settings`.
+- `analyseAccount` reads the kill switch first: off → labelled rule-based list, code `kill_switch`, no model call, no
+  cached AI result.
+- UI: `apps/analytics/app/admin` (404 unless `ADMIN_UI=1`), server actions for the switch, cap and deposit.
+- Deploy: `analytics-admin` service on `127.0.0.1:3002`, Caddy 404 for `/admin*`, `setup.sh` and `quickstart.sh`
+  add `ADMIN_API_TOKEN` to an existing `.env`.
+
+## 2026-11-12 — One priced-leg list for the account's totals, bar and concentration (#66)
+
+- `apps/api/src/analytics/account-view.ts`: `accountPortfolio` builds the legs (wallet, Burrow, Rhea v1 + DCL split
+  into tokens, liquid staking only when the wallet list does not already hold the token) and returns `metrics` and
+  `totals` from them. Net worth now includes LP; stNEAR is counted once; the concentration % and its rebalance amount
+  use the same total as the hero.
+- `apps/analytics/app/page.tsx`: a real account's allocation bar reads `metrics.byToken`; the holdings table adds one
+  row per LP position (and any staking token not in the wallet list), so it sums to "$X in assets". Demo portfolios
+  are unchanged.
+
+## 2026-11-12 — AI ranking survives auto-refresh (#67)
+
+- The UI keeps the AI result while the card ids and holdings (4 significant digits, prices excluded) stay the same; the
+  15 s refresh no longer drops it. When they change, the rule-based list returns with "Your portfolio changed — run the
+  AI analysis again." (`apps/analytics/lib/portfolio-signature.ts`).
+
+## 2026-11-13 — Haiku vs Sonnet on real wallets (#16)
+
+- `apps/api/src/llm/compare-models.ts` (`pnpm --filter @near-autopilot/api llm:compare <account> …`): runs the real
+  analysis loop per model/effort config and prints cost, latency, outcome and picks. `registerAccountView` now returns
+  `analysisInputs`, which the analysis route also uses.
+- `AnthropicToolLlm` takes an optional `effort` (`output_config.effort`).
+- Result in D17: Haiku 5.5 at default effort stays; same answers as Sonnet 5.5 at 1/15 the cost.
+
+## 2026-11-13 — The account view reads the whole account and hides small balances (#73)
+
+- `apps/api/src/analytics/discovery.ts`: FastNEAR tokens + staking pools, Rhea v1 pool ids, Rhea indexer prices;
+  zod, caps, null on failure (D18).
+- `apps/api/src/analytics/account-view.ts`: wallet tokens beyond Burrow's list, v1 LP in any pool the account has
+  shares in, native staking (staked / unstaking rows). Every holding and position row carries `verified`, `estimate`,
+  `small`; actions, recommendations and the agents' observation use verified tokens only. `discovery.complete` tells
+  the page when it fell back to the allowlists.
+- `apps/analytics/app/page.tsx`: "What you hold" (top 7, "Show all"), "Unverified tokens", "Show small balances".
+- Test: `apps/api/test/account-full.test.ts` replays recorded mainnet reads of `npro-validator.near`.
+
+## 2026-11-13 — Portfolio mode label (#87)
+
+- `apps/analytics/lib/portfolio-mode.ts`: one label + one "what you can do here" line from `isAccount`, the
+  connected wallet (`np_account` cookie), the ownership proof and `MAINNET_WALLET_SIGNING`: demo / read-only (with a
+  "not your connected wallet" line on mismatch) / your wallet / ownership verified. Replaces the "Live" / "Simulated"
+  badge; the switch tab is now "Mainnet account" without the LIVE chip.
+- `WalletButton` writes the `np_account` cookie before the post-connect page load, so the first load already knows
+  the wallet.
+
+## 2026-11-13 — Polling restarts when the user comes back (#60)
+
+- `poll()` (`apps/analytics/lib/polling.ts`) still stops 30 minutes after start, but the tab becoming visible or
+  getting focus starts a fresh 30-minute window, with an immediate tick if polling had stopped. An unattended tab
+  still goes quiet (Security 7); a tab the user returns to updates again after signing. `stop()` removes the listeners.
+
+**Tests run:** `pnpm verify` (green); `polling.test.ts` covers the deadline, restart on visible/focus, extending a
+running window and listener removal.
+
+## 2026-11-13 — Reasoning trace in the UI (#26)
+
+- `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount` returns `trace`, one `{tool, agent, ok, text, provenance}`
+  per offered tool the model called (first-call order, made-up tool names dropped, `Failed` when every call failed).
+  Each tool writes its line from the numbers it returns to the model; raw outputs stay on the server. The market tool
+  also returns each held token's gap to the second price source. The heuristic fallback has an empty trace.
+- `packages/orchestrator/src/agents/market-intelligence.ts`: with no second price source and no volatility it answers
+  `insufficient_data` instead of `healthy`.
+- `apps/analytics`: the analysis schema accepts `trace` and `calledTools` (both optional for older replies); a "How the
+  AI got here" block under the badge, with the provenance label per line, or the plain list of called tools.
+- Each trace line also says what became of its card (`pick`: ranked / kept by code / left out, and `rank`); a card
+  the model left out still shows its number, labelled as left out. The guardian line names the debt token missing
+  from the wallet when it cannot size a repayment. `run` summarises the model run (model, turns, tool calls, ms).
+- `run.read` (tokens held, loan or not) and `run.checks` (picked, explained, replaced, restored, dropped) let the UI
+  show the run as a four-step pipeline: read → agents → model ranking → code checks.
+
+## 2026-11-13 — No $0 cards on small wallets (#99)
+
+- Reduce-concentration and put-idle-to-work cards (rule-based and the AI deposit) need an action of at least $10
+  (`MIN_ACTION_USD` in `apps/api/src/analytics/ai-analysis.ts`); amounts are in cents, never rounded to $0.
+- A low health factor always keeps its card: the repay is 30% of the debt, at least $10, at most the whole debt.
+- What the agents skip as too small comes back as `skipped` (plain sentences with the wallet's numbers) and the
+  dashboard lists it under the cards, so a $1–9 wallet gets a read instead of "looks balanced" or a failing button.
+
+## 2026-11-13 — Fresh portfolio after signing (#65)
+
+- API: `GET /v1/analytics/account/:id?fresh=1` replaces the cached read, at most once per account every 5 s (D20).
+- UI: `refreshAccount` now reads fresh and returns whether the holdings changed; `refreshPortfolio`
+  (`apps/analytics/lib/portfolio-refresh.ts`) retries up to 4 times, 5 s apart, shared by `PrepareDialog` and
+  `AccountWatcher`, which shows "Transaction seen, updating your portfolio…" while it runs. The fixed 4 s wait after
+  signing is gone.
+
+**Tests run:** `pnpm verify`; `account-full.test.ts` (fresh flag and its 5 s gap), `account-cache.test.ts` (fresh
+read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries stop, early stop, shared run).
+
+- Owner's local check found the action and the page did not share state: Next puts server actions in the
+  `action-browser` layer and pages in `rsc`, each with its own module copy. The account cache and the rate-limit maps
+  now live in `processWide` (`globalThis`); `test/setup.ts` clears them between tests.
+
+## 2026-11-13 — One-click actions from $1 (#120)
+
+- `MIN_ACTION_USD` 10 → 1; the idle-asset "skipped" note from $0.10 (D21). An $11 all-NEAR wallet now gets a
+  rebalance card of about $5.57.
+
+**Tests run:** `pnpm verify`; `portfolio-recommendations.test.ts` thresholds rewritten for $1.
+
+## 2026-11-13 — Deposit from another chain through 1Click (#27)
+
+- `apps/api/src/gateway/one-click-deposit.ts`: real-quote client (hard-coded URL, optional JWT, cached token list,
+  every echoed field verified). `refund-address.ts`: per-chain refund address check.
+- `apps/api/src/analytics/deposit.ts`: `GET /v1/deposit/assets`, `POST /v1/deposit/quote`; `deposit-store.ts` +
+  migration 0020 `deposit_quotes` (30-day purge).
+- `apps/analytics`: `/api/deposit/*` proxies (`deposit-quote` limit 5/100 per 10 min), `DepositDialog` (form → deposit
+  address, QR, deadline countdown, fee) in the header and on the portfolio.
+- D19.

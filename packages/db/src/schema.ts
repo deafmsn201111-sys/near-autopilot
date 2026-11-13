@@ -646,9 +646,45 @@ export const llmCalls = pgTable(
   (t) => [index('llm_calls_at_idx').on(t.at)],
 );
 
-/** Single-row LLM settings (migration 0018). A null cap means LLM_DAILY_CAP_USD applies. */
+/**
+ * Single-row LLM settings (migrations 0018, 0019). A null cap means LLM_DAILY_CAP_USD applies; no row means LLM on.
+ * The deposit is what the owner last typed in as the provider balance, for the run-out forecast.
+ */
 export const llmSettings = pgTable('llm_settings', {
   id: integer('id').primaryKey(),
   dailyCapMicroUsd: bigint('daily_cap_micro_usd', { mode: 'bigint' }),
+  llmEnabled: boolean('llm_enabled').notNull().default(true),
+  depositMicroUsd: bigint('deposit_micro_usd', { mode: 'bigint' }),
+  depositSetAt: ts('deposit_set_at'),
   updatedAt: ts('updated_at').notNull(),
 });
+
+/**
+ * Real 1Click quotes for inbound deposits (migration 0020): what we asked for and what 1Click committed to, keyed by our
+ * own id. The refund address is the user's address on another chain. Deleted after 30 days by the analytics API.
+ */
+export const depositQuotes = pgTable(
+  'deposit_quotes',
+  {
+    id: text('id').primaryKey(),
+    createdAt: ts('created_at').notNull(),
+    accountId: text('account_id').notNull(),
+    originAsset: text('origin_asset').notNull(),
+    destinationAsset: text('destination_asset').notNull(),
+    amountIn: text('amount_in').notNull(),
+    amountOut: text('amount_out').notNull(),
+    minAmountOut: text('min_amount_out').notNull(),
+    refundTo: text('refund_to').notNull(),
+    depositAddress: text('deposit_address').notNull(),
+    deadline: ts('deadline').notNull(),
+    correlationId: text('correlation_id').notNull(),
+    /** 1Click's signature over the quote: kept to settle a dispute. */
+    signature: text('signature').notNull(),
+    /** As 1Click echoed it in the quote; null when it echoed none. */
+    feeBps: integer('fee_bps'),
+  },
+  (t) => [
+    index('deposit_quotes_created_at_idx').on(t.createdAt),
+    index('deposit_quotes_deposit_address_idx').on(t.depositAddress),
+  ],
+);

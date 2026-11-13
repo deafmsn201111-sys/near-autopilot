@@ -49,6 +49,8 @@ else
   echo "• .env created with fresh secrets (not shown)"
 fi
 
+grep -q '^ADMIN_API_TOKEN=.' .env || { set_var ADMIN_API_TOKEN "$(rand 32)"; echo "• ADMIN_API_TOKEN added to .env (not shown)"; }
+
 mkdir -p evidence/checkpoints
 
 echo "• building and starting containers (first run: a few minutes)…"
@@ -79,5 +81,6 @@ port="${ANALYTICS_DASHBOARD_PORT:-$(grep '^ANALYTICS_DASHBOARD_PORT=' .env | cut
 echo
 echo "Ready. Everything is bound to 127.0.0.1; the server never signs or sends anything."
 echo "  Site   http://127.0.0.1:${port:-3001}"
+echo "  Admin  http://127.0.0.1:${ANALYTICS_ADMIN_PORT:-3002}/admin   (AI spend and kill switch, loopback only)"
 echo "  (the mainnet collector fills the market pages within its first cycle, ~1-2 minutes)"
 echo "Stop: docker compose stop   (data is kept)"
