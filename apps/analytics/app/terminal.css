@@ -804,7 +804,8 @@ main.page {
 }
 
 /* NEAR palette: light surfaces are adapted for the same calm hierarchy; dark uses the supplied hex values. */
-:root {
+:root,
+:root[data-theme='light'] {
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --num-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'SFMono-Regular', Consolas, monospace;
