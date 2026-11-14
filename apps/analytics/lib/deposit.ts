@@ -219,6 +219,28 @@ const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {
 export const walletChainOf = (chain: string): 'evm' | 'solana' | null =>
   WALLET_CHAIN[chain] ?? null;
 
+/** Why an origin-wallet send threw, as `sendFailure` (lib/hot-kit.ts) reads the wallet's error. */
+export type SendFailure = 'declined' | 'no-gas' | 'no-token' | 'not-sent' | 'unknown';
+
+/** What the user is told for a send that did not go out; `why` is the wallet's own text. */
+export function walletSendError(
+  kind: Exclude<SendFailure, 'unknown'>,
+  q: DepositQuote,
+  why: string,
+): string {
+  const again = 'Top it up and press the button again.';
+  const fee = DEPOSIT_CHAINS.find((c) => c.id === q.chain)?.native ?? 'native coin';
+  const amount = `${formatUnits(q.amountIn, q.origin.decimals)} ${q.origin.symbol}`;
+  const native = q.origin.payment !== null && 'native' in q.origin.payment;
+  if (kind === 'declined') return 'You declined in your wallet. Nothing was sent.';
+  if (kind === 'not-sent') return `Nothing was sent: the network refused the transfer (${why}).`;
+  if (native)
+    return `Nothing was sent: your wallet needs ${amount} on ${q.chainName} plus a little more for the network fee. ${again}`;
+  return kind === 'no-gas'
+    ? `Nothing was sent: your wallet does not have enough ${fee} on ${q.chainName} to pay the network fee. Add a little ${fee} on ${q.chainName} (cents are enough) and press the button again.`
+    : `Nothing was sent: your wallet on ${q.chainName} has less than ${amount}. ${again}`;
+}
+
 const EXPLORERS: Record<string, { url: string; hash: RegExp }> = {
   eth: { url: 'https://etherscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
   base: { url: 'https://basescan.org/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },

@@ -221,13 +221,33 @@ describe('sendFailure', () => {
     expect(m.sendFailure(new Error('User denied transaction signature'))).toBe('declined');
   });
 
-  it('is not-sent for a balance or gas-estimate failure, which comes before any broadcast', async () => {
+  it('is no-gas when the native coin cannot pay the network fee (before any broadcast)', async () => {
     const m = await fresh();
-    expect(m.sendFailure(new Error('insufficient funds for gas * price + value'))).toBe('not-sent');
+    for (const text of [
+      'Execution reverted with reason: gas required exceeds allowance (0). Estimate Gas Arguments: from: 0x2865',
+      'insufficient funds for gas * price + value',
+      'Attempt to debit an account but found no record of a prior credit.',
+      'Transaction results in an account (0) with insufficient funds for rent',
+    ])
+      expect(m.sendFailure(new Error(text))).toBe('no-gas');
+  });
+
+  it('is no-token when the wallet holds less of the token than the quote', async () => {
+    const m = await fresh();
     expect(
       m.sendFailure(new Error('execution reverted: ERC20: transfer amount exceeds balance')),
+    ).toBe('no-token');
+    expect(m.sendFailure(new Error('Insufficient balance'))).toBe('no-token');
+    expect(m.sendFailure(new Error('custom program error: 0x1 (insufficient funds)'))).toBe(
+      'no-token',
+    );
+  });
+
+  it('is not-sent for another revert at gas estimate, also before any broadcast', async () => {
+    const m = await fresh();
+    expect(
+      m.sendFailure(new Error('execution reverted: Blacklistable: account is blacklisted')),
     ).toBe('not-sent');
-    expect(m.sendFailure(new Error('Insufficient balance'))).toBe('not-sent');
   });
 
   it('is unknown for anything else: the transfer may have gone out', async () => {

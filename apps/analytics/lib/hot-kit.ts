@@ -1,7 +1,7 @@
 'use client';
 import type { HotKit } from '@hot-labs/kit';
 import type { OmniWallet } from '@hot-labs/kit/core';
-import { walletChainOf, type DepositTransfer } from './deposit';
+import { walletChainOf, type DepositTransfer, type SendFailure } from './deposit';
 
 /**
  * ORIGIN-CHAIN WALLETS through HOT Kit (@hot-labs/kit): EVM and Solana only, for the deposit dialog. The NEAR wallet
@@ -137,19 +137,26 @@ export async function sendOriginTransfer(t: DepositTransfer): Promise<string> {
   return w.transfer({ token, receiver: t.receiver, amount: BigInt(t.amount) });
 }
 
+const NO_GAS =
+  /gas required exceeds|insufficient funds for (gas|rent|fee)|no record of a prior credit/i;
+const NO_TOKEN =
+  /exceeds balance|insufficient balance|custom program error: 0x1\b|insufficient funds/i;
+
 /**
- * Why a wallet send threw. `declined`: the user said no (EIP-1193 4001, or the wallet's words). `not-sent`: a balance
- * or gas-estimate failure, which comes before any broadcast. `unknown`: anything else may come after the broadcast, so
- * the dialog never offers to send that quote again.
+ * Why a wallet send threw. `declined`: the user said no (EIP-1193 4001, or the wallet's words). `no-gas`: the native
+ * coin cannot pay the network fee; `no-token`: less of the token than the quote; `not-sent`: another revert at the gas
+ * estimate. All of these come before any broadcast. `unknown`: anything else may come after it, so the dialog never
+ * offers to send that quote again.
  */
-export function sendFailure(e: unknown): 'declined' | 'not-sent' | 'unknown' {
+export function sendFailure(e: unknown): SendFailure {
   if (typeof e !== 'object' || e === null) return 'unknown';
   const { code, message } = e as { code?: unknown; message?: unknown };
   const text = typeof message === 'string' ? message : '';
   if (code === 4001 || /user (rejected|denied|cancel)|cancell?ed by user/i.test(text))
     return 'declined';
-  if (/insufficient (funds|balance)|exceeds balance|execution reverted/i.test(text))
-    return 'not-sent';
+  if (NO_GAS.test(text)) return 'no-gas';
+  if (NO_TOKEN.test(text)) return 'no-token';
+  if (/execution reverted/i.test(text)) return 'not-sent';
   return 'unknown';
 }
 

@@ -18,6 +18,7 @@ import {
   stopReason,
   searchTokens,
   walletChainOf,
+  walletSendError,
   type DepositAsset,
   type DepositAssets,
   type DepositQuote,
@@ -543,14 +544,8 @@ function WalletSend({
     } catch (e) {
       const why = e instanceof Error ? e.message.slice(0, 200) : '';
       const failure = sendFailure(e);
-      if (failure === 'declined') setError('You declined in your wallet. Nothing was sent.');
-      else if (failure === 'not-sent')
-        setError(
-          `Nothing was sent: your wallet needs ${send} and a little ${
-            DEPOSIT_CHAINS.find((c) => c.id === q.chain)?.native ?? 'native coin'
-          } on ${q.chainName} for the network fee. Top it up and press the button again.`,
-        );
-      else setUnsure(why);
+      if (failure === 'unknown') setUnsure(why);
+      else setError(walletSendError(failure, q, why));
     } finally {
       setBusy(false);
     }

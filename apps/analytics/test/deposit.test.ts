@@ -7,6 +7,7 @@ import {
   formatUnits,
   loadDepositTransfer,
   walletChainOf,
+  walletSendError,
   loadDepositIncidents,
   loadDepositStatus,
   searchTokens,
@@ -346,6 +347,53 @@ describe('walletChainOf', () => {
       null,
       null,
     ]);
+  });
+});
+
+describe('walletSendError', () => {
+  const usdc: DepositQuote = {
+    ...quote,
+    chain: 'base',
+    chainName: 'Base',
+    origin: { ...quote.origin, payment: { contract: '0x8335' } },
+  };
+  const eth: DepositQuote = {
+    ...usdc,
+    origin: {
+      assetId: 'nep141:base.omft.near',
+      symbol: 'ETH',
+      decimals: 18,
+      payment: { native: true },
+    },
+    amountIn: '1000000000000000',
+  };
+
+  it('names the fee coin when only the fee is missing, not the token already there', () => {
+    expect(walletSendError('no-gas', usdc, 'gas required exceeds allowance (0)')).toBe(
+      'Nothing was sent: your wallet does not have enough ETH on Base to pay the network fee. Add a little ETH on Base (cents are enough) and press the button again.',
+    );
+  });
+
+  it('names the token when the wallet holds less than the quote', () => {
+    expect(walletSendError('no-token', usdc, 'exceeds balance')).toBe(
+      'Nothing was sent: your wallet on Base has less than 50 USDC. Top it up and press the button again.',
+    );
+  });
+
+  it('for the native coin, the amount and the fee are one shortfall', () => {
+    for (const kind of ['no-gas', 'no-token'] as const)
+      expect(walletSendError(kind, eth, '')).toBe(
+        'Nothing was sent: your wallet needs 0.001 ETH on Base plus a little more for the network fee. Top it up and press the button again.',
+      );
+  });
+
+  it('says what the network answered for another refusal, and the declined case', () => {
+    expect(walletSendError('not-sent', usdc, 'execution reverted: blacklisted')).toBe(
+      'Nothing was sent: the network refused the transfer (execution reverted: blacklisted).',
+    );
+    expect(walletSendError('declined', usdc, '')).toBe(
+      'You declined in your wallet. Nothing was sent.',
+    );
   });
 });
 
