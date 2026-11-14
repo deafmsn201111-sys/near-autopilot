@@ -565,3 +565,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `events`. `GET /v1/admin/llm`: fallback rate by code, validation-error rate (`invalid_output`), p50/p95 latency
   (percentile_cont, in TS), top recommendation kinds the model picked, last 20 runs. Both behind `ADMIN_API_TOKEN`.
 - `/admin/funnel` and `/admin/llm` in the loopback admin container, with an admin nav; "no data yet" when empty.
+
+## #159 — 24 h range: outlier filter and one slim query
+
+- `range24hBps` takes the high-low range over a rolling median of five snapshots: one or two bad prints in a row no
+  longer raise a `volatility_spike`; a move that holds three snapshots (45 min) still does.
+- `snapshotPrices` groups price rows into per-snapshot consensus prices per asset; used by `range24hBps`,
+  `latestPrices` and `GET /v1/analytics/series/prices`.
+- The wallet observation reads the held tokens' history with one `priceSeries(since, assets)` query (slim columns,
+  asset filter) instead of one wide `priceHistory` query per token.
