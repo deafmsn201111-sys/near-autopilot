@@ -32,6 +32,7 @@
     "@near-autopilot/rhea-adapter": "workspace:*",
     "@near-autopilot/rhea-dcl-adapter": "workspace:*",
     "@near-autopilot/tx-execution": "workspace:*",
+    "@noble/curves": "1.9.7",
     "@noble/hashes": "1.8.0",
     "@scure/base": "1.2.6",
     "fastify": "^5.2.0",

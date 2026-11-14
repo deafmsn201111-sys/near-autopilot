@@ -1879,6 +1879,9 @@ main.page {
 .ai-clock {
   font-variant-numeric: tabular-nums;
 }
+.ai-replies code {
+  overflow-wrap: anywhere;
+}
 .ai-thinking {
   animation: ai-breathe 1.6s ease-in-out infinite;
 }

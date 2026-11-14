@@ -2,14 +2,15 @@
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  modelName,
   parseSaved,
   pipelineOf,
+  privacyMark,
   runAnalysis,
   type Analysis,
   type Pipeline,
   type TraceStep,
 } from '../lib/analysis-client';
+import { CopyButton } from './CopyButton';
 import { ago } from '../lib/format';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
@@ -285,7 +286,7 @@ function AiTrace({
   /** Why the model was not asked, built by code from the agents' lines. */
   why?: string | null;
 }) {
-  const { model, read, asked, trace, turns, checks, stage, ranking } = pipeline;
+  const { model, read, asked, trace, turns, checks, stage, ranking, privacy } = pipeline;
   const live = startedAt !== null;
   if (!live && trace.length === 0) {
     if (calledTools.length === 0) return null;
@@ -330,7 +331,7 @@ function AiTrace({
         </ol>
       </Panel>
     );
-  const who = model ? modelName(model) : 'The AI';
+  const mark = model ? privacyMark(privacy, model) : null;
   const current = stage;
   const state = (i: number): StageState =>
     i < current ? 'done' : i === current ? 'active' : 'pending';
@@ -345,11 +346,11 @@ function AiTrace({
         : `${plural(trace.length, 'agent')} ran`
       : asked.length > 0
         ? `Asking ${plural(asked.length, 'agent')}`
-        : `${who} picks the agents to ask`;
+        : 'The AI picks the agents to ask';
   const status = [
     'Reading the wallet on-chain',
-    asked.length > 0 ? agentsTitle : `${who} is choosing which agents to ask`,
-    `${who} is ranking the answers`,
+    asked.length > 0 ? agentsTitle : 'The AI is choosing which agents to ask',
+    'The AI is ranking the answers',
     'Code is checking the answer',
     'Done',
   ][current];
@@ -359,7 +360,14 @@ function AiTrace({
       <header>
         <h3>How the AI got here</h3>
         <span className="muted-note ai-clock" suppressHydrationWarning>
-          {model && `${modelName(model)} · `}
+          {mark && (
+            <>
+              <a href={mark.href} target="_blank" rel="noreferrer" title={mark.title}>
+                {mark.label}
+              </a>
+              {' · '}
+            </>
+          )}
           {live ? (
             <Elapsed since={startedAt} />
           ) : cachedAt ? (
@@ -394,7 +402,7 @@ function AiTrace({
         </Stage>
         <Stage
           state={state(2)}
-          title={state(2) === 'done' ? `${who} ranked them` : `${who} ranks them`}
+          title={state(2) === 'done' ? 'The AI ranked them' : 'The AI ranks them'}
         >
           {state(2) === 'active' && (
             <span className="ai-step-note ai-thinking">Ordering the answers and writing why…</span>
@@ -441,6 +449,12 @@ function AiTrace({
           )}
         </Stage>
       </ol>
+      {mark && mark.chatIds.length > 0 && (
+        <p className="muted-note ai-replies">
+          Reply ids, to check each signature on NEAR AI Cloud: <code>{mark.chatIds.join(' ')}</code>{' '}
+          <CopyButton text={mark.chatIds.join('\n')} label="Copy ids" />
+        </p>
+      )}
     </Panel>
   );
 }

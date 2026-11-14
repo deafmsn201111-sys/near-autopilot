@@ -85,6 +85,13 @@ const checksSchema = z.object({
   restored: z.number(),
   dropped: z.number(),
 });
+const privacySchema = z.object({
+  verified: z.boolean(),
+  reason: z.string().max(80).nullable(),
+  chatIds: z.array(z.string().max(200)).max(20),
+});
+export type Privacy = z.infer<typeof privacySchema>;
+
 const runSchema = z.object({
   model: z.string(),
   turns: z.number(),
@@ -93,6 +100,7 @@ const runSchema = z.object({
   read: readSchema,
   checks: checksSchema,
   ranking: z.string().max(300).nullable().catch(null),
+  privacy: privacySchema.nullable().catch(null).default(null),
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;
@@ -158,6 +166,8 @@ export type Pipeline = {
   stage: number;
   /** The model's sentence on why the cards are in this order, checked by code; only in a finished run. */
   ranking: string | null;
+  /** The TEE signature check; only in a finished run. */
+  privacy: Privacy | null;
 };
 
 export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
@@ -169,6 +179,7 @@ export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
   checks: run?.checks ?? null,
   stage: 4,
   ranking: run?.ranking ?? null,
+  privacy: run?.privacy ?? null,
 });
 
 const askedSchema = z.object({ tool: z.string(), agent: z.string() });
@@ -240,6 +251,7 @@ async function readStream(
     checks: null,
     stage: 0,
     ranking: null,
+    privacy: null,
   };
   let buffer = '';
   try {
@@ -306,14 +318,17 @@ export async function runAnalysis(
   };
 }
 
-const MODEL_NAMES: Record<string, string> = {
-  'z-ai/glm-5.3-flash': 'GLM 5.3 Flash',
-  // Analyses and spend rows saved before D38.
-  'claude-haiku-5-5': 'Claude Haiku 5.5',
-  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
-};
+const VERIFY_URL = 'https://cloud.near.ai/verify';
 
-/** "z-ai/glm-5.3-flash" → "GLM 5.3 Flash"; any other id is shown as is. */
-export function modelName(id: string): string {
-  return MODEL_NAMES[id] ?? id;
+/** The header's privacy mark. Only a run whose every reply was signed by the attested TEE key says "signed in TEE". */
+export function privacyMark(privacy: Privacy | null, model: string) {
+  if (!privacy) return null;
+  return {
+    label: privacy.verified ? 'Private AI · signed in TEE' : 'Private AI · signature not verified',
+    href: `${VERIFY_URL}?model=${encodeURIComponent(model)}`,
+    title: privacy.verified
+      ? 'Every reply was signed by the key NEAR AI Cloud’s attestation names for this model’s TEE. We check the signatures; the hardware quote is checked by NEAR AI’s verifier. Open the attestation.'
+      : `The TEE signature could not be verified: ${privacy.reason ?? 'unknown'}. Open the attestation on NEAR AI Cloud.`,
+    chatIds: privacy.chatIds,
+  };
 }

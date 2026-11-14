@@ -79,7 +79,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(27);
+    expect(applied.rows[0]?.n).toBe(28);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
