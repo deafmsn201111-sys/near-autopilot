@@ -871,6 +871,24 @@ tr.detail details[open] {
   color: var(--liq);
 }
 
+/* ---------------- admin form field */
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 16px;
+}
+.field input,
+.field select {
+  font: 14px var(--font);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-page);
+  color: var(--text-1);
+}
+
 /* ---------------- empty / error / loading */
 .state {
   display: flex;
