@@ -2685,25 +2685,42 @@ export function registerAccountView(
           tokens.isStorageRegistered(token, accountId(w.receiver)),
         ]);
         const human = Number(w.amount) / 10 ** w.decimals;
-        if (balance < w.amount)
+        let bounds: Promise<bigint> | undefined;
+        const storageMin = () =>
+          (bounds ??= viewer.view(token, 'storage_balance_bounds', {}).then((raw) => {
+            const b = z.object({ min: z.string().regex(/^\d{1,30}$/) }).safeParse(raw);
+            return b.success ? BigInt(b.data.min) : MAX_REGISTRATION_YOCTO + 1n;
+          }));
+        const oddStorage = () =>
+          reply
+            .code(409)
+            .send({ error: `${w.symbol} asks an unusual storage price; not registered by us` });
+        // A wNEAR quote spends the wallet's wNEAR first and wraps the native NEAR it lacks (#237); wrap.near takes
+        // its registration out of an unregistered wallet's first near_deposit, so that is wrapped on top.
+        let wrap = 0n;
+        if (balance < w.amount && token === WRAP_NEAR_ID) {
+          const [nativeYocto, selfRegistered] = await Promise.all([
+            native.getNativeBalance(account),
+            tokens.isStorageRegistered(token, account),
+          ]);
+          const registration = selfRegistered ? 0n : await storageMin();
+          if (registration > MAX_REGISTRATION_YOCTO) return oddStorage();
+          wrap = w.amount - balance + registration;
+          if (nativeYocto < wrap + BigInt(NEAR_RESERVE) * 10n ** 24n)
+            return reply.code(409).send({
+              error: `your wallet holds less NEAR than this quote sends, keeping ${NEAR_RESERVE} NEAR for fees`,
+            });
+        } else if (balance < w.amount)
           return reply
             .code(409)
             .send({ error: `your wallet holds less ${w.symbol} than this quote sends` });
-        let storageDeposit = 0n;
-        if (!registered) {
-          const bounds = z
-            .object({ min: z.string().regex(/^\d{1,30}$/) })
-            .safeParse(await viewer.view(token, 'storage_balance_bounds', {}));
-          storageDeposit = bounds.success ? BigInt(bounds.data.min) : MAX_REGISTRATION_YOCTO + 1n;
-          if (storageDeposit > MAX_REGISTRATION_YOCTO)
-            return reply
-              .code(409)
-              .send({ error: `${w.symbol} asks an unusual storage price; not registered by us` });
-        }
+        const storageDeposit = registered ? 0n : await storageMin();
+        if (storageDeposit > MAX_REGISTRATION_YOCTO) return oddStorage();
         const register =
-          storageDeposit > 0n
+          (wrap > 0n ? `wrap ${formatNear(wrap)} NEAR into wNEAR, ` : '') +
+          (storageDeposit > 0n
             ? `register the 1Click deposit address (${formatNear(storageDeposit)} NEAR, one-time) and `
-            : '';
+            : '');
         if (!(await w.claim()))
           return reply
             .code(409)
@@ -2714,6 +2731,7 @@ export function registerAccountView(
             receiver: w.receiver,
             amount: w.amount,
             storageDeposit,
+            wrap,
             preview: `In one transaction: ${register}send ${formatUnits(w.amount, w.decimals)} ${w.symbol} to the 1Click deposit address of your quote.`,
           }),
         ]);

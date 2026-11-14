@@ -196,6 +196,26 @@ describe('buildWithdrawTransfer', () => {
     ]);
   });
 
+  it('wraps native NEAR first on wrap.near, in the same transaction', () => {
+    const step = buildWithdrawTransfer({
+      token: accountId('wrap.near'),
+      receiver: DEPOSIT,
+      amount: 10n ** 24n,
+      storageDeposit: 0n,
+      wrap: 10n ** 24n,
+      preview: '',
+    });
+    expect(step.tx.receiverId).toBe('wrap.near');
+    expect(step.tx.actions[0]).toEqual({
+      type: 'FunctionCall',
+      methodName: 'near_deposit',
+      args: {},
+      gas: 10_000_000_000_000n,
+      deposit: 10n ** 24n,
+    });
+    expect(step.tx.actions.map((a) => a.methodName)).toEqual(['near_deposit', 'ft_transfer']);
+  });
+
   it('skips the registration when the address already holds storage', () => {
     const step = buildWithdrawTransfer({
       token: accountId(USDC),
@@ -312,18 +332,35 @@ describe('withdrawLookup', () => {
 
 describe('prepare withdraw_1click', () => {
   // ft_balance_of / storage_balance_of / storage_balance_bounds on the token, answered by method name.
-  const rpc = (views: Record<string, unknown>) =>
+  // A function view answers by its call's args; view_account answers with `native` yocto.
+  type Args = { account_id?: string };
+  type View = string | null | object | ((args: Args) => unknown);
+  const rpc = (views: Record<string, View>, native = 0n) =>
     ({
-      call: async (_: string, p: { method_name: string }) => ({
-        result: [...Buffer.from(JSON.stringify(views[p.method_name]))],
-        logs: [],
-      }),
+      call: async (
+        _: string,
+        p: { request_type: string; method_name: string; args_base64: string },
+      ) => {
+        if (p.request_type === 'view_account')
+          return { amount: native.toString(), locked: '0', storage_usage: 0 };
+        const v = views[p.method_name];
+        const args = JSON.parse(Buffer.from(p.args_base64, 'base64').toString()) as Args;
+        return {
+          result: [
+            ...Buffer.from(
+              JSON.stringify(typeof v === 'function' ? (v as (a: Args) => unknown)(args) : v),
+            ),
+          ],
+          logs: [],
+        };
+      },
     }) as unknown as NearRpcClient;
 
   const prepare = (
-    views: Record<string, unknown>,
+    views: Record<string, View>,
     o: Parameters<typeof depositDeps>[0] = {},
     deposit = depositDeps(o).deps,
+    native = 0n,
   ) =>
     buildAnalyticsServer({
       apiToken: API_TOKEN,
@@ -332,7 +369,7 @@ describe('prepare withdraw_1click', () => {
       now: () => NOW,
       deposit,
       mainnet: {
-        rpc: rpc(views),
+        rpc: rpc(views, native),
         burrowId: 'contract.main.burrow.near',
         rheaId: 'v2.ref-finance.near',
         pools: [],
@@ -394,5 +431,66 @@ describe('prepare withdraw_1click', () => {
 
   it('passes the lookup refusal through', async () => {
     expect((await prepare(views, { row: null })).statusCode).toBe(404);
+  });
+
+  describe('from native NEAR (wNEAR quote)', () => {
+    const NEAR = 10n ** 24n;
+    const REG = 1_250_000_000_000_000_000_000n;
+    const wnear = {
+      ...stored({ originAsset: 'nep141:wrap.near', amountIn: NEAR.toString() }),
+      status: null,
+    };
+    const near = (wallet: string, aliceRegistered = true) => ({
+      ft_balance_of: wallet,
+      storage_balance_of: ({ account_id }: { account_id?: string }) =>
+        account_id === ALICE && aliceRegistered ? { total: REG.toString(), available: '0' } : null,
+      storage_balance_bounds: { min: REG.toString(), max: null },
+    });
+    const TOKENS_WNEAR: OneClickToken[] = [
+      ...TOKENS,
+      {
+        assetId: 'nep141:wrap.near',
+        decimals: 24,
+        blockchain: 'near',
+        symbol: 'wNEAR',
+        contractAddress: 'wrap.near',
+      },
+    ];
+    const deps = () => {
+      const d = depositDeps({ row: wnear }).deps;
+      return { ...d, oneClick: { ...d.oneClick, tokens: async () => TOKENS_WNEAR } };
+    };
+    const methods = (res: { json: () => unknown }) =>
+      (res.json() as { transactions: { actions: { methodName: string; deposit: string }[] }[] })
+        .transactions[0]!.actions;
+
+    it('wraps only the wNEAR the wallet lacks, before the transfer, in one transaction', async () => {
+      const res = await prepare(near((NEAR / 4n).toString()), {}, deps(), 5n * NEAR);
+      expect(res.statusCode).toBe(200);
+      expect(methods(res).map((a) => a.methodName)).toEqual([
+        'near_deposit',
+        'storage_deposit',
+        'ft_transfer',
+      ]);
+      expect(methods(res)[0]!.deposit).toBe(((NEAR * 3n) / 4n).toString());
+    });
+
+    it('adds the wrap.near registration to the wrap when the wallet is not registered', async () => {
+      const res = await prepare(near('0', false), {}, deps(), 5n * NEAR);
+      expect(res.statusCode).toBe(200);
+      expect(methods(res)[0]!.deposit).toBe((NEAR + REG).toString());
+    });
+
+    it('does not wrap when the wallet already holds the wNEAR', async () => {
+      const res = await prepare(near(NEAR.toString()), {}, deps(), 0n);
+      expect(res.statusCode).toBe(200);
+      expect(methods(res).map((a) => a.methodName)).toEqual(['storage_deposit', 'ft_transfer']);
+    });
+
+    it('keeps 1 NEAR in the wallet for fees', async () => {
+      const res = await prepare(near('0'), {}, deps(), 2n * NEAR - 1n);
+      expect(res.statusCode).toBe(409);
+      expect(res.json<{ error: string }>().error).toMatch(/1 NEAR/);
+    });
   });
 });

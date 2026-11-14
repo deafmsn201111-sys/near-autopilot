@@ -11,7 +11,13 @@ import {
   type DepositQuote,
 } from '../lib/deposit';
 import { watchOriginWallets, type OriginWallet } from '../lib/hot-kit';
-import { requestWithdrawQuote, shareOf, WITHDRAW_CHAINS } from '../lib/withdraw';
+import {
+  requestWithdrawQuote,
+  shareOf,
+  withdrawSources,
+  WITHDRAW_CHAINS,
+  type WalletBalance,
+} from '../lib/withdraw';
 import {
   OriginWallets,
   REFUND_HINT,
@@ -22,12 +28,6 @@ import {
   useNow,
 } from './DepositDialog';
 import { PrepareDialog } from './PrepareDialog';
-
-/** A token the connected NEAR wallet holds, as the portfolio reports it (floored to at most 6 decimals). */
-export interface WalletBalance {
-  readonly token: string;
-  readonly amount: number;
-}
 
 const SHARES = [25, 50, 100] as const;
 // As the API's margin: the transfer must land well before 1Click's deadline.
@@ -64,6 +64,8 @@ function WithdrawQuote({
         <p>
           Sign one NEAR transaction within <b className="num">{remaining(left)}</b>: it sends {send}{' '}
           from <b>{account}</b> to the 1Click deposit address of this quote.
+          {q.origin.assetId === 'nep141:wrap.near' &&
+            ' Native NEAR your wallet lacks as wNEAR is wrapped first, in the same transaction.'}
         </p>
       )}
       <StatusLine q={q} />
@@ -158,11 +160,9 @@ export function WithdrawDialog({
   const [wallets, setWallets] = useState<OriginWallet[]>([]);
   useEffect(() => (opened ? watchOriginWallets(setWallets) : undefined), [opened]);
 
-  const held = (assets?.destinations ?? []).filter((d) =>
-    balances.some((b) => `nep141:${b.token}` === d.assetId && b.amount > 0),
-  );
+  const held = withdrawSources(assets?.destinations ?? [], balances);
   const chosen = held.find((d) => d.assetId === origin);
-  const balance = balances.find((b) => `nep141:${b.token}` === origin)?.amount ?? 0;
+  const balance = chosen?.balance ?? 0;
   const targets = (assets?.origins ?? []).filter((o) => o.chain === chain);
   const receive = targets.find((t) => t.assetId === destination);
   const chainName = CHAINS.find((c) => c.id === chain)?.name ?? chain;
@@ -194,9 +194,7 @@ export function WithdrawDialog({
     const r = await loadDepositAssets();
     if (!r.ok) return setError(r.error);
     setAssets(r.data);
-    const first = r.data.destinations.find((d) =>
-      balances.some((b) => `nep141:${b.token}` === d.assetId && b.amount > 0),
-    );
+    const first = withdrawSources(r.data.destinations, balances)[0];
     setOrigin(first?.assetId ?? '');
     const c = CHAINS.find((x) => r.data.origins.some((o) => o.chain === x.id));
     if (c) pickChain(c.id, r.data, first?.symbol);
