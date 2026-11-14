@@ -51,3 +51,27 @@ describe('prepare add_liquidity pool allowlist', () => {
     expect(res.statusCode).toBe(502);
   });
 });
+
+const swapInto = (tokenOut: string) =>
+  app.inject({
+    method: 'POST',
+    url: '/v1/wallet/prepare',
+    headers: { authorization: `Bearer ${TOKEN}` },
+    payload: {
+      account: 'alice.near',
+      intent: { action: 'swap', token: WNEAR, tokenOut, approxUsd: 10, maxSlippageBps: 50 },
+    },
+  });
+
+describe('prepare swap output (#274)', () => {
+  it('never swaps into a token outside our list, failing closed when Burrow cannot be read', async () => {
+    const res = await swapInto('usdc-airdrop.near');
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'usdc-airdrop.near is unverified: no swap into it' });
+  });
+
+  it('lets a token on our list through to the chain read', async () => {
+    const res = await swapInto(USDC);
+    expect(res.statusCode).toBe(502);
+  });
+});

@@ -78,6 +78,14 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('never swaps into the token it was handed, only into wNEAR or the pool stablecoin (#274)', () => {
+    for (const fromToken of ['usdc-airdrop.near', 'near', WRAP_NEAR, SWAP_STABLE]) {
+      const swap: RecommendationIntent = { action: 'swap', fromToken, approxUsd: 50 };
+      const out = (recommendationToPrepare(swap, ACC)?.intent as { tokenOut: string }).tokenOut;
+      expect([WRAP_NEAR, SWAP_STABLE]).toContain(out);
+    }
+  });
+
   it('maps reposition_dcl to the lpt id', () => {
     const r: RecommendationIntent = {
       action: 'reposition_dcl',

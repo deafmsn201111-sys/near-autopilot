@@ -116,6 +116,8 @@ function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
       <div className="ht-alloc">
         {isDebt ? (
           <span className="muted-note">Borrowed</span>
+        ) : r.verified === false ? (
+          <span className="muted-note">Not counted</span>
         ) : (
           <>
             <span className="track">
@@ -484,8 +486,9 @@ async function Portfolio({ sp }: { sp: Search }) {
             <div className="block-head" style={{ marginTop: 24 }}>
               <h2>Unverified tokens</h2>
               <span className="muted-note">
-                Not on our list: shown only, never used in a suggestion. Prices are estimates from
-                Rhea&apos;s indexer.
+                Not on our list: shown only, never used in a suggestion or swapped into, and kept
+                out of your total{t.unverifiedUsd ? ` (≈ ${money(t.unverifiedUsd, false)})` : ''}.
+                Prices are estimates from Rhea&apos;s indexer.
               </span>
             </div>
             <HoldingsTable rows={unverifiedRows} assetsTotal={assetsTotal} />

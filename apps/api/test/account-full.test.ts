@@ -118,7 +118,7 @@ interface Row {
   label?: string;
 }
 interface Body {
-  totals: { assetsUsd: number };
+  totals: { assetsUsd: number; unverifiedUsd: number };
   holdings: (Row & { token: string })[];
   positions: Row[];
   metrics: { concentration: { token: string } | null };
@@ -131,10 +131,12 @@ describe('GET /v1/analytics/account/:id reads the whole account', () => {
   it('values npro-validator.near: LP in an unlisted pool, unlisted tokens and native staking', async () => {
     const { body } = await read('6253046288164419544382378');
     const share = Number('6253046288164419544382378') / Number('7288694929996948835964691');
-    const lp = 741725.18937 * share * NPRO_USD + 51058.78278 * share * NEAR_USD;
-    const wallet = 413.41767 * NEAR_USD + 124901.31933 * NPRO_USD + 0.50196 * NEAR_USD;
+    const lpNear = 51058.78278 * share * NEAR_USD;
+    const wallet = 413.41767 * NEAR_USD + 0.50196 * NEAR_USD;
     const staking = (1021.69058 + 915.53968) * NEAR_USD;
-    expect(body.totals.assetsUsd).toBeCloseTo(lp + wallet + staking, -1);
+    const npro = (741725.18937 * share + 124901.31933) * NPRO_USD;
+    expect(body.totals.assetsUsd).toBeCloseTo(lpNear + wallet + staking, -1);
+    expect(body.totals.unverifiedUsd).toBeCloseTo(npro, -1);
 
     const rows: Row[] = [...body.holdings, ...body.positions];
     const byKey = (k: string) => rows.find((r) => (r.key ?? `${r.where}-${r.token}`) === k);
@@ -160,9 +162,9 @@ describe('GET /v1/analytics/account/:id reads the whole account', () => {
     expect(JSON.stringify(body.metrics)).not.toContain('spam.near');
   });
 
-  it('never offers an action on an unlisted token, even when it dominates the portfolio', async () => {
+  it('never counts or offers an action on an unlisted token, even when it dominates the portfolio', async () => {
     const { body } = await read('0');
-    expect(body.metrics.concentration?.token).toBe(NPRO);
+    expect(JSON.stringify(body.metrics)).not.toContain(NPRO);
     expect(JSON.stringify(body.recommendations)).not.toContain(NPRO);
     expect(JSON.stringify(body.actions)).not.toContain(NPRO);
   });

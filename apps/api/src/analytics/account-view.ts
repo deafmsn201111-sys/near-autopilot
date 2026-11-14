@@ -537,12 +537,18 @@ export interface PositionRow {
  * The one list of priced legs behind every total and percentage of the account view: wallet and Burrow holdings, Rhea
  * v1 + DCL liquidity split into its tokens, and liquid staking. A staking token is a wallet balance, so it counts
  * once: only when the wallet list does not already hold it. `positions` are the same legs grouped per LP position,
- * so the holdings and positions together add up to `totals.assetsUsd`.
+ * so the holdings and positions together add up to `totals.assetsUsd` plus `totals.unverifiedUsd`.
  */
 export function accountPortfolio(p: AccountPositions) {
   const legs: PortfolioLeg[] = [];
   const positions: PositionRow[] = [];
   const trust = p.trust ?? (() => ({ verified: true, estimate: false }));
+  // An unverified token can copy a real symbol and carry an inflated estimate: shown, never counted (#274).
+  let unverifiedUsd = 0;
+  const count = (l: PortfolioLeg, verified: boolean) => {
+    if (verified) legs.push(l);
+    else unverifiedUsd += l.usd;
+  };
   const position = (
     row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
@@ -553,7 +559,10 @@ export function accountPortfolio(p: AccountPositions) {
     let estimate = false;
     for (const x of parts)
       if (x.usd !== null && x.usd !== undefined && x.usd > 0) {
-        legs.push({ token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind });
+        count(
+          { token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind },
+          trust(x.token).verified,
+        );
         usd = (usd ?? 0) + x.usd;
         estimate ||= trust(x.token).estimate;
       }
@@ -569,13 +578,16 @@ export function accountPortfolio(p: AccountPositions) {
   };
   for (const h of p.holdings) {
     if (h.usd === null || h.usd <= 0) continue;
-    legs.push({
-      token: h.token,
-      symbol: h.symbol,
-      protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
-      usd: h.usd,
-      kind: h.where === 'borrowed' ? 'debt' : 'asset',
-    });
+    count(
+      {
+        token: h.token,
+        symbol: h.symbol,
+        protocol: h.where === 'wallet' ? 'Wallet' : 'Burrow',
+        usd: h.usd,
+        kind: h.where === 'borrowed' ? 'debt' : 'asset',
+      },
+      h.verified,
+    );
   }
   for (const v of p.v1Positions)
     position(
@@ -635,7 +647,7 @@ export function accountPortfolio(p: AccountPositions) {
     );
   const metrics = portfolioMetrics(legs);
   const idleUsd = p.holdings
-    .filter((h) => h.where === 'wallet')
+    .filter((h) => h.where === 'wallet' && h.verified)
     .reduce((s, h) => s + (h.usd ?? 0), 0);
   return {
     metrics,
@@ -645,6 +657,7 @@ export function accountPortfolio(p: AccountPositions) {
       debtUsd: metrics.totalDebtUsd,
       netWorthUsd: metrics.netUsd,
       idleUsd,
+      unverifiedUsd,
     },
   };
 }
@@ -2678,6 +2691,14 @@ export function registerAccountView(
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
     const { account, intent } = parsed.data;
+
+    // A fake token can copy a real symbol: a swap only ever pays out a token on our list (#274), fail closed.
+    if (
+      intent.action === 'swap' &&
+      !isKnownToken(intent.tokenOut) &&
+      !(await burrow.listAssets().catch(() => [])).some((a) => a.tokenId === intent.tokenOut)
+    )
+      return reply.code(409).send({ error: `${intent.tokenOut} is unverified: no swap into it` });
 
     if (intent.action === 'withdraw_1click') {
       if (!deps.withdraw) return reply.code(404).send({ error: 'withdrawals are unavailable' });

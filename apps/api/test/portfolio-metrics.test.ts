@@ -102,7 +102,13 @@ describe('accountPortfolio', () => {
   });
 
   it('counts wallet, Burrow and LP once each, and a wallet-held staking token once', () => {
-    expect(p.totals).toEqual({ assetsUsd: 108, debtUsd: 20, netWorthUsd: 88, idleUsd: 50 });
+    expect(p.totals).toEqual({
+      assetsUsd: 108,
+      debtUsd: 20,
+      netWorthUsd: 88,
+      idleUsd: 50,
+      unverifiedUsd: 0,
+    });
     expect(p.metrics.totalAssetsUsd).toBe(p.totals.assetsUsd);
     expect(p.metrics.byToken.find((t) => t.symbol === 'stNEAR')?.usd).toBe(4);
   });
@@ -146,6 +152,37 @@ describe('accountPortfolio', () => {
     });
     expect(q.positions.map((r) => r.usd)).toEqual([null, 100]);
     expect(q.totals.assetsUsd).toBe(100);
+  });
+
+  it('keeps unverified tokens out of every total and reports their estimate apart (#274)', () => {
+    const fake = 'usdc-airdrop.near';
+    const q = accountPortfolio({
+      holdings: (
+        [
+          { where: 'wallet', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
+          { where: 'wallet', token: fake, symbol: 'USDC', amount: 5000, usd: 5000 },
+        ] as const
+      ).map((h) => ({
+        ...h,
+        verified: h.token === USDC,
+        estimate: h.token !== USDC,
+        small: false,
+      })),
+      staking: [],
+      v1Positions: [
+        { poolId: 9, tokens: [USDC, fake], symbols: ['USDC', 'USDC'], usdPerToken: [3, 700] },
+      ],
+      dclPositions: [],
+      trust: (t) => ({ verified: t !== fake, estimate: t === fake }),
+    });
+    expect(q.totals).toMatchObject({
+      assetsUsd: 13,
+      netWorthUsd: 13,
+      idleUsd: 10,
+      unverifiedUsd: 5700,
+    });
+    expect(q.metrics.byToken.map((t) => t.token)).toEqual([USDC]);
+    expect(q.positions).toMatchObject([{ key: 'v1-9', usd: 703, verified: false, estimate: true }]);
   });
 
   it('counts a staking token the wallet list does not hold', () => {
