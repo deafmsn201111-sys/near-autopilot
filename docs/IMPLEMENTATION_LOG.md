@@ -742,4 +742,4 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   in Next 15.5 (the RSC fetch returns in ~20 ms, but no render lands), so the `useTransition` around it kept
   "Checking your signature…" until a later `AutoRefresh` render happened to commit (12 s to over a minute).
 - `OwnershipCheck` keeps its own `checking` state and re-renders every 2 s (`lib/ownership-refresh.ts`) until the page
-  shows verified or the check failed; after 20 s it says the signature was not accepted. Verified showed in ~2 s.
+  shows verified or the check failed; after 12 s it says it is not verified yet. Verified showed in ~2 s.
