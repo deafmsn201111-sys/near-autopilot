@@ -807,6 +807,12 @@ the same token) is taken off the amount the popup shows as received; no screen o
 with the exchange path).
 `GET /v1/deposit/transfer/:id`, its `retry` and the dialog's send are removed. The once-only flag
 (`transfer_issued_at`) stays: withdrawals claim it. No exchange (by-address) path: cut by the owner.
-**Consequences:** no new caps and no server code on the deposit path; our deposit quote endpoints have no UI any more.
+hex-api.app, the kit's only backend, answers browsers only from HOT's own origins (CORS 403 for ours, 200 without an
+Origin), so `loadKit` points the kit's 1Click client (`oneClick.baseUrl`) and market relay at our same-origin proxy
+`app/api/hex/[...path]/route.ts`. It forwards only the bridge's paths (market prices / tokens / trending; 1Click
+tokens, status, quote, deposit/submit) to hex-api without the visitor's origin or cookies, rate-limited per visitor
+and overall, POST bodies JSON and at most 16 KB (checked on `Content-Length` before reading). The kit still verifies
+every 1Click quote signature itself, so the proxy cannot forge a quote.
+**Consequences:** no new caps; the only server code on the deposit path is that pass-through proxy; our deposit quote endpoints have no UI any more.
 A failed non-1:1 swap may refund to the user's HOT balance, which the portfolio does not show (KNOWN_ISSUES). The kit
 popups take the page's design tokens at load (`pageTheme`).

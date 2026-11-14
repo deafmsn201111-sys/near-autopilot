@@ -23,7 +23,9 @@ async function call(
     headers: {
       origin: 'https://near-autopilot.tech',
       cookie: 'np_account=alice.near',
-      ...(body !== undefined ? { 'content-type': contentType } : {}),
+      ...(body !== undefined
+        ? { 'content-type': contentType, 'content-length': String(body.length) }
+        : {}),
     },
     ...(body !== undefined ? { body } : {}),
   });
@@ -76,6 +78,13 @@ describe('/api/hex proxy to hex-api (D42)', () => {
     expect((await call('POST', 'market/v1/1click/v0/quote', 'x', 'text/plain')).status).toBe(415);
     const big = JSON.stringify({ pad: 'x'.repeat(20_000) });
     expect((await call('POST', 'market/v1/1click/v0/quote', big)).status).toBe(413);
+    const route = await import('../app/api/hex/[...path]/route');
+    const unsized = new Request('http://localhost/api/hex/market/v1/1click/v0/quote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect((await route.POST(unsized)).status).toBe(413);
     expect(upstream).not.toHaveBeenCalled();
   });
 

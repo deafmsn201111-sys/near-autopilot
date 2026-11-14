@@ -841,3 +841,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   and its error parsing, the deposit quote / incidents / transfer proxies, `GET /v1/deposit/transfer/:id` and
   `issueTransfer`'s `retry`. Withdraw keeps the status line, token picker and wallet address fill.
 - `test/signing-lock.test.ts`: no source asks an origin wallet to send; `.openBridge(` only in `lib/hot-kit.ts`.
+- hex-api.app refuses our origin (CORS 403), so the kit's 1Click and market calls go through `/api/hex/[...path]`: an
+  allowlisted, rate-limited pass-through without the visitor's origin or cookies. Checked on a local stack: prices
+  load and a quote reaches 1Click.
