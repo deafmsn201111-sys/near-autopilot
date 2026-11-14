@@ -688,3 +688,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   at once and refreshed in the background, one shared read, last answer kept and a minute's pause after an error.
 - `apps/api/src/analytics/deposit.ts`: `lists()` drops unsafe or unreadable Solana tokens, so neither the asset list
   nor a quote offers them (D32). New env `SOLANA_RPC_URL`.
+
+## 2026-11-14 — HOT Kit foundation (#169)
+
+- `@hot-labs/kit@2.0.0` (exact) in `apps/analytics`; `lib/hot-kit.ts` creates one `HotKit` lazily (EVM + Solana
+  connectors), exposes connect per chain, disconnect and a wallets listener. D33.
+- Deposit dialog: **Connect EVM wallet** / **Connect Solana wallet**, address and **Disconnect**; the kit loads when the
+  dialog first opens. The `<dialog>` goes non-modal while a kit popup is open (top-layer inertness).
+- Kit 2.0.0 bug worked around: the all-chains picker's promise never settles when the nested picker is closed.

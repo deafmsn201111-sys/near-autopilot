@@ -971,6 +971,16 @@ tr.detail details[open] {
   gap: 6px;
   flex-wrap: wrap;
 }
+.origin-wallets,
+.origin-wallet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.origin-wallets {
+  margin-bottom: 14px;
+}
 .chain-chips {
   display: flex;
   flex-wrap: wrap;

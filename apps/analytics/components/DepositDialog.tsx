@@ -20,6 +20,12 @@ import {
   type DepositQuote,
   type DepositStatus,
 } from '../lib/deposit';
+import {
+  connectOriginWallet,
+  disconnectOriginWallet,
+  watchOriginWallets,
+  type OriginWallet,
+} from '../lib/hot-kit';
 import { paymentUri } from '../lib/payment-uri';
 import { poll, tabHidden } from '../lib/polling';
 import { TokenIcon } from './TokenIcon';
@@ -443,6 +449,61 @@ function TokenButton({
   );
 }
 
+const CHAIN_LABEL: Record<OriginWallet['chain'], string> = { evm: 'EVM', solana: 'Solana' };
+const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
+
+/** EVM / Solana wallets through HOT Kit; mounted only once the dialog has opened, so the kit loads only then. */
+function OriginWallets() {
+  const [wallets, setWallets] = useState<OriginWallet[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => watchOriginWallets(setWallets), []);
+
+  // A modal <dialog> sits in the top layer and makes the kit's picker inert: drop to non-modal while it is open.
+  async function connect(chain: OriginWallet['chain'], dialog: HTMLDialogElement | null) {
+    setBusy(true);
+    dialog?.close();
+    dialog?.show();
+    try {
+      await connectOriginWallet(chain);
+    } finally {
+      dialog?.close();
+      dialog?.showModal();
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="origin-wallets">
+      {wallets.map((w) => (
+        <span key={w.chain} className="origin-wallet">
+          <span className="muted-note">{CHAIN_LABEL[w.chain]}</span>{' '}
+          <code title={w.address}>
+            {w.address.slice(0, 6)}…{w.address.slice(-4)}
+          </code>{' '}
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={() => void disconnectOriginWallet(w)}
+          >
+            Disconnect
+          </button>
+        </span>
+      ))}
+      {ORIGIN_CHAINS.filter((c) => !wallets.some((w) => w.chain === c)).map((c) => (
+        <button
+          key={c}
+          type="button"
+          className="btn secondary small"
+          disabled={busy}
+          onClick={(e) => void connect(c, e.currentTarget.closest('dialog'))}
+        >
+          Connect {CHAIN_LABEL[c]} wallet
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Fund the connected NEAR account from another chain through 1Click. The server checks the refund address, verifies
  * the 1Click quote and only then returns a deposit address; the user sends to it from their own wallet on that chain.
@@ -476,6 +537,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
       clearInterval(timer);
     };
   }, [origin, destination]);
+  const [opened, setOpened] = useState(false);
 
   const chosen = assets?.origins.find((o) => o.assetId === origin);
   const receive = assets?.destinations.find((d) => d.assetId === destination);
@@ -495,6 +557,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
 
   async function open() {
     ref.current?.showModal();
+    setOpened(true);
     if (assets) return;
     setError(null);
     const r = await loadDepositAssets();
@@ -578,6 +641,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
               Through NEAR Intents 1Click. You get a one-time address on the chain you pick and send
               to it from your own wallet there; it arrives in <b>{account}</b>.
             </p>
+            {opened && <OriginWallets />}
             <div className="chain-chips" role="radiogroup" aria-label="Network">
               {chains.map((c) => (
                 <button

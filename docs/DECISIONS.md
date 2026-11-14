@@ -602,3 +602,24 @@ offered. `HttpJsonClient`'s timeout now also covers the body, so a stalled RPC c
 NEARKAT has a non-harmless extension.
 **Consequences:** One more outbound, read-only call from the analytics API. If the Solana RPC is down from start,
 only native SOL is offered on Solana. EVM fee-on-transfer tokens are not detected.
+
+## D33 — HOT Kit is the origin-chain wallet connector (#169)
+
+**Context:** #169. Deposit, withdraw and Google login (#126, #171, #172) need wallets on other chains. HOT Kit
+(`@hot-labs/kit`) 2.0.0 (13 Nov 2026) connects EVM, Solana, TON, Stellar, TRON, BTC and more with no API key.
+**Decision:** `@hot-labs/kit` pinned to exactly `2.0.0` in `apps/analytics`, used only in `lib/hot-kit.ts`: one lazily
+created `HotKit` with the EVM and Solana connectors only, imported on first use (the deposit dialog), never on page
+load. The kit's NEAR connector is left out: its session restore reads near-connect's `selected-wallet` key, and the
+NEAR wallet stays in `lib/wallet.ts`. One picker per chain (`kit.connect(WalletType.EVM | SOLANA)`), because in 2.0.0
+the all-chains picker never settles when its nested chain picker is closed. While a kit popup is open the deposit
+`<dialog>` drops to non-modal, or the top layer makes the popup inert. No WalletConnect `projectId` (browser
+wallets only; it would be a build-time `NEXT_PUBLIC_` variable), no Next polyfills needed, no CSP change.
+**What it calls:** by default only hex-api (`hex-api.app`: EVM/Solana RPC, prices and token lists, 1Click proxy;
+`mpc.hex-api.app`: intents relay) and public chain RPCs; connecting itself fetched only wallet icons
+(`storage.herewallet.app`, `tgapp.herewallet.app`). No telemetry. Our 1Click quote and status path stays ours.
+**#172 finding:** Google login (`@hot-labs/kit/privy`) needs our own Privy app (`appId`) and gives a NEAR implicit
+account whose ed25519 key never leaves Privy's TEE; it can `signAndSendTransaction`, so Privy, not the user's device,
+holds the key.
+**Consequences:** HOT Kit adds ~1.1 MB of lazy chunks (the core chunk ~110 kB gzip) to the deposit dialog only. The
+kit adds no signing path in this step; #126 decides where the origin-chain transfer lives and extends
+`test/signing-lock.test.ts`.
