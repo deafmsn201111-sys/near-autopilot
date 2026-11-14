@@ -179,6 +179,8 @@ export interface Analysis {
   readonly trace: readonly TraceStep[];
   /** The model run behind an AI ranking; null for the rule-based list. */
   readonly run: RunSummary | null;
+  /** What the agents read, also when no model ran; null when they did not run. */
+  readonly read: RunSummary['read'] | null;
   /** When the reused AI result was computed; null for a fresh run or the rule-based list. */
   readonly cachedAt: string | null;
 }
@@ -770,6 +772,7 @@ export async function analyseAccount(
     calledTools: [],
     trace: [],
     run: null,
+    read: null,
     cachedAt: null,
   });
   if (!ai) return fallback('off');
@@ -853,6 +856,10 @@ export async function analyseAccount(
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS)
     return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  const read = {
+    tokens: heldTokens(obs).size,
+    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+  };
   // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
   if (ctx.heuristics.length === 0) {
     const offered = new Map<string, PortfolioRecommendation>();
@@ -869,16 +876,13 @@ export async function analyseAccount(
           .map((t) => t.text)
           .join(' · '),
         trace,
+        read,
       });
     }
   }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));
-  const read = {
-    tokens: heldTokens(obs).size,
-    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
-  };
   onEvent({ type: 'read', model: ai.model, ...read });
 
   // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
@@ -1067,6 +1071,7 @@ export async function analyseAccount(
       read,
       checks,
     },
+    read,
     cachedAt: null,
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });

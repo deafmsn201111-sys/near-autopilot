@@ -538,6 +538,7 @@ describe('analyseAccount', () => {
     });
     expect(tools).toEqual([]);
     expect(out.fallback).toBe('nothing_to_rank');
+    expect(out.read).toEqual({ tokens: 2, loan: true });
     expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
       'Health factor 1.37; safe from 1.25 on Aggressive',
     );

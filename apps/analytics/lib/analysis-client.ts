@@ -111,6 +111,7 @@ const analysisSchema = z.object({
   calledTools: z.array(z.string()).default([]),
   trace: z.array(traceStepSchema).default([]),
   run: runSchema.nullable().catch(null),
+  read: readSchema.nullable().catch(null).default(null),
   cachedAt: z.string().nullable().catch(null).default(null),
 });
 
@@ -122,6 +123,8 @@ export type Analysis = {
   calledTools: string[];
   trace: TraceStep[];
   run: z.infer<typeof runSchema> | null;
+  /** What the agents read, also when no model ran. */
+  read: z.infer<typeof readSchema> | null;
   cachedAt: string | null;
 };
 
@@ -136,9 +139,9 @@ export type Pipeline = {
   checks: z.infer<typeof checksSchema> | null;
 };
 
-export const pipelineOf = ({ run, trace }: Analysis): Pipeline => ({
+export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
   model: run?.model ?? null,
-  read: run?.read ?? null,
+  read: run?.read ?? read,
   asked: trace.map(({ tool, agent }) => ({ tool, agent })),
   trace,
   turns: run?.turns ?? null,
