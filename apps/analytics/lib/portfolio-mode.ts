@@ -11,6 +11,8 @@ export interface PortfolioMode {
   label: string;
   note: string;
   mine: boolean;
+  /** The connected wallet to go back to while another account is open; null otherwise. */
+  backTo: string | null;
 }
 
 export function portfolioMode({
@@ -25,6 +27,7 @@ export function portfolioMode({
       label: 'Demo portfolio · simulated',
       note: 'Explore only: a simulated portfolio, not a real account.',
       mine: false,
+      backTo: null,
     };
 
   const ai = verified ? ' AI analysis available.' : '';
@@ -35,15 +38,17 @@ export function portfolioMode({
       label: 'Mainnet account · read-only',
       note: `${whose}${signingEnabled ? "Prepare only: the account's owner signs in their own wallet." : signingOff}${ai}`,
       mine: false,
+      backTo: connected || null,
     };
   }
 
   const act = signingEnabled ? 'Prepare and sign in your wallet.' : signingOff;
   return verified
-    ? { label: 'Your wallet · ownership verified', note: `${act}${ai}`, mine: true }
+    ? { label: 'Your wallet · ownership verified', note: `${act}${ai}`, mine: true, backTo: null }
     : {
         label: 'Your wallet',
         note: verified === null ? act : `${act} Verify ownership to unlock AI analysis.`,
         mine: true,
+        backTo: null,
       };
 }
