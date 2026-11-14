@@ -82,6 +82,27 @@ describe('NearAiToolLlm', () => {
     ]);
   });
 
+  it('reads tool calls that finish on stop, and blank arguments as no input', async () => {
+    const blank = { ...call('t1'), function: { name: 'echo', arguments: '' } };
+    const fetch = fakeFetch(
+      reply('stop', { role: 'assistant', content: null, tool_calls: [blank] }),
+    );
+    await expect(
+      new NearAiToolLlm(fetch, config).open({ system: 's', prompt: 'p', tools: [tool] }).send(null),
+    ).resolves.toEqual({ kind: 'tool_calls', calls: [{ id: 't1', name: 'echo', input: {} }] });
+  });
+
+  it('reports the usage of a reply whose body then fails the schema', async () => {
+    const fetch = fakeFetch({ choices: [], usage: { prompt_tokens: 900, completion_tokens: 40 } });
+    const usage: unknown[] = [];
+    await expect(
+      new NearAiToolLlm(fetch, config)
+        .open({ system: 's', prompt: 'p', tools: [], onUsage: (u) => usage.push(u) })
+        .send(null),
+    ).rejects.toThrow();
+    expect(usage).toEqual([{ inputTokens: 900, outputTokens: 40 }]);
+  });
+
   it('marks a failed tool result as an error for the model', async () => {
     const fetch = fakeFetch(
       reply('tool_calls', { role: 'assistant', content: null, tool_calls: [call('t1')] }),
@@ -131,6 +152,14 @@ describe('NearAiToolLlm', () => {
       .send(null);
     await expect(send).rejects.toThrow('402');
     await expect(send).rejects.not.toThrow('secret');
+  });
+
+  it('fails closed on a reply without usage, so the call is booked at its worst case', async () => {
+    const { usage: _, ...noUsage } = reply('stop', { role: 'assistant', content: '{}' });
+    const fetch = fakeFetch(noUsage);
+    await expect(
+      new NearAiToolLlm(fetch, config).open({ system: 's', prompt: 'p', tools: [] }).send(null),
+    ).rejects.toThrow();
   });
 
   it('fails closed on a reply that is not a chat completion', async () => {

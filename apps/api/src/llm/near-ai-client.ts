@@ -20,6 +20,15 @@ const toolCallSchema = z.object({
   function: z.object({ name: z.string(), arguments: z.string() }),
 });
 
+// Read before the rest of the reply is checked, so a reply that then fails is still booked at its real cost. Required:
+// a reply without usage throws, so the caller books the call at its worst case instead of at nothing.
+const usageSchema = z.object({
+  usage: z.object({
+    prompt_tokens: z.number().int().nonnegative(),
+    completion_tokens: z.number().int().nonnegative(),
+  }),
+});
+
 const completionSchema = z.object({
   id: z.string(),
   choices: z
@@ -33,7 +42,6 @@ const completionSchema = z.object({
       }),
     )
     .min(1),
-  usage: z.object({ prompt_tokens: z.number(), completion_tokens: z.number() }).optional(),
 });
 
 type ChatMessage =
@@ -69,7 +77,7 @@ export class NearAiToolLlm implements ToolLlm {
             tool_call_id: r.id,
             content: r.isError ? `Error: ${r.content}` : r.content,
           });
-        const reply = await this.post(
+        const raw = await this.post(
           {
             model: this.config.model,
             max_tokens: this.config.maxTokens,
@@ -79,13 +87,17 @@ export class NearAiToolLlm implements ToolLlm {
           },
           request.signal,
         );
-        if (reply.usage)
-          request.onUsage?.({
-            inputTokens: reply.usage.prompt_tokens,
-            outputTokens: reply.usage.completion_tokens,
-          });
-        const { finish_reason, message } = reply.choices[0]!;
-        if (finish_reason === 'tool_calls' && message.tool_calls?.length) {
+        const { usage } = usageSchema.parse(raw);
+        request.onUsage?.({
+          inputTokens: usage.prompt_tokens,
+          outputTokens: usage.completion_tokens,
+        });
+        const { finish_reason, message } = completionSchema.parse(raw).choices[0]!;
+        // Some vLLM tool parsers finish a tool request on `stop`; the tool calls decide, not the finish reason.
+        if (
+          (finish_reason === 'tool_calls' || finish_reason === 'stop') &&
+          message.tool_calls?.length
+        ) {
           messages.push({
             role: 'assistant',
             content: message.content ?? null,
@@ -94,7 +106,8 @@ export class NearAiToolLlm implements ToolLlm {
           const calls = message.tool_calls.map((c) => ({
             id: c.id,
             name: c.function.name,
-            input: JSON.parse(c.function.arguments) as unknown,
+            // A function with no parameters may come back with `arguments: ""`.
+            input: JSON.parse(c.function.arguments.trim() || '{}') as unknown,
           }));
           return { kind: 'tool_calls', calls };
         }
@@ -122,7 +135,7 @@ export class NearAiToolLlm implements ToolLlm {
     const text = await res.text();
     // The body is not echoed: it may carry account details and ends up in logs.
     if (!res.ok) throw new Error(`NEAR AI Cloud answered HTTP ${res.status}`);
-    return completionSchema.parse(JSON.parse(text));
+    return JSON.parse(text) as unknown;
   }
 }
 

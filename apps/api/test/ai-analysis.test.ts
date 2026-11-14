@@ -152,7 +152,7 @@ const ai = (llm: ToolLlm, l: ToolLlmDeps['ledger'] = ledger()): ToolLlmDeps => (
   ledger: l,
   memo: analysisMemo(),
 });
-/** Haiku 5.5, 100K input + 4096 output: the most one call may cost. */
+/** GLM 5.3 Flash, 100K input + 4096 output: the most one call may cost. */
 const WORST_CALL_MICRO = 10_048n;
 const ctx = { accountId: ALICE, observe: async () => observation(), ownerVerified: true };
 
@@ -2114,7 +2114,7 @@ describe('analyseAccount', () => {
       expect(l.rows).toMatchObject([{ costMicroUsd: 260n }]);
     });
 
-    it('never sends a request that could go over 100K input tokens (the long-context rate)', async () => {
+    it('never sends a request that could go over 100K input tokens', async () => {
       let sends = 0;
       const big: ToolLlm = {
         open: (req) => ({

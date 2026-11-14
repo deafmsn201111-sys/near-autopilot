@@ -204,11 +204,11 @@ function admit(memo: AnalysisMemo, now = Date.now()): boolean {
 }
 
 /**
- * The most input one model call may send: the last token at the base rate (Haiku bills a prompt above 100K at 5x). A
- * request that could go over it is never sent, so one worst-case call (this input + the reply cap) bounds any call.
+ * The most input one model call may send (a real run sends about 3K; GLM 5.3 Flash takes 1M). A request that could go
+ * over it is never sent, so one worst-case call (this input + the reply cap) bounds the cost of any call.
  */
 const WORST_CASE_INPUT_TOKENS = 100_000;
-// ponytail: a generous margin for the API's tool-use framing; measure with count_tokens if requests near the bound.
+// ponytail: a generous margin for the API's tool-use framing; measure it if requests near the bound.
 const REQUEST_OVERHEAD_TOKENS = 2_000;
 /** A token is at least one byte, so UTF-8 bytes bound the tokens from above. */
 const tokenBound = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
