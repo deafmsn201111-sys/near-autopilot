@@ -44,6 +44,17 @@ export interface Holding {
   readonly small: boolean;
 }
 
+/** Each Burrow row with today's rate as a percentage (supply on deposits and collateral, borrow on loans); null unrated. */
+export const ratedHoldings = <H extends Pick<Holding, 'where' | 'token'>>(
+  holdings: readonly H[],
+  rate: (token: string, field: 'netSupplyApr' | 'borrowApr') => number | null,
+) =>
+  holdings.map((h) => {
+    if (h.where === 'wallet') return h;
+    const r = rate(h.token, h.where === 'borrowed' ? 'borrowApr' : 'netSupplyApr');
+    return { ...h, aprPct: r === null ? null : Math.round(r * 10_000) / 100 };
+  });
+
 /** Below this a row sits behind "show small balances". */
 export const SMALL_USD = 1;
 const DUST_AMOUNT = 0.005;

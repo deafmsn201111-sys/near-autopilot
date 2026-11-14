@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ratedHoldings } from '../src/analytics/account';
 import { accountPortfolio, portfolioMetrics } from '../src/analytics/account-view';
 
 const leg = (
@@ -204,5 +205,54 @@ describe('accountPortfolio', () => {
         usd: 5,
       },
     ]);
+  });
+});
+
+describe('holdings-table statuses', () => {
+  const h = (where: 'wallet' | 'deposited' | 'collateral' | 'borrowed', token: string) => ({
+    where,
+    token,
+    symbol: token,
+    amount: 1,
+    usd: 1,
+    verified: true,
+    estimate: false,
+    small: false,
+  });
+
+  it('rates each Burrow row as a percentage: supply on deposits and collateral, borrow on loans', () => {
+    const rates: Record<string, { netSupplyApr: number; borrowApr: number }> = {
+      usdc: { netSupplyApr: 0.085, borrowApr: 0.136 },
+    };
+    const rows = ratedHoldings(
+      [h('wallet', 'usdc'), h('deposited', 'usdc'), h('borrowed', 'usdc'), h('collateral', 'x')],
+      (t, f) => rates[t]?.[f] ?? null,
+    );
+    expect(rows.map((r) => ('aprPct' in r ? r.aprPct : 'none'))).toEqual(['none', 8.5, 13.6, null]);
+  });
+
+  it('marks a DCL position in or out of range', () => {
+    const dcl = (lptId: string, inRange: boolean) => ({
+      lptId,
+      poolId: 'p',
+      tokenX: 'a',
+      tokenY: 'b',
+      symbolX: 'A',
+      symbolY: 'B',
+      amountX: 1,
+      amountY: 1,
+      usdX: 1,
+      usdY: 1,
+      usd: 2,
+      range: { left: 0, right: 1 },
+      inRange,
+    });
+    const { positions } = accountPortfolio({
+      holdings: [],
+      staking: [],
+      v1Positions: [],
+      dclPositions: [dcl('1', true), dcl('2', false)],
+    });
+    expect(positions.map((p) => p.inRange)).toEqual([true, false]);
   });
 });

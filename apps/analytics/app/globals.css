@@ -2721,56 +2721,7 @@ main.page {
   box-shadow: none;
 }
 
-/* ---- holdings table ---- */
-.holdings-table {
-  background: var(--bg-surface);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: var(--elev-1);
-}
-.ht-head,
-.ht-row {
-  display: grid;
-  grid-template-columns: 2.4fr 1.3fr 1.2fr 1fr;
-  align-items: center;
-  gap: 16px;
-  padding: 0 26px;
-}
-.ht-head {
-  height: 46px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-raised);
-}
-.ht-head span {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-.ht-head .r,
-.ht-row .r {
-  text-align: right;
-  justify-self: end;
-}
-.ht-row {
-  height: 72px;
-  border-bottom: 1px solid var(--line);
-  transition: background 0.12s ease;
-}
-.ht-row:last-child {
-  border-bottom: none;
-}
-.ht-row:hover {
-  background: var(--accent-muted);
-}
-.ht-asset {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
+/* ---- token icons ---- */
 .token-icon {
   border-radius: 50%;
   flex: none;
@@ -2793,67 +2744,8 @@ main.page {
   margin-left: var(--overlap);
   box-shadow: 0 0 0 2px var(--bg-surface);
 }
-.ht-asset .nm {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-.ht-asset .sub {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.ht-qty {
-  font-size: 14.5px;
-  color: var(--text-1);
-  font-weight: 500;
-}
-.ht-alloc {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.ht-alloc .track {
-  flex: 1;
-  height: 6px;
-  max-width: 130px;
-  border-radius: 4px;
-  background: var(--bg-page);
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.ht-alloc .fill {
-  display: block;
-  height: 100%;
-  border-radius: 4px;
-  background: var(--accent);
-}
-.ht-alloc .pc {
-  width: 46px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text-2);
-}
-.ht-val {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-.ht-foot {
-  margin-top: 14px;
-  padding: 0 4px;
-}
 
 /* ---- responsive ---- */
-@media (max-width: 720px) {
-  .ht-head,
-  .ht-row {
-    grid-template-columns: 2fr 1fr 1fr;
-    padding: 0 16px;
-  }
-  .ht-alloc {
-    display: none;
-  }
-}
 
 /* ---- demo analysis cards + decision log: match the account view's panel surfaces ---- */
 .action,
@@ -2918,36 +2810,6 @@ main.page {
 .recs:has(> .rec:only-child) > .rec,
 .actions-list:has(> .action:only-child) > .action {
   flex: 1 1 auto;
-}
-
-/* ---- holdings: unverified badge, "show all" and "show small balances" ---- */
-.ht-badge {
-  margin-left: 8px;
-  padding: 1px 7px;
-  border-radius: 6px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-3);
-  border: 1px solid var(--line);
-  vertical-align: middle;
-}
-.ht-more summary,
-.ht-small summary {
-  cursor: pointer;
-  padding: 14px 26px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-.ht-more[open] summary {
-  border-bottom: 1px solid var(--line);
-}
-.ht-small {
-  margin-top: 12px;
-}
-.ht-small summary {
-  padding: 8px 4px;
 }
 
 .hero-mode {
@@ -5338,7 +5200,7 @@ dialog.sheet.closing::backdrop {
   color: var(--liq);
 }
 /* A holding whose amount changed after a signed move remounts (its key carries the amount) and flashes once. */
-html[data-refreshing] .ht-row {
+html[data-refreshing] .hold-t tr[data-row] {
   animation: row-flash 1.6s ease-out;
 }
 @keyframes row-flash {
@@ -5542,5 +5404,243 @@ html[data-refreshing] .ht-row {
   }
   .an-fail {
     margin-inline: var(--s4);
+  }
+}
+
+/* ------------------------------------------------------------------ holdings (DESIGN.md → Layout, prototype .hold) */
+.ds-panel.hold {
+  padding: 0;
+  overflow: hidden;
+  margin-top: var(--s8);
+}
+.hold-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2) var(--s4);
+  padding: var(--s4) var(--s6);
+}
+.hold-head h2 {
+  margin: 0;
+  font-size: var(--fs-h);
+}
+.hold-head span {
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+.hold-callout {
+  margin: 0 var(--s6) var(--s4);
+}
+.hold-t th,
+.hold-t td {
+  position: static;
+  padding: 0 var(--s3);
+  height: 56px;
+  border-bottom: 0;
+  border-top: 1px solid var(--line-subtle);
+  background: transparent;
+  font-size: var(--fs-m);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.hold-t tr > :first-child {
+  padding-left: var(--s6);
+  width: 40%;
+}
+.hold-t tr > :last-child {
+  padding-right: var(--s6);
+}
+.hold-t thead th {
+  height: 36px;
+  border-top: 0;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  color: var(--text-3);
+}
+.hold-t .r {
+  text-align: right;
+}
+.hold-t tbody tr:hover td,
+.hold-t tbody tr:hover th {
+  background: transparent;
+}
+.hold-grp th,
+.hold-grp td {
+  height: auto;
+  padding-top: var(--s4);
+  padding-bottom: var(--s2);
+  border-top-color: var(--line-strong);
+  font-size: var(--fs-s);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.hold-grp td {
+  font-weight: 500;
+  color: var(--text-1);
+}
+.hold-grp + tr th,
+.hold-grp + tr td {
+  border-top: 0;
+}
+.hold-ext .hold-grp th,
+.hold-ext .hold-grp td {
+  font-weight: 500;
+  border-top: 1px dashed var(--line-control);
+}
+.hold-asset {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+}
+.hold-asset > div {
+  min-width: 0;
+}
+.hold-asset b {
+  display: block;
+  font-weight: 500;
+}
+.hold-asset small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+.hold-usd b {
+  font-weight: 500;
+}
+.hold svg[data-icon] {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.hold .ds-chip:not([class*='ds-chip-']) svg[data-icon='trend-up'] {
+  color: var(--safe);
+}
+.hold-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s5);
+  padding: var(--s3) var(--s6);
+  border-top: 1px solid var(--line-subtle);
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+.hold-src {
+  margin-left: auto;
+}
+.hold-more summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.hold-more[open] {
+  flex-basis: 100%;
+  order: 1;
+}
+.hold-more .hold-t {
+  margin: var(--s2) calc(-1 * var(--s6)) 0;
+  width: calc(100% + 2 * var(--s6));
+}
+.hold-more thead {
+  display: none;
+}
+.hold-empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--s4);
+  padding: var(--s2) var(--s6) var(--s6);
+  color: var(--text-2);
+  max-width: 64ch;
+}
+.hold-empty p {
+  margin: 0;
+}
+.hold-empty b {
+  color: var(--text-1);
+  font-weight: 500;
+}
+@media (max-width: 640px) {
+  .hold-head,
+  .hold-foot,
+  .hold-empty {
+    padding-left: var(--s4);
+    padding-right: var(--s4);
+  }
+  .hold-callout {
+    margin: 0 var(--s4) var(--s4);
+  }
+  .hold-t,
+  .hold-t tbody {
+    display: block;
+  }
+  .hold-t thead {
+    display: none;
+  }
+  .hold-t tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    row-gap: 2px;
+    column-gap: var(--s3);
+    padding: 10px var(--s4);
+    border-top: 1px solid var(--line-subtle);
+  }
+  .hold-t tr.hold-grp {
+    padding: var(--s4) var(--s4) var(--s2);
+    border-top-color: var(--line-strong);
+  }
+  .hold-ext tr.hold-grp {
+    border-top: 1px dashed var(--line-control);
+  }
+  .hold-grp + tr {
+    border-top: 0;
+  }
+  .hold-t th,
+  .hold-t td,
+  .hold-t tr > :first-child,
+  .hold-t tr > :last-child {
+    display: block;
+    height: auto;
+    width: auto;
+    padding: 0;
+    border: 0;
+  }
+  .hold-t th[scope='rowgroup'] {
+    white-space: normal;
+  }
+  .hold-t th[scope='row'] {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .hold-t .hold-usd {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .hold-t .hold-amt {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 44px;
+    text-align: left;
+    color: var(--text-2);
+    font-size: var(--fs-s);
+  }
+  .hold-t .hold-status {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .hold-more .hold-t {
+    margin: var(--s2) calc(-1 * var(--s4)) 0;
+    width: calc(100% + 2 * var(--s4));
   }
 }

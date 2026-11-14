@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { PortfolioView } from '../lib/product';
 import { money, signedMoney } from '../lib/format';
 import { CountUp } from './CountUp';
+import { ALERT, ALERT_CIRCLE, CHECK, HELP, TREND_DOWN, TREND_UP } from './icons';
 import { Chip, LoanGauge, ProvenanceMark, type ChipTone } from './primitives';
 import { TokenIcon, TokenIcons } from './TokenIcon';
 
@@ -65,37 +66,12 @@ const healthTone = ({ healthFactor, level }: Health): ChipTone | undefined =>
       ? 'liq'
       : LEVEL_TONE[level];
 
-const icon = (name: string, d: ReactNode) => (
-  <svg data-icon={name} viewBox="0 0 24 24" aria-hidden="true">
-    {d}
-  </svg>
-);
-const TREND_UP = icon('trend-up', <path d="m22 7-8.5 8.5-5-5L2 17M16 7h6v6" />);
-const TREND_DOWN = icon('trend-down', <path d="m22 17-8.5-8.5-5 5L2 7M16 17h6v-6" />);
-const ALERT = icon(
-  'alert',
-  <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01" />,
-);
 const TONE_ICON: Partial<Record<ChipTone, ReactNode>> = {
-  safe: icon('check', <path d="M20 6 9 17l-5-5" />),
-  watch: icon(
-    'alert-circle',
-    <>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 8v4M12 16h.01" />
-    </>,
-  ),
+  safe: CHECK,
+  watch: ALERT_CIRCLE,
   act: ALERT,
   liq: ALERT,
 };
-
-const HELP = icon(
-  'help-circle',
-  <>
-    <circle cx="12" cy="12" r="10" />
-    <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" />
-  </>,
-);
 
 function LoanCell({ health, by, source }: { health: Health; by: string; source: ReactNode }) {
   // A loan that could not be valued is unknown, not at risk: a neutral chip, and the sentence says what is missing.

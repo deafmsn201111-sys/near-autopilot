@@ -939,6 +939,20 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - The deposit-rebuild scenario from the issue was replaced: D42 removed that endpoint (HOT Kit builds deposits).
 - `pnpm demo:attack`: 19/19 attacks stopped, 4 controls allowed, signed 0, broadcast 0; log regenerated.
 
+## 2026-11-14 — Holdings table (#253)
+
+- `components/Holdings.tsx`: "What you hold" is a real `<table>` grouped by where the money sits (Burrow · lending,
+  Liquidity, Limit orders, Staking, Wallet) with group totals (assets − loans), 56px rows, two-line rows on phone and
+  a provenance mark. Status chips: neutral for Earning X% / Collateral / Kept for fees (wallet NEAR up to the 1 NEAR
+  fee reserve) / In range; tinted only for Idle, Costs X% and Out of range. The allocation column is gone.
+- Unverified tokens and balances under $1 moved into the footer as native disclosures; an empty wallet gets a sentence
+  instead of an empty table. An other-chain group slot (dashed, "shown only, not analysed") renders only with data;
+  #265 fills it.
+- A row whose amount changed remounts (key carries the amount) and flashes with #254's `html[data-refreshing]` rule,
+  which runs only after the sign sheet has closed.
+- API: Burrow holdings carry `aprPct` (supply rate, or borrow rate on a loan), positions carry `kind` and DCL
+  positions `inRange`, on both the account and the demo portfolio views.
+
 ## 2026-11-14 — "What the AI saw": the owner sees the exact model input (#271)
 
 - `ToolLlm.open` takes `onRequest`: the NEAR AI client reports the exact body of every request before posting it.
