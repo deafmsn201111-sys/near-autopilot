@@ -101,7 +101,7 @@ import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
-import { hurdle, money, type PortfolioAction } from './portfolio-view';
+import { hurdle, money, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
@@ -667,6 +667,8 @@ export interface RecommendationContext {
         readonly amount: number;
         readonly wallet: number;
         readonly collateral: number;
+        /** This debt token's own Burrow borrow rate, a percentage; null when unknown. */
+        readonly borrowAprPct?: number | null;
       })
     | null;
   /** Priced Burrow supply per token (whole tokens): plain deposit and collateral. aprPct is null with no rate. */
@@ -798,7 +800,46 @@ export function portfolioAdvice(
   const [idle, runnerUp] = earning
     .filter((a) => a.usd >= MIN_ACTION_USD)
     .sort((a, b) => yearly(b) - yearly(a));
-  if (idle) {
+  // A deposit stays for months: its year of interest, after the one network fee, must clear the usual hurdle.
+  const worthIt = idle && yearWorthTheFee(yearly(idle));
+  // The same token borrowed at a higher rate: repaying beats supplying, unless the loan card above already repays it.
+  const debt = ctx.largestDebt;
+  const borrowPct = debt?.borrowAprPct ?? null;
+  const repayUsd = idle && debt ? Math.min(idle.usd, debt.usd) : 0;
+  const saves = borrowPct === null ? 0 : (repayUsd * borrowPct) / 100;
+  const repayInstead =
+    idle &&
+    debt &&
+    debt.token === idle.token &&
+    borrowPct !== null &&
+    borrowPct > idle.aprPct &&
+    repayUsd >= MIN_ACTION_USD &&
+    !recs.some((r) => r.kind === 'improve_loan_safety') &&
+    yearWorthTheFee(saves);
+  if (idle && repayInstead) {
+    const rest = idle.usd - repayUsd;
+    const then =
+      rest >= MIN_ACTION_USD
+        ? ` The other ${money0(rest)} can then go to Burrow at ${idle.aprPct.toFixed(1)}%.`
+        : '';
+    recs.push({
+      id: 'repay-with-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: `Use your idle ${idle.symbol} to repay your ${debt.symbol} loan`,
+      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${idle.symbol} on Burrow earns about ${idle.aprPct.toFixed(1)}%. Repaying ${money0(repayUsd)} saves about ${money2(saves)} a year, more than the ${money2((repayUsd * idle.aprPct) / 100)} supplying it would earn.${then}`,
+      intent: {
+        action: 'repay',
+        token: idle.token,
+        approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
+      },
+    });
+  } else if (idle && !worthIt) {
+    skipped.push(
+      `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
+    );
+  } else if (idle) {
     const other = runnerUp
       ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
       : '';
@@ -1875,6 +1916,7 @@ export function registerAccountView(
             amount: debts[0].amount,
             wallet: held('wallet', debts[0].token),
             collateral: held('collateral', debts[0].token),
+            borrowAprPct: ((r) => (r === null ? null : r * 100))(rate(debts[0].token, 'borrowApr')),
           }
         : null;
     const burrowBalances = [

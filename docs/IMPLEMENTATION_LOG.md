@@ -714,3 +714,15 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `wallet.transfer` (ERC-20 / native on Ethereum, Base, Arbitrum; SPL / SOL). After a send the QR is hidden and the
   explorer link shown; the status polling follows the deposit. The connected wallet fills the refund address.
 - `signing-lock.test.ts` keeps origin-chain sends to that one call.
+
+## 2026-11-14 — A model that picks nothing keeps the warnings (#202)
+
+- `runModel`: left-out warnings are put back before the empty check, so "picked nothing" with a Guardian warning is
+  an AI result (`restored: 1`), not "Heuristic (AI unavailable)". Only no card at all is the `empty` fallback.
+
+## 2026-11-14 — Idle money after costs (#194)
+
+- The idle card needs a year of Burrow interest, after the one network fee, to clear `hurdle()` (at least $0.50 kept,
+  3× the fee); below it, one honest line in `skipped` ("not worth the network fee") instead of a cents card.
+- With a loan in the same token that costs more than supplying earns, the card repays it instead (`repay` intent,
+  sized to the smaller of the idle balance and the debt), saying both rates.
