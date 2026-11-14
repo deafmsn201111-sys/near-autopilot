@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consensus, range24hBps, riskBands } from '../src/analytics/series';
+import { consensus, range24hBps, riskBands, snapshotPrices } from '../src/analytics/series';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
 
@@ -34,35 +34,62 @@ describe('consensus of one snapshot', () => {
   });
 });
 
+describe('per-snapshot consensus prices', () => {
+  it('groups rows by asset and snapshot, oldest first, at the earliest observation', () => {
+    const at = (m: number) => new Date(m * 60_000);
+    const rows = [
+      { snapshotId: 'b', asset: 'x', observedAt: at(10), ...q('pyth', '2') },
+      { snapshotId: 'a', asset: 'x', observedAt: at(1), ...q('pyth', '1') },
+      { snapshotId: 'a', asset: 'x', observedAt: at(0), ...q('kraken', '1.02') },
+      { snapshotId: 'a', asset: 'y', observedAt: at(0), ...q('pyth', null, 'stale') },
+    ];
+    expect(snapshotPrices(rows)).toEqual(
+      new Map([
+        [
+          'x',
+          [
+            { t: 0, price: 1.01, spreadBps: 200, sources: 2 },
+            { t: 600_000, price: 2, spreadBps: null, sources: 1 },
+          ],
+        ],
+        ['y', [{ t: 0, price: null, spreadBps: null, sources: 0 }]],
+      ]),
+    );
+  });
+});
+
 describe('24h range from the collector prices', () => {
   const HOUR = 60 * 60 * 1000;
-  const snaps = (prices: readonly number[], stepMs = 2 * HOUR) =>
-    prices.flatMap((p, i) => {
-      const at = { snapshotId: `s${i}`, observedAt: new Date(i * stepMs) };
-      return [
-        { ...at, ...q('pyth', String(p)) },
-        { ...at, ...q('kraken', '1.00', 'stale') },
-      ];
-    });
+  const points = (prices: readonly (number | null)[], stepMs = 2 * HOUR) =>
+    prices.map((price, i) => ({ t: i * stepMs, price }));
+  const flat = (n: number) => Array<number>(n).fill(2);
   it('is (high - low) / low of the per-snapshot consensus, in bps', () => {
-    expect(range24hBps(snaps([1, 1.2, ...Array<number>(10).fill(1.1), 1.4]))).toBe(4000);
+    expect(range24hBps(points([...Array<number>(6).fill(1), ...Array<number>(6).fill(1.4)]))).toBe(
+      4000,
+    );
+  });
+  it('ignores one or two bad prints in an otherwise flat day', () => {
+    expect(range24hBps(points([1, 1, 1, 1, 1, 9, 1, 1, 1, 1, 1, 1]))).toBe(0);
+    expect(range24hBps(points([1, 1, 1, 1, 0.1, 0.1, 1, 1, 1, 1, 1, 1]))).toBe(0);
+    expect(range24hBps(points([5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5]))).toBe(0);
+    expect(range24hBps(points([9, 9, ...Array<number>(10).fill(1)]))).toBe(0);
+    expect(range24hBps(points([...Array<number>(10).fill(1), 9, 9]))).toBe(0);
+  });
+  it('still counts a sustained move of three snapshots, even at the end of the day', () => {
+    expect(range24hBps(points([...Array<number>(9).fill(1), 1.3, 1.3, 1.3]))).toBe(3000);
   });
   it('needs 12 priced snapshots: fewer is not a 24h range', () => {
-    expect(range24hBps(snaps(Array<number>(11).fill(2)))).toBeNull();
-    expect(range24hBps(snaps(Array<number>(12).fill(2)))).toBe(0);
+    expect(range24hBps(points(flat(11)))).toBeNull();
+    expect(range24hBps(points(flat(12)))).toBe(0);
   });
   it('needs the snapshots to span 12 h: a fast collector after a restart is not a 24h range', () => {
-    expect(range24hBps(snaps(Array<number>(48).fill(2), 15 * 60 * 1000))).toBeNull();
-    expect(range24hBps(snaps(Array<number>(49).fill(2), 15 * 60 * 1000))).toBe(0);
+    expect(range24hBps(points(flat(48), 15 * 60 * 1000))).toBeNull();
+    expect(range24hBps(points(flat(49), 15 * 60 * 1000))).toBe(0);
   });
   it('an unpriced snapshot does not stretch the span', () => {
-    const unpriced = {
-      snapshotId: 'old',
-      observedAt: new Date(-23 * HOUR),
-      ...q('pyth', null, 'stale'),
-    };
+    const unpriced = { t: -23 * HOUR, price: null };
     expect(
-      range24hBps([unpriced, ...snaps([1, ...Array<number>(11).fill(1.3)], 60_000)]),
+      range24hBps([unpriced, ...points([1, ...Array<number>(11).fill(1.3)], 60_000)]),
     ).toBeNull();
   });
 });

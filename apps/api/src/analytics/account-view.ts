@@ -102,7 +102,7 @@ import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
-import { consensus, range24hBps } from './series';
+import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
@@ -1271,14 +1271,9 @@ export function registerAccountView(
   const latestPrices = async () => {
     const snap = await store.latestSnapshot();
     if (!snap) return new Map<string, number>();
-    const obs = await store.pricesForSnapshot(snap.id);
-    const by = new Map<string, typeof obs>();
-    for (const o of obs) by.set(o.asset, [...(by.get(o.asset) ?? []), o]);
     const out = new Map<string, number>();
-    for (const [asset, list] of by) {
-      const c = consensus(list);
-      if (c.price !== null) out.set(asset, c.price);
-    }
+    for (const [asset, [point]] of snapshotPrices(await store.pricesForSnapshot(snap.id)))
+      if (typeof point?.price === 'number') out.set(asset, point.price);
     const summary = (snap.summary ?? {}) as {
       prices?: { token: string; usd: string; quality: string }[];
     };
@@ -2009,19 +2004,21 @@ export function registerAccountView(
     const [reference, lp, ranges] = await Promise.all([
       burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
       readLp(id, prices, decimalsOf),
-      Promise.all(
-        priced.map(async (t) => {
-          try {
-            return [t, range24hBps(await store.priceHistory(t, since))] as const;
-          } catch (err) {
-            log.warn({ err, token: t }, 'price history read failed: no 24 h range');
-            return [t, null] as const;
-          }
-        }),
-      ),
+      (async () => {
+        if (priced.length === 0) return new Map<string, SnapshotPrice[]>();
+        try {
+          return snapshotPrices(await store.priceSeries(since, priced));
+        } catch (err) {
+          log.warn({ err }, 'price history read failed: no 24 h range');
+          return new Map<string, SnapshotPrice[]>();
+        }
+      })(),
     ]);
     const volatility24hBps = new Map<TokenId, number>();
-    for (const [t, bps] of ranges) if (bps !== null) volatility24hBps.set(t, bps);
+    for (const t of priced) {
+      const bps = range24hBps(ranges.get(t) ?? []);
+      if (bps !== null) volatility24hBps.set(t, bps);
+    }
     return {
       now: clock.now(),
       accountId: id,
@@ -2182,7 +2179,7 @@ export function registerAccountView(
           }),
           // unwrap: wNEAR -> native NEAR.
           z.object({ action: z.literal('unwrap'), approxUsd: usd }),
-          // Burrow borrow / withdraw / repay from collateral — priced through the oracle.
+          // Burrow borrow / withdraw / repay from collateral — priced by Burrow (execute_with_pyth).
           z.object({ action: z.literal('borrow'), token: accountIdSchema, approxUsd: usd }),
           z.object({
             action: z.literal('withdraw'),
@@ -2631,14 +2628,6 @@ export function registerAccountView(
           storageMin(intent.collateralToken),
           storageMin(intent.token),
         ]);
-        const assetIds = [
-          ...new Set<string>([
-            intent.collateralToken,
-            intent.token,
-            ...acct.collateral.map((b) => b.tokenId),
-            ...acct.borrowed.map((b) => b.tokenId),
-          ]),
-        ];
         const now = clock.now();
         const prepared = await prepareSwapRepay({
           account,
@@ -2680,7 +2669,6 @@ export function registerAccountView(
               now,
               rawAmount,
               fromCollateralRaw,
-              assetIds,
             }),
           repayTx: (rawAmount) => buildRepay({ deployment, token: vDebt, now, rawAmount }),
         });
@@ -2704,7 +2692,6 @@ export function registerAccountView(
           {
             signerId: account,
             allowedReceivers: new Set<string>([
-              deployment.oracleId,
               deps.burrowId,
               deps.rheaId,
               intent.collateralToken,
@@ -2731,8 +2718,8 @@ export function registerAccountView(
       }
     }
 
-    // borrow / withdraw / repay from collateral — priced Burrow actions routed through the verified oracle
-    // (oracle_call). No wallet balance is needed (you borrow what you do not hold; you withdraw or repay from what
+    // borrow / withdraw / repay from collateral — priced Burrow actions (execute_with_pyth: Burrow fetches its own
+    // prices). No wallet balance is needed (you borrow what you do not hold; you withdraw or repay from what
     // Burrow holds). Burrow re-checks, at fresh prices, that collateral still covers debt, or the call reverts on-chain.
     if (
       intent.action === 'borrow' ||
@@ -2755,14 +2742,6 @@ export function registerAccountView(
         if (!acct) return reply.code(409).send({ error: `${account} has no Burrow account` });
         if (intent.action === 'borrow' && acct.collateral.length === 0)
           return reply.code(409).send({ error: 'you have no Burrow collateral to borrow against' });
-        // The oracle must price every asset Burrow values for this account, plus the action token.
-        const assetIds = [
-          ...new Set<string>([
-            intent.token,
-            ...acct.collateral.map((b) => b.tokenId),
-            ...acct.borrowed.map((b) => b.tokenId),
-          ]),
-        ];
         if (
           intent.action === 'repay_from_collateral' &&
           !acct.borrowed.some((b) => b.tokenId === intent.token)
@@ -2798,7 +2777,7 @@ export function registerAccountView(
         const humanAmount = Number(rawAmount) / 10 ** decimals;
         const human = humanAmount.toFixed(Math.min(6, decimals));
 
-        const common = { deployment, token: verifiedToken, now: clock.now(), rawAmount, assetIds };
+        const common = { deployment, token: verifiedToken, now: clock.now(), rawAmount };
         const steps: CascadeStep[] =
           intent.action === 'borrow'
             ? [
@@ -2832,7 +2811,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
-            allowedReceivers: new Set<string>([deployment.oracleId]),
+            allowedReceivers: new Set<string>([deps.burrowId]),
           },
           {
             amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },

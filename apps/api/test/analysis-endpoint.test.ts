@@ -618,17 +618,16 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
       readonly receiverId: string;
       readonly actions: readonly {
         readonly methodName: string;
-        readonly args: { readonly receiver_id?: string; readonly msg?: string };
+        readonly args: { readonly actions?: unknown };
       }[];
     }[];
   }
   const executed = (body: Prepared) => {
     expect(body.transactions).toHaveLength(1);
     const tx = body.transactions[0]!;
-    expect(tx.receiverId).toBe(ORACLE);
-    expect(tx.actions[0]?.methodName).toBe('oracle_call');
-    expect(tx.actions[0]?.args.receiver_id).toBe(BURROW);
-    return JSON.parse(tx.actions[0]?.args.msg ?? '{}') as unknown;
+    expect(tx.receiverId).toBe(BURROW);
+    expect(tx.actions[0]?.methodName).toBe('execute_with_pyth');
+    return tx.actions[0]?.args;
   };
 
   it('repays from collateral with an empty wallet: plain supply first, the rest released from collateral', async () => {
@@ -642,12 +641,10 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     const body = res.json<Prepared>();
     expect(body.amount.raw).toBe('17170000');
     expect(executed(body)).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
-          { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
-        ],
-      },
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
+        { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
+      ],
     });
   });
 
@@ -683,12 +680,10 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     const body = res.json<Prepared>();
     expect(body.amount.raw).toBe('55870000');
     expect(executed(body)).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
-          { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
-        ],
-      },
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
+        { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
+      ],
     });
   });
 });
@@ -709,6 +704,7 @@ describe('wallet observation for Market Intelligence', () => {
   const log = { warn: (...args: unknown[]) => warned.push(args), info: () => {}, error: () => {} };
   const snapshot = (i: number, usd: string) => ({
     snapshotId: `s${i}`,
+    asset: USDT,
     observedAt: new Date(Date.now() - i * 2 * 60 * 60 * 1000),
     source: 'pyth',
     priceUsd: usd,
@@ -716,16 +712,28 @@ describe('wallet observation for Market Intelligence', () => {
     status: 'valid',
   });
 
-  it("carries each held token's 24 h range from the collector's stored prices", async () => {
-    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i === 5 ? '1.2' : '1'));
-    const history = { ...store, priceHistory: async () => day } as unknown as CollectorStore;
+  it("carries each held token's 24 h range from one slim read of the collector's stored prices", async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i < 6 ? '1.2' : '1'));
+    const calls: unknown[][] = [];
+    const history = {
+      ...store,
+      priceSeries: async (...args: unknown[]) => (calls.push(args), day),
+    } as unknown as CollectorStore;
     expect(await observed(history)).toEqual(new Map([[USDT, 2000]]));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toEqual([USDT]);
+  });
+
+  it('one bad print in a flat day is no volatility', async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i === 5 ? '1.2' : '1'));
+    const history = { ...store, priceSeries: async () => day } as unknown as CollectorStore;
+    expect(await observed(history)).toEqual(new Map([[USDT, 0]]));
   });
 
   it('has no range, and logs it, when the price history cannot be read', async () => {
     const failing = {
       ...store,
-      priceHistory: async () => Promise.reject(new Error('db down')),
+      priceSeries: async () => Promise.reject(new Error('db down')),
     } as unknown as CollectorStore;
     expect(await observed(failing)).toEqual(new Map());
     expect(warned).toHaveLength(1);
