@@ -10,6 +10,7 @@ import {
   type Pipeline,
   type TraceStep,
 } from '../lib/analysis-client';
+import { ago } from '../lib/format';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
@@ -18,6 +19,9 @@ import { label } from '../lib/token-label';
 import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
+
+/** A saved analysis this old still ranks the right cards, but its prices and rates may have moved. */
+const FRESH_MS = 60 * 60_000;
 
 /**
  * The agents' recommendations for the connected wallet, each a card: what (title), why (plain language), which agent,
@@ -114,12 +118,19 @@ export function Recommendations({
           {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
-      {analysis?.cachedAt && !running && (
-        <p className="callout good" role="status">
-          ✓ Up to date — your portfolio hasn&apos;t changed since this analysis (
-          {ago(analysis.cachedAt)}).
-        </p>
-      )}
+      {analysis?.cachedAt &&
+        !running &&
+        (Date.now() - Date.parse(analysis.cachedAt) < FRESH_MS ? (
+          <p className="callout good" role="status" suppressHydrationWarning>
+            ✓ Up to date — your portfolio hasn&apos;t changed since this analysis (
+            {ago(analysis.cachedAt)}).
+          </p>
+        ) : (
+          <p className="callout" role="status" suppressHydrationWarning>
+            Your portfolio hasn&apos;t changed since this analysis ({ago(analysis.cachedAt)}), but
+            prices and rates may have. Run the AI analysis again for fresh numbers.
+          </p>
+        ))}
       {live ? (
         <AiTrace pipeline={live} startedAt={startedAt} />
       ) : (
@@ -329,7 +340,7 @@ function AiTrace({
     <section className="ai-trace" aria-label="How the AI got here" aria-busy={live}>
       <header>
         <h3>How the AI got here</h3>
-        <span className="muted-note ai-clock">
+        <span className="muted-note ai-clock" suppressHydrationWarning>
           {model && `${modelName(model)} · `}
           {live ? (
             <Elapsed since={startedAt} />
@@ -474,11 +485,6 @@ function AgentRow({
 const order = (i: number) => ({ '--i': i }) as CSSProperties;
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-
-function ago(iso: string): string {
-  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  return min < 1 ? 'just now' : `${min} min ago`;
-}
 
 const explained = (ok: number, all: number) =>
   `${ok} of ${all} AI ${all === 1 ? 'explanation uses' : 'explanations use'} only numbers the agents returned`;

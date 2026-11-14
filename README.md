@@ -266,8 +266,9 @@ to the plain JSON request.
 
 **The last analysis survives a reload.** The API saves the last AI analysis per account and strategy in Postgres
 (`account_analyses`, kept 30 days) with the page's portfolio signature, and serves it back only to the proven owner
-(`GET /v1/analytics/account/:id/analysis`). The page shows it on open: "✓ Up to date" while the portfolio is unchanged,
-"Your portfolio changed — run the AI analysis again" once it is not. A repeat run on the same wallet state within 10
+(`GET /v1/analytics/account/:id/analysis`). The page shows it on open: "✓ Up to date" while the portfolio is unchanged and the
+run is under an hour old, a note that prices and rates may have moved once it is older, and "Your portfolio changed —
+run the AI analysis again" once the portfolio itself changed. A repeat run on the same wallet state within 10
 minutes reuses the saved result, also across an API restart, with no model call.
 
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at

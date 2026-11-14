@@ -1021,12 +1021,29 @@ async function runModel(
     ),
   ];
   const key = analysisKey(obs, ctx.heuristics, strategy);
-  const hit = await reusable(ai, ctx.accountId, strategy, key, onError);
-  if (hit) return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
-  const keep = async (analysis: Analysis) => {
-    ai.memo.results.set(key, { at: Date.now(), analysis });
-    const saved = { key, signature: ctx.signature ?? null, at: new Date(), analysis };
-    await ai.store?.save(ctx.accountId, strategy, saved).catch(onError);
+  // Not awaited: a slow database never holds the answer back; the row is written well before a reload reads it.
+  const save = (analysis: Analysis, at: number) =>
+    void ai.store
+      ?.save(ctx.accountId, strategy, {
+        key,
+        signature: ctx.signature ?? null,
+        at: new Date(at),
+        analysis,
+      })
+      .catch(onError);
+  const hit = await Promise.race([
+    reusable(ai, ctx.accountId, strategy, key, onError),
+    deadline,
+  ]).catch(() => null);
+  if (hit) {
+    // The page's signature may be newer than the saved one: a reload must not report a change that did not happen.
+    if (ctx.signature !== undefined) save(hit.analysis, hit.at);
+    return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  }
+  const keep = (analysis: Analysis) => {
+    const at = Date.now();
+    ai.memo.results.set(key, { at, analysis });
+    save(analysis, at);
     return analysis;
   };
   const read = {

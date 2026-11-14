@@ -307,8 +307,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
-  const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
-  const saved = recs?.ownerVerified ? await savedAnalysis(accountParam, strategy) : null;
+  // The API serves a saved analysis to the proven owner only, so it is asked in parallel and checked on its side.
+  const [recsRead, saved] = isAccount
+    ? await Promise.all([
+        accountRecommendations(accountParam, strategy),
+        savedAnalysis(accountParam, strategy),
+      ])
+    : [null, null];
+  const recs = recsRead?.data ?? null;
   const tokenOf = (h: { token?: string; symbol: string }) => h.token ?? curatedId(h.symbol);
   const icons = await tokenIcons([
     ...data.holdings.flatMap((h) => tokenOf(h) ?? []),

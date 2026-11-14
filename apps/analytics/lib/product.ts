@@ -93,17 +93,7 @@ export const opportunity = (id: string) =>
   }>(`/v1/analytics/opportunities/${encodeURIComponent(id)}`);
 export const system = () => tryApi<SystemView>('/v1/analytics/system');
 
-export const ago = (iso: string | null | undefined, nowIso?: string): string => {
-  if (!iso) return '—';
-  const s = Math.max(
-    0,
-    Math.round(((nowIso ? Date.parse(nowIso) : Date.now()) - Date.parse(iso)) / 1000),
-  );
-  if (s < 90) return `${s} s ago`;
-  if (s < 5400) return `${Math.round(s / 60)} min ago`;
-  if (s < 172_800) return `${(s / 3600).toFixed(1)} h ago`;
-  return `${Math.round(s / 86_400)} days ago`;
-};
+export { ago } from './format';
 
 export interface PortfolioAction {
   id: string;

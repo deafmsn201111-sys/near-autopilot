@@ -1525,6 +1525,18 @@ describe('analyseAccount', () => {
         expect(l.rows).toHaveLength(1);
       });
 
+      it('a reused result takes the newer page signature and keeps its time', async () => {
+        const { rows, store } = memoryStore();
+        const deps = { ...ai(ranked().llm), store };
+        await analyseAccount(deps, { ...input, signature: 'old' });
+        const at = rows.get(`${ALICE}|balanced`)!.at;
+        await analyseAccount(
+          { ...deps, llm: fake([() => callAll]).llm },
+          { ...input, signature: 'new' },
+        );
+        expect(rows.get(`${ALICE}|balanced`)).toMatchObject({ signature: 'new', at });
+      });
+
       it('runs the model when the saved result is for other wallet data', async () => {
         const { rows, store } = memoryStore();
         await analyseAccount({ ...ai(ranked().llm), store }, input);
