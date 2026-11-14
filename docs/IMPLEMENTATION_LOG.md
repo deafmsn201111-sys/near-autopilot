@@ -698,3 +698,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Kit 2.0.0 bug worked around: the all-chains picker's promise never settles when the nested picker is closed.
 - WalletConnect: `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (zod-checked, Docker build arg via compose and
   `build-bundle.sh`) adds WalletConnect to the kit's pickers with the site's metadata.
+
+## 2026-11-14 — Incoming token transfers refresh the account page (#204)
+
+- `lib/account-signal.ts` `readTokens`: one keyless FastNEAR `/v1/account/{id}/ft` call per watcher tick (zod-checked),
+  turned into a sorted `contract:balance` fingerprint. `watchStep` also fires when it changes; a failed token read
+  keeps the baseline. #117 covered native NEAR only; a USDC/USDT transfer or a 1Click deposit now shows within a tick.

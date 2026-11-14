@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readAccount, watchStep, type Reading } from '../lib/account-signal';
+import { readAccount, readTokens, watchStep, type Reading } from '../lib/account-signal';
 
 const NEAR = 10n ** 24n;
 const at = (height: number, near: number): Reading => ({
@@ -35,6 +35,63 @@ describe('watchStep', () => {
 
   it('skips a failed read without losing the baseline', () => {
     expect(run([at(1, 5), null, at(3, 6)])).toEqual([false, false, true]);
+  });
+
+  const tok = (height: number, tokens: string | null): Reading => ({ ...at(height, 5), tokens });
+
+  it('fires when a token balance moves or a new token lands, NEAR unchanged', () => {
+    expect(
+      run([tok(1, 'usdc:0'), tok(2, 'usdc:0'), tok(3, 'usdc:5'), tok(4, 'usdc:5|usdt:1')]),
+    ).toEqual([false, false, true, true]);
+  });
+
+  it('keeps the token baseline over a failed token read', () => {
+    expect(
+      run([tok(1, 'usdc:0'), tok(2, null), tok(3, 'usdc:0'), tok(4, null), tok(5, 'usdc:7')]),
+    ).toEqual([false, false, false, false, true]);
+  });
+
+  it('fires once when NEAR and a token move together', () => {
+    expect(run([tok(1, 'usdc:0'), { ...at(2, 9), tokens: 'usdc:3' }])).toEqual([false, true]);
+  });
+});
+
+describe('readTokens', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is a fingerprint of every token balance, in a stable order', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              account_id: 'alice.near',
+              tokens: [
+                {
+                  contract_id: 'usdt.tether-token.near',
+                  balance: '4',
+                  last_update_block_height: 9,
+                },
+                { contract_id: 'wrap.near', balance: '0', last_update_block_height: null },
+              ],
+            }),
+          ),
+      ),
+    );
+    expect(await readTokens('alice.near')).toBe('usdt.tether-token.near:4|wrap.near:0');
+  });
+
+  it('is null on a malformed answer, an HTTP error or no network', async () => {
+    const stub = (f: () => Promise<Response>) => vi.stubGlobal('fetch', vi.fn(f));
+    stub(async () => new Response(JSON.stringify({ tokens: [{ contract_id: 'x', balance: 5 }] })));
+    expect(await readTokens('alice.near')).toBeNull();
+    stub(async () => new Response('slow down', { status: 429 }));
+    expect(await readTokens('alice.near')).toBeNull();
+    stub(async () => {
+      throw new Error('offline');
+    });
+    expect(await readTokens('alice.near')).toBeNull();
   });
 });
 
