@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { STRATEGIES, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import { saveStrategy } from '../app/account-actions';
 import { Segmented } from './primitives';
@@ -17,13 +17,16 @@ export function StrategyPicker({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const s = STRATEGIES[current];
+  const [chosen, setChosen] = useState(current);
+  const s = STRATEGIES[chosen];
 
-  const choose = (id: StrategyId) =>
+  const choose = (id: StrategyId) => {
+    setChosen(id);
     startTransition(async () => {
       await saveStrategy(account, id);
       router.push(`/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`);
     });
+  };
 
   return (
     <div className="strategy-picker" aria-busy={pending}>
@@ -31,7 +34,7 @@ export function StrategyPicker({
       <Segmented
         legend="Strategy"
         name="strategy"
-        value={current}
+        value={chosen}
         options={STRATEGY_IDS.map((id) => ({ value: id, label: STRATEGIES[id].label }))}
         onChange={choose}
       />

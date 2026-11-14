@@ -165,7 +165,7 @@ export function Recommendations({
               <Card
                 key={r.id}
                 urgent={r.severity === 'warning'}
-                className={analysis ? 'rec-in' : undefined}
+                className={`rec sev-${r.severity}${analysis ? ' rec-in' : ''}`}
                 style={order(i)}
               >
                 <span className="rec-agent">
@@ -181,7 +181,7 @@ export function Recommendations({
                   <p className="muted-note">
                     {r.carry.text}{' '}
                     <ProvenanceMark
-                      kind={r.carry.provenance === 'protocol_reported' ? 'on_chain' : 'estimate'}
+                      kind="estimate"
                       title={PROVENANCE_TIER_INFO[r.carry.provenance].describe}
                     >
                       {PROVENANCE_TIER_INFO[r.carry.provenance].label}

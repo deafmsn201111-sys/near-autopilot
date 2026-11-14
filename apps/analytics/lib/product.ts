@@ -128,7 +128,15 @@ export interface PortfolioView {
     small?: boolean;
   }[];
   totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
-  health: { healthFactor: number | null; level: Level; label: string; sentence: string };
+  health: {
+    healthFactor: number | null;
+    /** The health factors the API judged `level` by; the gauge draws these lines. Absent when there is no loan. */
+    urgentBelow?: number;
+    safeFrom?: number;
+    level: Level;
+    label: string;
+    sentence: string;
+  };
   /** Set when the chosen strategy changes nothing on this account: why the presets agree. */
   strategyNote?: string | null;
   earnings: { monthlyNetUsd: number | null; sentence: string };

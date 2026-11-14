@@ -153,6 +153,13 @@ describe('LoanGauge', () => {
     );
   });
 
+  it('never rounds a live loan to "falls 0%" or a buffer to 100%', () => {
+    const at = (hf: number) =>
+      html(<LoanGauge healthFactor={hf} urgentBelow={1.3} safeFrom={1.5} />);
+    expect(at(1.004)).toContain('falls <b>less than 1%</b>');
+    expect(at(1000)).toContain('falls <b>99%</b>');
+  });
+
   it('keeps the knob on the track for a very safe loan', () => {
     expect(html(<LoanGauge healthFactor={10} urgentBelow={1.3} safeFrom={1.5} />)).toContain(
       'class="ds-gauge-you" style="left:100%"',

@@ -186,10 +186,13 @@ export function buildPortfolioView(i: {
       : undefined;
   const hf = liveHf === undefined ? wad(risk?.healthFactorWad) : liveHf;
   const drop = hf !== null && hf > 1 ? 1 - 1 / hf : null;
+  const urgentBelow = 1.1;
   const healthLevel: Risk =
-    hf === null ? 'high' : hf >= WATCH_HF ? 'low' : hf >= 1.1 ? 'medium' : 'high';
+    hf === null ? 'high' : hf >= WATCH_HF ? 'low' : hf >= urgentBelow ? 'medium' : 'high';
   const health = {
     healthFactor: hf,
+    urgentBelow,
+    safeFrom: WATCH_HF,
     level: healthLevel,
     label:
       hf === null

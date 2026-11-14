@@ -246,7 +246,7 @@ export function LoanGauge({
           'The loan can be liquidated now.'
         ) : (
           <>
-            Liquidation if {by} falls <b>{buffer}%</b>.
+            Liquidation if {by} falls <b>{buffer < 1 ? 'less than 1' : Math.min(99, buffer)}%</b>.
           </>
         )}
       </p>

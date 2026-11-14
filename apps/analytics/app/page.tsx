@@ -54,7 +54,6 @@ import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
 import { Chip, LoanGauge, ProvenanceMark } from '../components/primitives';
 import {
-  STRATEGIES,
   savedStrategy,
   STRATEGY_COOKIE,
   STRATEGY_IDS,
@@ -399,7 +398,12 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {isAccount && <AccountForm compact />}
 
       {isAccount && (
-        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
+        <StrategyPicker
+          key={strategy}
+          account={accountParam}
+          current={strategy}
+          note={data.strategyNote}
+        />
       )}
 
       {!data.asOf && (
@@ -471,23 +475,26 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </div>
           <div className="hero-stat">
             <span className="eyebrow">
-              Loan safety <ProvenanceMark kind={isAccount ? 'on_chain' : 'simulated'} />
+              Loan safety <ProvenanceMark kind={isAccount ? 'estimate' : 'simulated'} />
             </span>
             <div className="hero-safe">
               <Chip tone={healthTone(data.health)} large>
                 {data.health.label}
               </Chip>
-              {data.health.healthFactor != null && (
+              {data.health.healthFactor !== null && (
                 <span className="muted-note num">
                   Health factor {data.health.healthFactor.toFixed(2)}
                 </span>
               )}
             </div>
-            {data.health.healthFactor != null ? (
+            {data.health.healthFactor !== null &&
+            data.health.urgentBelow !== undefined &&
+            data.health.safeFrom !== undefined ? (
               <LoanGauge
                 healthFactor={data.health.healthFactor}
-                urgentBelow={STRATEGIES[strategy].warningBelow}
-                safeFrom={STRATEGIES[strategy].healthyAt}
+                urgentBelow={data.health.urgentBelow}
+                safeFrom={data.health.safeFrom}
+                by={isAccount ? 'your collateral' : 'NEAR'}
               />
             ) : (
               <span className="muted-note">{data.health.sentence}</span>
