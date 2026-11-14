@@ -20,7 +20,7 @@ const fake = vi.hoisted(() => {
     hang: false,
     connectorsRequested: false,
     blankAccount: false,
-    accountError: 'No accounts found',
+    accountError: new Error('No accounts found') as unknown,
   };
   const events = new Map<string, Set<Listener>>();
   const emit = (name: string, payload: unknown) => {
@@ -38,7 +38,7 @@ const fake = vi.hoisted(() => {
     }
     async getConnectedWallet() {
       if (state.blankAccount) return { wallet: baseWallet, accounts: [{ accountId: '' }] };
-      if (!state.account) throw new Error(state.accountError);
+      if (!state.account) throw state.accountError;
       return { wallet: baseWallet, accounts: [{ accountId: state.account }] };
     }
     get availableWallets() {
@@ -141,7 +141,7 @@ async function fresh({ session = null as string | null } = {}) {
     hang: false,
     connectorsRequested: false,
     blankAccount: false,
-    accountError: 'No accounts found',
+    accountError: new Error('No accounts found'),
   });
   localStorage.clear();
   if (session) localStorage.setItem('selected-wallet', 'hot-wallet');
@@ -257,7 +257,11 @@ describe('NEAR wallet through HOT Kit', () => {
   it("forgets a sign-in HOT answers with 'Connect NEAR', keeps the session on any other failure", async () => {
     const m = await fresh();
     localStorage.setItem('selected-wallet', 'hot-wallet');
-    for (const error of ['No wallet selected', 'Failed to fetch', 'Permission denied']) {
+    for (const error of [
+      new Error('No wallet selected'),
+      new TypeError('Failed to fetch'),
+      'Permission denied',
+    ]) {
       fake.state.accountError = error;
       expect(await m.currentAccount()).toBeNull();
       expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');

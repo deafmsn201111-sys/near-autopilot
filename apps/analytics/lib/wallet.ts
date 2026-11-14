@@ -41,11 +41,11 @@ function forgetCancelledSignIn() {
   }
 }
 
-// Answers that mean "no account": near-connect's own, and HOT's after a cancelled sign-in (seen in a browser). Any
+// Answers that mean "no account": near-connect's own Error, and the plain string HOT sends after a cancelled sign-in. Any
 // other failure (network, a wallet frame that did not load) keeps the key, so a valid session is never dropped.
 // ponytail: wallets with another wording keep loading the kit on each page; add their answer here when seen.
 const hasNoAccount = (e: unknown) =>
-  e instanceof Error && /^(No accounts found|Connect NEAR)/.test(e.message);
+  /^(No accounts found|Connect NEAR)/.test(e instanceof Error ? e.message : String(e));
 
 let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
 function near() {
