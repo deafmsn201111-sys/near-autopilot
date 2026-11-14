@@ -137,6 +137,20 @@ export async function sendOriginTransfer(t: DepositTransfer): Promise<string> {
   return w.transfer({ token, receiver: t.receiver, amount: BigInt(t.amount) });
 }
 
+/**
+ * The user declined in the wallet (EIP-1193 4001, or the wallet's own words), so nothing was broadcast. Any other
+ * error may come after the broadcast: the dialog then never offers to send that quote again.
+ */
+export function isUserRejection(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null) return false;
+  const { code, message } = e as { code?: unknown; message?: unknown };
+  return (
+    code === 4001 ||
+    (typeof message === 'string' &&
+      /user (rejected|denied|cancel)|cancell?ed by user/i.test(message))
+  );
+}
+
 export async function disconnectOriginWallet(wallet: OriginWallet): Promise<void> {
   const k = await load();
   const w = k.wallets.find((x) => CHAIN_BY_TYPE[x.type] === wallet.chain);

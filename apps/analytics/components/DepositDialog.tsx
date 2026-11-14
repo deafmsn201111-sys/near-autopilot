@@ -27,6 +27,7 @@ import { shortHash } from '../lib/activity';
 import {
   connectOriginWallet,
   disconnectOriginWallet,
+  isUserRejection,
   sendOriginTransfer,
   watchOriginWallets,
   type OriginWallet,
@@ -215,7 +216,14 @@ function QuoteView({
         </p>
       )}
       <StatusLine q={q} />
-      <WalletSend q={q} wallets={wallets} send={send} expired={expired} onState={setWalletSend} />
+      <WalletSend
+        q={q}
+        wallets={wallets}
+        send={send}
+        expiresAt={expiresAt}
+        expired={expired}
+        onState={setWalletSend}
+      />
       {!expired && walletSend === 'idle' && walletChainOf(q.chain) && (
         <p className="muted-note">Or send it manually from any wallet:</p>
       )}
@@ -489,18 +497,22 @@ async function withKitPopup<T>(
 }
 
 type WalletSendState = 'idle' | 'busy' | 'sent';
+// As the API's margin: a wallet prompt can stay open, and the transfer must land before 1Click's deadline.
+const SEND_MARGIN_MS = 2 * 60_000;
 
 /** Connect, send, wait: the one-click path when the user's wallet can send on the quoted chain. */
 function WalletSend({
   q,
   wallets,
   send,
+  expiresAt,
   expired,
   onState,
 }: {
   q: DepositQuote;
   wallets: readonly OriginWallet[];
   send: string;
+  expiresAt: number;
   expired: boolean;
   onState: (s: WalletSendState) => void;
 }) {
@@ -508,9 +520,11 @@ function WalletSend({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(null);
-  useEffect(() => onState(hash ? 'sent' : busy ? 'busy' : 'idle'), [hash, busy, onState]);
+  const [unsure, setUnsure] = useState<string | null>(null);
+  const done = hash !== null || unsure !== null;
+  useEffect(() => onState(done ? 'sent' : busy ? 'busy' : 'idle'), [done, busy, onState]);
   // Kept mounted past the deadline while the wallet is open or once it sent: a signed transfer is never lost.
-  if (!chain || (expired && !busy && !hash)) return null;
+  if (!chain || (expired && !busy && !done)) return null;
   const connected = wallets.find((w) => w.chain === chain);
 
   const run = async (dialog: HTMLDialogElement | null) => {
@@ -522,18 +536,27 @@ function WalletSend({
           return setError('No wallet was connected. Connect one, or send manually below.');
         const t = await loadDepositTransfer(q);
         if (!t.ok) return setError(t.error);
+        if (expiresAt - Date.now() < SEND_MARGIN_MS)
+          return setError('This quote expires too soon to send. Get a new one.');
         setHash(await sendOriginTransfer(t.data));
       });
     } catch (e) {
-      const why = e instanceof Error ? e.message.slice(0, 200) : '';
-      setError(
-        `Your wallet reported an error${why ? `: ${why}` : ''}. If it shows the transfer as sent, do not send again: the status above follows the deposit.`,
-      );
+      if (isUserRejection(e)) setError('You declined in your wallet. Nothing was sent.');
+      else setUnsure(e instanceof Error ? e.message.slice(0, 200) : '');
     } finally {
       setBusy(false);
     }
   };
 
+  if (unsure !== null) {
+    return (
+      <p className="deposit-warn" role="alert">
+        Your wallet reported an error{unsure ? `: ${unsure}` : ''}. The transfer may still have been
+        sent: check your wallet&apos;s activity and the status above. Do not send to this address
+        again; if nothing was sent, get a new quote.
+      </p>
+    );
+  }
   if (hash) {
     const url = explorerTxUrl(q.chain, hash);
     return (

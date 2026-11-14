@@ -212,6 +212,19 @@ describe('sendOriginTransfer', () => {
   });
 });
 
+describe('isUserRejection', () => {
+  it('is true only when the wallet says the user declined, so nothing was sent', async () => {
+    const m = await fresh();
+    expect(m.isUserRejection({ code: 4001, message: 'x' })).toBe(true);
+    expect(m.isUserRejection(new Error('User rejected the request.'))).toBe(true);
+    expect(m.isUserRejection(new Error('Transaction cancelled by user'))).toBe(true);
+    expect(m.isUserRejection(new Error('User denied transaction signature'))).toBe(true);
+    expect(m.isUserRejection(new Error('Request timed out'))).toBe(false);
+    expect(m.isUserRejection(new Error('Transaction simulation failed'))).toBe(false);
+    expect(m.isUserRejection('nope')).toBe(false);
+  });
+});
+
 describe('kit load failure', () => {
   it('connect resolves null and the next call retries the load', async () => {
     const m = await fresh();
