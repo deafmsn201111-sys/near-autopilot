@@ -264,6 +264,13 @@ placeholder until its result arrives, and a clock runs until the end. The events
 "from a run N min ago"); a stream that breaks falls back
 to the plain JSON request.
 
+**The last analysis survives a reload.** The API saves the last AI analysis per account and strategy in Postgres
+(`account_analyses`, kept 30 days) with the page's portfolio signature, and serves it back only to the proven owner
+(`GET /v1/analytics/account/:id/analysis`). The page shows it on open: "✓ Up to date" while the portfolio is unchanged and the
+run is under an hour old, a note that prices and rates may have moved once it is older, and "Your portfolio changed —
+run the AI analysis again" once the portfolio itself changed. A repeat run on the same wallet state within 10
+minutes reuses the saved result, also across an API restart, with no model call.
+
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the

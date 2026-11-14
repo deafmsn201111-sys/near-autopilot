@@ -2284,14 +2284,43 @@ export function registerAccountView(
     return { owner, items: activityTimeline(rows, { owner }) };
   });
 
+  /** The owner's last saved analysis for a strategy (#190); everyone else gets none. */
+  app.get('/v1/analytics/account/:id/analysis', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    const strategy = strategySchema.safeParse((req.query as { strategy?: unknown }).strategy);
+    if (!strategy.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
+    const none = { analysis: null, signature: null };
+    const ai = deps.ai;
+    if (!ai?.store) return none;
+    if ((await isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log)) !== true) return none;
+    // As for a run: with the kill switch off (or unreadable) no AI result is shown, saved or not.
+    if (!(await ai.ledger.enabled().catch(() => false))) return none;
+    const saved = ai.store;
+    const last = await saved.latest(parsed.data, strategy.data).catch((err: unknown) => {
+      req.log.warn({ err, account: parsed.data }, 'saved analysis not read');
+      return null;
+    });
+    if (!last) return none;
+    return {
+      analysis: { ...last.analysis, cachedAt: last.at.toISOString() },
+      signature: last.signature,
+    };
+  });
+
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const visitorLeft = new AbortController();
     reply.raw.on('close', () => reply.raw.writableFinished || visitorLeft.abort());
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
-    const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
-    if (!body.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
+    const body = z
+      .object({ strategy: strategySchema, signature: z.string().max(20_000).optional() })
+      .safeParse(req.body ?? {});
+    if (!body.success)
+      return reply
+        .code(400)
+        .send({ error: `${UNKNOWN_STRATEGY}; signature at most 20000 characters` });
     const owner = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log);
     const inputs = await analysisInputs(parsed.data, req.log, body.data.strategy);
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
@@ -2300,7 +2329,11 @@ export function registerAccountView(
     const run = async (onEvent?: (e: AnalysisEvent) => void) => {
       const analysis = await analyseAccount(
         deps.ai ?? null,
-        { ...inputs, ownerVerified },
+        {
+          ...inputs,
+          ownerVerified,
+          ...(body.data.signature !== undefined && { signature: body.data.signature }),
+        },
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,

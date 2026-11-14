@@ -21,7 +21,9 @@ import {
   analysisMemo,
   walletAgentConfig,
   type AnalysisEvent,
+  type AnalysisStore,
   type LlmCallRecord,
+  type SavedAnalysis,
   type ToolLlmDeps,
 } from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
@@ -1488,6 +1490,75 @@ describe('analyseAccount', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    describe('saved analysis (#190)', () => {
+      const memoryStore = () => {
+        const rows = new Map<string, SavedAnalysis>();
+        const store: AnalysisStore = {
+          latest: async (account, strategy) => rows.get(`${account}|${strategy}`) ?? null,
+          save: async (account, strategy, saved) => void rows.set(`${account}|${strategy}`, saved),
+        };
+        return { rows, store };
+      };
+      const input = { ...ctx, heuristics: [heuristic], checks: [heuristic] };
+
+      it('saves an AI result with the portfolio signature the page sent', async () => {
+        const { rows, store } = memoryStore();
+        const out = await analyseAccount(
+          { ...ai(ranked().llm), store },
+          { ...input, signature: 'sig-1' },
+        );
+        const saved = rows.get(`${ALICE}|balanced`);
+        expect(saved).toMatchObject({ signature: 'sig-1', analysis: out });
+        expect(saved?.at).toBeInstanceOf(Date);
+      });
+
+      it('reuses a saved result after a restart: no model call, marked as cached', async () => {
+        const { store } = memoryStore();
+        const l = ledger();
+        const first = await analyseAccount({ ...ai(ranked().llm, l), store }, input);
+        const again = fake([() => callAll]);
+        const second = await analyseAccount({ ...ai(again.llm, l), store }, input);
+        expect(second).toEqual({ ...first, cachedAt: expect.any(String) as unknown });
+        expect(again.tools).toEqual([]);
+        expect(l.rows).toHaveLength(1);
+      });
+
+      it('a reused result takes the newer page signature and keeps its time', async () => {
+        const { rows, store } = memoryStore();
+        const deps = { ...ai(ranked().llm), store };
+        await analyseAccount(deps, { ...input, signature: 'old' });
+        const at = rows.get(`${ALICE}|balanced`)!.at;
+        await analyseAccount(
+          { ...deps, llm: fake([() => callAll]).llm },
+          { ...input, signature: 'new' },
+        );
+        expect(rows.get(`${ALICE}|balanced`)).toMatchObject({ signature: 'new', at });
+      });
+
+      it('runs the model when the saved result is for other wallet data', async () => {
+        const { rows, store } = memoryStore();
+        await analyseAccount({ ...ai(ranked().llm), store }, input);
+        rows.set(`${ALICE}|balanced`, { ...rows.get(`${ALICE}|balanced`)!, key: 'other' });
+        const again = ranked();
+        await analyseAccount({ ...ai(again.llm), store }, input);
+        expect(again.tools).toHaveLength(1);
+      });
+
+      it('does not save a fallback, and a failing store never fails the analysis', async () => {
+        const { rows, store } = memoryStore();
+        await analyseAccount({ ...ai(fake([() => final([])]).llm), store }, input);
+        expect(rows.size).toBe(0);
+        const fail = async (): Promise<never> => {
+          throw new Error('db down');
+        };
+        const out = await analyseAccount(
+          { ...ai(ranked().llm), store: { latest: fail, save: fail } },
+          input,
+        );
+        expect(out.source).toBe('llm');
+      });
     });
 
     it('does not cache a fallback', async () => {

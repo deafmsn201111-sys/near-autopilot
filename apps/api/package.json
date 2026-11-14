@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
-    "test:db": "vitest run test/drizzle-repository.integration.test.ts test/orchestrator-stores.integration.test.ts test/checkpoint.integration.test.ts test/llm-ledger.integration.test.ts test/deposit-store.integration.test.ts test/events-store.integration.test.ts",
+    "test:db": "vitest run test/drizzle-repository.integration.test.ts test/orchestrator-stores.integration.test.ts test/checkpoint.integration.test.ts test/llm-ledger.integration.test.ts test/deposit-store.integration.test.ts test/events-store.integration.test.ts test/analysis-store.integration.test.ts",
     "test:live:yield": "node --env-file-if-exists=../../.env node_modules/vitest/vitest.mjs run test/yield.live.test.ts",
     "collector:backfill": "node --import tsx src/collector/backfill-main.ts",
     "audit:verify": "node --import tsx src/evidence/cli.ts verify",

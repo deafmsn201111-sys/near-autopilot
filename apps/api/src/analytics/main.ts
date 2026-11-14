@@ -13,6 +13,7 @@ import { HttpJsonClient } from '../market-data/http';
 import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
 import { analysisMemo } from './ai-analysis';
 import { DrizzleDepositQuoteStore } from './deposit-store';
+import { DrizzleAnalysisStore } from './analysis-store';
 import { DrizzleEventStore } from './events-store';
 import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
@@ -85,6 +86,7 @@ const solanaFees = new SolanaTransferFees({
   onError: (err) => app.log.warn({ err }, 'Solana mint read failed; unread mints are not offered'),
 });
 const events = new DrizzleEventStore(database.db);
+const analyses = new DrizzleAnalysisStore(database.db);
 // The tokens a deposit may arrive as: our own allowlist, never user input.
 const destinationTokens = market.policy?.allowedTokens ?? [];
 const mainnet = env.MAINNET_READ_RPC_URL
@@ -114,6 +116,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
             maxTokens: llmEnv.ANTHROPIC_MAX_TOKENS,
             ledger: llmLedger,
             memo: analysisMemo(),
+            store: analyses,
           }
         : null,
     }
@@ -170,6 +173,9 @@ const purge = () =>
       .purge()
       .catch((err: unknown) => app.log.warn({ err }, 'deposit_quotes purge failed')),
     events.purge().catch((err: unknown) => app.log.warn({ err }, 'events purge failed')),
+    analyses
+      .purge()
+      .catch((err: unknown) => app.log.warn({ err }, 'account_analyses purge failed')),
   ]);
 await purge();
 const purgeTimer = setInterval(() => void purge(), 60 * 60 * 1000);

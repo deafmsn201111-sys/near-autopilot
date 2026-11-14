@@ -726,3 +726,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   receivers: Burrow + the named tokens; limits unchanged.
 - Card `supply-all-idle` when two or more idle tokens clear the fee hurdle (#194), else the single-token card; the AI
   allocator offers it instead of one supply per token. UI: intent schema, mapping, logos, "Prepare N deposits".
+
+## 2026-11-14 — AI analysis survives a reload (#190)
+
+- Migration 0025 `account_analyses`: last analysis per account + strategy (analysisKey, page signature, JSON), purged
+  after 30 days. `DrizzleAnalysisStore` in `apps/api/src/analytics/analysis-store.ts`.
+- `analyseAccount` reuses a saved result for the same `analysisKey` within 10 min (also after a restart) and saves
+  every AI result and `nothing_to_rank`; a failing store is logged and never fails the run.
+- `GET /v1/analytics/account/:id/analysis?strategy=` serves it to the proven owner only; the page loads it
+  server-side and shows "✓ Up to date" while the portfolio signature matches.

@@ -1,5 +1,5 @@
 import { KeyPairEd25519 } from '@near-js/crypto';
-import { analysisMemo } from '../src/analytics/ai-analysis';
+import { analysisMemo, type AnalysisStore, type SavedAnalysis } from '../src/analytics/ai-analysis';
 import { describe, expect, it } from 'vitest';
 import { RpcError } from '@near-autopilot/core';
 import {
@@ -129,12 +129,16 @@ const store = {
   markets: async () => [],
 } as unknown as CollectorStore;
 
+/** The admin kill switch the test servers' ledger reports. */
+let aiOn = true;
+
 function server(
   node: NearRpcClient,
   collector: CollectorStore,
   llm: ToolLlm | null = null,
   dclId?: string,
   events?: MemoryEventStore,
+  saved?: AnalysisStore,
 ) {
   return buildAnalyticsServer({
     apiToken: TOKEN,
@@ -152,11 +156,12 @@ function server(
         model: 'claude-haiku-5-5',
         maxTokens: 4096,
         ledger: {
-          enabled: async () => true,
+          enabled: async () => aiOn,
           remainingTodayMicro: async () => 10n ** 9n,
           record: async () => {},
         },
         memo: analysisMemo(undefined, 0),
+        ...(saved && { store: saved }),
       },
     } as never,
   });
@@ -293,6 +298,72 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
       await proofHeader('alice.near', stranger),
     );
     expect(llm.opened).toBe(0);
+  });
+});
+
+describe('the saved analysis (#190)', () => {
+  const memoryStore = () => {
+    const rows = new Map<string, SavedAnalysis>();
+    const saved: AnalysisStore = {
+      latest: async (account, strategy) => rows.get(`${account}|${strategy}`) ?? null,
+      save: async (account, strategy, s) => void rows.set(`${account}|${strategy}`, s),
+    };
+    return { rows, saved };
+  };
+  const analyse = (app: ReturnType<typeof server>, payload: object, proof?: string) =>
+    app.inject({
+      method: 'POST',
+      url: '/v1/analytics/account/alice.near/analysis',
+      headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
+      payload,
+    });
+  const latest = (app: ReturnType<typeof server>, proof?: string, strategy = 'balanced') =>
+    app.inject({
+      method: 'GET',
+      url: `/v1/analytics/account/alice.near/analysis?strategy=${strategy}`,
+      headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
+    });
+
+  it("saves the owner's run with the page's portfolio signature and serves it back to the owner only", async () => {
+    const { rows, saved } = memoryStore();
+    const app = server(chain, store, countingLlm(), undefined, undefined, saved);
+    const proof = await proofHeader('alice.near');
+    const run = await analyse(app, { strategy: 'balanced', signature: 'sig-1' }, proof);
+    expect(run.json()).toMatchObject({ fallback: 'nothing_to_rank' });
+    expect(rows.get('alice.near|balanced')?.signature).toBe('sig-1');
+
+    const mine = await latest(app, proof);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json()).toMatchObject({
+      signature: 'sig-1',
+      analysis: { fallback: 'nothing_to_rank', cachedAt: expect.any(String) as unknown },
+    });
+    expect((await latest(app)).json()).toEqual({ analysis: null, signature: null });
+    expect((await latest(app, proof, 'aggressive')).json()).toEqual({
+      analysis: null,
+      signature: null,
+    });
+  });
+
+  it('serves no saved AI result while the kill switch is off', async () => {
+    const { saved } = memoryStore();
+    const app = server(chain, store, countingLlm(), undefined, undefined, saved);
+    const proof = await proofHeader('alice.near');
+    await analyse(app, { strategy: 'balanced', signature: 'sig-1' }, proof);
+    aiOn = false;
+    try {
+      expect((await latest(app, proof)).json()).toEqual({ analysis: null, signature: null });
+    } finally {
+      aiOn = true;
+    }
+  });
+
+  it('rejects an oversized signature and an unknown strategy', async () => {
+    const app = server(chain, store, countingLlm(), undefined, undefined, memoryStore().saved);
+    const proof = await proofHeader('alice.near');
+    const big = await analyse(app, { strategy: 'balanced', signature: 'x'.repeat(20_001) }, proof);
+    expect(big.statusCode).toBe(400);
+    expect((await latest(app, proof, 'yolo')).statusCode).toBe(400);
   });
 });
 

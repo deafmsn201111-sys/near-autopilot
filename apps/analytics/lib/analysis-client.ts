@@ -139,6 +139,12 @@ export type Analysis = {
   cachedAt: string | null;
 };
 
+/** The owner's last analysis as the API saved it (#190), with the portfolio signature it was run for. */
+export const parseSaved = (raw: unknown): { analysis: Analysis; signature: string } | null => {
+  const saved = z.object({ analysis: analysisSchema, signature: z.string() }).safeParse(raw);
+  return saved.success ? saved.data : null;
+};
+
 /** The run so far, as the "How the AI got here" pipeline shows it; a part is null until its event arrives. */
 export type Pipeline = {
   model: string | null;
@@ -269,12 +275,13 @@ export async function runAnalysis(
   account: string,
   strategy: StrategyId,
   onProgress: (p: Pipeline | null) => void = () => {},
+  signature?: string,
 ): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string }> {
   const post = (accept: string) =>
     fetch('/api/analysis', {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept },
-      body: JSON.stringify({ account, strategy }),
+      body: JSON.stringify({ account, strategy, signature }),
     });
   let res: Response;
   try {
