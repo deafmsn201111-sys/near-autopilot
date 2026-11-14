@@ -221,7 +221,9 @@ transaction amount: an id no tool returned is dropped, and a "why" that contains
 by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
 turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
 **AI-ranked**. When neither the rules nor the agents find an action worth $1 or more, no model is called: the page says
-**Nothing for the AI to rank** and lists what each agent checked. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
+**Nothing for the AI to rank** and keeps the same "How the AI got here" timeline: the wallet read, each agent's line,
+and a neutral "AI not asked" step with a reason built by code from those lines (e.g. "Why: Health factor 1.29; safe
+from 1.25 on Aggressive · Nothing idle to put to work · …"). A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 

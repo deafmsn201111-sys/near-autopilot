@@ -1705,6 +1705,11 @@ main.page {
     background 0.3s ease,
     color 0.3s ease;
 }
+.ai-steps > li.is-skipped::before {
+  content: '–';
+  background: var(--grid);
+  color: var(--muted);
+}
 .ai-steps > li.is-done::before {
   content: '✓';
 }

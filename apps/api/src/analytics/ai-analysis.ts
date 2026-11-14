@@ -179,6 +179,8 @@ export interface Analysis {
   readonly trace: readonly TraceStep[];
   /** The model run behind an AI ranking; null for the rule-based list. */
   readonly run: RunSummary | null;
+  /** What the agents read, also when no model ran; null when they did not run. */
+  readonly read: RunSummary['read'] | null;
   /** When the reused AI result was computed; null for a fresh run or the rule-based list. */
   readonly cachedAt: string | null;
 }
@@ -347,9 +349,11 @@ function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
   carry: PortfolioRecommendation['carry'],
+  strategy: StrategyId,
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
+  const { label, healthyAt } = STRATEGIES[strategy];
   const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
   return {
     spec: {
@@ -436,7 +440,7 @@ function guardianTool(
               : { text: 'No Burrow loan; nothing to do', provenance: null }
             : {
                 text: safe
-                  ? `Health factor ${hf}; nothing to do`
+                  ? `Health factor ${hf}; safe from ${healthyAt.toFixed(2)} on ${label}`
                   : `Health factor ${hf} is below target; ${noRepayWhy}`,
                 provenance: 'calculated_estimate',
               },
@@ -771,6 +775,7 @@ export async function analyseAccount(
     calledTools: [],
     trace: [],
     run: null,
+    read: null,
     cachedAt: null,
   });
   if (!ai) return fallback('off');
@@ -816,7 +821,7 @@ export async function analyseAccount(
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
-    guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
+    guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
     allocatorTool(obs, found, steps),
     marketTool(obs, steps),
     walletTool(
@@ -854,6 +859,10 @@ export async function analyseAccount(
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS)
     return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  const read = {
+    tokens: heldTokens(obs).size,
+    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+  };
   // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
   if (ctx.heuristics.length === 0) {
     const offered = new Map<string, PortfolioRecommendation>();
@@ -862,19 +871,21 @@ export async function analyseAccount(
     const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
     if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
       const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
+      const trace = traceSteps(ran, checked, [], new Set());
       return early({
         ...fallback('nothing_to_rank'),
-        trace: traceSteps(ran, checked, [], new Set()),
+        note: trace
+          .filter((t) => t.tool !== 'market_intelligence')
+          .map((t) => t.text)
+          .join(' · '),
+        trace,
+        read,
       });
     }
   }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));
-  const read = {
-    tokens: heldTokens(obs).size,
-    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
-  };
   onEvent({ type: 'read', model: ai.model, ...read });
 
   // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
@@ -1063,6 +1074,7 @@ export async function analyseAccount(
       read,
       checks,
     },
+    read,
     cachedAt: null,
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });

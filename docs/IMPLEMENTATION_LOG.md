@@ -525,3 +525,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   and stops after a failed one; Activity and /policy rebuilt on events; shadow-mode text removed from Home and
   Opportunities.
 - Found on the way: Burrow's `oracle_call` failed with "Price oracle disabled" on mainnet on 13 Nov (autopilot-test.near).
+
+## 2026-11-14 — "Nothing for the AI to rank" says why (#143)
+
+- On top of #119 (no model call when nothing to rank): `nothing_to_rank` carries `note` = the proposing agents' own
+  lines joined in order (no model text); the guardian's safe-loan line names the strategy ("Health factor 1.29; safe
+  from 1.25 on Aggressive").
+- `Recommendations.tsx`: the nothing-to-rank case keeps the "How the AI got here" timeline: wallet read (new
+  `read` on the analysis, set without a model run), the agents, and a neutral "AI not asked" step carrying the "Why: …"
+  line with a provenance tag; the generic "Nothing to improve right now" is gone for that case.
+- #143's original goal (a `source: 'llm'` result) is superseded by #119's decision not to call the model at all.
