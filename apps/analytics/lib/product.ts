@@ -260,9 +260,9 @@ export const forgetAccount = async (id: string) => {
 };
 
 /**
- * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
- * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
- * stops retrying. Reads under other strategies are dropped; the next page render re-reads them from the fresh API cache.
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True when the
+ * holdings differ from the read it replaced, or when there is nothing to compare or the read failed (the caller then
+ * reads once more). Reads under other strategies are dropped; the next page render re-reads them from the fresh API cache.
  */
 export const refreshAccountRead = async (id: string): Promise<boolean> => {
   const normalized = id.trim().toLowerCase();

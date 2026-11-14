@@ -1,4 +1,4 @@
-const ATTEMPTS = 4;
+const ATTEMPTS = 6;
 const RETRY_MS = 5_000;
 
 const QUIET_AFTER_MS = 10_000;
@@ -22,9 +22,10 @@ export const subscribe = (listener: () => void) => {
 };
 
 /**
- * After a transaction from this wallet: reads the account fresh and re-renders, retrying every 5 s (the chain may
- * still show the old state at first) until `read` says the new state arrived, or after 4 reads. One refresh per
- * account at a time; a second trigger joins it.
+ * After a transaction from this wallet: reads the account fresh and re-renders every 5 s, up to 6 reads. `read` says
+ * whether the holdings changed since the previous read. The first change may be only part of it (a swap's input leaves
+ * at once, its output lands a few blocks later), so it stops at the first read after a change that shows nothing new,
+ * or on a failed read. One refresh per account at a time; a second trigger joins it.
  */
 export function refreshPortfolio(
   account: string,
@@ -35,11 +36,13 @@ export function refreshPortfolio(
   const current = running.get(key);
   if (current) return current;
   const run = (async () => {
+    let changed = false;
     for (let i = 0; i < ATTEMPTS; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, RETRY_MS));
-      const settled = await read(account).catch(() => true);
+      const moved = await read(account).catch(() => null);
       rerender();
-      if (settled) break;
+      if (moved === null || (changed && !moved)) break;
+      changed ||= moved;
     }
   })().finally(() => {
     running.delete(key);

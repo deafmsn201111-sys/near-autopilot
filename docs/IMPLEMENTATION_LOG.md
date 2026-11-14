@@ -550,3 +550,8 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   30 min after the deadline (a late deposit can take a confirmation to show up); `INCOMPLETE_DEPOSIT` keeps
   polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
   address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.
+
+## 2026-11-14 — Swap output shows without a reload (#160)
+
+- `refreshPortfolio` no longer stops at the first changed read: a Rhea swap's debit lands first and its credit a few
+  blocks later. It keeps reading every 5 s until a read after a change shows nothing new, at most 6 reads (~25 s).
