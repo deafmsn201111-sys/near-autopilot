@@ -59,6 +59,19 @@ async function call<T>(url: string, init?: RequestInit): Promise<Result<T>> {
   }
 }
 
+const incidents = z.object({
+  incidents: z.array(z.object({ message: z.string().min(1).max(300) })).max(20),
+});
+
+/** 1Click's incident warnings on this route, as plain text. Any failure is no warning: the dialog works without it. */
+export async function loadDepositIncidents(origin: string, destination: string): Promise<string[]> {
+  const r = await call<unknown>(
+    `/api/deposit/incidents?${new URLSearchParams({ origin, destination })}`,
+  );
+  const parsed = r.ok ? incidents.safeParse(r.data) : null;
+  return parsed?.success ? parsed.data.incidents.map((i) => i.message) : [];
+}
+
 export const loadDepositAssets = () => call<DepositAssets>('/api/deposit/assets');
 
 export const requestDepositQuote = (form: DepositForm) =>

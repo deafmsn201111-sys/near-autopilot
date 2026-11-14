@@ -307,6 +307,22 @@ export const oneClickEnvSchema = z.object({
 });
 export type OneClickEnv = z.output<typeof oneClickEnvSchema>;
 
+/**
+ * 1Click SHIELD key (partners.near-intents.org, key type SHIELD) for the incident warning in the deposit dialog. Unset =
+ * no warning ever. SHIELD_URL points it at a local stub; unset = SHIELD itself. Sent only there; never logged.
+ */
+export const shieldEnvSchema = z.object({
+  SHIELD_JWT: z.preprocess(
+    unsetIfEmpty,
+    z
+      .string()
+      .regex(/^[\w.~+/=-]{16,4096}$/, 'must be one token with no spaces')
+      .optional(),
+  ),
+  SHIELD_URL: z.preprocess(unsetIfEmpty, z.string().url().optional()),
+});
+export type ShieldEnv = z.output<typeof shieldEnvSchema>;
+
 export const databaseEnvSchema = z.object({ DATABASE_URL: z.string().url() });
 export type DatabaseEnv = z.output<typeof databaseEnvSchema>;
 

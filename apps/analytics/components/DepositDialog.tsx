@@ -9,6 +9,7 @@ import {
   defaultOrigin,
   formatUnits,
   loadDepositAssets,
+  loadDepositIncidents,
   loadDepositStatus,
   requestDepositQuote,
   statusDelayMs,
@@ -277,7 +278,7 @@ function QuoteView({
         <dd>{new Date(q.deadline).toLocaleString()}</dd>
         <dt>Arrives in</dt>
         <dd>
-          about {Math.max(1, Math.round(q.timeEstimateSeconds / 60))} min after your deposit
+          usually about {Math.max(1, Math.round(q.timeEstimateSeconds / 60))} min after your deposit
           confirms
         </dd>
       </dl>
@@ -459,6 +460,17 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<DepositQuote | null>(null);
   const [picking, setPicking] = useState<'send' | 'receive' | null>(null);
+  const [incidents, setIncidents] = useState<string[]>([]);
+
+  useEffect(() => {
+    setIncidents([]);
+    if (!origin || !destination) return;
+    let alive = true;
+    void loadDepositIncidents(origin, destination).then((list) => alive && setIncidents(list));
+    return () => {
+      alive = false;
+    };
+  }, [origin, destination]);
 
   const chosen = assets?.origins.find((o) => o.assetId === origin);
   const receive = assets?.destinations.find((d) => d.assetId === destination);
@@ -517,6 +529,12 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
           setPicking(null);
         }}
       >
+        {!picking &&
+          incidents.map((text) => (
+            <p key={text} className="deposit-incident" role="alert">
+              <b>1Click reports an incident:</b> {text}
+            </p>
+          ))}
         {quote ? (
           <QuoteView
             q={quote}

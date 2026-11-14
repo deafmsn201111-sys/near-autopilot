@@ -913,6 +913,14 @@ tr.detail details[open] {
 .deposit-warn {
   color: var(--critical) !important;
 }
+.deposit-incident {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warning);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface));
+  color: var(--ink);
+}
 .deposit-address {
   display: grid;
   justify-items: center;

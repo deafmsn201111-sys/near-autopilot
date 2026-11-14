@@ -8,6 +8,7 @@ import {
   type OneClickToken,
   type SwapStatus,
 } from '../gateway/one-click-deposit';
+import { incidentsFor, type ShieldClient, type ShieldIncident } from '../gateway/shield';
 import { DEPOSIT_CHAINS, isRefundAddress, type DepositChain } from '../gateway/refund-address';
 import { eventRecorder, type EventStore } from './events';
 
@@ -59,6 +60,8 @@ export interface DepositDeps {
   readonly icon?: (token: string) => Promise<string | null>;
   /** Re-check unfinished quotes in the background this often, so a closed deposit screen does not freeze a status. */
   readonly refreshEveryMs?: number;
+  /** 1Click SHIELD incidents, shown as a warning. Absent (no SHIELD_JWT): never an incident. */
+  readonly shield?: Pick<ShieldClient, 'incidents'>;
 }
 
 const CHAIN_NAMES: Record<DepositChain, string> = {
@@ -68,6 +71,7 @@ const CHAIN_NAMES: Record<DepositChain, string> = {
   sol: 'Solana',
   btc: 'Bitcoin',
 };
+const BRIDGE_NAMES: Record<string, string> = { poa: 'the PoA bridge', hot: 'the HOT bridge' };
 const POPULAR = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
 const SLIPPAGE_BPS = 100;
 const NOT_VERIFIED =
@@ -190,6 +194,47 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     });
     return { origins, destinations };
   };
+
+  const incidentQuery = z.object({
+    origin: z.string().min(1).max(200),
+    destination: z.string().min(1).max(200),
+  });
+
+  const ownCopy = (i: ShieldIncident, tokens: readonly OneClickToken[]) => {
+    const what =
+      i.scopeType === 'chain'
+        ? i.scopeValue === 'near'
+          ? 'NEAR'
+          : isDepositChain(i.scopeValue)
+            ? CHAIN_NAMES[i.scopeValue]
+            : 'a network on this route'
+        : i.scopeType === 'bridge'
+          ? (BRIDGE_NAMES[i.scopeValue] ?? 'a bridge on this route')
+          : (tokens.find((t) => t.assetId === i.scopeValue)?.symbol ?? 'a token on this route');
+    return `1Click reports a problem with ${what}. Your deposit may take longer than usual.`;
+  };
+
+  // Display only: anything that goes wrong here means no warning, never a broken dialog.
+  app.get('/v1/deposit/incidents', async (req) => {
+    const q = incidentQuery.safeParse(req.query);
+    if (!deps.shield || !q.success) return { incidents: [] };
+    try {
+      const [incidents, tokens] = await Promise.all([
+        deps.shield.incidents(),
+        deps.oneClick.tokens(),
+      ]);
+      const origin = tokens.find((t) => t.assetId === q.data.origin);
+      const destination = tokens.find((t) => t.assetId === q.data.destination);
+      if (!origin || !destination) return { incidents: [] };
+      const messages = incidentsFor(incidents, { origin, destination }).map(
+        (i) => i.text ?? ownCopy(i, tokens),
+      );
+      return { incidents: [...new Set(messages)].map((message) => ({ message })) };
+    } catch (err) {
+      req.log.warn({ err }, 'deposit incidents unavailable');
+      return { incidents: [] };
+    }
+  });
 
   app.get('/v1/deposit/assets', async (req, reply) => {
     try {
