@@ -7,7 +7,7 @@ interface Rate {
   readonly output: bigint;
 }
 
-/** Anthropic first-party list prices (claude-api skill, cached 3 Nov 2026). */
+/** Cached provider list prices; refresh from each provider's catalog when changing model versions. */
 const PRICES: Record<
   LlmModel,
   { readonly base: Rate; readonly long?: Rate; readonly longFrom?: number }
@@ -18,6 +18,11 @@ const PRICES: Record<
     longFrom: 100_000,
   },
   'claude-sonnet-5-5': { base: { input: 2_000_000n, output: 10_000_000n } },
+  // NEAR AI Cloud catalog, checked 14 Nov 2026. USD/M tokens converted to micro-USD/M tokens.
+  'deepseek-ai/DeepSeek-V4.1-Flash-1017': {
+    base: { input: 300_000n, output: 1_200_000n },
+  },
+  'Qwen/Qwen3.8-27B': { base: { input: 40_000n, output: 1_350_000n } },
 };
 
 /** The cost of one model call in micro-USD, rounded up. */

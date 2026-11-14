@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { llmEnvSchema, oneClickEnvSchema } from '@near-autopilot/config';
+import { llmEnvSchema, nearAiEnvSchema, oneClickEnvSchema } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
 import { NearContractViewer, NearRpcClient } from '@near-autopilot/near-adapter';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
@@ -8,7 +8,7 @@ import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
 import { OneClickDepositClient } from '../gateway/one-click-deposit';
 import { HttpJsonClient } from '../market-data/http';
-import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
+import { nearAiToolLlmFromEnv } from '../llm/near-ai-client';
 import { analysisMemo } from './ai-analysis';
 import { DrizzleDepositQuoteStore } from './deposit-store';
 import { DrizzleEventStore } from './events-store';
@@ -42,15 +42,16 @@ const env = z
   })
   .refine((e) => e.ADMIN_API_TOKEN !== e.API_TOKEN, 'ADMIN_API_TOKEN must differ from API_TOKEN')
   .parse(process.env);
-// Parsed on every start, so a model outside the allowlist stops the API even when the wallet path is off.
+// Model IDs are allowlisted and priced before the API starts, even when the wallet path is off.
 const llmEnv = llmEnvSchema.parse(process.env);
+const nearAiEnv = nearAiEnvSchema.parse(process.env);
 
 const database = createDatabase(env.DATABASE_URL, { max: 4 });
 // The only process that migrates: the collector waits for this API to be healthy before it starts.
 await runMigrations(database.db);
 const defaultCapMicro = BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6));
 const llmLedger = new DrizzleLlmLedger(database.db, defaultCapMicro);
-const toolLlm = anthropicToolLlmFromEnv(llmEnv);
+const toolLlm = nearAiToolLlmFromEnv(nearAiEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const market = env.MARKET_CONFIG_FILE
   ? (JSON.parse(readFileSync(env.MARKET_CONFIG_FILE, 'utf8')) as {
@@ -92,8 +93,8 @@ const mainnet = env.MAINNET_READ_RPC_URL
       ai: toolLlm
         ? {
             llm: toolLlm,
-            model: llmEnv.ANTHROPIC_MODEL,
-            maxTokens: llmEnv.ANTHROPIC_MAX_TOKENS,
+            model: nearAiEnv.NEAR_AI_MODEL,
+            maxTokens: nearAiEnv.NEAR_AI_MAX_TOKENS,
             ledger: llmLedger,
             memo: analysisMemo(),
           }

@@ -292,8 +292,11 @@ export async function runAnalysis(
   };
 }
 
-/** "claude-haiku-5-5" → "Claude Haiku 5.5"; any other id is shown as is. */
+/** Render provider model IDs as readable names in analysis status and event details. */
 export function modelName(id: string): string {
   const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
-  return m ? `Claude ${m[1]!.charAt(0).toUpperCase()}${m[1]!.slice(1)} ${m[2]}.${m[3]}` : id;
+  if (m) return `Claude ${m[1]!.charAt(0).toUpperCase()}${m[1]!.slice(1)} ${m[2]}.${m[3]}`;
+  if (id === 'deepseek-ai/DeepSeek-V4.1-Flash-1017') return 'DeepSeek V4.1 Flash';
+  if (id === 'Qwen/Qwen3.8-27B') return 'Qwen 3.8 27B';
+  return id;
 }

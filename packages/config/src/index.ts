@@ -267,17 +267,35 @@ export function loadDashboardEnv(source: EnvSource = process.env): DashboardEnv 
 /** Unset and empty both mean "not provided". */
 const unsetIfEmpty = (v: unknown) => (v === '' ? undefined : v);
 
-/** The models the server may call; each has a price in apps/api/src/llm/pricing.ts. */
-export const LLM_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
+/** The models the server or the legacy comparison utility may call; each has a price in apps/api/src/llm/pricing.ts. */
+export const ANTHROPIC_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
+export const NEAR_AI_MODELS = ['deepseek-ai/DeepSeek-V4.1-Flash-1017', 'Qwen/Qwen3.8-27B'] as const;
+export const LLM_MODELS = [...ANTHROPIC_MODELS, ...NEAR_AI_MODELS] as const;
 export type LlmModel = (typeof LLM_MODELS)[number];
 
-/** Server LLM (Anthropic). No key = LLM off, heuristics only. The key is read from the local .env only; never logged. */
+/** Server analysis LLM (NEAR AI Cloud). No key = LLM off, heuristics only; the key is never logged. */
+export const nearAiEnvSchema = z.object({
+  NEAR_AI_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(8).optional()),
+  NEAR_AI_MODEL: z.preprocess(
+    unsetIfEmpty,
+    z
+      .enum(NEAR_AI_MODELS, { message: `must be one of ${NEAR_AI_MODELS.join(', ')}` })
+      .default('deepseek-ai/DeepSeek-V4.1-Flash-1017'),
+  ),
+  NEAR_AI_MAX_TOKENS: z.preprocess(
+    unsetIfEmpty,
+    z.coerce.number().int().min(1).max(16_000).default(4096),
+  ),
+});
+export type NearAiEnv = z.output<typeof nearAiEnvSchema>;
+
+/** Legacy Anthropic settings used only by the comparison utility, not the server analysis path. */
 export const llmEnvSchema = z.object({
   ANTHROPIC_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(8).optional()),
   ANTHROPIC_MODEL: z.preprocess(
     unsetIfEmpty,
     z
-      .enum(LLM_MODELS, { message: `must be one of ${LLM_MODELS.join(', ')}` })
+      .enum(ANTHROPIC_MODELS, { message: `must be one of ${ANTHROPIC_MODELS.join(', ')}` })
       .default('claude-haiku-5-5'),
   ),
   /** Hard cap on one reply; also bounds the spend of a single call. */
