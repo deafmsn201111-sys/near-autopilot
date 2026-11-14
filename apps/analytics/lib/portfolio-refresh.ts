@@ -23,13 +23,13 @@ export const subscribe = (listener: () => void) => {
 
 /**
  * After a transaction from this wallet: reads the account fresh and re-renders every 5 s, up to 6 reads. `read` says
- * whether the holdings changed since the previous read. The first change may be only part of it (a swap's input leaves
- * at once, its output lands a few blocks later), so it stops at the first read after a change that shows nothing new,
- * or on a failed read. One refresh per account at a time; a second trigger joins it.
+ * whether the holdings changed since the previous read, or null when it failed. The first change may be only part of
+ * it (a swap's input leaves at once, its output lands a few blocks later), so it stops at the first read after a change
+ * that shows nothing new, or on a failed read. One refresh per account at a time; a second trigger joins it.
  */
 export function refreshPortfolio(
   account: string,
-  read: (account: string) => Promise<boolean>,
+  read: (account: string) => Promise<boolean | null>,
   rerender: () => void,
 ): Promise<void> {
   const key = keyOf(account);
@@ -41,6 +41,7 @@ export function refreshPortfolio(
       if (i > 0) await new Promise((r) => setTimeout(r, RETRY_MS));
       const moved = await read(account).catch(() => null);
       rerender();
+      // ponytail: one quiet read (5 s) ends it; a credit landing later than that needs a reload or an expected-token wait
       if (moved === null || (changed && !moved)) break;
       changed ||= moved;
     }
