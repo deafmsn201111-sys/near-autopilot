@@ -200,6 +200,32 @@ describe('intentTokens', () => {
       SWAP_STABLE,
     ]);
     expect(intentTokens({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toEqual([]);
+    expect(
+      intentTokens({
+        action: 'recentre_dcl',
+        lptId: 'x',
+        poolId: 'y',
+        leftPoint: 0,
+        rightPoint: 1,
+      }),
+    ).toEqual([]);
+    expect(
+      intentTokens({
+        action: 'repay_with_collateral',
+        token: SWAP_STABLE,
+        collateralToken: WRAP_NEAR,
+        approxUsd: 5,
+        amount: '1',
+        maxSlippageBps: 50,
+        plan: {
+          hfNow: 1.1,
+          hfAfterWithdraw: 1.05,
+          hfAfterRepay: 1.6,
+          floorHf: 1.05,
+          transactions: 3,
+        },
+      }),
+    ).toEqual([WRAP_NEAR, SWAP_STABLE]);
     expect(intentTokens(null)).toEqual([]);
   });
 });

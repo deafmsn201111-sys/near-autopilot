@@ -66,14 +66,22 @@ function swapTargetFor(from: string): string {
   return from === SWAP_STABLE ? WRAP_NEAR : SWAP_STABLE;
 }
 
-/** The tokens a card acts on, for its logos: the token, or both sides of a swap; none for advice or a reposition. */
+/** The tokens a card acts on, for its logos: the token, or both sides of a swap; none for advice or an LP move. */
 export function intentTokens(intent: RecommendationIntent | null): string[] {
-  if (!intent || intent.action === 'reposition_dcl') return [];
-  if (intent.action === 'swap') {
-    const from = normalizeFrom(intent.fromToken);
-    return [from, swapTargetFor(from)];
+  if (!intent) return [];
+  switch (intent.action) {
+    case 'reposition_dcl':
+    case 'recentre_dcl':
+      return [];
+    case 'swap': {
+      const from = normalizeFrom(intent.fromToken);
+      return [from, swapTargetFor(from)];
+    }
+    case 'repay_with_collateral':
+      return [intent.collateralToken, intent.token];
+    default:
+      return [intent.token];
   }
-  return [intent.token];
 }
 
 /**
