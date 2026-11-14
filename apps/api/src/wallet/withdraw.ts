@@ -1,10 +1,12 @@
 import type { AccountId, FunctionCallAction } from '@near-autopilot/core';
 import type { CascadeStep } from './cascade';
+import { buildWrapNear } from './wrap';
 
 /**
  * The NEAR side of a 1Click withdrawal (D36): one transaction on the token contract that registers the quote's
  * deposit address (an implicit account 1Click watches) when it holds no storage, then transfers the quoted amount to
  * it. Both actions share one receipt, so a failed registration sends nothing. Every value comes from the stored quote.
+ * A wNEAR withdrawal first wraps the native NEAR the wallet lacks (`wrap`, #237), in the same receipt.
  */
 export function buildWithdrawTransfer(o: {
   readonly token: AccountId;
@@ -12,9 +14,13 @@ export function buildWithdrawTransfer(o: {
   readonly amount: bigint;
   /** 0 when the deposit address is already registered on the token. */
   readonly storageDeposit: bigint;
+  /** Native NEAR (yocto) to wrap first; only for wrap.near. */
+  readonly wrap?: bigint;
   readonly preview: string;
 }): CascadeStep {
-  const actions: FunctionCallAction[] = [];
+  const actions: FunctionCallAction[] = o.wrap
+    ? [...buildWrapNear({ wrapContractId: o.token, rawAmount: o.wrap }).actions]
+    : [];
   if (o.storageDeposit > 0n)
     actions.push({
       type: 'FunctionCall',

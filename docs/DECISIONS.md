@@ -735,3 +735,14 @@ are read, each still validated. `@anthropic-ai/sdk` and `ANTHROPIC_*` are gone (
 numbers check replaces a "why" with code's own text), so a weaker model costs wording, never safety. Latency varies
 more than Haiku's (up to ~21 s seen, deadline 45 s). The spend cap holds a worst case of about $0.010 per call. Until
 #233 the server does not verify the reply signatures itself.
+
+## D39 — A NEAR withdrawal wraps the native NEAR it lacks in the same transaction (#237)
+
+**Context:** #237. Most wallets hold native NEAR, which 1Click takes only as wNEAR (`nep141:wrap.near`).
+**Decision:** The withdraw dialog shows wNEAR and spare native NEAR as one "NEAR" (native less 1 NEAR kept for fees).
+A `withdraw_1click` quote of wNEAR spends the wallet's wNEAR first; for the rest, `near_deposit` is prepended to the
+D36 transaction on `wrap.near`, plus wrap.near's own registration when the wallet holds none (the contract takes it
+from the first deposit). Only the NEAR sent counts against the 1 NEAR reserve; registrations and gas come out of it.
+`near_deposit` keeps its existing exemption from the deposit caps although the wrapped NEAR now leaves the wallet: it
+leaves only through D36's `ft_transfer` to the stored quote's deposit address, in the same receipt. No cap changes.
+**Consequences:** One signature. A failed step reverts the wrap too.
