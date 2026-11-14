@@ -55,6 +55,9 @@ Not exploitable today: the LLM only proposes, and its output goes through the sa
 - **Dependencies:** `drizzle-orm` 0.38 (the advisory needs `sql.raw`, used only in tests) and `vitest` 2 (dev only)
   are not upgraded. `pnpm audit --prod` reports 15 high, through `@hot-labs/kit` (protobufjs, toml, zod), `next`
   (postcss, build time) and drizzle; none reaches a request path we found. Request bodies are capped by Fastify's 1 MiB default.
+- **The ownership cookie is `secure` only when `x-forwarded-proto` is https** (`apps/analytics/app/account-actions.ts`).
+  The local Docker stack runs `NODE_ENV=production` over plain http, so tying `secure` to `NODE_ENV` would break it
+  locally. On the live site Caddy always sends https, so the cookie is `secure` there.
 
 ## Watch list (external)
 

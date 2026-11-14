@@ -5,11 +5,12 @@
 #
 # What it does, and does not:
 #   - creates .env from .env.example ONLY if .env does not exist, with fresh random secrets (never printed); an
-#     existing .env is never touched
+#     existing .env keeps its values, only missing secrets are added; .env is always owner-only (600)
 #   - builds and starts the containers (bound to 127.0.0.1) and waits until they are healthy
 #   - never creates a wallet key, never signs, never sends a transaction; mainnet is read with view calls only
 set -euo pipefail
 cd "$(dirname "$0")/.."
+umask 077
 
 case "${1:-}" in
   "") ;;
@@ -45,12 +46,13 @@ else
   set_var API_TOKEN "$(rand 32)"
   set_var POSTGRES_PASSWORD "$pw"
   set_var DATABASE_URL "postgres://autopilot:${pw}@localhost:5432/autopilot"
-  chmod 600 .env
   echo "• .env created with fresh secrets (not shown)"
 fi
 
+grep -q '^API_TOKEN=.' .env || { set_var API_TOKEN "$(rand 32)"; echo "• API_TOKEN added to .env (not shown)"; }
 grep -q '^ADMIN_API_TOKEN=.' .env || { set_var ADMIN_API_TOKEN "$(rand 32)"; echo "• ADMIN_API_TOKEN added to .env (not shown)"; }
 grep -q '^ANALYSIS_ENCRYPTION_KEY=.' .env || { set_var ANALYSIS_ENCRYPTION_KEY "$(rand 32)"; echo "• ANALYSIS_ENCRYPTION_KEY added to .env (not shown)"; }
+chmod 600 .env
 
 mkdir -p evidence/checkpoints
 

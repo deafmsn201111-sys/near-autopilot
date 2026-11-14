@@ -13,3 +13,7 @@ evidence/checkpoints
 config/*.local.json
 .claude
 **/.env
+**/.env.*
+**/*.pem
+**/*.key
+deploy/public/config/
