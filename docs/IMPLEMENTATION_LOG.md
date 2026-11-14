@@ -462,6 +462,18 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   "AI unavailable". It still lists each agent's line under "What the agents checked". This replaces #130's model call
   for the same case (owner's choice, 14 Nov): a supply under 1% a year is no longer offered to the model either.
 
+## 2026-11-14 — LP Optimizer on the wallet path: DCL re-centre (#63)
+
+- `packages/rhea-dcl-adapter/src/recentre.ts`: `alignRange` (agent ticks → DCL points) and `recentreSwap` (surplus to
+  swap for a range's ratio), on the contract's own deposit math.
+- `apps/api/src/analytics/lp-recentre.ts`: `lpObservation` builds an `LpPositionView` per wallet DCL position
+  (liquidity converted to CLMM units, market depth as segments, 24 h volume and gas in token Y); `recentreSteps`
+  builds the cascade.
+- `apps/api/src/analytics/discovery.ts`: `dclVolumes24hUsd` from Rhea's indexer.
+- `ai-analysis.ts`: `lp_optimizer` tool replaces `liquidity_positions`; `account-view.ts`: `observe()` fills
+  `market.lpPositions`, prepare intent `recentre_dcl`; `validate-cascade.ts`: DCL `add_liquidity` allowlist (D26).
+- `apps/analytics`: "Prepare new range" button for `recentre_dcl`; the exit card reads as an exit.
+
 ## 2026-11-14 — "Nothing for the AI to rank" says why (#143)
 
 - On top of #119 (no model call when nothing to rank): `nothing_to_rank` carries `note` = the proposing agents' own

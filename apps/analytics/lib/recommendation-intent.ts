@@ -32,6 +32,13 @@ export type RecommendationIntent =
         readonly floorHf: number;
         readonly transactions: number;
       };
+    }
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly poolId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
     };
 
 export interface Recommendation {
@@ -110,6 +117,14 @@ export function recommendationToPrepare(
         maxSlippageBps: intent.maxSlippageBps,
       };
       break;
+    case 'recentre_dcl':
+      mapped = {
+        action: 'recentre_dcl',
+        lptId: intent.lptId,
+        leftPoint: intent.leftPoint,
+        rightPoint: intent.rightPoint,
+      };
+      break;
   }
   return { account, intent: mapped };
 }
@@ -128,8 +143,10 @@ export function actionLabel(intent: RecommendationIntent): string {
     case 'swap':
       return 'Prepare rebalance';
     case 'reposition_dcl':
-      return 'Prepare reposition';
+      return 'Prepare exit to wallet';
     case 'repay_with_collateral':
       return `Prepare ${intent.plan.transactions} transactions to repay`;
+    case 'recentre_dcl':
+      return 'Prepare new range';
   }
 }

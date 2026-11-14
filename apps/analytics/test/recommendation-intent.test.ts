@@ -73,6 +73,20 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('maps recentre_dcl to the lpt id and the new range, never the pool', () => {
+    const r: RecommendationIntent = {
+      action: 'recentre_dcl',
+      lptId: 'a|b|100#1',
+      poolId: 'a|b|100',
+      leftPoint: -640,
+      rightPoint: 600,
+    };
+    expect(recommendationToPrepare(r, ACC)).toEqual({
+      account: ACC,
+      intent: { action: 'recentre_dcl', lptId: 'a|b|100#1', leftPoint: -640, rightPoint: 600 },
+    });
+  });
+
   it('maps repay from collateral and withdraw with their exact amount, never the sizing', () => {
     const sizing = {
       collateralAdjUsd: 51,
@@ -168,8 +182,9 @@ describe('recommendationToPrepare', () => {
       /collateral/i,
     );
     expect(actionLabel({ action: 'withdraw', token: 'x', approxUsd: 1 })).toMatch(/withdraw/i);
-    expect(actionLabel({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toMatch(
-      /reposition/i,
-    );
+    expect(actionLabel({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toMatch(/exit/i);
+    expect(
+      actionLabel({ action: 'recentre_dcl', lptId: 'x', poolId: 'y', leftPoint: 0, rightPoint: 1 }),
+    ).toMatch(/new range/i);
   });
 });
