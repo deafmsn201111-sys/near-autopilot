@@ -123,6 +123,47 @@ describe('validateCascade', () => {
     if (!r.ok) expect(r.reasons.join()).toMatch(/method is not allowlisted/);
   });
 
+  describe('priced Burrow execute_with_pyth', () => {
+    const BURROW = accountId('contract.main.burrow.near');
+    const priced = (patch: Partial<PlannedTransaction['actions'][number]> = {}) => [
+      {
+        intentId: 'withdraw',
+        signerId: ALICE,
+        receiverId: BURROW,
+        actions: [
+          {
+            type: 'FunctionCall' as const,
+            methodName: 'execute_with_pyth',
+            args: { actions: [{ Withdraw: { token_id: USDT, max_amount: '1' } }] },
+            gas: MAX_ACTION_GAS,
+            deposit: 1n,
+            ...patch,
+          },
+        ],
+      },
+    ];
+    const burrowCtx = { signerId: ALICE, allowedReceivers: new Set<string>([BURROW]) };
+
+    it('accepts one yocto and an actions list at the gas ceiling', () => {
+      expect(validateCascade(priced(), burrowCtx)).toMatchObject({ ok: true, reasons: [] });
+    });
+
+    it('rejects any deposit other than one yocto', () => {
+      const r = validateCascade(priced({ deposit: 2n }), burrowCtx);
+      expect(r.reasons.join()).toMatch(/execute_with_pyth must attach exactly 1 yoctoNEAR/);
+    });
+
+    it('rejects args without an actions list', () => {
+      const r = validateCascade(priced({ args: { actions: 'Withdraw' } }), burrowCtx);
+      expect(r.reasons.join()).toMatch(/actions must be a non-empty list/);
+    });
+
+    it('no longer allows the disabled oracle_call', () => {
+      const r = validateCascade(priced({ methodName: 'oracle_call' }), burrowCtx);
+      expect(r.reasons.join()).toMatch(/method is not allowlisted/);
+    });
+  });
+
   it('rejects ft_transfer_call to an unexpected receiver', () => {
     const c = goodCascade();
     patchAction(c, 1, { args: { receiver_id: accountId('evil.near'), amount: '1', msg: '' } });
