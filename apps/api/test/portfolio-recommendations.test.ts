@@ -368,6 +368,35 @@ describe('portfolioRecommendations', () => {
       expect(c?.why).toContain('$150');
     });
 
+    describe('on a wallet past the $1M prepare cap', () => {
+      const whale = metrics({
+        totalAssetsUsd: 4_000_000,
+        concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 90 },
+      });
+      const card = (concentrationLiquidUsd: number) =>
+        portfolioRecommendations(ctx({ metrics: whale, concentrationLiquidUsd })).find(
+          (x) => x.kind === 'reduce_concentration',
+        );
+
+      it('does not claim the wallet holds the cap, and names the cap', () => {
+        const c = card(3_600_000);
+        expect(c?.intent).toEqual({ action: 'swap', fromToken: 'wrap.near', approxUsd: 1_000_000 });
+        expect(c?.why).not.toMatch(/your wallet holds/i);
+        expect(c?.why).toMatch(/capped at \$1,000,000/);
+        expect(c?.facts?.[0]?.value).toBe('≈ $1,000,000');
+      });
+
+      it('names what the wallet really holds when that is short of the target too', () => {
+        const c = card(1_200_000);
+        expect(c?.why).toContain('Your wallet holds $1,200,000 of it;');
+        expect(c?.why).toMatch(/capped at \$1,000,000/);
+      });
+
+      it('says nothing about the cap on a swap under it', () => {
+        expect(card(900_000)?.why).not.toMatch(/capped/);
+      });
+    });
+
     it('is advice without a button when the wallet holds none (or under $10) of the token', () => {
       const advice = portfolioAdvice(ctx({ metrics: concentrated, concentrationLiquidUsd: 0.4 }));
       const c = advice.recommendations.find((x) => x.kind === 'reduce_concentration');

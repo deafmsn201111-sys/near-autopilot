@@ -69,6 +69,7 @@ import {
   type AnalysisEvent,
   MIN_ACTION_USD,
   approxUsdOf,
+  PREPARE_CAP_USD,
   walletAgentConfig,
   type AnalysisContext,
   type ToolLlmDeps,
@@ -930,7 +931,8 @@ export function portfolioAdvice(
     : 0;
   if (c && c.pct >= strategy.concentrationInfoPct && ctx.metrics.totalAssetsUsd > 0) {
     const liquid = ctx.concentrationLiquidUsd ?? Infinity;
-    const approxUsd = approxUsdOf(Math.min(target, liquid));
+    const movable = Math.min(target, liquid);
+    const approxUsd = approxUsdOf(movable);
     if (target < MIN_ACTION_USD) {
       if (ctx.metrics.totalAssetsUsd >= 1)
         skipped.push(
@@ -943,9 +945,12 @@ export function portfolioAdvice(
         ? liquid < 1
           ? ' None of it is in your wallet: it sits on Burrow or in liquidity, so withdraw it there first.'
           : ` Your wallet holds only ${money2(liquid)} of it; the rest sits on Burrow or in liquidity, so withdraw it there first.`
-        : approxUsd < target
-          ? ` Your wallet holds ${money0(approxUsd)} of it, so this swaps that part; the rest sits on Burrow or in liquidity.`
-          : '';
+        : (liquid < target
+            ? ` Your wallet holds ${money0(liquid)} of it${movable > PREPARE_CAP_USD ? '' : ', so this swaps that part'}; the rest sits on Burrow or in liquidity.`
+            : '') +
+          (movable > PREPARE_CAP_USD
+            ? ` One swap is capped at ${money0(PREPARE_CAP_USD)}, so this one moves that much; run it again for the rest.`
+            : '');
       recs.push({
         id: 'reduce-concentration',
         kind: 'reduce_concentration',
@@ -958,7 +963,7 @@ export function portfolioAdvice(
           facts: [
             {
               label: 'Moves',
-              value: `≈ ${money0(Math.min(target, liquid))}`,
+              value: `≈ ${money0(Math.min(movable, PREPARE_CAP_USD))}`,
               sub: `of ${c.symbol}`,
               provenance: 'calculated_estimate',
             },
