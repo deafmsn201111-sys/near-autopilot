@@ -89,7 +89,28 @@ const TONE_ICON: Partial<Record<ChipTone, ReactNode>> = {
   liq: ALERT,
 };
 
+const HELP = icon(
+  'help-circle',
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" />
+  </>,
+);
+
 function LoanCell({ health, by, source }: { health: Health; by: string; source: ReactNode }) {
+  // A loan that could not be valued is unknown, not at risk: a neutral chip, and the sentence says what is missing.
+  if (health.healthFactor === null && health.level !== 'low')
+    return (
+      <div>
+        <span className="sum-lbl">Loan safety {source}</span>
+        <div className="sum-safe">
+          <Chip large icon={HELP}>
+            {health.label}
+          </Chip>
+        </div>
+        <span className="sum-sub">{health.sentence}</span>
+      </div>
+    );
   if (health.healthFactor === null)
     return (
       <div>

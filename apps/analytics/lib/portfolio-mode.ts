@@ -7,6 +7,8 @@ export interface PortfolioModeInput {
   /** null when the ownership state is unknown (recommendations did not load). */
   verified: boolean | null;
   signingEnabled: boolean;
+  /** An older read is on screen: nothing can be prepared or signed from it. */
+  stale?: boolean;
 }
 
 export interface PortfolioMode {
@@ -23,6 +25,7 @@ export function portfolioMode({
   connected,
   verified,
   signingEnabled,
+  stale = false,
 }: PortfolioModeInput): PortfolioMode {
   if (!isAccount)
     return {
@@ -43,7 +46,11 @@ export function portfolioMode({
     };
   }
 
-  const act = signingEnabled ? 'Prepare and sign in your wallet.' : signingOff;
+  const act = stale
+    ? 'Showing an older read: refresh it to prepare or sign.'
+    : signingEnabled
+      ? 'Prepare and sign in your wallet.'
+      : signingOff;
   return verified
     ? {
         kind: 'mine',

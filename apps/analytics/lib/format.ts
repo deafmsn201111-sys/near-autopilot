@@ -11,6 +11,12 @@ export const ago = (iso: string | null | undefined, nowIso?: string): string => 
   return `${Math.round(s / 86_400)} days ago`;
 };
 
+/** "14:02 UTC"; "—" for a missing or invalid time instead of a RangeError. */
+export const utcClock = (iso: string | null | undefined): string => {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(t) ? '—' : `${new Date(t).toISOString().slice(11, 16)} UTC`;
+};
+
 export function pct(fraction: string | number | null | undefined, digits = 2): string {
   if (fraction === null || fraction === undefined || fraction === '') return '—';
   const n = typeof fraction === 'number' ? fraction : Number(fraction);

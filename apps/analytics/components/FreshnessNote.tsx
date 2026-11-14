@@ -1,6 +1,5 @@
+import { utcClock as hhmm } from '../lib/format';
 import { freshness } from '../lib/series';
-
-const hhmm = (iso: string) => `${new Date(iso).toISOString().slice(11, 16)} UTC`;
 
 /** How old the stored data is and when the collector runs next. Read from the stored cycles only. */
 export async function FreshnessNote() {
