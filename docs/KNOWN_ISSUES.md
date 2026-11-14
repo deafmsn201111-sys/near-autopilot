@@ -12,6 +12,9 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Demo portfolios are simulated** (balances), valued at live prices; labelled as such.
 - **Rhea limit orders are shown, not managed.** Open DCL limit orders are portfolio rows with their price; there is no
   advice and no cancel button (it would add `cancel_order` to the cascade allowlist). → #223.
+- **A multi-step cascade is one wallet prompt per step.** Each step is confirmed on NEAR before the next is offered,
+  so a failed step stops the rest. One approval for the whole cascade (`signAndSendTransactions`) is after the
+  hackathon. An all-or-nothing cascade across contracts is not possible on NEAR. → #230.
 
 ## Defects / tech debt to address
 
