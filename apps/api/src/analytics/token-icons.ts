@@ -2,7 +2,6 @@ import {
   BoundedMap,
   accountIdSchema,
   safeTokenIcon,
-  type AccountId,
   type ContractViewer,
 } from '@near-autopilot/core';
 import type { FastifyInstance } from 'fastify';
@@ -36,7 +35,7 @@ export class TokenIcons {
     const id = accountIdSchema.safeParse(token);
     if (!id.success) return null;
     try {
-      const raw = metadataIcon.safeParse(await this.viewer.view(id.data as AccountId, 'ft_metadata'));
+      const raw = metadataIcon.safeParse(await this.viewer.view(id.data, 'ft_metadata'));
       const icon = raw.success ? safeTokenIcon(raw.data.icon) : null;
       this.cache.set(token, icon);
       return icon;
@@ -51,7 +50,12 @@ const iconsQuery = z.object({
     .string()
     .max(10_000)
     .transform((s) => [...new Set(s.split(',').filter(Boolean))])
-    .pipe(z.array(z.union([z.literal('near'), accountIdSchema])).min(1).max(100)),
+    .pipe(
+      z
+        .array(z.union([z.literal('near'), accountIdSchema]))
+        .min(1)
+        .max(100),
+    ),
 });
 
 /** Logos for the tokens a page shows, in one call: `{ icons: { [token]: dataUri | null } }`. */

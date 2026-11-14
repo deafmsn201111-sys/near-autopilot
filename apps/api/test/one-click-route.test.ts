@@ -57,9 +57,7 @@ const quoted = (over: Partial<DepositQuote> = {}): DepositQuote => ({
   ...over,
 });
 
-function setup(
-  o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['icon'] } = {},
-) {
+function setup(o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['icon'] } = {}) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
   const deposit: DepositDeps = {

@@ -3,6 +3,7 @@ import {
   SWAP_STABLE,
   WRAP_NEAR,
   actionLabel,
+  intentTokens,
   recommendationToPrepare,
   type RecommendationIntent,
 } from '../lib/recommendation-intent';
@@ -186,5 +187,19 @@ describe('recommendationToPrepare', () => {
     expect(
       actionLabel({ action: 'recentre_dcl', lptId: 'x', poolId: 'y', leftPoint: 0, rightPoint: 1 }),
     ).toMatch(/new range/i);
+  });
+});
+
+describe('intentTokens', () => {
+  it('names the token a card acts on, both sides for a swap, none for advice', () => {
+    expect(intentTokens({ action: 'supply', token: SWAP_STABLE, approxUsd: 5 })).toEqual([
+      SWAP_STABLE,
+    ]);
+    expect(intentTokens({ action: 'swap', fromToken: 'near', approxUsd: 5 })).toEqual([
+      WRAP_NEAR,
+      SWAP_STABLE,
+    ]);
+    expect(intentTokens({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toEqual([]);
+    expect(intentTokens(null)).toEqual([]);
   });
 });

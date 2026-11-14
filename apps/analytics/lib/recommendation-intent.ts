@@ -66,6 +66,16 @@ function swapTargetFor(from: string): string {
   return from === SWAP_STABLE ? WRAP_NEAR : SWAP_STABLE;
 }
 
+/** The tokens a card acts on, for its logos: the token, or both sides of a swap; none for advice or a reposition. */
+export function intentTokens(intent: RecommendationIntent | null): string[] {
+  if (!intent || intent.action === 'reposition_dcl') return [];
+  if (intent.action === 'swap') {
+    const from = normalizeFrom(intent.fromToken);
+    return [from, swapTargetFor(from)];
+  }
+  return [intent.token];
+}
+
 /**
  * Map a recommendation's intent to a concrete `prepare` request for `account`. Returns null for advice-only cards
  * (no intent), so the card shows the advice without a button. Burrow intents map straight through, with `amount`

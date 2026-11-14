@@ -12,7 +12,9 @@ import {
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
-import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
+import { actionLabel, intentTokens, recommendationToPrepare } from '../lib/recommendation-intent';
+import { label } from '../lib/token-label';
+import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
 
@@ -27,6 +29,7 @@ export function Recommendations({
   recommendations: initial,
   skipped,
   holdings,
+  icons = {},
   signingEnabled,
 }: {
   account: string;
@@ -34,6 +37,8 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
+  /** Logos by token id (untrusted data URIs, rendered through TokenIcon). */
+  icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -134,6 +139,10 @@ export function Recommendations({
         >
           {recommendations.map((r, i) => {
             const request = recommendationToPrepare(r.intent, account);
+            const logos = intentTokens(r.intent).map((t) => ({
+              icon: icons[t] ?? null,
+              symbol: holdings.find((h) => h.token === t)?.symbol ?? label(t, new Map()).symbol,
+            }));
             return (
               <article
                 className={`rec sev-${r.severity}${analysis ? ' rec-in' : ''}`}
@@ -145,6 +154,7 @@ export function Recommendations({
                   {r.agent}
                 </span>
                 <div className="rec-head">
+                  {logos.length > 0 && <TokenIcons tokens={logos} size={28} />}
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>

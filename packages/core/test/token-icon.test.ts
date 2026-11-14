@@ -7,7 +7,9 @@ describe('safeTokenIcon', () => {
     const png = 'data:image/png;base64,iVBORw0KGgo=';
     expect(safeTokenIcon(svg)).toBe(svg);
     expect(safeTokenIcon(png)).toBe(png);
-    expect(safeTokenIcon('data:image/svg+xml;base64,PHN2Zy8+')).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+    expect(safeTokenIcon('data:image/svg+xml;base64,PHN2Zy8+')).toBe(
+      'data:image/svg+xml;base64,PHN2Zy8+',
+    );
   });
 
   it('refuses anything that is not an image data URI', () => {

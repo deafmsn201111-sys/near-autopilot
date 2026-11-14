@@ -78,7 +78,9 @@ describe('GET /v1/tokens/icons', () => {
   it('returns one logo or null per asked token', async () => {
     const res = await get(`/v1/tokens/icons?ids=${USDC},plain.near,near`);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ icons: { [USDC]: USDC_ICON, 'plain.near': null, near: NEAR_ICON } });
+    expect(res.json()).toEqual({
+      icons: { [USDC]: USDC_ICON, 'plain.near': null, near: NEAR_ICON },
+    });
   });
 
   it('refuses a token id that is not a NEAR account, and too many ids', async () => {

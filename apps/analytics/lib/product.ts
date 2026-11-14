@@ -161,6 +161,7 @@ export interface PortfolioView {
     key: string;
     label: string;
     sub: string;
+    tokens?: string[];
     amount: number | null;
     usd: number | null;
     verified?: boolean;
