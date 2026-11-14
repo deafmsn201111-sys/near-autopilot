@@ -1077,7 +1077,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   holdings group per wallet with Bring to NEAR per row. Provenance "Estimate · HOT Kit". Nothing reaches our API.
 - D42 extended; KNOWN_ISSUES refund line updated (the HOT balance is shown, withdrawn in HOT Wallet).
 
-## 2026-11-14 —  Withdraw in the review-and-sign sheet, HOT deposit popup themed (#255)
+## 2026-11-14 — Withdraw in the review-and-sign sheet, HOT deposit popup themed (#255)
 
 - `components/Sheet.tsx`: the review-and-sign sheet's shell, now shared by `PrepareDialog` and `WithdrawDialog`.
 - Withdraw: amount parsed to base units in the browser (`parseAmount`), address shape per chain (`addressError`),
