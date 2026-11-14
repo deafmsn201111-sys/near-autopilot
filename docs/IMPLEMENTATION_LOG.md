@@ -698,3 +698,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Kit 2.0.0 bug worked around: the all-chains picker's promise never settles when the nested picker is closed.
 - WalletConnect: `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (zod-checked, Docker build arg via compose and
   `build-bundle.sh`) adds WalletConnect to the kit's pickers with the site's metadata.
+
+## 2026-11-14 — Exit card for out-of-range LP on meme pools (#193)
+
+- `exitableOutOfRange()`: an out-of-range DCL position gets the exit card (remove + withdraw to the wallet) when both
+  tokens have any price, the indexer estimate included; its value is then called an estimate. Re-centring (D26)
+  stays on allowlisted pools. The exit cascade and `validateCascade` limits are unchanged.
+- Prepare reads a token missing from our metadata table with `ft_metadata` instead of assuming 24 decimals.

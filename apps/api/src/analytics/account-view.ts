@@ -359,6 +359,8 @@ const WNEAR = 'wrap.near' as TokenId;
 const MAX_UNLISTED_TOKENS = 30;
 /** Native NEAR left untouched for gas and storage when proposing to use the rest. */
 const NEAR_RESERVE = 1;
+/** 0.0125 NEAR: ten times a standard NEP-145 registration; an unknown token asking more is not registered by us. */
+const MAX_REGISTRATION_YOCTO = 12_500_000_000_000_000_000_000n;
 
 interface PortfolioLeg {
   readonly token: string;
@@ -694,6 +696,8 @@ export interface RecommendationContext {
     poolId: string;
     pair: string;
     usd: number | null;
+    /** A token of the pair is priced only by Rhea's indexer. */
+    estimate: boolean;
   }[];
 }
 
@@ -824,7 +828,7 @@ export function portfolioAdvice(
       agent: 'Liquidity Optimizer',
       severity: 'info',
       title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
-      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.${oor.estimate ? ` A token of this pool has no confirmed price: its value here is only an estimate from Rhea's pools.` : ''}`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
@@ -924,6 +928,32 @@ export function unlistedByValue<T extends { readonly token: string; readonly raw
     .map((t) => ({ t, v: value(t) }))
     .sort((x, y) => y.v - x.v)
     .map(({ t }) => t);
+}
+
+/**
+ * Out-of-range DCL positions an exit card may name: both tokens priced, an indexer estimate included. The exit only
+ * returns the user's own tokens to their wallet, so an unverified token is fine; re-centring stays allowlisted (D26).
+ */
+export function exitableOutOfRange(
+  positions: readonly Pick<
+    DclPositionView,
+    'lptId' | 'poolId' | 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY' | 'inRange' | 'usd'
+  >[],
+  priced: { has(token: string): boolean },
+  confirmed: { has(token: string): boolean },
+  pair: (d: Pick<DclPositionView, 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY'>) => string = (d) =>
+    `${d.symbolX}/${d.symbolY}`,
+): RecommendationContext['dclOutOfRange'] {
+  return positions
+    .filter((d) => !d.inRange && priced.has(d.tokenX) && priced.has(d.tokenY))
+    .map((d) => ({
+      lptId: d.lptId,
+      poolId: d.poolId,
+      pair: pair(d),
+      usd: d.usd,
+      estimate: !confirmed.has(d.tokenX) || !confirmed.has(d.tokenY),
+    }))
+    .sort((a, b) => Number(a.estimate) - Number(b.estimate) || (b.usd ?? 0) - (a.usd ?? 0));
 }
 
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
@@ -1867,14 +1897,10 @@ export function registerAccountView(
           ]
         : [];
     });
-    const outOfRange = (pair: (d: DclPositionView) => string) =>
-      dclPositions
-        .filter(
-          (d) =>
-            !d.inRange && [d.tokenX, d.tokenY].every((t) => verified.has(t) && !trust(t).estimate),
-        )
-        .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
-        .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+    const confirmed = { has: (t: string) => verified.has(t) && !trust(t).estimate };
+    const outOfRange = (
+      pair: (d: Pick<DclPositionView, 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY'>) => string,
+    ) => exitableOutOfRange(dclPositions, shown, confirmed, pair);
     const loanKnown = !unknownOn.has('borrowed') && loanUsd > 0;
     const carry: LoanCarry = {
       borrowAprPct: loanKnown ? (loanMonthly / H / loanUsd) * 100 : null,
@@ -1919,7 +1945,11 @@ export function registerAccountView(
       burrowBalances,
       carry,
       swapRepay,
-      dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
+      // An unverified token's ft_metadata symbol could read "USDC": it is named by its contract instead.
+      dclOutOfRange: outOfRange(
+        (d) =>
+          `${verified.has(d.tokenX) ? d.symbolX : d.tokenX}/${verified.has(d.tokenY) ? d.symbolY : d.tokenY}`,
+      ),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
     const labelled = <T extends { token: string }>(x: T) => ({
@@ -2467,15 +2497,59 @@ export function registerAccountView(
         const minY = (freed.y * keep) / 10_000n;
 
         const meta = await store.tokenMetadata();
-        const metaOf = (t: string) => meta.find((x) => x.token === t);
-        const symX = metaOf(tokX)?.symbol ?? tokX.slice(0, 10);
-        const symY = metaOf(tokY)?.symbol ?? tokY.slice(0, 10);
-        const decX = metaOf(tokX)?.decimals ?? 24;
-        const decY = metaOf(tokY)?.decimals ?? 24;
+        const metaOf = async (t: AccountId) =>
+          meta.find((x) => x.token === t) ??
+          (await tokens.getMetadata(t).then(
+            (m) => ({ symbol: t, decimals: m.decimals }),
+            () => undefined,
+          ));
+        const [mX, mY] = await Promise.all([metaOf(tokX), metaOf(tokY)]);
+        if (!mX || !mY)
+          return reply
+            .code(502)
+            .send({ error: 'could not read the decimals of a token in this pool; try again' });
+        const { symbol: symX, decimals: decX } = mX;
+        const { symbol: symY, decimals: decY } = mY;
         const hX = (Number(freed.x) / 10 ** decX).toFixed(Math.min(6, decX));
         const hY = (Number(freed.y) / 10 ** decY).toFixed(Math.min(6, decY));
 
+        // The pool's token is any contract: it names its own storage price, so a price above a normal NEP-145 one is refused.
+        const register = async (t: AccountId, sym: string): Promise<CascadeStep[] | null> => {
+          if (await tokens.isStorageRegistered(t, account)) return [];
+          const bounds = z
+            .object({ min: z.string().regex(/^\d{1,30}$/) })
+            .safeParse(await viewer.view(t, 'storage_balance_bounds', {}));
+          const minDeposit = bounds.success ? BigInt(bounds.data.min) : MAX_REGISTRATION_YOCTO + 1n;
+          if (minDeposit > MAX_REGISTRATION_YOCTO) return null;
+          return [
+            {
+              intentId: `register-${t}`,
+              tx: {
+                receiverId: t,
+                actions: [
+                  {
+                    type: 'FunctionCall',
+                    methodName: 'storage_deposit',
+                    args: { account_id: account },
+                    gas: 10_000_000_000_000n,
+                    deposit: minDeposit,
+                  },
+                ],
+              },
+              preview: `Register to receive ${sym} — one-time storage deposit of ${formatNear(minDeposit)} NEAR on that token's contract.`,
+            },
+          ];
+        };
+        // An unregistered wallet would bounce the withdrawal back into the DCL contract: register first.
+        const registering = await Promise.all([register(tokX, symX), register(tokY, symY)]);
+        if (registering.some((r) => r === null))
+          return reply.code(409).send({
+            error: `a token in this pool asks an unusual storage deposit; register on it yourself, then try again`,
+          });
+        const registrations = registering.flatMap((r) => r ?? []);
+
         const steps: CascadeStep[] = [
+          ...registrations,
           {
             intentId: 'remove-liquidity',
             tx: buildRemoveLiquidity({
@@ -2502,7 +2576,10 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
-            allowedReceivers: new Set<string>([dclId]),
+            allowedReceivers: new Set<string>([
+              dclId,
+              ...registrations.map((r) => r.tx.receiverId),
+            ]),
           },
           {
             position: { lptId: pos.lpt_id, poolId: pos.pool_id },

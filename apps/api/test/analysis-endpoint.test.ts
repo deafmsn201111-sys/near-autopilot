@@ -589,6 +589,113 @@ describe('GET /v1/analytics/account/:id ownership', () => {
   });
 });
 
+describe('prepare the exit of a meme-pool DCL position (#193)', () => {
+  const DCL = 'dclv2.ref-labs.near';
+  const MEME = 'imeme-2.v2-launchpad.justhoot.near';
+  const POOL = `wrap.near|${MEME}|10000`;
+  const LPT = `${POOL}#9`;
+  const node = rpc(
+    {
+      [`${DCL}#list_liquidities`]: () => [
+        { lpt_id: LPT, pool_id: POOL, left_point: -800, right_point: -400, amount: '1000000000' },
+      ],
+      [`${DCL}#get_pool`]: () => ({
+        pool_id: POOL,
+        token_x: 'wrap.near',
+        token_y: MEME,
+        fee: 10000,
+        point_delta: 200,
+        current_point: 48311,
+        state: 'Running',
+      }),
+      [`${MEME}#ft_metadata`]: () => ({
+        spec: 'ft-1.0.0',
+        name: 'iMEME',
+        symbol: 'USDC',
+        decimals: 18,
+      }),
+      [`${MEME}#storage_balance_of`]: () => null,
+      [`${MEME}#storage_balance_bounds`]: () => ({ min: '1250000000000000000000' }),
+      ['wrap.near#ft_metadata']: () => ({
+        spec: 'ft-1.0.0',
+        name: 'w',
+        symbol: 'wNEAR',
+        decimals: 24,
+      }),
+      ['wrap.near#storage_balance_of']: () => ({ total: '1', available: '0' }),
+    },
+    { [DCL]: [] },
+  );
+
+  it('registers, removes and withdraws to the wallet, sized with on-chain decimals, never trusting the symbol', async () => {
+    const res = await server(node, store, null, DCL).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: {
+        account: 'alice.near',
+        intent: { action: 'reposition_dcl', lptId: LPT, poolId: POOL },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      transactions: { receiverId: string; actions: { methodName: string }[] }[];
+      freed: { raw: string; human: number; symbol: string }[];
+    }>();
+    expect(body.transactions.flatMap((t) => t.actions.map((a) => a.methodName))).toEqual([
+      'storage_deposit',
+      'remove_liquidity',
+      'withdraw_asset',
+      'withdraw_asset',
+    ]);
+    expect(body.transactions.map((t) => t.receiverId)).toEqual([MEME, DCL, DCL]);
+    expect(JSON.stringify(body)).not.toContain('USDC');
+    const meme = body.freed.find((f) => f.symbol === MEME);
+    expect(meme && meme.human).toBeCloseTo(Number(meme?.raw) / 1e18);
+  });
+
+  it("refuses when the token's own storage price is unusual, instead of paying it", async () => {
+    const pricey = rpc(
+      {
+        [`${DCL}#list_liquidities`]: () => [
+          { lpt_id: LPT, pool_id: POOL, left_point: -800, right_point: -400, amount: '1000000000' },
+        ],
+        [`${DCL}#get_pool`]: () => ({
+          pool_id: POOL,
+          token_x: 'wrap.near',
+          token_y: MEME,
+          fee: 10000,
+          point_delta: 200,
+          current_point: 48311,
+          state: 'Running',
+        }),
+        [`${MEME}#ft_metadata`]: () => ({ spec: 'ft-1.0.0', name: 'm', symbol: 'M', decimals: 18 }),
+        [`${MEME}#storage_balance_of`]: () => null,
+        [`${MEME}#storage_balance_bounds`]: () => ({ min: (10n ** 24n).toString() }),
+        ['wrap.near#ft_metadata']: () => ({
+          spec: 'ft-1.0.0',
+          name: 'w',
+          symbol: 'w',
+          decimals: 24,
+        }),
+        ['wrap.near#storage_balance_of']: () => ({ total: '1', available: '0' }),
+      },
+      { [DCL]: [] },
+    );
+    const res = await server(pricey, store, null, DCL).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: {
+        account: 'alice.near',
+        intent: { action: 'reposition_dcl', lptId: LPT, poolId: POOL },
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toMatch(/storage deposit/);
+  });
+});
+
 describe('prepare exact amount', () => {
   const app = server(chain, store);
   const prepare = (intent: Record<string, unknown>) =>
