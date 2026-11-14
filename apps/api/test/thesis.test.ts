@@ -101,6 +101,17 @@ describe.skipIf(!existsSync(resolve(RAW_DIR, 'manifest.json')))('thesis:rebuild'
       expect(readFileSync(resolve(ROOT, path), 'utf8'), path).toBe(content);
   });
 
+  it('recomputes the counts over the last N days of the same raw data', () => {
+    const full = computeThesis();
+    const last90 = computeThesis(90);
+    expect(last90.manifest.days).toBe(90);
+    expect(last90.manifest.blocks).toEqual(full.manifest.blocks.slice(-91));
+    const first = last90.manifest.blocks[0]?.height ?? 0;
+    expect(last90.daily.every((p) => p.height >= first)).toBe(true);
+    expect(() => computeThesis(full.manifest.days)).toThrow();
+    expect(() => computeThesis(0)).toThrow();
+  });
+
   it('is deterministic: two rebuilds are byte-identical', () => {
     expect(renderOutputs(computeThesis())).toEqual(renderOutputs(computeThesis()));
   });

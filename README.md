@@ -166,9 +166,9 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 
 ### Thesis track: displayed APR and TVL are not the yield you keep
 
-[THESIS.md](THESIS.md) tests three counts on 90 days of NEAR mainnet data: Rhea v1 and Burrow, 91 daily blocks, from
-2026-08-06 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
-counter-evidence written out.
+[THESIS.md](THESIS.md) tests three counts on 180 days of NEAR mainnet data: Rhea v1 and Burrow, 181 daily blocks,
+from 2026-05-08 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
+counter-evidence written out. The same rules over the last 90 days alone give the same result on every count.
 
 **Try it**
 
@@ -182,7 +182,7 @@ counter-evidence written out.
 
 - Rhea DCL pools are not part of the thesis yet: they are in the dashboard only.
 - No BigQuery or Intents Explorer data: the thesis uses archival RPC view calls only.
-- The window is 90 days.
+- The window is 180 days.
 
 ## What it does
 

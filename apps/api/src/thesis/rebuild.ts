@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { z } from 'zod';
 import {
   burrowLine,
   burrowMetrics,
@@ -27,7 +28,10 @@ import { dumbbell, scatterLogX } from './svg';
  */
 const ROUND_TRIP_GAS = 4n * 180_000_000_000_000n; // swap, add, remove, swap; 180 Tgas attached each: an upper bound
 
-const lines = (file: string) =>
+const COMPARE_DAYS = 90;
+const heightOf = z.object({ height: z.number().int() });
+
+const readLines = (file: string) =>
   readFileSync(resolve(RAW_DIR, file), 'utf8')
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -43,6 +47,7 @@ export interface ThesisData {
   readonly gasPriceEnd: bigint;
   readonly tvlVsNet: number | null;
   readonly tvlVsNominal: number | null;
+  readonly burrowPausedHeights: readonly number[];
   /** The same metrics over the last 30 days, by pool id. */
   readonly pools30: ReadonlyMap<number, PoolMetrics>;
   /**
@@ -88,10 +93,19 @@ function cohort(key: Cohort['key'], label: string, list: readonly PoolMetrics[])
   };
 }
 
-export function computeThesis(): ThesisData {
-  const manifest = manifestSchema.parse(
+export function computeThesis(lastDays?: number): ThesisData {
+  const all = manifestSchema.parse(
     JSON.parse(readFileSync(resolve(RAW_DIR, 'manifest.json'), 'utf8')),
   );
+  if (lastDays !== undefined && (lastDays < 1 || lastDays >= all.days))
+    throw new Error(`lastDays must be between 1 and ${all.days - 1}`);
+  const manifest =
+    lastDays === undefined
+      ? all
+      : { ...all, days: lastDays, blocks: all.blocks.slice(-(lastDays + 1)) };
+  const inWindow = new Set(manifest.blocks.map((b) => b.height));
+  const lines = (file: string) =>
+    readLines(file).filter((l) => inWindow.has(heightOf.parse(l).height));
   const times = new Map(manifest.blocks.map((b) => [b.height, Date.parse(b.timestamp)]));
   const admin = new Map(
     lines('rhea-metadata.jsonl').map((l) => {
@@ -142,10 +156,11 @@ export function computeThesis(): ThesisData {
       : null,
     maxBps: sortedDiffs.length ? (sortedDiffs[sortedDiffs.length - 1] ?? null) : null,
   };
-  const burrow = burrowMetrics(
-    lines('burrow-assets.jsonl').map((l) => burrowLine.parse(l)),
-    times,
-  );
+  const burrowLines = lines('burrow-assets.jsonl').map((l) => burrowLine.parse(l));
+  const burrow = burrowMetrics(burrowLines, times);
+  const burrowPausedHeights = burrowLines
+    .filter((l) => l.assets.every((a) => Number(a.supply_apr) < 1e-6))
+    .map((l) => l.height);
   const priced = pools.filter((p) => p.tvlUsdEnd !== null && p.netApr500 !== null);
   const endSet = new Set(manifest.universe.endPools ?? manifest.universe.pools);
   const cohorts: Cohort[] = [
@@ -176,6 +191,7 @@ export function computeThesis(): ThesisData {
   ];
   return {
     manifest,
+    burrowPausedHeights,
     cohorts,
     pools,
     daily,
@@ -347,7 +363,10 @@ export function renderOutputs(d: ThesisData): Record<string, string> {
       .sort((a, b) => b.supplyAprEnd - a.supplyAprEnd)
       .map((b) => ({ label: tokenLabel(b.token), values: [b.supplyAprEnd, b.supplyAprRealized] })),
   });
-  files['THESIS.md'] = thesisMarkdown(d);
+  files['THESIS.md'] = thesisMarkdown(
+    d,
+    d.manifest.days > COMPARE_DAYS ? computeThesis(COMPARE_DAYS) : null,
+  );
   return files;
 }
 
