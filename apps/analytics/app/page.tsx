@@ -241,9 +241,11 @@ function DemoPlan({ a }: { a: PortfolioAction }) {
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
   // A fresh boundary per URL: under app/loading.tsx alone, a production build never commits a soft navigation to this
-  // page with other search params (strategy, demo switch) and keeps the old one on screen (#263).
+  // page with other search params (demo switch, another account) and keeps the old one on screen (#263). A strategy
+  // switch keeps the boundary, so the focused strategy radio and the scroll position survive it (#288).
+  const { strategy: _, ...view } = sp;
   return (
-    <Suspense key={JSON.stringify(sp)} fallback={<Loading />}>
+    <Suspense key={JSON.stringify(view)} fallback={<Loading />}>
       <Portfolio sp={sp} />
     </Suspense>
   );
@@ -441,7 +443,7 @@ async function Portfolio({ sp }: { sp: Search }) {
       {isAccount && recs && (
         <section className="block">
           <Recommendations
-            key={`${accountParam}:${strategy}`}
+            key={accountParam}
             account={accountParam}
             strategy={strategy}
             recommendations={recs.recommendations}

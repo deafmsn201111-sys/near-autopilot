@@ -10,12 +10,17 @@ const keyFor = async (sp: Record<string, string>) => {
 };
 
 describe('PortfolioPage', () => {
-  it('gives every set of search params its own loading boundary (#263)', async () => {
+  it('gives every view its own loading boundary (#263)', async () => {
+    const mine = await keyFor({ p: 'account', account: 'a.near' });
+    expect(mine).toBeTruthy();
+    expect(await keyFor({ p: 'account', account: 'b.near' })).not.toBe(mine);
+    expect(await keyFor({ p: 'demo-5000' })).not.toBe(mine);
+  });
+
+  it('keeps the boundary across a strategy switch, so focus and scroll hold (#288)', async () => {
     const balanced = await keyFor({ p: 'account', account: 'a.near', strategy: 'balanced' });
-    expect(balanced).toBeTruthy();
-    expect(await keyFor({ p: 'account', account: 'a.near', strategy: 'aggressive' })).not.toBe(
+    expect(await keyFor({ p: 'account', account: 'a.near', strategy: 'aggressive' })).toBe(
       balanced,
     );
-    expect(await keyFor({ p: 'demo-5000' })).not.toBe(balanced);
   });
 });

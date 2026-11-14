@@ -991,3 +991,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `loanHealth` draws the gauge's "urgent" line and the "At risk" level at the strategy's `warningBelow`
   (Conservative 1.50, Balanced 1.30, Aggressive 1.15) instead of the agents' fixed 1.10, so the gauge, the hero chip
   and the urgent repay card agree. The demo portfolio uses the Balanced lines.
+
+## 2026-11-14 — Strategy switch keeps focus and scroll on / (#288)
+
+- The `/` Suspense boundary from #263 is now keyed by the search params without `strategy`, and `Recommendations` by
+  the account only, so a strategy switch no longer remounts the page: the focused strategy radio keeps focus, and
+  `router.push(..., { scroll: false })` keeps the scroll position. A demo or account switch still gets a fresh
+  boundary.
+- Without the remount, `Recommendations` keeps the AI result and error per strategy, so a run that ends after a switch
+  lands under the strategy it started with; the card list stays keyed by strategy, so repay pickers start fresh.
