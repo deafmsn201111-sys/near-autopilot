@@ -117,21 +117,19 @@ describe('loadDashboardEnv', () => {
 });
 
 describe('llmEnvSchema', () => {
-  it('is off without a key; empty or unset model and max_tokens default to Haiku and 4096', () => {
-    expect(
-      llmEnvSchema.parse({ ANTHROPIC_API_KEY: '', ANTHROPIC_MODEL: '', ANTHROPIC_MAX_TOKENS: '' }),
-    ).toEqual({
-      ANTHROPIC_API_KEY: undefined,
-      ANTHROPIC_MODEL: 'claude-haiku-5-5',
-      ANTHROPIC_MAX_TOKENS: 4096,
+  it('is off without a key; empty or unset model and max_tokens default to GLM 5.3 Flash and 4096', () => {
+    expect(llmEnvSchema.parse({ NEAR_AI_API_KEY: '', LLM_MODEL: '', LLM_MAX_TOKENS: '' })).toEqual({
+      NEAR_AI_API_KEY: undefined,
+      LLM_MODEL: 'z-ai/glm-5.3-flash',
+      LLM_MAX_TOKENS: 4096,
       LLM_DAILY_CAP_USD: 5,
     });
   });
 
   it('accepts only the allowlisted models', () => {
-    const bad = llmEnvSchema.safeParse({ ANTHROPIC_MODEL: 'claude-made-up' });
+    const bad = llmEnvSchema.safeParse({ LLM_MODEL: 'anthropic/claude-haiku-5-5' });
     expect(bad.success).toBe(false);
-    expect(bad.error?.issues[0]?.message).toMatch(/claude-haiku-5-5.*claude-sonnet-5-5/);
+    expect(bad.error?.issues[0]?.message).toMatch(/z-ai\/glm-5\.3-flash/);
   });
 
   it('takes a daily cap in USD and rejects a negative one', () => {
@@ -142,17 +140,17 @@ describe('llmEnvSchema', () => {
   it('honours overrides and rejects a zero cap', () => {
     expect(
       llmEnvSchema.parse({
-        ANTHROPIC_API_KEY: 'sk-test-key',
-        ANTHROPIC_MODEL: 'claude-sonnet-5-5',
-        ANTHROPIC_MAX_TOKENS: '2000',
+        NEAR_AI_API_KEY: 'sk-test-key',
+        LLM_MODEL: 'z-ai/glm-5.3-flash',
+        LLM_MAX_TOKENS: '2000',
       }),
     ).toEqual({
-      ANTHROPIC_API_KEY: 'sk-test-key',
-      ANTHROPIC_MODEL: 'claude-sonnet-5-5',
-      ANTHROPIC_MAX_TOKENS: 2000,
+      NEAR_AI_API_KEY: 'sk-test-key',
+      LLM_MODEL: 'z-ai/glm-5.3-flash',
+      LLM_MAX_TOKENS: 2000,
       LLM_DAILY_CAP_USD: 5,
     });
-    expect(llmEnvSchema.safeParse({ ANTHROPIC_MAX_TOKENS: '0' }).success).toBe(false);
+    expect(llmEnvSchema.safeParse({ LLM_MAX_TOKENS: '0' }).success).toBe(false);
   });
 });
 

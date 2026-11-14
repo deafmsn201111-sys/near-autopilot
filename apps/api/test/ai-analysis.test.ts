@@ -147,13 +147,13 @@ function ledger(left = 10n ** 9n) {
 }
 const ai = (llm: ToolLlm, l: ToolLlmDeps['ledger'] = ledger()): ToolLlmDeps => ({
   llm,
-  model: 'claude-haiku-5-5',
+  model: 'z-ai/glm-5.3-flash',
   maxTokens: 4096,
   ledger: l,
   memo: analysisMemo(),
 });
-/** Haiku 5.5, 100K input + 4096 output: the most one call may cost. */
-const WORST_CALL_MICRO = 12_048n;
+/** GLM 5.3 Flash, 100K input + 4096 output: the most one call may cost. */
+const WORST_CALL_MICRO = 10_048n;
 const ctx = { accountId: ALICE, observe: async () => observation(), ownerVerified: true };
 
 const callAll: LlmToolTurn = {
@@ -332,6 +332,30 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('llm');
     expect(out.recommendations.map((r) => r.intent?.action)).toEqual(['repay_with_collateral']);
     expect(JSON.stringify(out.trace)).toContain('1.24 after withdrawing collateral');
+  });
+
+  it('drops keys the reply was not asked for instead of failing the whole answer', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => ({
+        kind: 'final',
+        text: JSON.stringify({
+          picks: [
+            { id: 'reduce-concentration', why: 'wNEAR is 84% of the portfolio.', id_note: '' },
+          ],
+          extra: 1,
+        }),
+      }),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      checks: [heuristic],
+      ownerVerified: true,
+    });
+    expect(out.source).toBe('llm');
+    expect(out.recommendations.map((r) => r.id)).toContain('reduce-concentration');
   });
 
   it('builds the ranked list from tool candidates in the model order, numbers from code only', async () => {
@@ -707,7 +731,7 @@ describe('analyseAccount', () => {
       checks: [heuristic],
     });
     expect(out.run).toEqual({
-      model: 'claude-haiku-5-5',
+      model: 'z-ai/glm-5.3-flash',
       turns: 2,
       toolCalls: 5,
       ms: expect.any(Number) as number,
@@ -1854,10 +1878,10 @@ describe('analyseAccount', () => {
       const row = l.rows[0]!;
       expect(row).toMatchObject({
         accountId: ALICE,
-        model: 'claude-haiku-5-5',
+        model: 'z-ai/glm-5.3-flash',
         inputTokens: 2000,
         outputTokens: 200,
-        costMicroUsd: 300n,
+        costMicroUsd: 260n,
         outcome: 'ok',
       });
       expect([...row.tools].sort()).toEqual([
@@ -2028,7 +2052,7 @@ describe('analyseAccount', () => {
     });
 
     it('counts a call cut off by the deadline at its worst case, so the next run sees the budget reached', async () => {
-      const l = ledger(150n + 2n * WORST_CALL_MICRO - 1n);
+      const l = ledger(130n + 2n * WORST_CALL_MICRO - 1n);
       let turn = 0;
       const hung: ToolLlm = {
         open: (req) => ({
@@ -2047,7 +2071,7 @@ describe('analyseAccount', () => {
       );
       expect(out.fallback).toBe('deadline');
       expect(l.rows).toMatchObject([
-        { outcome: 'deadline', costMicroUsd: 150n + WORST_CALL_MICRO },
+        { outcome: 'deadline', costMicroUsd: 130n + WORST_CALL_MICRO },
       ]);
 
       const next = fake([() => final([])]);
@@ -2087,10 +2111,10 @@ describe('analyseAccount', () => {
         50,
       );
       expect(out.fallback).toBe('deadline');
-      expect(l.rows).toMatchObject([{ costMicroUsd: 300n }]);
+      expect(l.rows).toMatchObject([{ costMicroUsd: 260n }]);
     });
 
-    it('never sends a request that could go over 100K input tokens (the long-context rate)', async () => {
+    it('never sends a request that could go over 100K input tokens', async () => {
       let sends = 0;
       const big: ToolLlm = {
         open: (req) => ({
@@ -2296,7 +2320,7 @@ describe('progress events', () => {
       'ranked',
       'checked',
     ]);
-    expect(events[0]).toEqual({ type: 'read', model: 'claude-haiku-5-5', ...out.run?.read });
+    expect(events[0]).toEqual({ type: 'read', model: 'z-ai/glm-5.3-flash', ...out.run?.read });
     expect(events[1]).toEqual({
       type: 'asked',
       agents: [

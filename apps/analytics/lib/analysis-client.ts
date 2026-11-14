@@ -306,8 +306,14 @@ export async function runAnalysis(
   };
 }
 
-/** "claude-haiku-5-5" → "Claude Haiku 5.5"; any other id is shown as is. */
+const MODEL_NAMES: Record<string, string> = {
+  'z-ai/glm-5.3-flash': 'GLM 5.3 Flash',
+  // Analyses and spend rows saved before D38.
+  'claude-haiku-5-5': 'Claude Haiku 5.5',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+};
+
+/** "z-ai/glm-5.3-flash" → "GLM 5.3 Flash"; any other id is shown as is. */
 export function modelName(id: string): string {
-  const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
-  return m ? `Claude ${m[1]!.charAt(0).toUpperCase()}${m[1]!.slice(1)} ${m[2]}.${m[3]}` : id;
+  return MODEL_NAMES[id] ?? id;
 }

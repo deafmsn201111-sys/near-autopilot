@@ -428,7 +428,8 @@ describe('collector and analytics code: no signing, no sending; the LLM only beh
   const wiresLlm = (file: string) => file.endsWith('/analytics/main.ts');
   it.each(files)('%s', (file) => {
     const src = readFileSync(file, 'utf8');
-    if (!wiresLlm(file)) expect(src).not.toMatch(/anthropic|openai|LlmClient|claude/i);
+    if (!wiresLlm(file))
+      expect(src).not.toMatch(/anthropic|openai|near-ai|nearai|LlmClient|claude/i);
     expect(src).not.toMatch(
       /broadcast|send_tx|signTransaction|sendTransaction|NearKeyPairSigner|loadSigner/,
     );

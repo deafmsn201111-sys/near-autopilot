@@ -781,3 +781,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `storage_deposit` + `ft_transfer` on the token. `validateCascade`: `ft_transfer` only to `ctx.transferTo` (D36).
 - UI: `WithdrawDialog` (token, 25% / 50% / Max, chain, token, recipient from HOT Kit or typed), status from the
   deposit `StatusLine`, signing through `PrepareDialog`, which now drops a surrounding modal while the wallet is open.
+
+## 2026-11-14 — The AI analysis runs on NEAR AI Cloud private inference (#232)
+
+- `apps/api/src/llm/near-ai-client.ts`: `NearAiToolLlm` over `POST https://cloud-api.near.ai/v1/chat/completions`
+  with plain `fetch` (`x-no-aliasing: true`, `reasoning_effort: low`, 120 s timeout, no retry); zod on the reply;
+  any finish other than `stop` / `tool_calls`, an empty answer, bad tool arguments or an HTTP error throws (the body is
+  not echoed). Replaces `anthropic-client.ts` and `@anthropic-ai/sdk`.
+- Env `NEAR_AI_API_KEY`, `LLM_MODEL` (allowlist `z-ai/glm-5.3-flash`), `LLM_MAX_TOKENS`; NEAR AI prices in
+  `pricing.ts`; `llm:compare` runs every allowlisted model. The reply schema drops unknown keys (D38).
+- UI shows "GLM 5.3 Flash"; admin asks for the NEAR AI Cloud credit balance.
+
+**Tests run:** `pnpm verify` (green); new `near-ai-llm.test.ts` (mocked `fetch`), stray-key case in
+`ai-analysis.test.ts`; `llm:compare` on autopilot-test.near and hodl13.near through NEAR AI Cloud (table in D38).

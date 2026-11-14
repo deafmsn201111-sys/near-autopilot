@@ -10,7 +10,7 @@ import { OneClickDepositClient } from '../gateway/one-click-deposit';
 import { ShieldClient } from '../gateway/shield';
 import { createJsonLogger } from '../logger';
 import { HttpJsonClient } from '../market-data/http';
-import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
+import { nearAiToolLlmFromEnv } from '../llm/near-ai-client';
 import { analysisMemo } from './ai-analysis';
 import { DrizzleDepositQuoteStore } from './deposit-store';
 import { DrizzleAnalysisStore } from './analysis-store';
@@ -54,7 +54,7 @@ const database = createDatabase(env.DATABASE_URL, { max: 4 });
 await runMigrations(database.db);
 const defaultCapMicro = BigInt(Math.round(llmEnv.LLM_DAILY_CAP_USD * 1e6));
 const llmLedger = new DrizzleLlmLedger(database.db, defaultCapMicro);
-const toolLlm = anthropicToolLlmFromEnv(llmEnv);
+const toolLlm = nearAiToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const market = env.MARKET_CONFIG_FILE
   ? (JSON.parse(readFileSync(env.MARKET_CONFIG_FILE, 'utf8')) as {
@@ -112,8 +112,8 @@ const mainnet = env.MAINNET_READ_RPC_URL
       ai: toolLlm
         ? {
             llm: toolLlm,
-            model: llmEnv.ANTHROPIC_MODEL,
-            maxTokens: llmEnv.ANTHROPIC_MAX_TOKENS,
+            model: llmEnv.LLM_MODEL,
+            maxTokens: llmEnv.LLM_MAX_TOKENS,
             ledger: llmLedger,
             memo: analysisMemo(),
             store: analyses,
