@@ -5424,6 +5424,8 @@ html[data-refreshing] .ht-row {
     50% {
       opacity: 0.4;
     }
+  }
+}
 
 /* ------------------------------------------------------------------ missing states: stale data, AI failure, skeleton */
 .stale-notice,
