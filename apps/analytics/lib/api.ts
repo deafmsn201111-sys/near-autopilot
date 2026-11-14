@@ -59,6 +59,7 @@ export async function apiPost(
   body?: unknown,
   timeoutMs = 20_000,
   extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const env = getEnv();
   try {
@@ -71,7 +72,7 @@ export async function apiPost(
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? null : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { status: res.status, body: json };

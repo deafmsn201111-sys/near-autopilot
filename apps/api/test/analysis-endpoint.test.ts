@@ -370,7 +370,8 @@ describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
         return { send: () => new Promise(() => {}) };
       },
     };
-    const app = server(listed, earning, hanging);
+    const events = new MemoryEventStore();
+    const app = server(listed, earning, hanging, undefined, events);
     const base = await app.listen({ port: 0, host: '127.0.0.1' });
     try {
       const client = new AbortController();
@@ -389,6 +390,8 @@ describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
       expect(new TextDecoder().decode(first.value as Uint8Array)).toContain('event: read');
       client.abort();
       await modelStopped;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(events.rows.map((e) => e.kind)).not.toContain('analyse');
     } finally {
       await app.close();
     }

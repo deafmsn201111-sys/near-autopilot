@@ -808,15 +808,24 @@ export async function analyseAccount(
 
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let leave = () => {};
   const deadline = new Promise<never>((_, reject) => {
-    const stop = (why: string) => (abort.abort(), reject(new Error(why)));
-    timer = setTimeout(() => stop(`no answer within ${deadlineMs} ms`), deadlineMs);
-    if (signal?.aborted) stop('stopped by the caller');
-    signal?.addEventListener('abort', () => stop('stopped by the caller'), { once: true });
+    const stop = (code: 'cancelled' | 'deadline', why: string) => {
+      abort.abort(code);
+      reject(new Error(why));
+    };
+    timer = setTimeout(() => stop('deadline', `no answer within ${deadlineMs} ms`), deadlineMs);
+    leave = () => stop('cancelled', 'stopped by the caller');
+    if (signal?.aborted) leave();
+    signal?.addEventListener('abort', leave, { once: true });
   });
   deadline.catch(() => {});
-  const stopped = (): 'cancelled' | 'deadline' => (signal?.aborted ? 'cancelled' : 'deadline');
-  const early = (out: Analysis) => (clearTimeout(timer), out);
+  const stopped = () => abort.signal.reason as 'cancelled' | 'deadline';
+  const settle = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', leave);
+  };
+  const early = (out: Analysis) => (settle(), out);
 
   let obs: WalletObservation;
   try {
@@ -1014,7 +1023,7 @@ export async function analyseAccount(
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
     reply = await Promise.race([run(), deadline]).finally(() => {
-      clearTimeout(timer);
+      settle();
       release();
     });
   } catch (e) {

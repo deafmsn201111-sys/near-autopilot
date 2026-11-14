@@ -42,13 +42,15 @@ describe('POST /api/analysis', () => {
 
   it('forwards a valid account to the analysis endpoint', async () => {
     const { POST } = await import('../app/api/analysis/route');
-    const res = await POST(request({ account: 'Alice.near ' }));
+    const req = request({ account: 'Alice.near ' });
+    const res = await POST(req);
     expect(res.status).toBe(200);
     expect(apiPost).toHaveBeenCalledWith(
       '/v1/analytics/account/alice.near/analysis',
       { strategy: 'balanced' },
       60_000,
       {},
+      req.signal,
     );
   });
 
@@ -96,6 +98,7 @@ describe('POST /api/analysis', () => {
       { strategy: 'aggressive' },
       60_000,
       {},
+      expect.any(AbortSignal),
     );
   });
 
@@ -121,6 +124,7 @@ describe('POST /api/analysis', () => {
       {
         'x-ownership-proof': 'signed-proof',
       },
+      expect.any(AbortSignal),
     );
   });
 

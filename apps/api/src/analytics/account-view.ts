@@ -2085,9 +2085,8 @@ export function registerAccountView(
 
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
-    // A visitor who leaves, even during the wallet read, stops the model run: no spend on an answer nobody reads.
-    const left = new AbortController();
-    reply.raw.on('close', () => reply.raw.writableFinished || left.abort());
+    const visitorLeft = new AbortController();
+    reply.raw.on('close', () => reply.raw.writableFinished || visitorLeft.abort());
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
@@ -2104,8 +2103,9 @@ export function registerAccountView(
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
-        left.signal,
+        visitorLeft.signal,
       );
+      if (analysis.fallback === 'cancelled') return analysis;
       await record({
         at: new Date(),
         kind: 'analyse',
