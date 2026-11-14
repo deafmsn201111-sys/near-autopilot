@@ -706,6 +706,15 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   stays on allowlisted pools. The exit cascade and `validateCascade` limits are unchanged.
 - Prepare reads a token missing from our metadata table with `ft_metadata` instead of assuming 24 decimals.
 
+## 2026-11-14 — Deposit sent from a connected EVM / Solana wallet (#126)
+
+- `GET /v1/deposit/transfer/:id` rebuilds the origin-chain transfer from the stored quote (token, `amountIn`, deposit
+  address); refuses near the deadline, once 1Click (asked fresh) sees a deposit, for Bitcoin and unnamed assets (D34).
+- The dialog checks it against the quote on screen; `sendOriginTransfer` (`lib/hot-kit.ts`) calls the kit's
+  `wallet.transfer` (ERC-20 / native on Ethereum, Base, Arbitrum; SPL / SOL). After a send the QR is hidden and the
+  explorer link shown; the status polling follows the deposit. The connected wallet fills the refund address.
+- `signing-lock.test.ts` keeps origin-chain sends to that one call.
+
 ## 2026-11-14 — A model that picks nothing keeps the warnings (#202)
 
 - `runModel`: left-out warnings are put back before the empty check, so "picked nothing" with a Guardian warning is

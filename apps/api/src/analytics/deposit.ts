@@ -92,6 +92,10 @@ export const EXPIRY_GRACE_MS = 30 * 60_000;
 export const REFRESH_CAP = 20;
 const MIN_RECHECK_MS = 60_000;
 const MAX_RECHECK_MS = 10 * 60_000;
+// A wallet prompt can stay open a while: a transfer must land well before 1Click's deadline.
+export const SEND_MARGIN_MS = 2 * 60_000;
+const ALREADY_SEEN = 'A deposit to this address was already seen. Do not send again.';
+const MANUAL_ONLY = 'Send this deposit manually: your wallet cannot be asked for it here.';
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
 
 /** "1.5" with 6 decimals -> 1500000n. Null unless a positive plain decimal with at most `decimals` places. */
@@ -360,6 +364,51 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       req.log.warn({ err }, '1Click status failed');
       return reply.code(502).send({ error: STATUS_UNAVAILABLE });
     }
+  });
+
+  // What the user's own wallet on the origin chain is asked to send: rebuilt from the stored quote, never the browser.
+  app.get('/v1/deposit/transfer/:id', async (req, reply) => {
+    const id = quoteId.safeParse((req.params as { id?: unknown }).id);
+    if (!id.success) return reply.code(400).send({ error: 'Bad quote id.' });
+    const at = now();
+    let q;
+    let origins;
+    try {
+      [q, { origins }] = await Promise.all([deps.store.find(id.data), lists()]);
+    } catch (err) {
+      req.log.warn({ err }, 'deposit transfer unavailable');
+      return reply.code(502).send({ error: UNAVAILABLE });
+    }
+    if (!q) return reply.code(404).send({ error: 'Unknown deposit.' });
+    if (at.getTime() >= q.deadline.getTime() - SEND_MARGIN_MS)
+      return reply.code(409).send({ error: 'This quote expires too soon to send. Get a new one.' });
+    const seen = (s: string | null) => s !== null && s !== 'PENDING_DEPOSIT';
+    if (seen(q.status)) return reply.code(409).send({ error: ALREADY_SEEN });
+    // Never the cached status: a retry right after a send must see the deposit 1Click already knows of.
+    try {
+      if (seen((await fetchStatus(q.id, at)).status))
+        return reply.code(409).send({ error: ALREADY_SEEN });
+    } catch (err) {
+      req.log.warn({ err }, '1Click status failed before a wallet transfer');
+      return reply.code(502).send({ error: STATUS_UNAVAILABLE });
+    }
+    const origin = origins.find((t) => t.assetId === q.originAsset);
+    const chain = origin?.blockchain ?? '';
+    const payment =
+      origin && isDepositChain(chain) && chain !== 'btc' ? paymentToken(chain, origin) : null;
+    if (!origin || !payment || !isRefundAddress(chain as DepositChain, q.depositAddress))
+      return reply.code(409).send({ error: MANUAL_ONLY });
+    return {
+      quoteId: q.id,
+      chain,
+      receiver: q.depositAddress,
+      amount: q.amountIn,
+      token: {
+        ...asset(origin),
+        blockchain: chain,
+        contractAddress: 'contract' in payment ? payment.contract : null,
+      },
+    };
   });
 
   app.post('/v1/deposit/quote', async (req, reply) => {

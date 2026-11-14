@@ -127,7 +127,7 @@ from another chain (below), in a separate client.
 
 5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
    on the portfolio. **Connect EVM wallet** / **Connect Solana wallet** links MetaMask, Phantom or another browser
-   wallet (or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build) through HOT Kit and shows its address (it signs nothing yet). Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
+   wallet (or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build) through HOT Kit and shows its address, which then fills the refund address for that chain. Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
    (search by symbol, popular ones first, every token with its logo; a Solana token whose mint, read from the chain, takes a fee on
    every transfer or can block one, is not offered, since it would arrive short and be refunded), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
@@ -137,7 +137,11 @@ from another chain (below), in a separate client.
    Ethereum, Base and Arbitrum, Solana Pay for SOL and SPL tokens. The API names the token from the quoted 1Click asset
    (native coin by its exact asset id; on EVM the contract the asset id names; on Solana the mint 1Click lists); when it cannot be, or the wallet does not read payment links, the QR holds the
    address only (also an **Address only** switch). **Open in wallet** opens the same link; the address and the amount
-   each have a copy button. Send exactly that amount from your wallet on that chain;
+   each have a copy button. On Ethereum, Base, Arbitrum and Solana, **Send … with your wallet** (or **Connect … wallet
+   and send**) does it in one click: the server rebuilds the transfer from the stored quote (token, exact amount,
+   deposit address; refused once the deadline passed or a deposit was seen), the browser checks it matches the quote
+   on screen, and your MetaMask / Phantom shows that transfer for you to sign; then the dialog links the transaction
+   (D34). Otherwise send exactly that amount from your wallet on that chain;
    1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
    deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
    transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;

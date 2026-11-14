@@ -7,14 +7,18 @@ import {
   defaultDestination,
   describeStatus,
   defaultOrigin,
+  explorerTxUrl,
   formatUnits,
   loadDepositAssets,
   loadDepositIncidents,
   loadDepositStatus,
+  loadDepositTransfer,
   requestDepositQuote,
   statusDelayMs,
   stopReason,
   searchTokens,
+  walletChainOf,
+  walletSendError,
   type DepositAsset,
   type DepositAssets,
   type DepositQuote,
@@ -24,6 +28,8 @@ import { shortHash } from '../lib/activity';
 import {
   connectOriginWallet,
   disconnectOriginWallet,
+  sendFailure,
+  sendOriginTransfer,
   watchOriginWallets,
   type OriginWallet,
 } from '../lib/hot-kit';
@@ -176,17 +182,20 @@ function QuoteView({
   q,
   originIcon,
   destinationIcon,
+  wallets,
   onBack,
 }: {
   q: DepositQuote;
   originIcon: string | null | undefined;
   destinationIcon: string | null | undefined;
+  wallets: readonly OriginWallet[];
   onBack: () => void;
 }) {
   const now = useNow();
   // The server's seconds-left, counted from when the answer arrived: the browser clock may be off.
   const [expiresAt] = useState(() => Date.now() + q.expiresInSeconds * 1000);
   const [addressOnly, setAddressOnly] = useState(false);
+  const [walletSend, setWalletSend] = useState<WalletSendState>('idle');
   const left = Math.max(0, Math.floor((expiresAt - now) / 1000));
   const expired = left === 0;
   const amount = formatUnits(q.amountIn, q.origin.decimals);
@@ -208,7 +217,18 @@ function QuoteView({
         </p>
       )}
       <StatusLine q={q} />
-      {!expired && (
+      <WalletSend
+        q={q}
+        wallets={wallets}
+        send={send}
+        expiresAt={expiresAt}
+        expired={expired}
+        onState={setWalletSend}
+      />
+      {!expired && walletSend === 'idle' && walletChainOf(q.chain) && (
+        <p className="muted-note">Or send it manually from any wallet:</p>
+      )}
+      {!expired && walletSend === 'idle' && (
         <div className="deposit-address">
           <Qr
             text={link ?? q.depositAddress}
@@ -290,10 +310,17 @@ function QuoteView({
         </dd>
       </dl>
       <form method="dialog" className="modal-actions">
-        <button type="button" className="btn secondary" onClick={onBack}>
+        <button
+          type="button"
+          className="btn secondary"
+          disabled={walletSend === 'busy'}
+          onClick={onBack}
+        >
           New quote
         </button>
-        <button className="btn primary">Close</button>
+        <button className="btn primary" disabled={walletSend === 'busy'}>
+          Close
+        </button>
       </form>
     </>
   );
@@ -453,24 +480,140 @@ function TokenButton({
 const CHAIN_LABEL: Record<OriginWallet['chain'], string> = { evm: 'EVM', solana: 'Solana' };
 const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
 
-/** EVM / Solana wallets through HOT Kit; mounted only once the dialog has opened, so the kit loads only then. */
-function OriginWallets() {
-  const [wallets, setWallets] = useState<OriginWallet[]>([]);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => watchOriginWallets(setWallets), []);
+/** A modal <dialog> sits in the top layer and makes the kit's sheets inert: drop to non-modal while one may be open. */
+async function withKitPopup<T>(
+  dialog: HTMLDialogElement | null,
+  run: () => Promise<T>,
+): Promise<T> {
+  dialog?.close();
+  dialog?.show();
+  try {
+    return await run();
+  } finally {
+    if (dialog?.open && dialog.isConnected) {
+      dialog.close();
+      dialog.showModal();
+    }
+  }
+}
 
-  // A modal <dialog> sits in the top layer and makes the kit's picker inert: drop to non-modal while it is open.
+type WalletSendState = 'idle' | 'busy' | 'sent';
+// As the API's margin: a wallet prompt can stay open, and the transfer must land before 1Click's deadline.
+const SEND_MARGIN_MS = 2 * 60_000;
+
+/** Connect, send, wait: the one-click path when the user's wallet can send on the quoted chain. */
+function WalletSend({
+  q,
+  wallets,
+  send,
+  expiresAt,
+  expired,
+  onState,
+}: {
+  q: DepositQuote;
+  wallets: readonly OriginWallet[];
+  send: string;
+  expiresAt: number;
+  expired: boolean;
+  onState: (s: WalletSendState) => void;
+}) {
+  const chain = walletChainOf(q.chain);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hash, setHash] = useState<string | null>(null);
+  const [unsure, setUnsure] = useState<string | null>(null);
+  const done = hash !== null || unsure !== null;
+  useEffect(() => onState(done ? 'sent' : busy ? 'busy' : 'idle'), [done, busy, onState]);
+  // Kept mounted past the deadline while the wallet is open or once it sent: a signed transfer is never lost.
+  if (!chain || (expired && !busy && !done)) return null;
+  const connected = wallets.find((w) => w.chain === chain);
+
+  const run = async (dialog: HTMLDialogElement | null) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await withKitPopup(dialog, async () => {
+        if (!connected && !(await connectOriginWallet(chain)))
+          return setError('No wallet was connected. Connect one, or send manually below.');
+        const t = await loadDepositTransfer(q);
+        if (!t.ok) return setError(t.error);
+        if (expiresAt - Date.now() < SEND_MARGIN_MS)
+          return setError('This quote expires too soon to send. Get a new one.');
+        setHash(await sendOriginTransfer(t.data));
+      });
+    } catch (e) {
+      const why = e instanceof Error ? e.message.slice(0, 200) : '';
+      const failure = sendFailure(e);
+      if (failure === 'unknown') setUnsure(why);
+      else setError(walletSendError(failure, q, why));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (unsure !== null) {
+    return (
+      <p className="deposit-warn" role="alert">
+        Your wallet reported an error{unsure ? `: ${unsure}` : ''}. The transfer may still have been
+        sent: check your wallet&apos;s activity and the status above. Do not send to this address
+        again; if nothing was sent, get a new quote.
+      </p>
+    );
+  }
+  if (hash) {
+    const url = explorerTxUrl(q.chain, hash);
+    return (
+      <p className="deposit-sent" role="status">
+        Sent from your wallet.{' '}
+        {url ? (
+          <a href={url} target="_blank" rel="noreferrer">
+            View the {q.chainName} transaction
+          </a>
+        ) : (
+          <code>{shortHash(hash)}</code>
+        )}
+        . Do not send it again; the status above follows the deposit.
+      </p>
+    );
+  }
+  return (
+    <div className="deposit-wallet-send">
+      <button
+        type="button"
+        className="btn primary"
+        disabled={busy}
+        onClick={(e) => void run(e.currentTarget.closest('dialog'))}
+      >
+        {busy
+          ? 'Confirm in your wallet…'
+          : connected
+            ? `Send ${send} with your wallet`
+            : `Connect ${CHAIN_LABEL[chain]} wallet and send ${send}`}
+      </button>
+      {connected && (
+        <span className="muted-note">
+          From <code title={connected.address}>{shortHash(connected.address)}</code>; your wallet
+          shows the transfer and you sign it there.
+        </span>
+      )}
+      {error && (
+        <p className="deposit-warn" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** EVM / Solana wallets through HOT Kit, as connected in the dialog. */
+function OriginWallets({ wallets }: { wallets: readonly OriginWallet[] }) {
+  const [busy, setBusy] = useState(false);
+
   async function connect(chain: OriginWallet['chain'], dialog: HTMLDialogElement | null) {
     setBusy(true);
-    dialog?.close();
-    dialog?.show();
     try {
-      await connectOriginWallet(chain);
+      await withKitPopup(dialog, () => connectOriginWallet(chain));
     } finally {
-      if (dialog?.open && dialog.isConnected) {
-        dialog.close();
-        dialog.showModal();
-      }
       setBusy(false);
     }
   }
@@ -539,8 +682,20 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
     };
   }, [origin, destination]);
   const [opened, setOpened] = useState(false);
+  // Subscribed only once the dialog has opened, so the kit loads only then.
+  const [wallets, setWallets] = useState<OriginWallet[]>([]);
+  useEffect(() => (opened ? watchOriginWallets(setWallets) : undefined), [opened]);
 
   const chosen = assets?.origins.find((o) => o.assetId === origin);
+  const refundWallet =
+    wallets.find((w) => w.chain === walletChainOf(chosen?.chain ?? ''))?.address ?? '';
+  // The connected wallet of the chosen chain is the refund address, until the user types another one.
+  const autoRefund = useRef('');
+  useEffect(() => {
+    const before = autoRefund.current;
+    autoRefund.current = refundWallet;
+    setRefundTo((now) => (now === '' || now === before ? refundWallet : now));
+  }, [refundWallet]);
   const receive = assets?.destinations.find((d) => d.assetId === destination);
   const chains = DEPOSIT_CHAINS.filter((c) => assets?.origins.some((o) => o.chain === c.id));
   const onChain = assets?.origins.filter((o) => o.chain === chain) ?? [];
@@ -609,6 +764,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
             q={quote}
             originIcon={chosen?.icon}
             destinationIcon={receive?.icon}
+            wallets={wallets}
             onBack={() => setQuote(null)}
           />
         ) : picking === 'send' ? (
@@ -642,7 +798,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
               Through NEAR Intents 1Click. You get a one-time address on the chain you pick and send
               to it from your own wallet there; it arrives in <b>{account}</b>.
             </p>
-            {opened && <OriginWallets />}
+            {opened && <OriginWallets wallets={wallets} />}
             <div className="chain-chips" role="radiogroup" aria-label="Network">
               {chains.map((c) => (
                 <button
@@ -703,6 +859,9 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
                 required
               />
               <span className="muted-note">
+                {refundWallet && refundTo === refundWallet
+                  ? 'Filled from your connected wallet. '
+                  : ''}
                 If the swap fails, 1Click sends your deposit back here. It must be your own address.
               </span>
             </label>

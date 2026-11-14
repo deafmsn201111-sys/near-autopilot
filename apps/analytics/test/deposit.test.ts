@@ -3,7 +3,11 @@ import {
   defaultDestination,
   defaultOrigin,
   describeStatus,
+  explorerTxUrl,
   formatUnits,
+  loadDepositTransfer,
+  walletChainOf,
+  walletSendError,
   loadDepositIncidents,
   loadDepositStatus,
   searchTokens,
@@ -282,5 +286,126 @@ describe('searchTokens', () => {
 
   it('keeps the whole list for an empty query', () => {
     expect(searchTokens(list, '')).toEqual(list);
+  });
+});
+
+describe('loadDepositTransfer', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const transfer = {
+    quoteId: 'dq_1',
+    chain: 'eth',
+    receiver: '0xdeposit',
+    amount: '50000000',
+    token: {
+      assetId: 'nep141:eth-usdc',
+      blockchain: 'eth',
+      symbol: 'USDC',
+      decimals: 6,
+      contractAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+    },
+  };
+  const serve = (body: unknown, status = 200) =>
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(body), { status }));
+
+  it('returns the server transfer when it is exactly the quote on screen', async () => {
+    serve(transfer);
+    expect(await loadDepositTransfer(quote)).toEqual({ ok: true, data: transfer });
+  });
+
+  it('refuses one that differs from the quote in chain, asset, amount or address', async () => {
+    for (const bad of [
+      { ...transfer, quoteId: 'dq_2' },
+      { ...transfer, chain: 'base', token: { ...transfer.token, blockchain: 'base' } },
+      { ...transfer, receiver: '0xattacker' },
+      { ...transfer, amount: '50000001' },
+      { ...transfer, token: { ...transfer.token, assetId: 'nep141:eth.omft.near' } },
+      { ...transfer, token: { ...transfer.token, decimals: 18 } },
+      { ...transfer, token: { ...transfer.token, blockchain: 'base' } },
+      { ...transfer, amount: '5e7' },
+    ]) {
+      serve(bad);
+      expect((await loadDepositTransfer(quote)).ok).toBe(false);
+    }
+  });
+
+  it('passes the server refusal through', async () => {
+    serve({ error: 'This quote has expired. Get a new one.' }, 409);
+    expect(await loadDepositTransfer(quote)).toEqual({
+      ok: false,
+      error: 'This quote has expired. Get a new one.',
+    });
+  });
+});
+
+describe('walletChainOf', () => {
+  it('maps EVM chains and Solana to the wallet that sends there; Bitcoin has none', () => {
+    expect(['eth', 'base', 'arb', 'sol', 'btc', 'x'].map(walletChainOf)).toEqual([
+      'evm',
+      'evm',
+      'evm',
+      'solana',
+      null,
+      null,
+    ]);
+  });
+});
+
+describe('walletSendError', () => {
+  const usdc: DepositQuote = {
+    ...quote,
+    chain: 'base',
+    chainName: 'Base',
+    origin: { ...quote.origin, payment: { contract: '0x8335' } },
+  };
+  const eth: DepositQuote = {
+    ...usdc,
+    origin: {
+      assetId: 'nep141:base.omft.near',
+      symbol: 'ETH',
+      decimals: 18,
+      payment: { native: true },
+    },
+    amountIn: '1000000000000000',
+  };
+
+  it('names the fee coin when only the fee is missing, not the token already there', () => {
+    expect(walletSendError('no-gas', usdc, 'gas required exceeds allowance (0)')).toBe(
+      'Nothing was sent: your wallet does not have enough ETH on Base to pay the network fee. Add a little ETH on Base (cents are enough) and press the button again.',
+    );
+  });
+
+  it('names the token when the wallet holds less than the quote', () => {
+    expect(walletSendError('no-token', usdc, 'exceeds balance')).toBe(
+      'Nothing was sent: your wallet on Base has less than 50 USDC. Top it up and press the button again.',
+    );
+  });
+
+  it('for the native coin, the amount and the fee are one shortfall', () => {
+    for (const kind of ['no-gas', 'no-token'] as const)
+      expect(walletSendError(kind, eth, '')).toBe(
+        'Nothing was sent: your wallet needs 0.001 ETH on Base plus a little more for the network fee. Top it up and press the button again.',
+      );
+  });
+
+  it('says what the network answered for another refusal, and the declined case', () => {
+    expect(walletSendError('not-sent', usdc, 'execution reverted: blacklisted')).toBe(
+      'Nothing was sent: the network refused the transfer (execution reverted: blacklisted).',
+    );
+    expect(walletSendError('declined', usdc, '')).toBe(
+      'You declined in your wallet. Nothing was sent.',
+    );
+  });
+});
+
+describe('explorerTxUrl', () => {
+  it('links the origin chain explorer, only for a hash of that chain', () => {
+    const evm = `0x${'ab'.repeat(32)}`;
+    const sol = '5'.repeat(88);
+    expect(explorerTxUrl('base', evm)).toBe(`https://basescan.org/tx/${evm}`);
+    expect(explorerTxUrl('eth', evm)).toBe(`https://etherscan.io/tx/${evm}`);
+    expect(explorerTxUrl('arb', evm)).toBe(`https://arbiscan.io/tx/${evm}`);
+    expect(explorerTxUrl('sol', sol)).toBe(`https://solscan.io/tx/${sol}`);
+    expect(explorerTxUrl('sol', evm)).toBeNull();
+    expect(explorerTxUrl('base', 'javascript:alert(1)')).toBeNull();
   });
 });
