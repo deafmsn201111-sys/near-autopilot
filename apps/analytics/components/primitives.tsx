@@ -1,4 +1,3 @@
-'use client';
 import { useId, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
 
 /** The design-system primitives from DESIGN.md → Components. Screens build from these, not page-local markup. */
