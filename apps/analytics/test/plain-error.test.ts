@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { aiFailure, bridgeOpenError, plainReadError, staleNotices } from '../lib/plain-error';
+import {
+  aiFailure,
+  bridgeOpenError,
+  plainQuoteError,
+  plainReadError,
+  staleNotices,
+} from '../lib/plain-error';
 
 describe('a failed read in plain words', () => {
   it('a rate limit is about our load, never the account name', () => {
@@ -134,5 +140,34 @@ describe('review follow-ups', () => {
   it('a request we sent wrong offers no retry that would fail the same way', () => {
     expect(aiFailure({ status: 400, error: 'invalid JSON body' })?.retry).toBe(false);
     expect(aiFailure({ status: 429 })?.retry).toBe(true);
+  });
+});
+
+describe('a withdraw quote that failed', () => {
+  it('keeps our own plain messages about the amount or address', () => {
+    expect(plainQuoteError(400, 'The recipient is not a valid Base address.')).toBe(
+      'The recipient is not a valid Base address.',
+    );
+    expect(
+      plainQuoteError(
+        502,
+        '1Click has no quote for this amount right now. Try a larger amount or another token.',
+      ),
+    ).toBe('1Click has no quote for this amount right now. Try a larger amount or another token.');
+  });
+
+  it('never shows raw API text', () => {
+    expect(plainQuoteError(400, 'body must be { account, amount }')).toBe(
+      'This amount or address cannot be quoted. Check them and try again.',
+    );
+    expect(plainQuoteError(429, 'Too many quotes.')).toBe(
+      'Too many quotes in a short time. Wait a few minutes and try again.',
+    );
+    expect(plainQuoteError(0, 'fetch failed')).toBe(
+      'Our server is not answering right now. Check your connection and try again.',
+    );
+    expect(plainQuoteError(503, 'upstream ECONNRESET')).toBe(
+      '1Click is not answering right now. Nothing was sent; try again in a minute.',
+    );
   });
 });

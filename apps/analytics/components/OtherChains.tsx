@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState, type ComponentProps } from 'react';
 import { shortHash } from '../lib/activity';
-import { watchOtherBalances, type OtherBalance } from '../lib/hot-kit';
-import { CHAIN_LABEL, DepositButton } from './DepositDialog';
+import { CHAIN_LABEL, watchOtherBalances, type OtherBalance } from '../lib/hot-kit';
+import { DepositButton } from './DepositButton';
 import { HoldingsPanel, type OtherChainGroup } from './Holdings';
 import { PortfolioSummary } from './PortfolioSummary';
 import { Chip } from './primitives';

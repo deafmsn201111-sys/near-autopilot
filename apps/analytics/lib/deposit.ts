@@ -35,7 +35,7 @@ export interface DepositQuote {
   readonly expiresInSeconds: number;
   readonly timeEstimateSeconds: number;
 }
-type Result<T> = { ok: true; data: T } | { ok: false; error: string };
+type Result<T> = { ok: true; data: T } | { ok: false; error: string; status: number };
 
 async function call<T>(url: string, init?: RequestInit): Promise<Result<T>> {
   try {
@@ -45,9 +45,14 @@ async function call<T>(url: string, init?: RequestInit): Promise<Result<T>> {
     return {
       ok: false,
       error: typeof body.error === 'string' ? body.error : `Request failed (HTTP ${res.status}).`,
+      status: res.status,
     };
   } catch {
-    return { ok: false, error: 'The site is unreachable. Check your connection and try again.' };
+    return {
+      ok: false,
+      error: 'The site is unreachable. Check your connection and try again.',
+      status: 0,
+    };
   }
 }
 
@@ -132,7 +137,11 @@ export async function loadDepositStatus(id: string): Promise<Result<DepositStatu
   const parsed = depositStatus.safeParse(r.data);
   return parsed.success
     ? { ok: true, data: parsed.data }
-    : { ok: false, error: 'The deposit status could not be read. It is checked again shortly.' };
+    : {
+        ok: false,
+        error: 'The 1Click status could not be read. It is checked again shortly.',
+        status: 200,
+      };
 }
 
 const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {

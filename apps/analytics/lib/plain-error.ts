@@ -126,3 +126,18 @@ export function bridgeOpenError(e: unknown): string {
 
 export const NO_NEAR_ACCOUNT = 'Connect your NEAR wallet first, then add funds.';
 export const CONNECT_FAILED = 'The wallet list did not open. Check your connection and try again.';
+
+// Messages our API writes itself about the amount, the tokens or the address: already plain, about what was typed.
+const OWN_QUOTE_ERROR =
+  /^(The amount must|The recipient is not|1Click has no quote|Unknown token|Transfers to other chains are unavailable)/;
+
+/** A withdraw quote that failed, in plain words inside the sheet; raw API text never reaches the screen. */
+export function plainQuoteError(status: number, error: string): string {
+  if (OWN_QUOTE_ERROR.test(error)) return error;
+  if (status === 429) return 'Too many quotes in a short time. Wait a few minutes and try again.';
+  if (status === 0)
+    return 'Our server is not answering right now. Check your connection and try again.';
+  if (status >= 500)
+    return '1Click is not answering right now. Nothing was sent; try again in a minute.';
+  return 'This amount or address cannot be quoted. Check them and try again.';
+}

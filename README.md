@@ -206,15 +206,19 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
    balance, where a failed HOT swap refunds) as "+ $X on other chains · not analysed", in the wallet menu and as a
    holdings group, valued by HOT Kit in your browser and never sent to our server or analysed. **Bring to NEAR** on a
    row opens the same popup with that token preselected; the HOT balance is withdrawn in HOT Wallet.
-6. **Withdraw to another chain.** On your own portfolio or in the wallet menu, press **Withdraw**. Pick a token your NEAR
-   wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
+6. **Withdraw to another chain.** On your own portfolio or in the wallet menu, press **Withdraw**. The same sheet as
+   signing opens. Pick a token your NEAR wallet holds (our token list) and an amount (Max fills your balance; letters,
+   too many decimals or more than you hold are flagged under the field and never quoted), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
-   typed; the server checks it is an address of that chain). **Get quote** asks 1Click for a real quote with your NEAR
-   account as the refund address, verifies it and stores it. **Build transaction** then assembles one NEAR transaction
+   typed; its shape is checked here, the server checks it fully). **Get quote** asks 1Click for a real quote with your NEAR
+   account as the refund address, verifies it and stores it; the sheet shows what you receive, the minimum, 1Click's fee, the time and the refund to your
+   account (wNEAR for NEAR). A failed quote is said in plain words in the sheet. **Review and sign** then assembles one NEAR transaction
    on the token contract from that stored quote, never from the browser: `storage_deposit` for the 1Click deposit
    address (a NEAR implicit account) when it holds no storage, then `ft_transfer` of the quoted amount to it. It passes
-   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D36). You sign it in your NEAR
-   wallet; the dialog follows the withdrawal with the same 1Click status as a deposit.
+   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D36). You review and sign it in the
+   usual review-and-sign sheet; after that the withdraw sheet follows it on a timeline (signed → seen by 1Click →
+   swapping → arrived, or refunded / failed / expired). Closing it keeps tracking: the status shows by the Withdraw
+   button until the page reloads.
 
 **Not done**
 

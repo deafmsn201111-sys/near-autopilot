@@ -29,7 +29,7 @@ import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
-import { DepositButton } from '../components/DepositDialog';
+import { DepositButton } from '../components/DepositButton';
 import { WithdrawDialog } from '../components/WithdrawDialog';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
@@ -366,6 +366,14 @@ async function Portfolio({ sp }: { sp: Search }) {
             : 'Simulated balances valued at live NEAR prices'
         }
         unverifiedUsd={t.unverifiedUsd}
+        emptyAction={
+          isAccount &&
+          accountParam &&
+          accountParam === cookieAccount &&
+          !stale && (
+            <DepositButton account={accountParam} className="ds-btn ds-btn-primary ds-btn-sm" />
+          )
+        }
       >
         {isAccount && data.discovery?.complete === false && (
           <div className="callout warn hold-callout">

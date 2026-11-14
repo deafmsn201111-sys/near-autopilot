@@ -15,7 +15,7 @@ import { ago } from '../lib/format';
 import { aiFailure } from '../lib/plain-error';
 import type { AccountRecommendation } from '../lib/product';
 import { Button, Chip, ProvenanceMark } from './primitives';
-import { useNow } from './DepositDialog';
+import { useNow } from '../lib/use-now';
 import { StrategyPicker } from './StrategyPicker';
 
 /** A saved analysis this old still ranks the right cards, but its prices and rates may have moved. */
