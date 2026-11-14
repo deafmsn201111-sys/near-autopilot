@@ -240,6 +240,8 @@ export function WithdrawDialog({
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quote, setQuote] = useState<DepositQuote | null>(null);
   const [quotedAt, setQuotedAt] = useState(0);
+  // The quote under review: its sheet stays mounted even if the form's quote expires or is cleared meanwhile.
+  const [reviewing, setReviewing] = useState<DepositQuote | null>(null);
   const now = useNow();
   const [picking, setPicking] = useState<'send' | 'receive' | null>(null);
   const [showStatus, setShowStatus] = useState(false);
@@ -276,6 +278,11 @@ export function WithdrawDialog({
     autoRecipient.current = walletAddress;
     setRecipient((now) => (now === '' || now === before ? walletAddress : now));
   }, [walletAddress]);
+  // Any change of address, typed or from a wallet switch, voids a quote bound to the old one.
+  useEffect(() => {
+    setQuote(null);
+    setQuoteError(null);
+  }, [recipient]);
 
   const stale =
     <T,>(set: (v: T) => void) =>
@@ -342,6 +349,9 @@ export function WithdrawDialog({
   const left = quote
     ? Math.max(0, Math.floor((quotedAt + quote.expiresInSeconds * 1000 - now) / 1000))
     : 0;
+  const offered = reviewing ?? (quote && left > SEND_MARGIN_S ? quote : null);
+  const trackedId = useRef<string | null>(null);
+  trackedId.current = tracked?.quote.id ?? null;
   const following = showStatus && tracked !== null;
   const ended = tracked ? timelineOf(tracked.status).end : undefined;
 
@@ -498,18 +508,21 @@ export function WithdrawDialog({
     <Button variant={ended === 'ok' ? 'primary' : 'secondary'} onClick={sheet.close}>
       {ended ? 'Back to portfolio' : 'Close and keep tracking'}
     </Button>
-  ) : picking ? null : quote && left > SEND_MARGIN_S ? (
+  ) : picking ? null : offered ? (
     <PrepareDialog
-      request={{ account, intent: { action: 'withdraw_1click', quoteId: quote.id } }}
+      key={offered.id}
+      request={{ account, intent: { action: 'withdraw_1click', quoteId: offered.id } }}
       label="Review and sign"
-      title={`Send ${amountOf(quote.amountIn, quote.origin)} to ${quote.to.chainName}`}
+      title={`Send ${amountOf(offered.amountIn, offered.origin)} to ${shortHash(offered.recipient)} on ${offered.to.chainName}`}
       context="Withdraw via 1Click"
       signingEnabled={signingEnabled}
       size="md"
       once
-      onSpent={(sent) => sent && trackWithdrawal(quote)}
+      onSpent={(sent) => sent && trackWithdrawal(offered)}
+      onSheetOpened={() => setReviewing(offered)}
       onSheetClosed={() => {
-        if (tracked?.quote.id === quote.id) setShowStatus(true);
+        setReviewing(null);
+        if (trackedId.current === offered.id) setShowStatus(true);
       }}
     />
   ) : (

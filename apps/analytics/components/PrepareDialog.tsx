@@ -218,6 +218,7 @@ export function PrepareDialog({
   size = 'sm',
   onStage,
   onSpent,
+  onSheetOpened,
   onSheetClosed,
 }: {
   request: PrepareRequest;
@@ -235,6 +236,7 @@ export function PrepareDialog({
   onStage?: (stage: CardStage) => void;
   /** A `once` payment was tried: `sent` when the wallet reported a transaction hash. */
   onSpent?: (sent: boolean) => void;
+  onSheetOpened?: () => void;
   onSheetClosed?: () => void;
 }) {
   const router = useRouter();
@@ -260,6 +262,7 @@ export function PrepareDialog({
 
   async function run() {
     sheet.show();
+    onSheetOpened?.();
     setState('loading');
     setError(null);
     setCascade(null);

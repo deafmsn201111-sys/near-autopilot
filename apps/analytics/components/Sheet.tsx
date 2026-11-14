@@ -119,11 +119,14 @@ export function Sheet({
       onAnimationEnd={(e) =>
         e.target === e.currentTarget && !e.pseudoElement && sheet.setEntered(true)
       }
+      // React propagates cancel and close through the tree: a nested sheet's own events are not this one's.
       onCancel={(e) => {
+        if (e.target !== e.currentTarget) return;
         e.preventDefault();
         if (!onEscape?.()) close();
       }}
-      onClose={() => {
+      onClose={(e) => {
+        if (e.target !== e.currentTarget) return;
         // Signing drops the sheet to non-modal and back (lib/modal.ts): that close is not the user's.
         if (sheet.ref.current?.open) return;
         sheet.settle();

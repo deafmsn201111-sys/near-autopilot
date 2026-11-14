@@ -70,7 +70,7 @@ export function withdrawSources(
   });
 }
 
-const DECIMAL = /^(\d+)(?:\.(\d+))?$/;
+const DECIMAL = /^(\d*)\.?(\d*)$/;
 
 /**
  * The typed amount as integer base units, or why it cannot be quoted; null while empty. A comma counts as the decimal
@@ -84,16 +84,17 @@ export function parseAmount(
   const amount = text.trim().replace(',', '.');
   if (!amount) return null;
   const m = DECIMAL.exec(amount);
-  if (!m) return { error: 'Type a number, like 12.5.' };
-  const frac = m[2] ?? '';
+  const [, digits = '', frac = ''] = m ?? [];
+  if (!m || digits + frac === '') return { error: 'Type a number, like 12.5.' };
+  const whole = digits || '0';
   if (frac.length > decimals) return { error: `This token has at most ${decimals} decimals.` };
-  const units = BigInt(m[1] + frac.padEnd(decimals, '0'));
+  const units = BigInt(whole + frac.padEnd(decimals, '0'));
   if (units === 0n) return { error: 'Type an amount above 0.' };
   const held = shareOf(balance, 100, decimals);
-  const [whole, part = ''] = held.split('.');
-  if (units > BigInt(whole + part.padEnd(decimals, '0')))
+  const [heldWhole, heldFrac = ''] = held.split('.');
+  if (units > BigInt(heldWhole + heldFrac.padEnd(decimals, '0')))
     return { error: `More than your balance of ${held}.` };
-  return { amount, units };
+  return { amount: frac ? `${whole}.${frac}` : whole, units };
 }
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;

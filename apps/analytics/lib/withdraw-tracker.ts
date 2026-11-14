@@ -21,6 +21,8 @@ let current: Tracked | null = null;
 let stopRound: (() => void) | null = null;
 const listeners = new Set<() => void>();
 
+const STATUS_ERROR = 'The 1Click status could not be read right now. It is checked again shortly.';
+
 const emit = () => listeners.forEach((l) => l());
 function patch(id: string, next: Partial<Tracked>) {
   if (current?.quote.id !== id) return;
@@ -43,7 +45,7 @@ function round(id: string) {
       if (n < shown || current?.quote.id !== id) return;
       shown = n;
       if (r.ok) last = r.data;
-      patch(id, r.ok ? { status: r.data, error: null } : { error: r.error });
+      patch(id, r.ok ? { status: r.data, error: null } : { error: STATUS_ERROR });
       if (stopReason(last, checks)) {
         stop();
         patch(id, { stopped: true });

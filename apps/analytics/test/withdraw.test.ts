@@ -65,6 +65,12 @@ describe('parseAmount', () => {
     });
   });
 
+  it('accepts a missing whole or fraction part, sent in the API form', () => {
+    expect(parseAmount('.5', 6, 10)).toEqual({ amount: '0.5', units: 500_000n });
+    expect(parseAmount('1.', 6, 10)).toEqual({ amount: '1', units: 1_000_000n });
+    expect(parseAmount('.', 6, 10)).toEqual({ error: 'Type a number, like 12.5.' });
+  });
+
   it('accepts exactly the balance', () => {
     expect(parseAmount('5.123457', 6, 5.123457)).toEqual({ amount: '5.123457', units: 5_123_457n });
   });
