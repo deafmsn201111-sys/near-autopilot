@@ -938,3 +938,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   unless the model really got the token, under our label only, and the forged pick is dropped).
 - The deposit-rebuild scenario from the issue was replaced: D42 removed that endpoint (HOT Kit builds deposits).
 - `pnpm demo:attack`: 19/19 attacks stopped, 4 controls allowed, signed 0, broadcast 0; log regenerated.
+
+## 2026-11-14 — "What the AI saw": the owner sees the exact model input (#271)
+
+- `ToolLlm.open` takes `onRequest`: the NEAR AI client reports the exact body of every request before posting it.
+  `run.input` is the last one (the whole conversation, tool results with their `Error: ` prefix, the tool list)
+  without `model`. A test drives the real client over a fake fetch and compares `run.input` with the posted bytes.
+  A first version rebuilt the input in the `metered` wrapper; review showed it missed the model's own turns, the
+  error prefix and the tool schemas, so it was replaced.
+- Only in the owner's analysis (same NEP-413 gate) and its saved copy (#190, 30 days); not in `llm_calls`, not
+  logged. A run that fell back shows none (no `run`).
+- The panel's "How this was decided" has a collapsible "What the AI saw" block (JSON re-indented, Copy all).

@@ -80,6 +80,8 @@ export interface ToolLlm {
     readonly onUsage?: (usage: LlmUsage) => void;
     /** Called for every reply of a provider that signs them, before the reply is checked. */
     readonly onReply?: (reply: SignedReply) => void;
+    /** Called with the exact body of every request, before it is sent; the last one holds the whole conversation. */
+    readonly onRequest?: (body: string) => void;
   }): ToolChat;
 }
 

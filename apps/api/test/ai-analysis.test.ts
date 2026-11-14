@@ -29,6 +29,7 @@ import {
 } from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
 import { lpObservation, type WalletObservation } from '../src/analytics/lp-recentre';
+import { NearAiToolLlm } from '../src/llm/near-ai-client';
 
 const ALICE = accountId('alice.near');
 const WNEAR = accountId('wrap.near');
@@ -221,6 +222,53 @@ describe('analyseAccount', () => {
     );
     const off = await analyseAccount(null, lists);
     expect(off.recommendations).toEqual([shown]);
+  });
+
+  it('returns the exact last request the model got, without the model name, for "What the AI saw"', async () => {
+    const answer = (message: Record<string, unknown>) =>
+      new Response(
+        JSON.stringify({
+          id: 'chat-1',
+          choices: [{ finish_reason: 'stop', message }],
+          usage: { prompt_tokens: 10, completion_tokens: 2 },
+        }),
+      );
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        answer({
+          content: null,
+          tool_calls:
+            callAll.kind === 'tool_calls'
+              ? callAll.calls.map((c) => ({
+                  id: c.id,
+                  type: 'function',
+                  function: { name: c.name, arguments: '{}' },
+                }))
+              : [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        answer({ content: JSON.stringify({ picks: [{ id: REPAY, why: 'Repay first.' }] }) }),
+      );
+    const llm = new NearAiToolLlm(fetch, {
+      apiKey: 'k',
+      model: 'z-ai/glm-5.3-flash',
+      maxTokens: 4096,
+    });
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    const { model, ...sent } = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(model).toBe('z-ai/glm-5.3-flash');
+    expect(out.run?.input).toEqual(sent);
+    expect(JSON.stringify(out.run?.input)).not.toContain('glm');
+    expect(JSON.stringify(out.run?.input)).toContain('Balanced');
   });
 
   it('offers the three orchestrator agents and the three wallet checks as tools', async () => {
@@ -787,6 +835,7 @@ describe('analyseAccount', () => {
       checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
       ranking: null,
       privacy: null,
+      input: null,
     });
     const off = await analyseAccount(null, {
       ...ctx,
