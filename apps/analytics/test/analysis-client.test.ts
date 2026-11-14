@@ -63,7 +63,7 @@ describe('runAnalysis', () => {
       },
     ];
     const run = {
-      model: 'claude-haiku-5-5',
+      model: 'z-ai/glm-5.3-flash',
       turns: 2,
       toolCalls: 5,
       ms: 6200,
@@ -89,7 +89,7 @@ describe('runAnalysis', () => {
 
   it('reads a run without a ranking sentence, or with one over 300 characters, as no sentence', async () => {
     const run = {
-      model: 'claude-haiku-5-5',
+      model: 'z-ai/glm-5.3-flash',
       turns: 2,
       toolCalls: 5,
       ms: 6200,
@@ -193,7 +193,7 @@ describe('runAnalysis as a stream', () => {
   it('builds the pipeline from each event as it arrives and ends with the done analysis', async () => {
     serve(
       stream(
-        frame('read', { model: 'claude-haiku-5-5', tokens: 7, loan: true }) +
+        frame('read', { model: 'z-ai/glm-5.3-flash', tokens: 7, loan: true }) +
           frame('asked', { agents: [{ tool: step.tool, agent: step.agent }] }) +
           frame('agent', { step }) +
           frame('ranked', { turns: 2 }) +
@@ -207,7 +207,7 @@ describe('runAnalysis as a stream', () => {
       ok: true,
       analysis: { source: 'llm', trace: done.trace, cachedAt: null },
     });
-    const read = { model: 'claude-haiku-5-5', read: { tokens: 7, loan: true } };
+    const read = { model: 'z-ai/glm-5.3-flash', read: { tokens: 7, loan: true } };
     const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
       { ...read, asked: [], trace: [], turns: null, checks: null, ranking: null, stage: 1 },

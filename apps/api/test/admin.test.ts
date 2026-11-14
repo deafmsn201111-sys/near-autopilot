@@ -19,7 +19,7 @@ const DEFAULTS: LlmSettings = {
   depositMicroUsd: null,
   depositSetAt: null,
 };
-const row = (at: string, costMicroUsd: bigint, model = 'claude-haiku-5-5'): SpendRow => ({
+const row = (at: string, costMicroUsd: bigint, model = 'z-ai/glm-5.3-flash'): SpendRow => ({
   at: new Date(at),
   model,
   costMicroUsd,
@@ -28,7 +28,7 @@ const row = (at: string, costMicroUsd: bigint, model = 'claude-haiku-5-5'): Spen
 describe('spendSummary', () => {
   const rows = [
     row('2026-11-12T09:00:00Z', 1_000_000n),
-    row('2026-11-12T01:00:00Z', 500_000n, 'claude-sonnet-5-5'),
+    row('2026-11-12T01:00:00Z', 500_000n, 'claude-haiku-5-5'),
     row('2026-11-10T12:00:00Z', 2_000_000n),
     row('2026-11-06T00:00:00Z', 3_500_000n),
     row('2026-11-05T23:59:59Z', 9_000_000n),
@@ -53,8 +53,8 @@ describe('spendSummary', () => {
   it('splits the 7 days by model and averages the cost per analysis', () => {
     const s = spendSummary(rows, DEFAULTS, 5_000_000n, NOW);
     expect(s.models).toEqual([
-      { model: 'claude-haiku-5-5', analyses: 3, usd: 6.5 },
-      { model: 'claude-sonnet-5-5', analyses: 1, usd: 0.5 },
+      { model: 'claude-haiku-5-5', analyses: 1, usd: 0.5 },
+      { model: 'z-ai/glm-5.3-flash', analyses: 3, usd: 6.5 },
     ]);
     expect(s.avgPerAnalysisUsd).toBe(1.75);
     expect(s.dailyAvgUsd).toBe(1);
@@ -319,7 +319,7 @@ describe('/v1/admin/funnel and /v1/admin/llm', () => {
               {
                 at: NOW,
                 accountId: 'alice.near',
-                model: 'claude-haiku-5-5',
+                model: 'z-ai/glm-5.3-flash',
                 latencyMs: 1000,
                 tools: [],
                 outcome: 'ok',

@@ -153,7 +153,7 @@ function server(
       pools: [],
       ai: llm && {
         llm,
-        model: 'claude-haiku-5-5',
+        model: 'z-ai/glm-5.3-flash',
         maxTokens: 4096,
         ledger: {
           enabled: async () => aiOn,

@@ -17,6 +17,7 @@ import {
   statusDelayMs,
   stopReason,
   searchTokens,
+  refundChainOf,
   walletChainOf,
   walletSendError,
   type DepositAsset,
@@ -478,7 +479,11 @@ export function TokenButton({
   );
 }
 
-const CHAIN_LABEL: Record<OriginWallet['chain'], string> = { evm: 'EVM', solana: 'Solana' };
+const CHAIN_LABEL: Record<OriginWallet['chain'], string> = {
+  evm: 'EVM',
+  solana: 'Solana',
+  btc: 'Bitcoin',
+};
 const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
 
 type WalletSendState = 'idle' | 'busy' | 'sent';
@@ -593,8 +598,14 @@ function WalletSend({
   );
 }
 
-/** EVM / Solana wallets through HOT Kit, as connected in the dialog. */
-export function OriginWallets({ wallets }: { wallets: readonly OriginWallet[] }) {
+/** EVM / Solana / Bitcoin wallets through HOT Kit, as connected in the dialog. */
+export function OriginWallets({
+  wallets,
+  chains = ORIGIN_CHAINS,
+}: {
+  wallets: readonly OriginWallet[];
+  chains?: readonly OriginWallet['chain'][];
+}) {
   const [busy, setBusy] = useState(false);
 
   async function connect(chain: OriginWallet['chain'], dialog: HTMLDialogElement | null) {
@@ -621,17 +632,19 @@ export function OriginWallets({ wallets }: { wallets: readonly OriginWallet[] })
           </button>
         </span>
       ))}
-      {ORIGIN_CHAINS.filter((c) => !wallets.some((w) => w.chain === c)).map((c) => (
-        <button
-          key={c}
-          type="button"
-          className="btn secondary small"
-          disabled={busy}
-          onClick={(e) => void connect(c, e.currentTarget.closest('dialog'))}
-        >
-          Connect {CHAIN_LABEL[c]} wallet
-        </button>
-      ))}
+      {chains
+        .filter((c) => !wallets.some((w) => w.chain === c))
+        .map((c) => (
+          <button
+            key={c}
+            type="button"
+            className="btn secondary small"
+            disabled={busy}
+            onClick={(e) => void connect(c, e.currentTarget.closest('dialog'))}
+          >
+            Connect {CHAIN_LABEL[c]} wallet
+          </button>
+        ))}
     </div>
   );
 }
@@ -676,7 +689,7 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
 
   const chosen = assets?.origins.find((o) => o.assetId === origin);
   const refundWallet =
-    wallets.find((w) => w.chain === walletChainOf(chosen?.chain ?? ''))?.address ?? '';
+    wallets.find((w) => w.chain === refundChainOf(chosen?.chain ?? ''))?.address ?? '';
   // The connected wallet of the chosen chain is the refund address, until the user types another one.
   const autoRefund = useRef('');
   useEffect(() => {

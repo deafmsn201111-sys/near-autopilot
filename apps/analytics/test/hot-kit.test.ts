@@ -56,6 +56,7 @@ vi.mock('@hot-labs/kit/defaults', () => ({
 const EVM = { type: 1, address: '0xabc0000000000000000000000000000000000001' };
 const SOL = { type: 1001, address: 'So1anaAddre55' };
 const TON = { type: 1111, address: 'EQton' };
+const BTC = { type: -6, address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' };
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -79,14 +80,14 @@ describe('HOT Kit origin wallets', () => {
     m = await fresh();
   });
 
-  it('creates the kit lazily, once, with the NEAR, EVM and Solana connectors', async () => {
+  it('creates the kit lazily, once, with the NEAR, EVM, Solana and Bitcoin connectors', async () => {
     expect(fake.state.created).toBe(0);
     const stop1 = m.watchOriginWallets(() => undefined);
     const stop2 = m.watchOriginWallets(() => undefined);
     await m.connectOriginWallet('evm');
     await flush();
     expect(fake.state.created).toBe(1);
-    expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana'] });
+    expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'utxo'] });
     stop1();
     stop2();
   });
@@ -142,6 +143,8 @@ describe('kit wallet type numbers', () => {
       chain: 'solana',
       address: SOL.address,
     });
+    fake.state.pick = { type: WalletType.Btc, address: BTC.address };
+    expect(await m.connectOriginWallet('btc')).toEqual({ chain: 'btc', address: BTC.address });
   });
 });
 
@@ -214,6 +217,10 @@ describe('sendOriginTransfer', () => {
     const m = await fresh();
     await expect(m.sendOriginTransfer(transfer('base', BASE_USDC))).rejects.toThrow(/Connect/);
     await expect(m.sendOriginTransfer(transfer('btc', null, 8))).rejects.toThrow();
+    const sent: Sent[] = [];
+    fake.state.wallets = [wallet(BTC, sent)];
+    await expect(m.sendOriginTransfer(transfer('btc', null, 8))).rejects.toThrow(/manually/);
+    expect(sent).toEqual([]);
   });
 });
 
@@ -294,7 +301,7 @@ describe('WalletConnect project id', () => {
       vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', value);
       const m = await fresh();
       await m.connectOriginWallet('evm');
-      expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana'] });
+      expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'utxo'] });
     }
     vi.unstubAllEnvs();
   });

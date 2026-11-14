@@ -279,21 +279,24 @@ export const walletConnectProjectIdSchema = z.preprocess(
     .optional(),
 );
 
-/** The models the server may call; each has a price in apps/api/src/llm/pricing.ts. */
-export const LLM_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
+/**
+ * The models the server may call: NEAR AI Cloud private inference only (TEE, D38). Each has a price in
+ * apps/api/src/llm/pricing.ts. A model outside TEE would make the privacy claim false, so none is allowed here.
+ */
+export const LLM_MODELS = ['z-ai/glm-5.3-flash'] as const;
 export type LlmModel = (typeof LLM_MODELS)[number];
 
-/** Server LLM (Anthropic). No key = LLM off, heuristics only. The key is read from the local .env only; never logged. */
+/** Server LLM (NEAR AI Cloud). No key = LLM off, heuristics only. The key is read from the local .env only; never logged. */
 export const llmEnvSchema = z.object({
-  ANTHROPIC_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(8).optional()),
-  ANTHROPIC_MODEL: z.preprocess(
+  NEAR_AI_API_KEY: z.preprocess(unsetIfEmpty, z.string().min(8).optional()),
+  LLM_MODEL: z.preprocess(
     unsetIfEmpty,
     z
       .enum(LLM_MODELS, { message: `must be one of ${LLM_MODELS.join(', ')}` })
-      .default('claude-haiku-5-5'),
+      .default('z-ai/glm-5.3-flash'),
   ),
   /** Hard cap on one reply; also bounds the spend of a single call. */
-  ANTHROPIC_MAX_TOKENS: z.preprocess(
+  LLM_MAX_TOKENS: z.preprocess(
     unsetIfEmpty,
     z.coerce.number().int().min(1).max(16_000).default(4096),
   ),

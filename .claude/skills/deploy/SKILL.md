@@ -51,6 +51,16 @@ cp -a OLD/checkpoints near-autopilot-public-<sha>/ 2>/dev/null || true
 cd near-autopilot-public-<sha> && ./setup.sh
 ```
 
+**Env carried across a rename (#232, D38).** Between the `cp -p` and `setup.sh` (so as part of the same switch, after
+the upload), check the new `.env` without printing it:
+`ssh near-autopilot "grep -q '^NEAR_AI_API_KEY=.' NEW/.env"`, where `NEW` = `APP/near-autopilot-public-<sha>`.
+If it has none, pipe the key from the local `.env` (never echo it, never put it on a command line):
+`grep '^NEAR_AI_API_KEY=.' .env | ssh near-autopilot "cat >> NEW/.env"`. No key in the local `.env` either → stop and
+ask the owner for it (cloud.near.ai → API Keys). Then drop the old provider from the new `.env` only:
+`ssh near-autopilot "sed -i '/^ANTHROPIC_/d' NEW/.env"` (`OLD/.env` keeps it, so a rollback still works). After the
+switch, confirm the API got the key: `ssh near-autopilot "cd NEW && docker compose exec -T analytics-api sh -c 'test -n \"\$NEAR_AI_API_KEY\"'"`
+exits 0; otherwise the AI is silently off (heuristics only) — fix the `.env` and re-run `setup.sh`.
+
 `.env` must be copied before `setup.sh`: without it, `setup.sh` creates a new database password that does not match
 the kept database. The compose project name is fixed, so the database volume carries over. `setup.sh` appends a generated
 `ADMIN_API_TOKEN` to the copied `.env` if it has none (it is kept from then on), for `analytics-api` and the

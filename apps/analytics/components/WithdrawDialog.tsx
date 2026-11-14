@@ -11,7 +11,13 @@ import {
   type DepositQuote,
 } from '../lib/deposit';
 import { watchOriginWallets, type OriginWallet } from '../lib/hot-kit';
-import { requestWithdrawQuote, shareOf, WITHDRAW_CHAINS } from '../lib/withdraw';
+import {
+  requestWithdrawQuote,
+  shareOf,
+  withdrawSources,
+  WITHDRAW_CHAINS,
+  type WalletBalance,
+} from '../lib/withdraw';
 import {
   OriginWallets,
   REFUND_HINT,
@@ -23,15 +29,12 @@ import {
 } from './DepositDialog';
 import { PrepareDialog } from './PrepareDialog';
 
-/** A token the connected NEAR wallet holds, as the portfolio reports it (floored to at most 6 decimals). */
-export interface WalletBalance {
-  readonly token: string;
-  readonly amount: number;
-}
-
 const SHARES = [25, 50, 100] as const;
 // As the API's margin: the transfer must land well before 1Click's deadline.
 const SEND_MARGIN_S = 120;
+// The dialog names wNEAR "NEAR" (#237); either name finds the same token on the target chain.
+const sameToken = (a: string, b: string | undefined) =>
+  b !== undefined && a.replace(/^w(?=NEAR$)/, '') === b.replace(/^w(?=NEAR$)/, '');
 const CHAINS = DEPOSIT_CHAINS.filter((c) => (WITHDRAW_CHAINS as readonly string[]).includes(c.id));
 
 function WithdrawQuote({
@@ -64,6 +67,8 @@ function WithdrawQuote({
         <p>
           Sign one NEAR transaction within <b className="num">{remaining(left)}</b>: it sends {send}{' '}
           from <b>{account}</b> to the 1Click deposit address of this quote.
+          {q.origin.assetId === 'nep141:wrap.near' &&
+            ' Any of it your wallet lacks as wNEAR is first wrapped from native NEAR, in the same transaction, keeping 1 NEAR for fees. A 1Click refund comes back as wNEAR.'}
         </p>
       )}
       <StatusLine q={q} />
@@ -158,11 +163,9 @@ export function WithdrawDialog({
   const [wallets, setWallets] = useState<OriginWallet[]>([]);
   useEffect(() => (opened ? watchOriginWallets(setWallets) : undefined), [opened]);
 
-  const held = (assets?.destinations ?? []).filter((d) =>
-    balances.some((b) => `nep141:${b.token}` === d.assetId && b.amount > 0),
-  );
+  const held = withdrawSources(assets?.destinations ?? [], balances);
   const chosen = held.find((d) => d.assetId === origin);
-  const balance = balances.find((b) => `nep141:${b.token}` === origin)?.amount ?? 0;
+  const balance = chosen?.balance ?? 0;
   const targets = (assets?.origins ?? []).filter((o) => o.chain === chain);
   const receive = targets.find((t) => t.assetId === destination);
   const chainName = CHAINS.find((c) => c.id === chain)?.name ?? chain;
@@ -181,8 +184,8 @@ export function WithdrawDialog({
     setChain(id);
     const here = (list?.origins ?? []).filter((o) => o.chain === id);
     setDestination(
-      (here.find((o) => o.symbol === symbol) ?? defaultOrigin(list?.origins ?? [], id))?.assetId ??
-        '',
+      (here.find((o) => sameToken(o.symbol, symbol)) ?? defaultOrigin(list?.origins ?? [], id))
+        ?.assetId ?? '',
     );
   }
 
@@ -194,9 +197,7 @@ export function WithdrawDialog({
     const r = await loadDepositAssets();
     if (!r.ok) return setError(r.error);
     setAssets(r.data);
-    const first = r.data.destinations.find((d) =>
-      balances.some((b) => `nep141:${b.token}` === d.assetId && b.amount > 0),
-    );
+    const first = withdrawSources(r.data.destinations, balances)[0];
     setOrigin(first?.assetId ?? '');
     const c = CHAINS.find((x) => r.data.origins.some((o) => o.chain === x.id));
     if (c) pickChain(c.id, r.data, first?.symbol);
@@ -272,7 +273,7 @@ export function WithdrawDialog({
               at the address you give on the chain you pick. A refund comes back to <b>{account}</b>
               .
             </p>
-            {opened && <OriginWallets wallets={wallets} />}
+            {opened && <OriginWallets wallets={wallets} chains={['evm', 'solana']} />}
             <div className="asset-box">
               <span className="asset-box-label">You send from NEAR</span>
               <div className="asset-box-row">
@@ -298,7 +299,14 @@ export function WithdrawDialog({
                 <div className="chain-chips" aria-label="Share of your balance">
                   <span className="muted-note">
                     Balance {balance} {chosen.symbol} (
-                    {describeProvenance('on_chain_verified').label})
+                    {
+                      describeProvenance(
+                        chosen.assetId === 'nep141:wrap.near'
+                          ? 'calculated_estimate'
+                          : 'on_chain_verified',
+                      ).label
+                    }
+                    )
                   </span>
                   {SHARES.map((p) => (
                     <button

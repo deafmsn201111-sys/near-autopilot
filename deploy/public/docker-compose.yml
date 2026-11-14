@@ -114,9 +114,9 @@ services:
       SHIELD_JWT: ${SHIELD_JWT:-}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
       # Server LLM: only this service gets the key. Empty = LLM off, heuristics only.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}
-      ANTHROPIC_MAX_TOKENS: ${ANTHROPIC_MAX_TOKENS:-4096}
+      NEAR_AI_API_KEY: ${NEAR_AI_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-z-ai/glm-5.3-flash}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-4096}
       LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
       # The only token /v1/admin/* accepts. Held by analytics-admin too, never by the public site.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; setup.sh adds it)}

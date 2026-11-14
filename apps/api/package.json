@@ -20,7 +20,6 @@
     "llm:compare": "node --env-file-if-exists=../../.env --import tsx src/llm/compare-models.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.8.0",
     "@near-autopilot/agents": "workspace:*",
     "@near-autopilot/burrow-adapter": "workspace:*",
     "@near-autopilot/config": "workspace:*",

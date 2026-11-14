@@ -5,22 +5,23 @@ import type { EventMap, NearConnector } from '@hot-labs/near-connect';
 import { walletChainOf, type DepositTransfer, type SendFailure } from './deposit';
 
 /**
- * EVERY WALLET THROUGH ONE HOT KIT (@hot-labs/kit): NEAR (lib/wallet.ts reads it), EVM and Solana (the deposit dialog).
+ * EVERY WALLET THROUGH ONE HOT KIT (@hot-labs/kit): NEAR (lib/wallet.ts reads it), EVM, Solana and Bitcoin (the deposit
+ * dialog). A Bitcoin wallet only gives its address; it is never asked to send (D34).
  * The kit's NEAR connector runs on our own near-connect 0.12 instance, not the kit's bundled 0.8.2: only 0.12 passes the
  * CSP nonce to the wallet iframes (D11), and it connects without adding an access key. It keeps near-connect's
  * `selected-wallet` session, so a NEAR wallet connected before stays connected.
  * The kit (and every chain SDK it pulls in) is imported on first use, never on page load. Nothing here signs NEAR
  * transactions (lib/wallet-sign.ts does); the only send is the deposit transfer below (D34).
  */
-export type OriginChain = 'evm' | 'solana';
+export type OriginChain = 'evm' | 'solana' | 'btc';
 export interface OriginWallet {
   chain: OriginChain;
   address: string;
 }
 
-// WalletType.EVM / SOLANA / NEAR, inlined so this module stays free of a runtime kit import.
-const TYPE_BY_CHAIN: Record<OriginChain, number> = { evm: 1, solana: 1001 };
-const CHAIN_BY_TYPE: Record<number, OriginChain> = { 1: 'evm', 1001: 'solana' };
+// WalletType.EVM / SOLANA / Btc / NEAR, inlined so this module stays free of a runtime kit import.
+const TYPE_BY_CHAIN: Record<OriginChain, number> = { evm: 1, solana: 1001, btc: -6 };
+const CHAIN_BY_TYPE: Record<number, OriginChain> = { 1: 'evm', 1001: 'solana', [-6]: 'btc' };
 export const NEAR_WALLET_TYPE = 1010;
 export type NearSignIn = EventMap['wallet:signIn'];
 
@@ -96,6 +97,11 @@ export function loadKit(): Promise<Loaded> {
           () => import('@hot-labs/kit/solana'),
           (m) => m.default(),
         ),
+        lazyConnector(
+          'utxo',
+          () => import('@hot-labs/kit/utxo'),
+          (m) => m.default(),
+        ),
       ],
     });
     const emit = () => {
@@ -121,7 +127,7 @@ function originWallets(wallets: OmniWallet[]): OriginWallet[] {
   });
 }
 
-/** Calls `onChange` with the connected EVM / Solana wallets now and on every connect / disconnect. */
+/** Calls `onChange` with the connected EVM / Solana / Bitcoin wallets now and on every connect / disconnect. */
 export function watchOriginWallets(onChange: (wallets: OriginWallet[]) => void): () => void {
   listeners.add(onChange);
   void load().then(

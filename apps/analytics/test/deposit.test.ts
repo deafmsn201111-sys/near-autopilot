@@ -6,6 +6,7 @@ import {
   explorerTxUrl,
   formatUnits,
   loadDepositTransfer,
+  refundChainOf,
   walletChainOf,
   walletSendError,
   loadDepositIncidents,
@@ -357,6 +358,19 @@ describe('walletChainOf', () => {
       'evm',
       'solana',
       null,
+      null,
+    ]);
+  });
+});
+
+describe('refundChainOf', () => {
+  it('maps every deposit chain to the wallet whose address can be its refund address, Bitcoin included', () => {
+    expect(['eth', 'base', 'arb', 'sol', 'btc', 'x'].map(refundChainOf)).toEqual([
+      'evm',
+      'evm',
+      'evm',
+      'solana',
+      'btc',
       null,
     ]);
   });

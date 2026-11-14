@@ -285,8 +285,14 @@ run is under an hour old, a note that prices and rates may have moved once it is
 run the AI analysis again" once the portfolio itself changed. A repeat run on the same wallet state within 10
 minutes reuses the saved result, also across an API restart, with no model call.
 
-**Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
-start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
+**Private inference.** The model is `z-ai/glm-5.3-flash` on [NEAR AI Cloud](https://cloud.near.ai), served inside a
+TEE (Intel TDX + NVIDIA confidential computing): the prompt with the wallet's positions and strategy is processed in an
+enclave that neither we nor the GPU operator can read, and NEAR AI signs every reply with the enclave key (anyone can
+check one at [cloud.near.ai/verify](https://cloud.near.ai/verify)). Our server does not verify those signatures yet
+(#233). There is no fallback to a model outside a TEE: on any failure the page shows the labelled rule-based list. Why
+this model, with the measurement: [D38](docs/DECISIONS.md).
+
+**Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
 page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
 `cap`, `model_error`, `invalid_output`, `empty`, `nothing_to_rank`, `deadline`, `cancelled`, `loop_limit`). **What we log:** one `llm_calls` row per
