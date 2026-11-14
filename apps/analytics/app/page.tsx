@@ -182,7 +182,7 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
     <article className={`action${best ? ' best' : ''}`}>
       <div className="action-main">
         <div>
-          {best && <span className="tag">Best result after costs</span>}
+          {best && <span className="tag">Highest net after costs</span>}
           <h3>{a.title}</h3>
           <p>{a.summary}</p>
         </div>
