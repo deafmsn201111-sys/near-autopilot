@@ -179,7 +179,7 @@ describe('account read cache', () => {
     const p = await load();
     for (let i = 0; i < 30; i++) await p.refreshAccountRead('alice.near');
     expect(reads).toHaveBeenCalledTimes(30);
-    expect(await p.refreshAccountRead('alice.near')).toBe(true);
+    expect(await p.refreshAccountRead('alice.near')).toBe(null);
     expect(reads).toHaveBeenCalledTimes(30);
   });
 
