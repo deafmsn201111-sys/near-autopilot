@@ -10,6 +10,7 @@ import {
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
 import type { ToolLlm } from '@near-autopilot/orchestrator';
 import Fastify from 'fastify';
+import { request } from 'node:http';
 import { registerAccountView } from '../src/analytics/account-view';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import { MemoryEventStore } from './support/memory-events';
@@ -374,21 +375,27 @@ describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
     const app = server(listed, earning, hanging, undefined, events);
     const base = await app.listen({ port: 0, host: '127.0.0.1' });
     try {
-      const client = new AbortController();
-      const res = await fetch(`${base}/v1/analytics/account/alice.near/analysis`, {
-        method: 'POST',
-        headers: {
-          ...headers,
-          'content-type': 'application/json',
-          accept: 'text/event-stream',
-          'x-ownership-proof': await proofHeader('alice.near'),
-        },
-        body: '{}',
-        signal: client.signal,
+      const proof = await proofHeader('alice.near');
+      const firstChunk = await new Promise<string>((resolve, reject) => {
+        const client = request(`${base}/v1/analytics/account/alice.near/analysis`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            'x-ownership-proof': proof,
+          },
+        });
+        client.on('response', (res) =>
+          res.once('data', (chunk: Buffer) => {
+            resolve(chunk.toString());
+            client.destroy();
+          }),
+        );
+        client.on('error', reject);
+        client.end('{}');
       });
-      const first = await res.body!.getReader().read();
-      expect(new TextDecoder().decode(first.value as Uint8Array)).toContain('event: read');
-      client.abort();
+      expect(firstChunk).toContain('event: read');
       await modelStopped;
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(events.rows.map((e) => e.kind)).not.toContain('analyse');
