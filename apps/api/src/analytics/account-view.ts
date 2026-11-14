@@ -2640,7 +2640,7 @@ export function registerAccountView(
     });
     if (!last) return none;
     const run =
-      last.analysis.run && (owner ? last.analysis.run : { ...last.analysis.run, input: null });
+      owner || !last.analysis.run ? last.analysis.run : { ...last.analysis.run, input: null };
     return {
       analysis: { ...last.analysis, run, cachedAt: last.at.toISOString() },
       signature: last.signature,

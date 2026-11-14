@@ -298,7 +298,6 @@ export const accountEvents = async (id: string) => {
 /** The owner's last AI analysis for this strategy (#190), unparsed: the client component validates it. */
 export const savedAnalysis = async (id: string, strategy: StrategyId): Promise<unknown> => {
   const proof = await ownershipProof();
-  // Without a proof the API still serves the one account its owner made public (#24).
   const r = await tryApi<unknown>(
     `/v1/analytics/account/${encodeURIComponent(id)}/analysis?strategy=${strategy}`,
     proof ? { 'x-ownership-proof': proof } : undefined,
