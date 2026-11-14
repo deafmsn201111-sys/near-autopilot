@@ -111,6 +111,13 @@ export function loadKit(): Promise<Loaded> {
       ],
       ...(theme && { ui: { theme } }),
     });
+    // HOT's "Deposit to HOT Balance" flow takes NEAR tokens and an editable recipient, ignoring the bridge setup (D42).
+    const { openSelectSender } = k.router;
+    Object.assign(k.router, {
+      openSelectSender: (props: Parameters<typeof openSelectSender>[0]) =>
+        openSelectSender({ ...props, depositFlow: false }),
+      openDepositFlow: () => Promise.reject(new Error('Deposits go to the NEAR account only.')),
+    });
     const emit = () => {
       const now = originWallets(k.wallets);
       for (const l of listeners) l(now);
@@ -223,12 +230,13 @@ export function bridgeSetup(
 
 /**
  * Opens HOT's bridge popup to fund `account` from another chain: the account is the locked recipient, NEAR the only
- * destination. HOT builds the transfer and the user signs it in the origin wallet (D42).
+ * destination. HOT builds the transfer and the user signs it in the origin wallet (D42). Resolves once it is open.
  */
 export async function openDepositBridge(account: string): Promise<void> {
   const [kit, k] = await Promise.all([import('@hot-labs/kit'), load()]);
   const recipient = await kit.Recipient.fromAddress('near', account);
   const theme = pageTheme();
   if (theme) k.setUIOptions({ theme });
-  await k.openBridge({ setup: bridgeSetup(recipient, kit.toOneClickChain) });
+  // Settles with the swap, whose result and errors HOT's popup shows itself.
+  void k.openBridge({ setup: bridgeSetup(recipient, kit.toOneClickChain) }).catch(() => undefined);
 }

@@ -799,7 +799,9 @@ held by `test/signing-lock.test.ts`). The recipient is `Recipient.fromAddress('n
 `lockRecipient: true`, and only after `currentAccount()` matches the account the page shows. Destination filter:
 NEAR tokens only. Source filter (`isBridgeSource`): an EVM chain with a 1Click `blockchain` (`toOneClickChain`), Solana,
 Tron or Bitcoin; never `near` or a HOT balance (`hot`, `hot_v1`, `hotcraft`, `hypercore`), so the bridge can never ask
-for a NEAR signature that goes around `validateCascade`. HOT builds and re-checks the origin-chain transfer in the
+for a NEAR signature that goes around `validateCascade`. The kit's own "Deposit to HOT Balance" flow (offered from the
+bridge's sender picker) ignores that setup, so `loadKit` turns it off on our kit: the sender picker gets
+`depositFlow: false` and `router.openDepositFlow` rejects. HOT builds and re-checks the origin-chain transfer in the
 browser; the user signs it in their own wallet. HOT's app fee (`intents.tg`: 0.4% swaps, 0.01% stable↔stable, 0 for
 the same token) is said in one line before the popup opens; the popup shows the amount received.
 `GET /v1/deposit/transfer/:id`, its `retry` and the dialog's send are removed. The once-only flag

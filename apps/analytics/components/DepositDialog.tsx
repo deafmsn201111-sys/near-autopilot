@@ -344,11 +344,12 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
         return setError(
           'Connect your NEAR wallet first: the deposit goes to the connected account.',
         );
-      await withoutModal(dialog, () => openDepositBridge(account));
+      // A modal dialog would make HOT's popup inert.
       dialog?.close();
-    } catch (e) {
-      if (!(e instanceof Error && e.message === 'User rejected'))
-        setError('HOT could not open the deposit. Check your connection and try again.');
+      await openDepositBridge(account);
+    } catch {
+      setError('HOT could not open the deposit. Check your connection and try again.');
+      dialog?.showModal();
     } finally {
       setBusy(false);
     }

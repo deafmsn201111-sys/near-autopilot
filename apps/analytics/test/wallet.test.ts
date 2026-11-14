@@ -70,6 +70,7 @@ const fake = vi.hoisted(() => {
     }
   }
   class HotKit {
+    router = { openSelectSender: () => undefined, openDepositFlow: async () => undefined };
     constructor(options: { connectors: { id: string; create: (m: unknown) => unknown }[] }) {
       state.kits++;
       state.connectorIds = options.connectors.map((c) => c.id);

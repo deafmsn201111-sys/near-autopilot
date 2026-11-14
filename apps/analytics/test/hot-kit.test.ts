@@ -11,8 +11,13 @@ const fake = vi.hoisted(() => {
     disconnected: [] as Handler[],
     pick: null as { type: number; address: string } | null,
     failLoad: false,
+    senderProps: undefined as unknown,
   };
   class HotKit {
+    router = {
+      openSelectSender: (props: { depositFlow: boolean }) => (state.senderProps = props),
+      openDepositFlow: async () => 'opened',
+    };
     constructor(options: unknown) {
       if (state.failLoad) throw new Error('chunk failed');
       state.created++;
@@ -92,6 +97,13 @@ describe('HOT Kit origin wallets', () => {
     expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'tron', 'utxo'] });
     stop1();
     stop2();
+  });
+
+  it("never offers HOT's deposit-to-balance flow, which skips the bridge's filters (D42)", async () => {
+    const { kit } = await m.loadKit();
+    kit.router.openSelectSender({ depositFlow: true } as never);
+    expect(fake.state.senderProps).toMatchObject({ depositFlow: false });
+    await expect(kit.router.openDepositFlow(kit as never)).rejects.toThrow(/NEAR account/);
   });
 
   it('reports the address on connect and clears it on disconnect', async () => {
