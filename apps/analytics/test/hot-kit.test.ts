@@ -65,11 +65,6 @@ const SOL = { type: 1001, address: 'So1anaAddre55' };
 const TON = { type: 1111, address: 'EQton' };
 const BTC = { type: -6, address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' };
 
-const PROXY = {
-  oneClick: { baseUrl: '/api/hex/market/v1/1click' },
-  marketRelay: '/api/hex/market',
-};
-
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 async function fresh() {
@@ -100,7 +95,6 @@ describe('HOT Kit origin wallets', () => {
     await flush();
     expect(fake.state.created).toBe(1);
     expect(fake.state.options).toEqual({
-      ...PROXY,
       connectors: ['near', 'evm', 'solana', 'tron', 'utxo'],
     });
     stop1();
@@ -207,7 +201,6 @@ describe('WalletConnect project id', () => {
       const m = await fresh();
       await m.connectOriginWallet('evm');
       expect(fake.state.options).toEqual({
-        ...PROXY,
         connectors: ['near', 'evm', 'solana', 'tron', 'utxo'],
       });
     }

@@ -78,7 +78,7 @@ commits, PRs and issue comments in English.
 - `pnpm verify` green (plus `test:db` when the schema changes and `DATABASE_TEST_URL` is set).
 - Walk the "Done when" list item by item: done, not done, or needs the live site / a real wallet.
 - Run the `[local]` steps on a local run of this branch (`./scripts/quickstart.sh`, site on
-  http://127.0.0.1:3001), driving the browser with `claude-in-chrome`; screenshot each result. `owner` steps are not
+  http://127.0.0.1:3001; HOT Kit bridge steps on http://localhost:3001), driving the browser with `claude-in-chrome`; screenshot each result. `owner` steps are not
   faked. A failing step is a bug in this branch: fix it before the PR.
 - Behaviour changed → README in the same branch (plan, Process). Decision made → `docs/DECISIONS.md`. Notable work →
   `docs/IMPLEMENTATION_LOG.md`.

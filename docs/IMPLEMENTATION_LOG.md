@@ -972,3 +972,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   or move the sheet; a receipt stays until the agents send a changed card with the same id.
 - Demo: moves worth doing are cards, the rest are "Checked and skipped". Account cards show only facts the intent
   carries; structured facts from the API are #284.
+
+## 2026-11-14 — HOT Kit calls hex-api directly (#290)
+
+- HOT added `https://near-autopilot.tech` and `localhost` to hex-api's CORS list, so the `/api/hex` proxy and its
+  test are removed and `loadKit` uses the kit's default endpoints (D42).
+- `www.` still gets 403 from hex-api: Caddy now redirects any `www.` host to the bare one (301, path and query kept).
+- Local bridge checks run on `http://localhost:3001` (127.0.0.1 is refused by HOT).
