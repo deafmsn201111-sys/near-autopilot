@@ -118,19 +118,7 @@ export function Recommendations({
           {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
-      {analysis?.cachedAt &&
-        !running &&
-        (Date.now() - Date.parse(analysis.cachedAt) < FRESH_MS ? (
-          <p className="callout good" role="status" suppressHydrationWarning>
-            ✓ Up to date — your portfolio hasn&apos;t changed since this analysis (
-            {ago(analysis.cachedAt)}).
-          </p>
-        ) : (
-          <p className="callout" role="status" suppressHydrationWarning>
-            Your portfolio hasn&apos;t changed since this analysis ({ago(analysis.cachedAt)}), but
-            prices and rates may have. Run the AI analysis again for fresh numbers.
-          </p>
-        ))}
+      {analysis?.cachedAt && !running && <SavedAge cachedAt={analysis.cachedAt} />}
       {live ? (
         <AiTrace pipeline={live} startedAt={startedAt} />
       ) : (
@@ -233,6 +221,38 @@ export function Recommendations({
 }
 
 /** Ticks on its own so the list around it does not re-render ten times a second. */
+const AGE_TICK_MS = 30_000;
+
+/** The current time, re-read every 30 s, so an age on screen keeps counting without a reload. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+function Ago({ iso }: { iso: string }) {
+  const now = useNow();
+  return <span suppressHydrationWarning>{ago(iso, new Date(now).toISOString())}</span>;
+}
+
+function SavedAge({ cachedAt }: { cachedAt: string }) {
+  const fresh = useNow() - Date.parse(cachedAt) < FRESH_MS;
+  return fresh ? (
+    <p className="callout good" role="status">
+      ✓ Up to date — your portfolio hasn&apos;t changed since this analysis (<Ago iso={cachedAt} />
+      ).
+    </p>
+  ) : (
+    <p className="callout" role="status">
+      Your portfolio hasn&apos;t changed since this analysis (<Ago iso={cachedAt} />
+      ), but prices and rates may have. Run the AI analysis again for fresh numbers.
+    </p>
+  );
+}
+
 function Elapsed({ since }: { since: number }) {
   const [now, setNow] = useState(since);
   useEffect(() => {
@@ -345,7 +365,9 @@ function AiTrace({
           {live ? (
             <Elapsed since={startedAt} />
           ) : cachedAt ? (
-            `from a run ${ago(cachedAt)}`
+            <>
+              from a run <Ago iso={cachedAt} />
+            </>
           ) : (
             ms !== null && seconds(ms)
           )}
