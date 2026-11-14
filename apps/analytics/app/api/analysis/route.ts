@@ -53,8 +53,8 @@ export async function POST(req: Request): Promise<Response> {
   const streamed = req.headers.get('accept')?.includes('text/event-stream') ?? false;
   const click = `${await visitor()}|${account.data}|${strategy.data}`;
   const paidAt = retries.get(click);
-  retries.delete(click);
-  const retry = !streamed && paidAt !== undefined && Date.now() - paidAt < LIMIT.windowMs;
+  const retry = !streamed && paidAt !== undefined && Date.now() - paidAt < 2 * LLM_TIMEOUT_MS;
+  if (retry) retries.delete(click);
   if (!retry && !(await consume('analysis', LIMIT))) {
     return NextResponse.json(
       { error: 'Too many requests. Wait a few minutes and try again.' },

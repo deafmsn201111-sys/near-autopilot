@@ -144,6 +144,21 @@ describe('POST /api/analysis', () => {
     expect(apiPost).toHaveBeenCalledTimes(5);
   });
 
+  it('charges a JSON retry that comes after the stream could still be running', async () => {
+    ip = '192.0.2.12';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { POST } = await import('../app/api/analysis/route');
+      const click = { account: 'a.near' };
+      await POST(request(click, undefined, 'text/event-stream'));
+      vi.setSystemTime(Date.now() + 120_000);
+      for (let i = 0; i < 4; i++) expect((await POST(request(click))).status).toBe(200);
+      expect((await POST(request(click))).status).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('gives no free retry for another account or strategy', async () => {
     ip = '192.0.2.11';
     const { POST } = await import('../app/api/analysis/route');
