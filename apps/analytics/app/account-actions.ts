@@ -8,9 +8,9 @@ import { refreshAccountRead } from '../lib/product';
 const accountOf = (account: unknown) =>
   accountIdSchema.safeParse(typeof account === 'string' ? account.trim().toLowerCase() : account);
 
-export async function refreshAccount(account: unknown): Promise<boolean> {
+export async function refreshAccount(account: unknown): Promise<boolean | null> {
   const id = accountOf(account);
-  return id.success ? refreshAccountRead(id.data) : true;
+  return id.success ? refreshAccountRead(id.data) : null;
 }
 
 const YEAR_S = 365 * 24 * 60 * 60;

@@ -80,7 +80,29 @@ export interface LlmCallRecord {
   readonly latencyMs: number;
   readonly tools: readonly string[];
   readonly outcome: CallOutcome;
+  /** What the model was offered: the strategy and the candidate cards the tools returned. */
+  readonly input: LlmCallInput;
+  /** The model's own picks (before checks and restored warnings), the capped raw reply on invalid output, else null. */
+  readonly output: LlmCallOutput | null;
 }
+
+export interface LlmCallInput {
+  readonly strategy: StrategyId;
+  readonly candidates: readonly { readonly id: string; readonly kind: string }[];
+}
+
+export type LlmCallOutput =
+  | {
+      readonly picks: readonly {
+        readonly id: string;
+        /** Null for an id no tool returned (the pick was dropped). */
+        readonly kind: string | null;
+        readonly why: string;
+      }[];
+    }
+  | { readonly reply: string };
+
+const STORED_REPLY_CHARS = 2000;
 
 export interface LlmLedger {
   /** The admin kill switch: false means no model call for anyone. */
@@ -107,6 +129,7 @@ const MAX_RUNS_PER_WINDOW = 60;
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
 export interface AnalysisMemo {
   readonly results: BoundedMap<string, { readonly at: number; readonly analysis: Analysis }>;
+  readonly running: Map<string, Promise<Analysis>>;
   /** Start times of the runs that reached the model in the last window. */
   readonly runs: number[];
   readonly maxRuns: number;
@@ -114,6 +137,7 @@ export interface AnalysisMemo {
 
 export const analysisMemo = (maxRuns = MAX_RUNS_PER_WINDOW): AnalysisMemo => ({
   results: new BoundedMap(CACHE_MAX),
+  running: new Map(),
   runs: [],
   maxRuns,
 });
@@ -791,7 +815,28 @@ export async function analyseAccount(
   // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
   const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
   if (!enabled) return fallback('kill_switch');
+  // A retry while this account's run is still going (a broken stream's JSON fallback) waits for it: one click, one run.
+  const key = `${ctx.accountId}|${strategy}`;
+  const running = ai.memo.running.get(key);
+  if (running) return running;
+  const run = runModel(ai, ctx, strategy, fallback, onError, deadlineMs, onEvent);
+  ai.memo.running.set(key, run);
+  try {
+    return await run;
+  } finally {
+    ai.memo.running.delete(key);
+  }
+}
 
+async function runModel(
+  ai: ToolLlmDeps,
+  ctx: AnalysisContext,
+  strategy: StrategyId,
+  fallback: (code: FallbackCode) => Analysis,
+  onError: (e: unknown) => void,
+  deadlineMs: number,
+  onEvent: (e: AnalysisEvent) => void,
+): Promise<Analysis> {
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };
   const worstCall = costMicroUsd(ai.model, {
@@ -958,7 +1003,9 @@ export async function analyseAccount(
     ...tool,
     run: (input) => (calledTools.add(tool.spec.name), tool.run(input)),
   });
-  const record = async (outcome: CallOutcome) => {
+  const found = new Map<string, PortfolioRecommendation>();
+  const steps: Steps = new Map();
+  const record = async (outcome: CallOutcome, output: LlmCallOutput | null = null) => {
     if (usage.calls === 0) return;
     const cost = usage.costMicroUsd;
     await ai.ledger
@@ -972,6 +1019,8 @@ export async function analyseAccount(
         latencyMs: Date.now() - startedAt.getTime(),
         tools: [...calledTools],
         outcome,
+        input: { strategy, candidates: [...found.values()].map(({ id, kind }) => ({ id, kind })) },
+        output,
       })
       .catch((e: unknown) => {
         const day = utcDay();
@@ -982,13 +1031,11 @@ export async function analyseAccount(
         heldMicro -= cost;
       });
   };
-  const failed = async (code: Exclude<CallOutcome, 'ok'>) => {
-    await record(code);
+  const failed = async (code: Exclude<CallOutcome, 'ok'>, output: LlmCallOutput | null = null) => {
+    await record(code, output);
     return fallback(code);
   };
 
-  const found = new Map<string, PortfolioRecommendation>();
-  const steps: Steps = new Map();
   const succeeded = new Set<string>();
   const report = ({ tool, ok }: ToolTraceEntry) => {
     const agent = AGENTS[tool];
@@ -1030,7 +1077,7 @@ export async function analyseAccount(
   const parsed = picksSchema.safeParse(parseJson(stripFence(text)));
   if (!parsed.success) {
     onError(parsed.error);
-    return failed('invalid_output');
+    return failed('invalid_output', { reply: text.slice(0, STORED_REPLY_CHARS) });
   }
   // A "why" may quote its own card and the tools' shared context (health factor, notes, signals), never another card.
   const context = new Set(
@@ -1054,7 +1101,14 @@ export async function analyseAccount(
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
   checks.picked = recommendations.length;
-  if (recommendations.length === 0) return failed('empty');
+  const answered: LlmCallOutput = {
+    picks: parsed.data.picks.map((p) => ({
+      id: p.id,
+      kind: found.get(p.id)?.kind ?? null,
+      why: p.why,
+    })),
+  };
+  if (recommendations.length === 0) return failed('empty', answered);
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>
@@ -1072,7 +1126,7 @@ export async function analyseAccount(
     missing.length,
   );
   onEvent({ type: 'checked', checks });
-  await record('ok');
+  await record('ok', answered);
   const analysis: Analysis = {
     source: 'llm',
     fallback: null,

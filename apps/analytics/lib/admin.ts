@@ -27,6 +27,27 @@ export interface Spend {
   } | null;
 }
 
+export type DepositState = 'waiting' | 'processing' | 'success' | 'refunded' | 'failed' | 'expired';
+
+export interface AdminDeposits {
+  counts: Record<DepositState, number>;
+  quotes: {
+    id: string;
+    createdAt: string;
+    accountId: string;
+    chain: string | null;
+    asset: string;
+    amount: string;
+    depositAddress: string;
+    refundTo: string;
+    deadline: string;
+    feeBps: number | null;
+    status: string | null;
+    state: DepositState;
+    statusAt: string | null;
+  }[];
+}
+
 /** Calls /v1/admin/* with ADMIN_API_TOKEN; 404 outside the admin container. */
 export async function adminApi<T>(path: string, body?: unknown): Promise<T> {
   const token = getEnv().ADMIN_API_TOKEN;
@@ -47,4 +68,37 @@ export async function adminApi<T>(path: string, body?: unknown): Promise<T> {
   if (!res.ok)
     throw new Error(typeof json.error === 'string' ? json.error : `admin API HTTP ${res.status}`);
   return json as T;
+}
+
+interface FunnelCounts {
+  connect: number;
+  analyse: number;
+  prepare: number;
+  signed: number;
+  accounts: number;
+}
+
+export interface Funnel {
+  days: (FunnelCounts & { day: string })[];
+  total: FunnelCounts;
+}
+
+export interface LlmQuality {
+  calls: number;
+  fallbackRate: number | null;
+  validationErrorRate: number | null;
+  fallbacks: { code: string; count: number; rate: number }[];
+  p50Ms: number | null;
+  p95Ms: number | null;
+  topKinds: { kind: string; count: number }[];
+  last: {
+    at: string;
+    accountId: string;
+    model: string;
+    latencyMs: number;
+    outcome: string;
+    tools: string[];
+    input: unknown;
+    output: unknown;
+  }[];
 }

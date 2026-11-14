@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { pipelineOf, runAnalysis } from '../lib/analysis-client';
+import { pipelineOf, runAnalysis, type Pipeline } from '../lib/analysis-client';
 
 const reply = (body: unknown) =>
   vi.stubGlobal(
@@ -199,12 +199,28 @@ describe('runAnalysis as a stream', () => {
     const read = { model: 'claude-haiku-5-5', read: { tokens: 7, loan: true } };
     const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
-      { ...read, asked: [], trace: [], turns: null, checks: null, ranking: null },
-      { ...read, asked, trace: [], turns: null, checks: null, ranking: null },
-      { ...read, asked, trace: [step], turns: null, checks: null, ranking: null },
-      { ...read, asked, trace: [step], turns: 2, checks: null, ranking: null },
-      { ...read, asked, trace: [step], turns: 2, checks, ranking: null },
+      { ...read, asked: [], trace: [], turns: null, checks: null, ranking: null, stage: 1 },
+      { ...read, asked, trace: [], turns: null, checks: null, ranking: null, stage: 1 },
+      { ...read, asked, trace: [step], turns: null, checks: null, ranking: null, stage: 2 },
+      { ...read, asked, trace: [step], turns: 2, checks: null, ranking: null, stage: 3 },
+      { ...read, asked, trace: [step], turns: 2, checks, ranking: null, stage: 4 },
     ]);
+  });
+
+  it('never moves the stage back when the model asks more agents in a later turn', async () => {
+    const more = { tool: 'yield_scout', agent: 'Yield Scout' };
+    serve(
+      stream(
+        frame('read', { model: 'm', tokens: 1, loan: false }) +
+          frame('asked', { agents: [{ tool: step.tool, agent: step.agent }] }) +
+          frame('agent', { step }) +
+          frame('asked', { agents: [more] }) +
+          frame('done', done),
+      ),
+    );
+    const seen: Pipeline[] = [];
+    await runAnalysis('alice.near', 'balanced', (p) => p && seen.push(p));
+    expect(seen.map((p) => p.stage)).toEqual([1, 1, 2, 2]);
   });
 
   it('ignores an unknown or malformed event', async () => {
@@ -224,13 +240,25 @@ describe('runAnalysis as a stream', () => {
 
   it('asks for the plain JSON reply when the stream breaks before done', async () => {
     const fetch = serve(
-      stream(
-        frame('read', { model: 'm', tokens: 1, loan: false }) + frame('error', { error: 'x' }),
-      ),
+      stream(frame('read', { model: 'm', tokens: 1, loan: false })),
       new Response(JSON.stringify(done), { status: 200 }),
     );
     const r = await runAnalysis('alice.near', 'balanced');
     expect(r).toMatchObject({ ok: true, analysis: { source: 'llm' } });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an error frame instead of running the same failing pipeline again', async () => {
+    const fetch = serve(
+      stream(
+        frame('read', { model: 'm', tokens: 1, loan: false }) +
+          frame('error', { error: 'analysis failed' }),
+      ),
+    );
+    const seen: unknown[] = [];
+    const r = await runAnalysis('alice.near', 'balanced', (p) => seen.push(p));
+    expect(r).toEqual({ ok: false, error: 'analysis failed' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(seen.at(-1)).toBeNull();
   });
 });

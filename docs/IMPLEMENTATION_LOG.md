@@ -551,7 +551,42 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
   address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.
 
-## 14 Nov — AI trace: ranking sentence (#110)
+## 2026-11-14 — Swap output shows without a reload (#160)
+
+- `refreshPortfolio` no longer stops at the first changed read: a Rhea swap's debit lands first and its credit a few
+  blocks later. It keeps reading every 5 s until a read after a change shows nothing new, at most 6 reads (~25 s).
+
+## 2026-11-14 — Admin screens 2 Funnel and 3 LLM quality (#33)
+
+- `llm_calls` gets `input` (strategy + candidate cards offered: id, kind) and `output` (the model's own picks: id,
+  kind or null for an id no tool returned, why; the raw reply capped at 2000 chars on `invalid_output`), migration
+  0023, kept 7 days with the row.
+- `GET /v1/admin/funnel`: connect / analyse / prepare / signed and unique wallets per UTC day for 7 days, from
+  `events`. `GET /v1/admin/llm`: fallback rate by code, validation-error rate (`invalid_output`), p50/p95 latency
+  (percentile_cont, in TS), top recommendation kinds the model picked, last 20 runs. Both behind `ADMIN_API_TOKEN`.
+- `/admin/funnel` and `/admin/llm` in the loopback admin container, with an admin nav; "no data yet" when empty.
+
+## 2026-11-14 — A broken AI stream no longer starts a second run or spends a second token (#150)
+
+- `analyseAccount`: runs still going live in `AnalysisMemo.running` by account + strategy, checked before the wallet
+  read; a request for the same pair waits for that run and gets its result (also a fallback) instead of starting a
+  model run of its own. The model part moved into `runModel` unchanged.
+- `/api/analysis`: a paid stream request leaves one free JSON retry for the same visitor + account + strategy
+  (within 2 min of the stream, `BoundedMap` of 10 000; the pass is dropped only when used), so the client's fallback after a broken stream costs no second visitor token.
+- `runAnalysis`: an `error` frame returns its error (zod, ≤ 200 chars) instead of re-POSTing as JSON; only a stream
+  that ends without a valid `done` falls back.
+
+## 2026-11-14 — Admin screen 4: 1Click (#34)
+
+- `GET /v1/admin/deposits` (admin token only, same `onRequest` check as Spend): `deposit_quotes` of the last 7 UTC
+  days, newest first, at most 100 listed; counts by state — waiting, processing, success, refunded, failed, expired.
+  Expired = never checked or `PENDING_DEPOSIT` 30 min past the deadline (the deposit screen's rule).
+- Chain, symbol and decimals come from 1Click's cached token list; when it is down the row shows the raw asset id and
+  base units. Deposit and refund addresses leave the API shortened (`0x1111…2222`).
+- `/admin/1click` page and an admin nav (Spend · 1Click). Statuses are what the user's deposit screen last saw;
+  server-side refresh is a separate issue.
+
+## 2026-11-14 — AI trace: ranking sentence (#110)
 
 - `apps/api`: `picksSchema` takes an optional `ranking` (1–300 chars; an invalid one drops only itself). It reaches
   `run.ranking` only when every number in it appears in the code-built text of a card the user sees or in the tools'

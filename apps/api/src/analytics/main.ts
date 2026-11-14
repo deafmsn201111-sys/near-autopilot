@@ -61,6 +61,11 @@ const market = env.MARKET_CONFIG_FILE
 const pools = market.rhea?.pools ?? [];
 const { ONE_CLICK_JWT } = oneClickEnvSchema.parse(process.env);
 const depositQuotes = new DrizzleDepositQuoteStore(database.db);
+// No retry: every real quote mints a new deposit address, and the user must see exactly one.
+const oneClick = new OneClickDepositClient({
+  http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 15_000 }),
+  jwt: ONE_CLICK_JWT,
+});
 const events = new DrizzleEventStore(database.db);
 // The tokens a deposit may arrive as: our own allowlist, never user input.
 const destinationTokens = market.policy?.allowedTokens ?? [];
@@ -111,17 +116,15 @@ const app = buildAnalyticsServer(
             token: env.ADMIN_API_TOKEN,
             store: llmLedger,
             defaultCapMicro,
+            events,
+            deposits: { store: depositQuotes, tokens: () => oneClick.tokens() },
           },
         }
       : {}),
     ...(destinationTokens.length
       ? {
           deposit: {
-            // No retry: every real quote mints a new deposit address, and the user must see exactly one.
-            oneClick: new OneClickDepositClient({
-              http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 15_000 }),
-              jwt: ONE_CLICK_JWT,
-            }),
+            oneClick,
             store: depositQuotes,
             destinationTokens,
             ...(icons ? { icon: (t: string) => icons.get(t) } : {}),
