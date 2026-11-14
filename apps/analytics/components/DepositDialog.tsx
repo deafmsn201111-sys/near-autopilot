@@ -19,6 +19,7 @@ import {
   type DepositQuote,
   type DepositStatus,
 } from '../lib/deposit';
+import { paymentUri } from '../lib/payment-uri';
 import { poll, tabHidden } from '../lib/polling';
 import { TokenIcon } from './TokenIcon';
 
@@ -30,8 +31,8 @@ const REFUND_HINT: Record<string, string> = {
   btc: 'bc1… , 1… or 3…',
 };
 
-/** Drawn locally from the address: no external QR service ever sees it. Black on white so it scans in dark mode. */
-function Qr({ text }: { text: string }) {
+/** Drawn locally: no external QR service ever sees it. Black on white so it scans in dark mode. */
+function Qr({ text, label }: { text: string; label: string }) {
   const { size, path } = useMemo(() => {
     const qr = qrcode(0, 'M');
     qr.addData(text);
@@ -49,12 +50,30 @@ function Qr({ text }: { text: string }) {
       width={192}
       height={192}
       role="img"
-      aria-label="QR code of the deposit address"
+      aria-label={label}
       shapeRendering="crispEdges"
     >
       <rect width={size} height={size} fill="#fff" />
       <path d={path} fill="#000" />
     </svg>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="btn secondary small"
+      onClick={() =>
+        void navigator.clipboard
+          ?.writeText(text)
+          .then(() => setCopied(true))
+          .catch(() => undefined)
+      }
+    >
+      {copied ? 'Copied' : label}
+    </button>
   );
 }
 
@@ -159,10 +178,13 @@ function QuoteView({
   const now = useNow();
   // The server's seconds-left, counted from when the answer arrived: the browser clock may be off.
   const [expiresAt] = useState(() => Date.now() + q.expiresInSeconds * 1000);
-  const [copied, setCopied] = useState(false);
+  const [addressOnly, setAddressOnly] = useState(false);
   const left = Math.max(0, Math.floor((expiresAt - now) / 1000));
   const expired = left === 0;
-  const send = `${formatUnits(q.amountIn, q.origin.decimals)} ${q.origin.symbol}`;
+  const amount = formatUnits(q.amountIn, q.origin.decimals);
+  const send = `${amount} ${q.origin.symbol}`;
+  const uri = paymentUri(q);
+  const link = addressOnly ? null : uri;
   const fee = describeProvenance(q.fee.provenance).label;
   return (
     <>
@@ -180,20 +202,39 @@ function QuoteView({
       <StatusLine q={q} />
       {!expired && (
         <div className="deposit-address">
-          <Qr text={q.depositAddress} />
-          <code>{q.depositAddress}</code>
-          <button
-            type="button"
-            className="btn secondary small"
-            onClick={() =>
-              void navigator.clipboard
-                ?.writeText(q.depositAddress)
-                .then(() => setCopied(true))
-                .catch(() => undefined)
+          <Qr
+            text={link ?? q.depositAddress}
+            label={
+              link
+                ? `QR code of a payment of ${send} on ${q.chainName}`
+                : 'QR code of the deposit address'
             }
-          >
-            {copied ? 'Copied' : 'Copy address'}
-          </button>
+          />
+          {link && (
+            <a className="btn primary small" href={link}>
+              Open in wallet
+            </a>
+          )}
+          {uri ? (
+            <label className="muted-note">
+              <input
+                type="checkbox"
+                checked={addressOnly}
+                onChange={(e) => setAddressOnly(e.target.checked)}
+              />{' '}
+              Address only, for wallets that do not read payment links
+            </label>
+          ) : (
+            <p className="deposit-warn">
+              Your wallet will not fill in the amount for {q.chainName}: send exactly {send}.
+            </p>
+          )}
+          <code>{q.depositAddress}</code>
+          <CopyButton text={q.depositAddress} label="Copy address" />
+          <p>
+            <b className="num">{send}</b> on {q.chainName}{' '}
+            <CopyButton text={amount} label="Copy amount" />
+          </p>
         </div>
       )}
       <dl className="deposit-facts">

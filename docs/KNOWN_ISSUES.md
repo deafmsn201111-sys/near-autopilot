@@ -19,6 +19,14 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope = `demo-500` or `demo-5000`).
 - **The strategy preset is remembered per browser only** (one cookie for the last 20 accounts, #25). Another device or a cleared
   browser falls back to Balanced. → #100 (server-side per-account settings, written by the proven owner).
+- **Deposit payment links are not device-tested yet** (#128): wallet support for EIP-681 and Solana Pay is weakly
+  documented (Rabby does not parse EIP-681; MetaMask Mobile, Phantom and Solflare should). A wallet that ignores the
+  amount leaves it to the user; the dialog shows it with a copy button and an **Address only** switch.
+- **Fee-on-transfer origin tokens are still offered** (Solana NEARKAT, Token-2022 with a 3% transfer fee): the
+  deposit address gets less than the quote, so it is refunded. → #185.
+- **Deposit quotes are `EXACT_INPUT`** (#128): less than the quoted amount is refunded after the deadline, not
+  credited in part. `FLEX_INPUT` would accept any amount in a band but loosens the quote echo check; after the
+  hackathon.
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence. → `T2.1`.
 - **No uniform provenance tagging** across all financial values. → `T1.1/T1.2`.
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.

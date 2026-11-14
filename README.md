@@ -130,7 +130,12 @@ from another chain (below), in a separate client.
    (search by symbol, popular ones first, every token with its logo), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
    a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
-   partner key, `ONE_CLICK_JWT`, gives the partner schedule). Send exactly that amount from your wallet on that chain;
+   partner key, `ONE_CLICK_JWT`, gives the partner schedule). The QR is a payment link that fills in the address,
+   exact amount, token and network: BIP21 for Bitcoin, EIP-681 with the chain id for ETH and ERC-20 tokens on
+   Ethereum, Base and Arbitrum, Solana Pay for SOL and SPL tokens. The API names the token from the quoted 1Click asset
+   (native coin by its exact asset id; on EVM the contract the asset id names; on Solana the mint 1Click lists); when it cannot be, or the wallet does not read payment links, the QR holds the
+   address only (also an **Address only** switch). **Open in wallet** opens the same link; the address and the amount
+   each have a copy button. Send exactly that amount from your wallet on that chain;
    1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
    deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
    transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;

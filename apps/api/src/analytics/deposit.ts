@@ -125,6 +125,30 @@ const asset = (t: OneClickToken) => ({
   decimals: t.decimals,
 });
 
+// The chain's own coin as 1Click lists it: no contract and exactly this asset id. Anything else is not native.
+const NATIVE_ASSETS: Record<DepositChain, string> = {
+  eth: 'nep141:eth.omft.near',
+  base: 'nep141:base.omft.near',
+  arb: 'nep141:arb.omft.near',
+  sol: 'nep141:sol.omft.near',
+  btc: 'nep141:btc.omft.near',
+};
+
+export type PaymentToken = { readonly native: true } | { readonly contract: string } | null;
+
+/**
+ * What a payment link (EIP-681, Solana Pay, BIP21) may ask the wallet to send, or null: then the QR holds the
+ * address only. On EVM chains the quoted assetId names the contract, so a contract it does not name is refused;
+ * Solana assetIds are hashes, so there the mint is the one 1Click lists for the asset.
+ */
+export function paymentToken(chain: DepositChain, t: OneClickToken): PaymentToken {
+  const c = t.contractAddress;
+  if (!c) return t.assetId === NATIVE_ASSETS[chain] ? { native: true } : null;
+  if (chain === 'btc' || !isRefundAddress(chain, c)) return null;
+  if (chain !== 'sol' && !t.assetId.toLowerCase().includes(c.toLowerCase())) return null;
+  return { contract: c };
+}
+
 const quoteBody = z
   .object({
     account: accountIdSchema,
@@ -367,7 +391,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       id,
       chain: origin.blockchain,
       chainName: CHAIN_NAMES[origin.blockchain],
-      origin: asset(origin),
+      origin: { ...asset(origin), payment: paymentToken(origin.blockchain, origin) },
       destination: asset(destination),
       amountIn: q.amountIn.toString(),
       amountOut: q.amountOut.toString(),

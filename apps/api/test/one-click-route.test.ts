@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { toBaseUnits, type DepositDeps, type StoredDepositQuote } from '../src/analytics/deposit';
+import {
+  paymentToken,
+  toBaseUnits,
+  type DepositDeps,
+  type StoredDepositQuote,
+} from '../src/analytics/deposit';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
 import {
@@ -133,6 +138,48 @@ describe('toBaseUnits', () => {
   });
 });
 
+describe('paymentToken', () => {
+  const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const t = (blockchain: string, assetId: string, contractAddress?: string): OneClickToken => ({
+    assetId,
+    blockchain,
+    contractAddress,
+    decimals: 6,
+    symbol: 'USDC',
+  });
+
+  it('names the native coin only by its exact 1Click asset id', () => {
+    expect(paymentToken('eth', t('eth', 'nep141:eth.omft.near'))).toEqual({ native: true });
+    expect(paymentToken('btc', t('btc', 'nep141:btc.omft.near'))).toEqual({ native: true });
+    expect(paymentToken('base', t('base', 'nep141:eth.omft.near'))).toBeNull();
+    expect(paymentToken('btc', t('btc', '1cs_v1:btc:native:coin'))).toBeNull();
+    expect(paymentToken('eth', t('eth', 'nep141:eth-0xa0b8.omft.near'))).toBeNull();
+  });
+
+  it('returns the token contract when it is an address of the chain the quoted asset names', () => {
+    expect(
+      paymentToken('base', t('base', `nep141:base-${BASE_USDC}.omft.near`, BASE_USDC)),
+    ).toEqual({ contract: BASE_USDC });
+    expect(paymentToken('base', t('base', `1cs_v1:base:erc20:${BASE_USDC}`, BASE_USDC))).toEqual({
+      contract: BASE_USDC,
+    });
+    expect(paymentToken('sol', t('sol', 'nep141:sol-5ce3bf3a.omft.near', SOL_USDC))).toEqual({
+      contract: SOL_USDC,
+    });
+  });
+
+  it('refuses a contract the quoted asset does not name, one of another chain, or a burn address', () => {
+    const other = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+    const zero = `0x${'0'.repeat(40)}`;
+    expect(paymentToken('base', t('base', `nep141:base-${BASE_USDC}.omft.near`, other))).toBeNull();
+    expect(paymentToken('eth', t('eth', `nep141:eth-${zero}.omft.near`, zero))).toBeNull();
+    expect(paymentToken('eth', t('eth', 'nep141:eth-x.omft.near', SOL_USDC))).toBeNull();
+    expect(paymentToken('sol', t('sol', 'nep141:sol-x.omft.near', BASE_USDC))).toBeNull();
+    expect(paymentToken('btc', t('btc', 'nep141:btc.omft.near', 'bc1q'))).toBeNull();
+  });
+});
+
 describe('GET /v1/deposit/assets', () => {
   it('lists origins on the allowed chains only, popular first, and destinations from our own list', async () => {
     const res = await setup().app.inject({
@@ -183,7 +230,12 @@ describe('POST /v1/deposit/quote', () => {
       id: 'dq_1',
       chain: 'eth',
       chainName: 'Ethereum',
-      origin: { assetId: 'nep141:eth-0xa0b8.omft.near', symbol: 'USDC', decimals: 6 },
+      origin: {
+        assetId: 'nep141:eth-0xa0b8.omft.near',
+        symbol: 'USDC',
+        decimals: 6,
+        payment: null,
+      },
       destination: { assetId: `nep141:${USDC_NEAR_ID}`, symbol: 'USDC', decimals: 6 },
       amountIn: '100000000',
       amountOut: '99750000',
