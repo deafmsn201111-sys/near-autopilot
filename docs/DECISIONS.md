@@ -403,7 +403,9 @@ user signs it. The policy engine's `maxActionUsd` on the dry-run autopilot path,
 are unchanged.
 **Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
 turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
-(fail-closed) instead of scaled down. The two paths can still pick different tokens when several are idle (#139).
+(fail-closed) instead of scaled down. When several tokens are idle, both paths rank them by dollars a year at the live
+Burrow rate, each at least $1 and 1% a year (#139): the rule-based card offers the top earner and names the runner-up;
+the AI path gets every such token as a candidate (at most 8) and the model may rank another first, saying why.
 
 ## D24 — The AI pipeline streams over Server-Sent Events through the site proxy
 
