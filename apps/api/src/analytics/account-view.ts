@@ -1188,6 +1188,7 @@ export function loanHealth(
 ) {
   if (!loan.hasDebt)
     return {
+      healthFactor: null,
       level: 'low',
       label: 'No loan',
       sentence: 'Nothing is borrowed: there is nothing to liquidate.',
@@ -1195,6 +1196,7 @@ export function loanHealth(
   const hf = loan.healthFactor;
   if (hf === null)
     return {
+      healthFactor: null,
       level: 'high',
       label: 'Unknown',
       sentence: 'The loan could not be valued: a price or a risk parameter is missing.',
@@ -1202,6 +1204,7 @@ export function loanHealth(
   const safe = hf >= strategy.healthyAt;
   const watch = hf >= DANGER_HF;
   return {
+    healthFactor: hf,
     level: safe ? 'low' : watch ? 'medium' : 'high',
     label: safe ? 'Safe' : watch ? 'Needs watching' : 'At risk',
     sentence:

@@ -477,13 +477,13 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               <Chip tone={healthTone(data.health)} large>
                 {data.health.label}
               </Chip>
-              {data.health.healthFactor !== null && (
+              {data.health.healthFactor != null && (
                 <span className="muted-note num">
                   Health factor {data.health.healthFactor.toFixed(2)}
                 </span>
               )}
             </div>
-            {data.health.healthFactor !== null ? (
+            {data.health.healthFactor != null ? (
               <LoanGauge
                 healthFactor={data.health.healthFactor}
                 urgentBelow={STRATEGIES[strategy].warningBelow}
