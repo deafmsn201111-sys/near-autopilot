@@ -22,6 +22,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Deposit payment links are not device-tested yet** (#128): wallet support for EIP-681 and Solana Pay is weakly
   documented (Rabby does not parse EIP-681; MetaMask Mobile, Phantom and Solflare should). A wallet that ignores the
   amount leaves it to the user; the dialog shows it with a copy button and an **Address only** switch.
+- **Fee-on-transfer origin tokens are still offered** (Solana NEARKAT, Token-2022 with a 3% transfer fee): the
+  deposit address gets less than the quote, so it is refunded. → #185.
 - **Deposit quotes are `EXACT_INPUT`** (#128): less than the quoted amount is refunded after the deadline, not
   credited in part. `FLEX_INPUT` would accept any amount in a band but loosens the quote echo check; after the
   hackathon.
