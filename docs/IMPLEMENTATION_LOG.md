@@ -1076,3 +1076,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   wallet menu's USD per wallet, "+ $X on other chains" with Bring to NEAR for the largest bridgeable token, and a
   holdings group per wallet with Bring to NEAR per row. Provenance "Estimate · HOT Kit". Nothing reaches our API.
 - D42 extended; KNOWN_ISSUES refund line updated (the HOT balance is shown, withdrawn in HOT Wallet).
+
+## 2026-11-14 —  Withdraw in the review-and-sign sheet, HOT deposit popup themed (#255)
+
+- `components/Sheet.tsx`: the review-and-sign sheet's shell, now shared by `PrepareDialog` and `WithdrawDialog`.
+- Withdraw: amount parsed to base units in the browser (`parseAmount`), address shape per chain (`addressError`),
+  quote as an `<output>`, plain-word quote errors (`plainQuoteError`), a status timeline (`timelineOf`) driven by one
+  in-memory tracker (`lib/withdraw-tracker.ts`) so closing the sheet keeps tracking. `validateCascade` unchanged.
+- `DepositDialog.tsx` split: `DepositButton.tsx`, `TokenPicker.tsx`, `lib/use-now.ts`; the old modal CSS is gone.
+- "Add funds" in the empty-wallet state. DESIGN.md / PRODUCT.md / README no longer describe the old deposit form.

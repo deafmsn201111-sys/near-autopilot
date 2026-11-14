@@ -221,7 +221,7 @@ A neutral blue-violet-tinted dark ramp (H275, chroma ≤ .007), one violet voice
 ### Primary
 
 - **Lamp Violet** (`accent`): the AI's voice. Selected strategy, decision-pipeline progress, the "#1 · AI pick" marker and the 2px rule on the top card, AI chips, focus rings, links inside sheets. Never a fill larger than a chip.
-- **Signing Violet** (`sign`, white ink): the only solid chromatic fill in the product, reserved for the button that opens the user's wallet (Sign, Send with a connected wallet). Its rarity is what makes it findable.
+- **Signing Violet** (`sign`, white ink): the only solid chromatic fill in the product, reserved for the button that opens the user's wallet (Sign in your wallet), and HOT's primary button in its bridge popup. Its rarity is what makes it findable.
 
 ### Secondary (risk scale)
 
@@ -365,6 +365,12 @@ Five steps with 14–16px dots. Done = accent dot with a drawn check and an acce
 ### Review & sign sheet (signature)
 
 Order is fixed: balance changes (−/+ with token, amount, USD) → tiered warning with acknowledgement gate when loss > 5% → key facts inline → "What you will sign" steps → exact calls (collapsible, mono) → code-check line → sticky footer with Sign and its reason line. Price-impact tiers: under 1% a key fact, 1–5% a watch notice, above 5% an act warning with the "I understand" gate, above 15% a liquidation-red block with Sign locked. A view that cannot sign (read-only account, signing off) says why under Sign before any click. Signing progress replaces the body with numbered steps; the result appears in the footer; the portfolio updates only after the sheet closes (view transition card → receipt, count-up, row flash).
+
+### Withdraw sheet and Add funds
+
+- **Add funds** opens HOT Kit's bridge popup directly, with no screen of ours first (D42). `pageTheme()` in `lib/hot-kit.ts` maps the tokens onto the kit at every open (so a theme toggle applies on the next open): surfaces (`bg-surface` / `bg-raised` / `bg-page` / `bg-overlay`), the text ladder, `line-strong` borders, `accent` focus, `sign` on HOT's primary button, the page font. It is the same label in the wallet menu, the summary and the empty wallet.
+- **Withdraw** is the review-and-sign sheet's shell (`components/Sheet.tsx`): head with context line, one column, sticky footer with one primary button. Order: amount field (inset well, 24px value, Max, token pill; `type=text inputMode=decimal`, inline `aria-invalid` error, no quote while invalid) → network segmented control and receive token → address (mono, shape-checked per chain, "Fill from a … wallet") → the quote as an `<output>` (You receive ≈ / at least, fee, time, refund, quote validity; updating and failed states in plain words) → **Get quote** / **Review and sign**, which opens the review-and-sign sheet.
+- **Timeline:** a 1px rail with 14px dots: done = accent dot, now = spinning accent ring, waiting = hollow; then the outcome as a `result` block (safe arrived, watch refunded / expired, liq failed). "Close and keep tracking" leaves a status chip by the Withdraw button.
 
 ### Missing states
 
