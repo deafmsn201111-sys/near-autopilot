@@ -161,7 +161,7 @@ describe('NEAR wallet through HOT Kit', () => {
     m.watchAccount((id) => seen.push(id));
     await vi.waitFor(() => expect(seen).toEqual(['alice.near']));
     expect(fake.state.kits).toBe(1);
-    expect(fake.state.connectorIds).toEqual(['near', 'evm', 'solana']);
+    expect(fake.state.connectorIds).toEqual(['near', 'evm', 'solana', 'utxo']);
     expect(fake.state.bases).toEqual([
       expect.objectContaining({
         network: 'mainnet',

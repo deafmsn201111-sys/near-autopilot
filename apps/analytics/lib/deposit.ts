@@ -230,6 +230,10 @@ const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {
 export const walletChainOf = (chain: string): 'evm' | 'solana' | null =>
   WALLET_CHAIN[chain] ?? null;
 
+/** Which connected wallet's address fills the refund (or withdrawal recipient) on a chain. Never enables a send (D34). */
+export const refundChainOf = (chain: string): 'evm' | 'solana' | 'btc' | null =>
+  chain === 'btc' ? 'btc' : walletChainOf(chain);
+
 /** Why an origin-wallet send threw, as `sendFailure` (lib/hot-kit.ts) reads the wallet's error. */
 export type SendFailure = 'declined' | 'no-gas' | 'no-token' | 'not-sent' | 'unknown';
 

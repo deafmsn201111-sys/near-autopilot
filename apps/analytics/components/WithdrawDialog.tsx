@@ -272,7 +272,7 @@ export function WithdrawDialog({
               at the address you give on the chain you pick. A refund comes back to <b>{account}</b>
               .
             </p>
-            {opened && <OriginWallets wallets={wallets} />}
+            {opened && <OriginWallets wallets={wallets} chains={['evm', 'solana']} />}
             <div className="asset-box">
               <span className="asset-box-label">You send from NEAR</span>
               <div className="asset-box-row">

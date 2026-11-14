@@ -794,3 +794,8 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 **Tests run:** `pnpm verify` (green); new `near-ai-llm.test.ts` (mocked `fetch`), stray-key case in
 `ai-analysis.test.ts`; `llm:compare` on autopilot-test.near and hodl13.near through NEAR AI Cloud (table in D38).
+## 2026-11-14 — Bitcoin wallet in the HOT Kit picker (#229)
+
+- The kit's `utxo` connector (UniSat, Xverse, Leather, Ctrl, Vultisig) joins the picker; a connected Bitcoin wallet fills
+  the refund address of a BTC deposit through `refundChainOf`. `walletChainOf` is unchanged, so there is still no wallet
+  send for Bitcoin (D34). The withdraw dialog lists only EVM / Solana wallets (Bitcoin is not a withdraw target).
