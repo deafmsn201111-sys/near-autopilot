@@ -2085,6 +2085,9 @@ export function registerAccountView(
 
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
+    // A visitor who leaves, even during the wallet read, stops the model run: no spend on an answer nobody reads.
+    const left = new AbortController();
+    reply.raw.on('close', () => reply.raw.writableFinished || left.abort());
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
@@ -2094,9 +2097,6 @@ export function registerAccountView(
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
     const ownerVerified = await owner;
     if (ownerVerified === null) return reply.code(503).send({ error: OWNER_CHECK_FAILED });
-    // A visitor who leaves stops the model run: no spend on an answer nobody reads.
-    const left = new AbortController();
-    reply.raw.on('close', () => reply.raw.writableFinished || left.abort());
     const run = async (onEvent?: (e: AnalysisEvent) => void) => {
       const analysis = await analyseAccount(
         deps.ai ?? null,
