@@ -387,3 +387,31 @@ caps and cascade validation are unchanged.
 - When all three presets give the same cards and loan label on an account, the API returns `strategyNote`, one
   sentence on why (no loan, the largest non-stablecoin's share), shown under the picker.
   **Consequences:** A shared link shows its own strategy; on another browser the last choice is not restored.
+
+## D23 — An idle-token supply is not capped at the swap size limit
+
+**Context:** #131. On a wallet with $507 of idle USDC the rule-based card supplied all of it, while the AI path's
+Capital Allocator capped the deposit at `swap.maxSwapUsd` ($100, the old autopilot's per-trade cap) and the card then
+called $100 "your idle USDC". The decision engine also rejected a larger supply as `EXCEEDS_ORCHESTRATOR_LIMIT`.
+**Decision:** `lending.supply` deposits the whole held balance of the chosen token; `maxSwapUsd` limits swaps only
+(agent and decision engine). A supply is not a trade (no price, no slippage), it can be withdrawn any time, and the
+user signs it. The policy engine's `maxActionUsd` on the dry-run autopilot path, the prepare caps and `validateCascade`
+are unchanged.
+**Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
+turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
+(fail-closed) instead of scaled down. The two paths can still pick different tokens when several are idle (#139).
+
+## D24 — The AI pipeline streams over Server-Sent Events through the site proxy
+
+**Context:** #113. The AI analysis takes several seconds and its pipeline appeared only at the end.
+**Decision:** The same `POST /v1/analytics/account/:id/analysis` answers `text/event-stream` when the request asks
+for it (`Accept`), else JSON as before. Events: `read`, `asked` (the agents the model chose to call, before they
+run), `agent` (one per offered tool, in tool-result order, the server-built trace line without its pick; sent again
+if a failed agent later succeeds), `ranked`, `checked`, `done` (the full analysis), `error`. A reused result carries
+`cachedAt`, shown as "from a run N min ago" so it is never mistaken for a live run. Account and
+strategy errors are still plain JSON with their status, before any event. Ownership, kill switch, cache, daily cap,
+global limit and the 45 s deadline are the same code path. The Next.js route passes the body through with
+`cache-control: no-cache, no-transform` and `x-accel-buffering: no`; Caddy's `reverse_proxy` has
+`flush_interval -1`. SSE over a POST `fetch` stream rather than `EventSource` (GET only, no body, no custom headers).
+**Consequences:** If a stream breaks before `done`, the browser repeats the request as JSON, which may make a second
+model call (it counts against the same limits). A client that leaves keeps the server run going; its result is cached.

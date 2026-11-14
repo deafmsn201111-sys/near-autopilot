@@ -20,6 +20,7 @@ import {
   analyseAccount,
   analysisMemo,
   walletAgentConfig,
+  type AnalysisEvent,
   type LlmCallRecord,
   type ToolLlmDeps,
 } from '../src/analytics/ai-analysis';
@@ -715,6 +716,28 @@ describe('analyseAccount', () => {
     });
   });
 
+  it('supplies the whole idle balance like the rule-based card, past the $100 swap limit', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
+    ]);
+    const obs = observation();
+    const rich: AgentObservation = {
+      ...obs,
+      snapshot: { ...obs.snapshot, walletBalances: [{ token: USDT, raw: usdt(507.42) }] },
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => rich,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    const card = out.recommendations.find((r) => r.kind === 'put_idle_to_work');
+    expect(card?.intent).toMatchObject({ amount: usdt(507.42).toString() });
+    expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
+  });
+
   it.each([
     ['invalid JSON', (): LlmToolTurn => ({ kind: 'final', text: 'not json' })],
     ['a model error', (): Promise<LlmToolTurn> => Promise.reject(new Error('529'))],
@@ -1054,7 +1077,9 @@ describe('analyseAccount', () => {
         { ...deps, llm: again.llm },
         { ...ctx, observe: async () => later(), heuristics: [heuristic], checks: [heuristic] },
       );
-      expect(second).toEqual(first);
+      expect(first.cachedAt).toBeNull();
+      expect(second).toEqual({ ...first, cachedAt: expect.any(String) as unknown });
+      expect(Date.parse(second.cachedAt!)).toBeLessThanOrEqual(Date.now());
       expect(again.tools).toEqual([]);
       expect(l.rows).toHaveLength(1);
     });
@@ -1673,5 +1698,117 @@ describe('analysisKey', () => {
     const obs = observation();
     const prices = new Map([...obs.snapshot.prices].reverse());
     expect(key({ ...obs, snapshot: { ...obs.snapshot, prices } })).toBe(base);
+  });
+});
+
+describe('progress events', () => {
+  const live = async (
+    llm: ToolLlm,
+    deps: ToolLlmDeps = ai(llm),
+    extra: Partial<Parameters<typeof analyseAccount>[1]> = {},
+  ) => {
+    const events: AnalysisEvent[] = [];
+    const out = await analyseAccount(
+      deps,
+      { ...ctx, heuristics: [heuristic], checks: [heuristic], ...extra },
+      () => {},
+      undefined,
+      (e) => events.push(e),
+    );
+    return { out, events };
+  };
+
+  it('reports the read, each agent as its result comes back, the ranking and the checks', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () =>
+        final([
+          { id: REPAY, why: 'Repay first.' },
+          { id: heuristic.id, why: 'Worth a look.' },
+        ]),
+    ]);
+    const { out, events } = await live(llm);
+    expect(events.map((e) => e.type)).toEqual([
+      'read',
+      'asked',
+      ...Array<string>(5).fill('agent'),
+      'ranked',
+      'checked',
+    ]);
+    expect(events[0]).toEqual({ type: 'read', model: 'claude-haiku-5-5', ...out.run?.read });
+    expect(events[1]).toEqual({
+      type: 'asked',
+      agents: [
+        { tool: 'liquidation_guardian', agent: 'Liquidation Guardian' },
+        { tool: 'capital_allocator', agent: 'Capital Allocator' },
+        { tool: 'market_intelligence', agent: 'Market Intelligence' },
+        { tool: 'portfolio_concentration', agent: 'Portfolio Intelligence' },
+        { tool: 'liquidity_positions', agent: 'Liquidity Optimizer' },
+      ],
+    });
+    const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step] : []));
+    expect(agents).toEqual(
+      expect.arrayContaining(out.trace.map((t) => ({ ...t, pick: null, rank: null }))),
+    );
+    expect(events.at(-2)).toEqual({ type: 'ranked', turns: 2 });
+    expect(events.at(-1)).toEqual({ type: 'checked', checks: out.run?.checks });
+  });
+
+  it('reports a failed agent once and never a tool the model made up', async () => {
+    const { llm } = fake([
+      () => ({
+        kind: 'tool_calls',
+        calls: [
+          { id: '1', name: 'liquidation_guardian', input: { x: 1 } },
+          { id: '2', name: 'sign_everything', input: {} },
+          { id: '3', name: 'portfolio_concentration', input: {} },
+          { id: '4', name: 'portfolio_concentration', input: {} },
+        ],
+      }),
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const { events } = await live(llm);
+    expect(events.find((e) => e.type === 'asked')).toEqual({
+      type: 'asked',
+      agents: [
+        { tool: 'liquidation_guardian', agent: 'Liquidation Guardian' },
+        { tool: 'portfolio_concentration', agent: 'Portfolio Intelligence' },
+      ],
+    });
+    const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step] : []));
+    expect(agents.map((s) => [s.tool, s.ok, s.text])).toEqual([
+      ['liquidation_guardian', false, 'Failed'],
+      ['portfolio_concentration', true, heuristic.title],
+    ]);
+  });
+
+  it('reports an agent again when a retry succeeds after a failure', async () => {
+    const guardian = (input: object) => ({
+      kind: 'tool_calls' as const,
+      calls: [{ id: '1', name: 'liquidation_guardian', input }],
+    });
+    const { llm } = fake([
+      () => guardian({ x: 1 }),
+      () => guardian({}),
+      () => guardian({}),
+      () => final([{ id: REPAY, why: 'Repay first.' }]),
+    ]);
+    const { events } = await live(llm);
+    const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step.ok] : []));
+    expect(agents).toEqual([false, true]);
+  });
+
+  it('ends without checks when the run falls back', async () => {
+    const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
+    const { out, events } = await live(llm);
+    expect(out.fallback).toBe('empty');
+    expect(events.at(-1)).toEqual({ type: 'ranked', turns: 2 });
+  });
+
+  it('reports nothing for a cached result or a run that never reaches the model', async () => {
+    const deps = ai(fake([() => callAll, () => final([{ id: REPAY, why: 'Repay.' }])]).llm);
+    await live(deps.llm, deps);
+    expect((await live(deps.llm, deps)).events).toEqual([]);
+    expect((await live(deps.llm, deps, { ownerVerified: false })).events).toEqual([]);
   });
 });

@@ -1523,6 +1523,10 @@ main.page {
   position: relative;
   padding: 0 0 14px 34px;
   counter-increment: step;
+  transition: opacity 0.3s ease;
+}
+.ai-steps > li.is-pending {
+  opacity: 0.4;
 }
 .ai-steps > li:last-child {
   padding-bottom: 0;
@@ -1541,6 +1545,17 @@ main.page {
   font-weight: 600;
   line-height: 22px;
   text-align: center;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
+}
+.ai-steps > li.is-done::before {
+  content: '✓';
+}
+.ai-steps > li.is-active::before {
+  background: var(--accent);
+  color: var(--surface);
+  animation: ai-pulse 1.4s ease-out infinite;
 }
 .ai-steps > li:not(:last-child)::after {
   content: '';
@@ -1549,7 +1564,87 @@ main.page {
   top: 26px;
   bottom: 4px;
   width: 1px;
-  background: var(--grid);
+  background:
+    linear-gradient(var(--accent), var(--accent)) top / 100% 0 no-repeat,
+    var(--grid);
+  transition: background-size 0.5s ease;
+}
+.ai-steps > li.is-done:not(:last-child)::after {
+  background-size:
+    100% 100%,
+    auto;
+}
+.ai-clock {
+  font-variant-numeric: tabular-nums;
+}
+.ai-thinking {
+  animation: ai-breathe 1.6s ease-in-out infinite;
+}
+.ai-in {
+  animation: ai-in 0.28s ease-out both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+.ai-wait {
+  display: block;
+  width: min(260px, 60%);
+  height: 10px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2), var(--grid), var(--surface-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  align-self: center;
+}
+.ai-agents li.waiting .ai-agent::before {
+  animation: ai-breathe 1.2s ease-in-out infinite;
+}
+.recs {
+  transition:
+    opacity 0.3s ease,
+    filter 0.3s ease;
+}
+.recs.is-stale {
+  opacity: 0.45;
+  filter: saturate(0.5);
+  pointer-events: none;
+}
+.rec-in {
+  animation: ai-in 0.35s ease-out both;
+  animation-delay: calc(var(--i, 0) * 80ms);
+}
+@keyframes ai-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes ai-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes ai-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-in,
+  .rec-in,
+  .ai-thinking,
+  .ai-wait,
+  .ai-agents li.waiting .ai-agent::before,
+  .ai-steps > li.is-active::before {
+    animation: none;
+  }
+  .ai-steps > li,
+  .ai-steps > li::before,
+  .ai-steps > li::after,
+  .recs {
+    transition: none;
+  }
 }
 .ai-steps > li > strong {
   display: block;

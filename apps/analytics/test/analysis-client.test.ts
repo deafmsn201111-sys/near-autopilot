@@ -44,7 +44,13 @@ describe('runAnalysis', () => {
     const r = await runAnalysis('alice.near', 'balanced');
     expect(r).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run },
+      analysis: {
+        ...base,
+        calledTools: ['liquidation_guardian', 'capital_allocator'],
+        trace,
+        run,
+        cachedAt: null,
+      },
     });
   });
 
@@ -53,7 +59,7 @@ describe('runAnalysis', () => {
     reply(nothing);
     expect(await runAnalysis('alice.near', 'balanced')).toEqual({
       ok: true,
-      analysis: { ...nothing, calledTools: [], trace: [], run: null },
+      analysis: { ...nothing, calledTools: [], trace: [], run: null, cachedAt: null },
     });
   });
 
@@ -61,8 +67,14 @@ describe('runAnalysis', () => {
     reply(base);
     expect(await runAnalysis('alice.near', 'balanced')).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: [], trace: [], run: null },
+      analysis: { ...base, calledTools: [], trace: [], run: null, cachedAt: null },
     });
+  });
+
+  it('keeps when a reused result was computed', async () => {
+    reply({ ...base, cachedAt: '2026-11-14T10:00:00.000Z' });
+    const r = await runAnalysis('alice.near', 'balanced');
+    expect(r.ok && r.analysis.cachedAt).toBe('2026-11-14T10:00:00.000Z');
   });
 
   it('drops a provenance tier it does not know but keeps the analysis', async () => {
@@ -74,5 +86,95 @@ describe('runAnalysis', () => {
     expect(r.ok && r.analysis.trace).toEqual([
       { tool: 'x', agent: 'X', ok: true, text: 'y', provenance: null, pick: null, rank: null },
     ]);
+  });
+});
+
+describe('runAnalysis as a stream', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const step = {
+    tool: 'liquidation_guardian',
+    agent: 'Liquidation Guardian',
+    ok: true,
+    text: 'Health factor 1.37 → 1.60 after repaying 33.125 USDt',
+    provenance: 'calculated_estimate',
+    pick: null,
+    rank: null,
+  };
+  const checks = { picked: 1, explained: 1, replaced: 0, restored: 0, dropped: 0 };
+  const done = { ...base, trace: [{ ...step, pick: 'ranked', rank: 1 }], calledTools: [] };
+  const frame = (event: string, data: unknown) =>
+    `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  /** The stream cut at arbitrary points, as the network delivers it. */
+  const stream = (text: string, cut = 7) =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          for (let i = 0; i < text.length; i += cut)
+            c.enqueue(new TextEncoder().encode(text.slice(i, i + cut)));
+          c.close();
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+  const serve = (...replies: Response[]) => {
+    const fetch = vi.fn(async () => replies.shift()!);
+    vi.stubGlobal('fetch', fetch);
+    return fetch;
+  };
+
+  it('builds the pipeline from each event as it arrives and ends with the done analysis', async () => {
+    serve(
+      stream(
+        frame('read', { model: 'claude-haiku-5-5', tokens: 7, loan: true }) +
+          frame('asked', { agents: [{ tool: step.tool, agent: step.agent }] }) +
+          frame('agent', { step }) +
+          frame('ranked', { turns: 2 }) +
+          frame('checked', { checks }) +
+          frame('done', done),
+      ),
+    );
+    const seen: unknown[] = [];
+    const r = await runAnalysis('alice.near', 'balanced', (p) => seen.push(p));
+    expect(r).toMatchObject({
+      ok: true,
+      analysis: { source: 'llm', trace: done.trace, cachedAt: null },
+    });
+    const read = { model: 'claude-haiku-5-5', read: { tokens: 7, loan: true } };
+    const asked = [{ tool: step.tool, agent: step.agent }];
+    expect(seen).toEqual([
+      { ...read, asked: [], trace: [], turns: null, checks: null },
+      { ...read, asked, trace: [], turns: null, checks: null },
+      { ...read, asked, trace: [step], turns: null, checks: null },
+      { ...read, asked, trace: [step], turns: 2, checks: null },
+      { ...read, asked, trace: [step], turns: 2, checks },
+    ]);
+  });
+
+  it('ignores an unknown or malformed event', async () => {
+    serve(
+      stream(
+        frame('thinking', { secret: 'x' }) +
+          frame('agent', { step: { tool: 1 } }) +
+          'event: ranked\ndata: {not json\n\n' +
+          frame('done', done),
+      ),
+    );
+    const seen: unknown[] = [];
+    const r = await runAnalysis('alice.near', 'balanced', (p) => seen.push(p));
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([]);
+  });
+
+  it('asks for the plain JSON reply when the stream breaks before done', async () => {
+    const fetch = serve(
+      stream(
+        frame('read', { model: 'm', tokens: 1, loan: false }) + frame('error', { error: 'x' }),
+      ),
+      new Response(JSON.stringify(done), { status: 200 }),
+    );
+    const r = await runAnalysis('alice.near', 'balanced');
+    expect(r).toMatchObject({ ok: true, analysis: { source: 'llm' } });
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

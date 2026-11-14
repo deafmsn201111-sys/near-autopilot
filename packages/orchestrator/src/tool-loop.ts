@@ -33,6 +33,8 @@ export async function runToolLoop(args: {
   readonly maxTurns: number;
   /** Once aborted, no further model call is made (a call already in flight still finishes). */
   readonly signal?: AbortSignal;
+  readonly onCalls?: (names: readonly string[]) => void;
+  readonly onResult?: (entry: ToolTraceEntry) => void;
 }): Promise<{ text: string; trace: ToolTraceEntry[] }> {
   const byName = new Map(args.tools.map((t) => [t.spec.name, t] as const));
   const chat = args.llm.open({
@@ -52,8 +54,13 @@ export async function runToolLoop(args: {
       throw new ToolLoopError(`model asked for ${reply.calls.length} tool calls in one turn`);
     if (reply.calls.length === 0)
       throw new ToolLoopError('model asked for no tool and gave no answer');
+    args.onCalls?.(reply.calls.map((c) => c.name));
     const done = await Promise.all(
-      reply.calls.map(async (call) => ({ id: call.id, entry: await execute(byName, call) })),
+      reply.calls.map(async (call) => {
+        const entry = await execute(byName, call);
+        args.onResult?.(entry);
+        return { id: call.id, entry };
+      }),
     );
     trace.push(...done.map((d) => d.entry));
     results = done.map(({ id, entry }) => ({

@@ -1,3 +1,4 @@
+import { PassThrough } from 'node:stream';
 import {
   accountIdSchema,
   BoundedMap,
@@ -55,6 +56,7 @@ import { SnapshotService } from '../services/snapshot';
 import { toWad } from '../yield/math';
 import {
   analyseAccount,
+  type AnalysisEvent,
   MIN_ACTION_USD,
   MIN_SUPPLY_APR_PCT,
   approxUsdOf,
@@ -1727,11 +1729,32 @@ export function registerAccountView(
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
     const inputs = await analysisInputs(parsed.data, req.log, body.data.strategy);
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
-    return analyseAccount(
-      deps.ai ?? null,
-      { ...inputs, ownerVerified: await ownerVerified },
-      (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
-    );
+    const run = async (onEvent?: (e: AnalysisEvent) => void) =>
+      analyseAccount(
+        deps.ai ?? null,
+        { ...inputs, ownerVerified: await ownerVerified },
+        (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
+        undefined,
+        onEvent,
+      );
+    if (!req.headers.accept?.includes('text/event-stream')) return run();
+    // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
+    const out = new PassThrough();
+    // ponytail: a tool that returns after the deadline would write after `done`; the run is not aborted on disconnect.
+    const send = (event: string, data: unknown) =>
+      out.writable && out.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    run(({ type, ...data }) => send(type, data))
+      .then((analysis) => send('done', analysis))
+      .catch((err: unknown) => {
+        req.log.error({ err, account: parsed.data }, 'analysis stream failed');
+        send('error', { error: 'analysis failed' });
+      })
+      .finally(() => out.end());
+    return reply
+      .header('content-type', 'text/event-stream')
+      .header('cache-control', 'no-cache, no-transform')
+      .header('x-accel-buffering', 'no')
+      .send(out);
   });
 
   /**
