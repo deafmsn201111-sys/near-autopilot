@@ -2291,9 +2291,12 @@ export function registerAccountView(
     const strategy = strategySchema.safeParse((req.query as { strategy?: unknown }).strategy);
     if (!strategy.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
     const none = { analysis: null, signature: null };
-    const saved = deps.ai?.store;
-    if (!saved) return none;
+    const ai = deps.ai;
+    if (!ai?.store) return none;
     if ((await isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log)) !== true) return none;
+    // As for a run: with the kill switch off (or unreadable) no AI result is shown, saved or not.
+    if (!(await ai.ledger.enabled().catch(() => false))) return none;
+    const saved = ai.store;
     const last = await saved.latest(parsed.data, strategy.data).catch((err: unknown) => {
       req.log.warn({ err, account: parsed.data }, 'saved analysis not read');
       return null;

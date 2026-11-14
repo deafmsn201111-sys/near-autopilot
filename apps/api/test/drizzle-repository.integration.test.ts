@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  accountAnalyses,
   auditCheckpoints,
   auditEvents,
   demoLedger,
@@ -110,6 +111,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       llmCalls,
       llmSettings,
       depositQuotes,
+      accountAnalyses,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))

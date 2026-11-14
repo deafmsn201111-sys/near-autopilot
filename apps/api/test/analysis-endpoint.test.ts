@@ -129,6 +129,9 @@ const store = {
   markets: async () => [],
 } as unknown as CollectorStore;
 
+/** The admin kill switch the test servers' ledger reports. */
+let aiOn = true;
+
 function server(
   node: NearRpcClient,
   collector: CollectorStore,
@@ -153,7 +156,7 @@ function server(
         model: 'claude-haiku-5-5',
         maxTokens: 4096,
         ledger: {
-          enabled: async () => true,
+          enabled: async () => aiOn,
           remainingTodayMicro: async () => 10n ** 9n,
           record: async () => {},
         },
@@ -340,6 +343,19 @@ describe('the saved analysis (#190)', () => {
       analysis: null,
       signature: null,
     });
+  });
+
+  it('serves no saved AI result while the kill switch is off', async () => {
+    const { saved } = memoryStore();
+    const app = server(chain, store, countingLlm(), undefined, undefined, saved);
+    const proof = await proofHeader('alice.near');
+    await analyse(app, { strategy: 'balanced', signature: 'sig-1' }, proof);
+    aiOn = false;
+    try {
+      expect((await latest(app, proof)).json()).toEqual({ analysis: null, signature: null });
+    } finally {
+      aiOn = true;
+    }
   });
 
   it('rejects an oversized signature and an unknown strategy', async () => {
