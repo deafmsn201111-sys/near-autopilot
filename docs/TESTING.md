@@ -25,6 +25,7 @@ gh pr checkout <PR number>      # switches to the PR's code
 
 Open http://127.0.0.1:3001: this is the same site as near-autopilot.tech, running on your machine with the PR's
 code. Mainnet is read for real; nothing is signed unless you sign it in your wallet.
+Steps with HOT's deposit popup run on http://localhost:3001 instead: HOT answers `localhost` but refuses `127.0.0.1`.
 
 When done:
 

@@ -1,6 +1,10 @@
 {$SITE_ADDRESS} {
 	encode gzip
 
+	# One origin: HOT's hex-api allows only the bare host, so the bridge popup fails on www (D42).
+	@www header_regexp www Host ^www\.(.+)$
+	redir @www https://{re.www.1}{uri} permanent
+
 	# The admin is served only by the loopback analytics-admin service; the public site never shows it.
 	respond /admin 404
 	respond /admin/* 404
