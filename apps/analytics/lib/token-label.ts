@@ -101,6 +101,12 @@ export function label(id: string, onChain: ReadonlyMap<string, string>): TokenLa
   };
 }
 
+/** Demo holdings name a symbol only: the curated contract with that symbol stands in for its logo. */
+export function curatedId(symbol: string): string | undefined {
+  if (symbol.toUpperCase() === 'NEAR') return 'near';
+  return Object.entries(CURATED).find(([, c]) => c.symbol === symbol)?.[0];
+}
+
 /** A token's logo as an image when it is a checked data URI that loaded, else a round first-letter placeholder. */
 export function iconView(
   icon: string | null | undefined,

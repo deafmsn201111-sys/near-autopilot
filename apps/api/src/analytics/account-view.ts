@@ -431,8 +431,7 @@ export interface PositionRow {
   readonly key: string;
   readonly label: string;
   readonly sub: string;
-  /** The position's token ids (for logos). */
-  readonly tokens: readonly string[];
+  readonly tokens: readonly { readonly token: string; readonly symbol: string }[];
   readonly amount: number | null;
   /** Null when no leg has a price; then the row is listed but adds nothing to the totals. */
   readonly usd: number | null;
@@ -469,7 +468,7 @@ export function accountPortfolio(p: AccountPositions) {
     const verified = parts.every((x) => trust(x.token).verified);
     positions.push({
       ...row,
-      tokens: parts.map((x) => x.token),
+      tokens: parts.map((x) => ({ token: x.token, symbol: x.symbol })),
       usd,
       verified,
       estimate,

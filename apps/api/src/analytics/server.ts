@@ -39,7 +39,6 @@ export interface AnalyticsDeps {
   readonly admin?: AdminDeps;
   /** Real 1Click quotes for deposits from other chains (D19). Absent: /v1/deposit/* is not served. */
   readonly deposit?: DepositDeps;
-  /** Token logos (ft_metadata.icon, checked). Absent: /v1/tokens/icons is not served. */
   readonly icons?: TokenIcons;
 }
 

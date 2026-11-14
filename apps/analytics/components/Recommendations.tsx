@@ -37,7 +37,6 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
-  /** Logos by token id (untrusted data URIs, rendered through TokenIcon). */
   icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {

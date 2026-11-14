@@ -42,7 +42,6 @@ export interface DepositDeps {
   /** NEP-141 account ids the user may receive (config/market.json): our own list, never user input. */
   readonly destinationTokens: readonly string[];
   readonly newId?: () => string;
-  /** The logo of a NEAR token id (every 1Click asset is a `nep141:` NEAR token). Absent: no logos. */
   readonly icon?: (token: string) => Promise<string | null>;
 }
 

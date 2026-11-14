@@ -48,7 +48,7 @@ import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositDialog } from '../components/DepositDialog';
 import { TokenIcons } from '../components/TokenIcon';
-import { tokenIcons } from '../lib/tokens';
+import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
 import {
@@ -307,13 +307,15 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
   const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
+  const tokenOf = (h: { token?: string; symbol: string }) => h.token ?? curatedId(h.symbol);
   const icons = await tokenIcons([
-    ...data.holdings.flatMap((h) => (h.token ? [h.token] : [])),
-    ...(data.positions ?? []).flatMap((r) => r.tokens ?? []),
+    ...data.holdings.flatMap((h) => tokenOf(h) ?? []),
+    ...(data.positions ?? []).flatMap((r) => (r.tokens ?? []).map((t) => t.token)),
     ...(recs?.recommendations ?? []).flatMap((r) => intentTokens(r.intent)),
   ]);
-  const logo = (token: string | undefined, symbol: string) => ({
-    icon: token ? (icons[token] ?? null) : null,
+  // An unverified token may copy a real logo, so it keeps the letter placeholder.
+  const logo = (token: string | undefined, symbol: string, verified = true) => ({
+    icon: token && verified ? (icons[token] ?? null) : null,
     symbol,
   });
   const allRows: Row[] = [
@@ -321,17 +323,16 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       ...h,
       key: `${h.where}-${h.token ?? h.symbol}`,
       sub: null,
-      logos: [logo(h.token, h.symbol)],
+      logos: [logo(tokenOf(h), h.symbol, h.verified !== false)],
     })),
-    ...(data.positions ?? []).map((r) => {
-      const symbols = r.label.split('/');
-      return {
-        ...r,
-        where: 'position' as const,
-        symbol: r.label,
-        logos: (r.tokens ?? [undefined]).map((t, i) => logo(t, symbols[i] ?? r.label)),
-      };
-    }),
+    ...(data.positions ?? []).map((r) => ({
+      ...r,
+      where: 'position' as const,
+      symbol: r.label,
+      logos: r.tokens?.length
+        ? r.tokens.map((t) => logo(t.token, t.symbol, r.verified !== false))
+        : [logo(undefined, r.label)],
+    })),
   ].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
   const rows = allRows.filter((h) => !isSmall(h) && h.verified !== false);
   const unverifiedRows = allRows.filter((h) => !isSmall(h) && h.verified === false);

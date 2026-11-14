@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { iconView } from '../lib/token-label';
+import { curatedId, iconView } from '../lib/token-label';
+
+describe('curatedId', () => {
+  it('finds the curated contract of a demo symbol, native NEAR as "near"', () => {
+    expect(curatedId('NEAR')).toBe('near');
+    expect(curatedId('wNEAR')).toBe('wrap.near');
+    expect(curatedId('USDC')).toBe(
+      '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
+    );
+    expect(curatedId('PEPE')).toBeUndefined();
+  });
+});
 
 describe('iconView', () => {
   it('shows a checked logo as an image', () => {

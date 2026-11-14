@@ -17,9 +17,9 @@ const CHECKED_IN: Readonly<Record<string, string>> = { near: NEAR_ICON, 'wrap.ne
 
 const metadataIcon = z.object({ icon: z.unknown().optional() });
 
-/** Token logos from `ft_metadata.icon`, checked by `safeTokenIcon`. A failed read is not remembered, so it is retried. */
+/** Token logos from `ft_metadata.icon`, checked by `safeTokenIcon`. A failed read is dropped, so it is retried. */
 export class TokenIcons {
-  private readonly cache: BoundedMap<string, string | null>;
+  private readonly cache: BoundedMap<string, Promise<string | null>>;
 
   constructor(
     private readonly viewer: ContractViewer,
@@ -28,20 +28,25 @@ export class TokenIcons {
     this.cache = new BoundedMap(limit);
   }
 
-  async get(token: string): Promise<string | null> {
+  get(token: string): Promise<string | null> {
     const fixed = CHECKED_IN[token];
-    if (fixed) return fixed;
-    if (this.cache.has(token)) return this.cache.get(token) ?? null;
+    if (fixed) return Promise.resolve(fixed);
     const id = accountIdSchema.safeParse(token);
-    if (!id.success) return null;
-    try {
-      const raw = metadataIcon.safeParse(await this.viewer.view(id.data, 'ft_metadata'));
-      const icon = raw.success ? safeTokenIcon(raw.data.icon) : null;
-      this.cache.set(token, icon);
-      return icon;
-    } catch {
-      return null;
-    }
+    if (!id.success) return Promise.resolve(null);
+    const cached = this.cache.get(token);
+    if (cached) return cached;
+    const read = this.viewer.view(id.data, 'ft_metadata').then(
+      (raw) => {
+        const parsed = metadataIcon.safeParse(raw);
+        return parsed.success ? safeTokenIcon(parsed.data.icon) : null;
+      },
+      () => {
+        this.cache.delete(token);
+        return null;
+      },
+    );
+    this.cache.set(token, read);
+    return read;
   }
 }
 
@@ -50,12 +55,7 @@ const iconsQuery = z.object({
     .string()
     .max(10_000)
     .transform((s) => [...new Set(s.split(',').filter(Boolean))])
-    .pipe(
-      z
-        .array(z.union([z.literal('near'), accountIdSchema]))
-        .min(1)
-        .max(100),
-    ),
+    .pipe(z.array(z.string().max(128)).min(1).max(100)),
 });
 
 /** Logos for the tokens a page shows, in one call: `{ icons: { [token]: dataUri | null } }`. */

@@ -4,7 +4,6 @@ export interface DepositAsset {
   readonly assetId: string;
   readonly symbol: string;
   readonly decimals: number;
-  /** Untrusted logo (data URI): rendered only through TokenIcon. */
   readonly icon?: string | null;
 }
 export interface DepositOrigin extends DepositAsset {
@@ -74,7 +73,6 @@ export function formatUnits(units: string, decimals: number): string {
   return frac ? `${whole}.${frac}` : whole;
 }
 
-/** The chains a deposit may come from, in picker order, with their checked-in logos (public/chains). */
 export const DEPOSIT_CHAINS = [
   { id: 'eth', name: 'Ethereum', native: 'ETH' },
   { id: 'base', name: 'Base', native: 'ETH' },

@@ -12,8 +12,8 @@ export function TokenIcon({
   symbol: string;
   size?: number;
 }) {
-  const [broken, setBroken] = useState(false);
-  const view = iconView(icon, symbol, broken);
+  const [failed, setFailed] = useState<string | null>(null);
+  const view = iconView(icon, symbol, failed !== null && failed === icon);
   const style = { width: size, height: size, fontSize: Math.round(size * 0.42) };
   if ('letter' in view)
     return (
@@ -30,12 +30,11 @@ export function TokenIcon({
       height={size}
       style={style}
       referrerPolicy="no-referrer"
-      onError={() => setBroken(true)}
+      onError={() => setFailed(view.src)}
     />
   );
 }
 
-/** Two or more logos overlapping, for an LP position or a swap. */
 export function TokenIcons({
   tokens,
   size = 24,

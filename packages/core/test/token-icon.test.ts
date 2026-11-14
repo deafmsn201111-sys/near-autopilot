@@ -12,6 +12,15 @@ describe('safeTokenIcon', () => {
     );
   });
 
+  it('keeps the other shapes real contracts use: utf8, raw quotes, image/jpg', () => {
+    for (const ok of [
+      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+      'data:image/svg+xml;charset=utf-8,%3Csvg%3E',
+      'data:image/jpg;base64,/9j/4AAQ',
+    ])
+      expect(safeTokenIcon(ok), ok).toBe(ok);
+  });
+
   it('refuses anything that is not an image data URI', () => {
     for (const bad of [
       'data:text/html,<script>alert(1)</script>',

@@ -37,6 +37,13 @@ describe('TokenIcons', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('reads a token once when asked for it twice at the same time', async () => {
+    const { v, calls } = viewer({ [USDC]: USDC_ICON });
+    const icons = new TokenIcons(v);
+    expect(await Promise.all([icons.get(USDC), icons.get(USDC)])).toEqual([USDC_ICON, USDC_ICON]);
+    expect(calls).toHaveLength(1);
+  });
+
   it('does not remember a failed read', async () => {
     const { v, calls } = viewer({});
     const icons = new TokenIcons(v);
@@ -83,8 +90,13 @@ describe('GET /v1/tokens/icons', () => {
     });
   });
 
-  it('refuses a token id that is not a NEAR account, and too many ids', async () => {
-    expect((await get('/v1/tokens/icons?ids=..bad')).statusCode).toBe(400);
+  it('answers null for an id that is not a NEAR account, without failing the others', async () => {
+    const res = await get(`/v1/tokens/icons?ids=..bad,${USDC}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ icons: { '..bad': null, [USDC]: USDC_ICON } });
+  });
+
+  it('refuses too many ids', async () => {
     const many = Array.from({ length: 101 }, (_, i) => `t${i}.near`).join(',');
     expect((await get(`/v1/tokens/icons?ids=${many}`)).statusCode).toBe(400);
   });
