@@ -185,7 +185,7 @@ export function AnalysisPanel({
       {analysis?.note && analysis.fallback !== 'nothing_to_rank' && !running && !failure && (
         <p className="an-note">{analysis.note}</p>
       )}
-      {portfolioChanged && (
+      {portfolioChanged && aiAllowed && (
         <p className="an-note">Your portfolio changed — run the AI analysis again.</p>
       )}
       {failure && (
