@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { iconView } from '../lib/token-label';
 
 /** A token logo, only ever through <img> (an SVG there cannot run scripts); a letter placeholder when none or broken. */
@@ -43,7 +43,10 @@ export function TokenIcons({
   size?: number;
 }) {
   return (
-    <span className="token-icons">
+    <span
+      className="token-icons"
+      style={{ '--overlap': `-${Math.round(size * 0.35)}px` } as CSSProperties}
+    >
       {tokens.map((t, i) => (
         <TokenIcon key={`${t.symbol}-${i}`} icon={t.icon} symbol={t.symbol} size={size} />
       ))}

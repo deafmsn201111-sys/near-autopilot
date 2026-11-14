@@ -268,7 +268,11 @@ function TokenPicker<T extends DepositAsset>({
               <b>{t.symbol}</b>
               <span className="muted-note">{note(t)}</span>
             </span>
-            {t.assetId === selected && <span aria-hidden="true">✓</span>}
+            {t.assetId === selected && (
+              <span className="token-check" aria-hidden="true">
+                ✓
+              </span>
+            )}
           </li>
         ))}
         {shown.length === 0 && <li className="muted-note">No token matches “{query.trim()}”.</li>}

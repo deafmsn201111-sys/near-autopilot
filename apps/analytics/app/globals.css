@@ -958,12 +958,12 @@ tr.detail details[open] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px 6px 8px;
+  padding: 5px 10px 5px 6px;
   border: 1px solid var(--axis);
   border-radius: 999px;
   background: var(--page);
   color: var(--ink);
-  font: 500 13px var(--font);
+  font: 500 12.5px var(--font);
   cursor: pointer;
 }
 .chain-chip img {
@@ -1093,7 +1093,7 @@ tr.detail details[open] {
 .token-list li.is-active {
   background: var(--accent-wash);
 }
-.token-list li > [aria-hidden] {
+.token-check {
   margin-left: auto;
   color: var(--accent);
 }
@@ -3386,7 +3386,7 @@ main.page {
   align-items: center;
 }
 .token-icons > .token-icon + .token-icon {
-  margin-left: -30%;
+  margin-left: var(--overlap);
   box-shadow: 0 0 0 2px var(--surface);
 }
 .ht-asset .nm {
