@@ -15,11 +15,13 @@ export interface AccountDiscovery {
   v1PoolIds(id: string): Promise<number[] | null>;
   /** USD per whole token, an estimate from Rhea's pools; never used to size or allow an action. */
   prices(): Promise<ReadonlyMap<string, number> | null>;
+  /** Token decimals from the same indexer answer: only ranks tokens by value before their metadata is read. */
+  decimals(): Promise<ReadonlyMap<string, number> | null>;
   /** USD traded in the last 24 h per DCL pool id, Rhea's indexer; an estimate the LP Optimizer may size advice with. */
   dclVolumes24hUsd(): Promise<ReadonlyMap<string, number> | null>;
 }
 
-export const MAX_DISCOVERED = { tokens: 200, stakingPools: 5, v1Pools: 20 } as const;
+export const MAX_DISCOVERED = { tokens: 2000, stakingPools: 5, v1Pools: 20 } as const;
 const MAX_BODY_BYTES = 4_000_000;
 const TIMEOUT_MS = 5_000;
 const PRICES_TTL_MS = 5 * 60_000;
@@ -32,7 +34,10 @@ const fullSchema = z.object({
 const tokenSchema = z.object({ contract_id: accountIdSchema, balance: u128 });
 const stakingSchema = z.object({ pool_id: accountIdSchema });
 const v1PoolSchema = z.object({ id: z.string().regex(/^\d{1,9}$/) });
-const priceSchema = z.object({ price: z.string().regex(/^\d{1,20}(\.\d+)?$/) });
+const priceSchema = z.object({
+  price: z.string().regex(/^\d{1,20}(\.\d+)?$/),
+  decimal: z.number().int().min(0).max(36).optional().catch(undefined),
+});
 const dclListSchema = z.object({
   code: z.literal(0),
   data: z.object({ list: z.array(z.unknown()) }),
@@ -61,8 +66,8 @@ export function httpDiscovery(fetchImpl: typeof fetch = fetch, now = Date.now): 
       return null;
     }
   };
-  type Cache = { at: number; value: Promise<ReadonlyMap<string, number> | null> } | null;
-  const cached = (slot: { c: Cache }, load: () => Promise<ReadonlyMap<string, number> | null>) => {
+  type Cache<T> = { at: number; value: Promise<T | null> } | null;
+  const cached = <T>(slot: { c: Cache<T> }, load: () => Promise<T | null>) => {
     if (slot.c && now() - slot.c.at < PRICES_TTL_MS) return slot.c.value;
     const value = load();
     slot.c = { at: now(), value };
@@ -71,8 +76,26 @@ export function httpDiscovery(fetchImpl: typeof fetch = fetch, now = Date.now): 
     });
     return value;
   };
-  const priceSlot = { c: null as Cache };
-  const volumeSlot = { c: null as Cache };
+  type Indexed = { prices: Map<string, number>; decimals: Map<string, number> };
+  const priceSlot = { c: null as Cache<Indexed> };
+  const volumeSlot = { c: null as Cache<ReadonlyMap<string, number>> };
+  const indexed = () =>
+    cached(priceSlot, () =>
+      get('https://indexer.ref.finance/list-token-price').then((raw) => {
+        const body = z.record(z.unknown()).safeParse(raw);
+        if (!body.success) return null;
+        const out: Indexed = { prices: new Map(), decimals: new Map() };
+        for (const [token, entry] of Object.entries(body.data)) {
+          const p = priceSchema.safeParse(entry);
+          const usd = p.success ? Number(p.data.price) : 0;
+          if (!accountIdSchema.safeParse(token).success || !Number.isFinite(usd) || usd <= 0)
+            continue;
+          out.prices.set(token, usd);
+          if (p.data?.decimal !== undefined) out.decimals.set(token, p.data.decimal);
+        }
+        return out;
+      }),
+    );
 
   return {
     async account(id) {
@@ -99,22 +122,8 @@ export function httpDiscovery(fetchImpl: typeof fetch = fetch, now = Date.now): 
         .map((p) => Number(p.id))
         .slice(0, MAX_DISCOVERED.v1Pools);
     },
-    prices() {
-      return cached(priceSlot, () =>
-        get('https://indexer.ref.finance/list-token-price').then((raw) => {
-          const body = z.record(z.unknown()).safeParse(raw);
-          if (!body.success) return null;
-          const out = new Map<string, number>();
-          for (const [token, entry] of Object.entries(body.data)) {
-            const p = priceSchema.safeParse(entry);
-            const usd = p.success ? Number(p.data.price) : 0;
-            if (accountIdSchema.safeParse(token).success && Number.isFinite(usd) && usd > 0)
-              out.set(token, usd);
-          }
-          return out;
-        }),
-      );
-    },
+    prices: async () => (await indexed())?.prices ?? null,
+    decimals: async () => (await indexed())?.decimals ?? null,
     dclVolumes24hUsd() {
       return cached(volumeSlot, () =>
         get(DCL_LIST_URL).then((raw) => {

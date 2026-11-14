@@ -72,6 +72,7 @@ const discovery: AccountDiscovery = {
       [NPRO, NPRO_USD],
       [WNEAR, 99],
     ]),
+  decimals: async () => new Map([[NPRO, 24]]),
   dclVolumes24hUsd: async () => null,
 };
 
@@ -171,6 +172,7 @@ describe('GET /v1/analytics/account/:id reads the whole account', () => {
       account: async () => null,
       v1PoolIds: async () => null,
       prices: async () => null,
+      decimals: async () => null,
       dclVolumes24hUsd: async () => null,
     };
     const { body } = await read('6253046288164419544382378', down);
