@@ -36,7 +36,12 @@ import {
   buildSupply,
   buildWithdraw,
 } from '@near-autopilot/burrow-adapter';
-import { exactAmount, resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
+import {
+  exactAmount,
+  lpMinAmounts,
+  resolveBalancedLpAmounts,
+  resolveIntentAmount,
+} from '../wallet/amounts';
 import { buildUnwrapNear } from '../wallet/wrap';
 import {
   assembleCascade,
@@ -2917,9 +2922,7 @@ export function registerAccountView(
           return reply.code(409).send({ error: `no confirmed price for ${token0}` });
         if (p1 === undefined || !(p1 > 0))
           return reply.code(409).send({ error: `no confirmed price for ${token1}` });
-        const w0Human = Number(w0) / 10 ** dec0;
-        const w1Human = Number(w1) / 10 ** dec1;
-        if (w0Human <= 0 || w1Human <= 0)
+        if (w0 <= 0n || w1 <= 0n)
           return reply
             .code(409)
             .send({ error: `your wallet must hold both ${sym0} and ${sym1} to add liquidity` });
@@ -2931,8 +2934,8 @@ export function registerAccountView(
           price1Usd: p1,
           decimals0: dec0,
           decimals1: dec1,
-          wallet0Human: w0Human,
-          wallet1Human: w1Human,
+          wallet0Raw: w0,
+          wallet1Raw: w1,
         });
         if (side0.rawAmount <= 0n || side1.rawAmount <= 0n)
           return reply.code(409).send({ error: 'the resolved deposit amounts are zero' });
@@ -2978,7 +2981,12 @@ export function registerAccountView(
           idx0 < idx1 ? [side0.rawAmount, side1.rawAmount] : [side1.rawAmount, side0.rawAmount];
         steps.push({
           intentId: 'add-liquidity',
-          tx: buildV1AddLiquidity({ contractId: deps.rheaId, poolId: intent.poolId, amounts }),
+          tx: buildV1AddLiquidity({
+            contractId: deps.rheaId,
+            poolId: intent.poolId,
+            amounts,
+            minAmounts: lpMinAmounts(amounts),
+          }),
           preview: `Add ${h0} ${sym0} + ${h1} ${sym1} to pool #${intent.poolId} (balanced; any dust stays in your exchange balance, withdrawable).`,
         });
 
@@ -3214,13 +3222,12 @@ export function registerAccountView(
         const price = prices.get(WRAP);
         if (price === undefined || !(price > 0))
           return reply.code(409).send({ error: 'no confirmed price for wNEAR' });
-        const walletHuman = Number(walletRaw) / 1e24;
-        if (walletHuman <= 0) return reply.code(409).send({ error: 'your wallet holds no wNEAR' });
+        if (walletRaw <= 0n) return reply.code(409).send({ error: 'your wallet holds no wNEAR' });
         const { rawAmount, humanAmount } = resolveIntentAmount(
           intent.approxUsd,
           price,
           24,
-          walletHuman,
+          walletRaw,
         );
         if (rawAmount <= 0n) return reply.code(409).send({ error: 'the resolved amount is zero' });
         const steps: CascadeStep[] = [
@@ -3574,14 +3581,14 @@ export function registerAccountView(
         for (const [i, t] of intent.tokens.entries()) {
           const m = meta.find((x) => x.token === t.token)!;
           const price = prices.get(t.token)!;
-          const walletHuman = Number(balances[i]!) / 10 ** m.decimals;
-          if (walletHuman <= 0)
+          const walletRaw = balances[i]!;
+          if (walletRaw <= 0n)
             return reply.code(409).send({ error: `your wallet holds no ${m.symbol}` });
           const { rawAmount, humanAmount } = resolveIntentAmount(
             t.approxUsd,
             price,
             m.decimals,
-            walletHuman,
+            walletRaw,
           );
           if (rawAmount <= 0n)
             return reply.code(409).send({ error: `the resolved ${m.symbol} amount is zero` });
@@ -3635,17 +3642,16 @@ export function registerAccountView(
       const price = prices.get(intent.token);
       if (price === undefined || !(price > 0))
         return reply.code(409).send({ error: `no confirmed price for ${intent.token}` });
-      const walletHuman = Number(walletRaw) / 10 ** decimals;
       // A swap FROM wNEAR can wrap native NEAR first (handled in the swap branch), so an empty wNEAR balance is not a
       // blocker here; other actions (supply/repay) do need the token in the wallet.
       const isWrapSwap = intent.action === 'swap' && intent.token === WRAP_NEAR_ID;
-      if (walletHuman <= 0 && !isWrapSwap)
+      if (walletRaw <= 0n && !isWrapSwap)
         return reply.code(409).send({ error: `your wallet holds no ${sym}` });
       const exact = 'amount' in intent ? intent.amount : undefined;
       const { rawAmount, humanAmount } =
         exact !== undefined
           ? exactAmount(BigInt(exact), walletRaw, decimals)
-          : resolveIntentAmount(intent.approxUsd, price, decimals, walletHuman);
+          : resolveIntentAmount(intent.approxUsd, price, decimals, walletRaw);
       if (rawAmount <= 0n && !isWrapSwap)
         return reply.code(409).send({ error: 'the resolved amount is zero' });
       const human = humanAmount.toFixed(Math.min(6, decimals));
@@ -3669,8 +3675,12 @@ export function registerAccountView(
           const nativeYocto = await native.getNativeBalance(account).catch(() => 0n);
           const NATIVE_BUFFER = 1_000_000_000_000_000_000_000_000n; // keep 1 NEAR native for gas + storage
           const wrappable = nativeYocto > NATIVE_BUFFER ? nativeYocto - NATIVE_BUFFER : 0n;
-          const availHuman = walletHuman + Number(wrappable) / 1e24;
-          const resized = resolveIntentAmount(intent.approxUsd, price, decimals, availHuman);
+          const resized = resolveIntentAmount(
+            intent.approxUsd,
+            price,
+            decimals,
+            walletRaw + wrappable,
+          );
           swapRawAmount = resized.rawAmount;
           swapHuman = resized.humanAmount;
           if (swapRawAmount > walletRaw) wrapShortfall = swapRawAmount - walletRaw; // yocto == raw at 24 decimals
