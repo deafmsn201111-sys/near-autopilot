@@ -1,4 +1,5 @@
 'use client';
+import { bridgeOpenError, NO_NEAR_ACCOUNT } from '../lib/plain-error';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   describeStatus,
@@ -344,11 +345,10 @@ export function DepositButton({
     setBusy(true);
     setError(null);
     try {
-      if ((await currentAccount().catch(() => null)) !== account)
-        return setError('Connect your NEAR wallet first.');
+      if ((await currentAccount().catch(() => null)) !== account) return setError(NO_NEAR_ACCOUNT);
       await openDepositBridge(account);
-    } catch {
-      setError('HOT could not open. Try again.');
+    } catch (e) {
+      setError(bridgeOpenError(e));
     } finally {
       setBusy(false);
     }

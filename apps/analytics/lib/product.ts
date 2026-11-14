@@ -165,7 +165,27 @@ export interface PortfolioView {
   discovery?: { complete: boolean };
 }
 
-export const portfolioView = (id: string) => tryApi<PortfolioView>(`/v1/analytics/portfolio/${id}`);
+/**
+ * The last good read per key, shown marked stale when a later read fails (#256) so a down API or RPC does not blank the
+ * page. A key always names the visitor, so no one sees another visitor's read.
+ */
+// ponytail: in-process and lost on restart; a few hundred reads cover live visitors, a shared store if we scale out
+const lastGood = processWide('lastGoodReads', () => new BoundedMap<string, unknown>(500));
+
+const orLastGood = <T>(
+  key: string,
+  r: { data: T | null; error: string | null; status: number | null },
+) => {
+  if (r.data) {
+    lastGood.set(key, r.data);
+    return { ...r, stale: false };
+  }
+  const last = lastGood.get(key) as T | undefined;
+  return last ? { ...r, data: last, stale: true } : { ...r, stale: false };
+};
+
+export const portfolioView = async (id: string) =>
+  orLastGood(`demo:${id}`, await tryApi<PortfolioView>(`/v1/analytics/portfolio/${id}`));
 
 export { money } from './format';
 
@@ -179,7 +199,7 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated'> & {
   ownerCheckFailed?: boolean;
 };
 
-type AccountResult = { data: AccountRead | null; error: string | null };
+type AccountResult = { data: AccountRead | null; error: string | null; status: number | null };
 
 const ACCOUNT_TTL_MS = 60_000;
 // One page render reads the account twice; a failed ownership check is read again on the next render.
@@ -219,7 +239,8 @@ const fetchAccount = async (
   strategy: StrategyId,
   fresh: boolean,
 ): Promise<AccountResult> => {
-  if (!(await consume('account', ACCOUNT_LIMIT))) return { error: RATE_LIMITED, data: null };
+  if (!(await consume('account', ACCOUNT_LIMIT)))
+    return { error: RATE_LIMITED, data: null, status: 429 };
   return tryApi<AccountRead>(
     `/v1/analytics/account/${encodeURIComponent(id)}?strategy=${strategy}${fresh ? '&fresh=1' : ''}`,
     proof ? { 'x-ownership-proof': proof } : {},
@@ -291,10 +312,15 @@ export const refreshAccountRead = async (id: string): Promise<boolean | null> =>
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
+const readOrLastGood = async (id: string, strategy: StrategyId = DEFAULT_STRATEGY) =>
+  orLastGood(await readKey(id, await ownershipProof(), strategy), await readAccount(id, strategy));
+
 export const accountView = async (id: string, strategy?: StrategyId) => {
-  const r = await readAccount(id, strategy);
+  const r = await readOrLastGood(id, strategy);
   return {
     error: r.error,
+    status: r.status,
+    stale: r.stale,
     data: r.data
       ? ({
           ...r.data,
@@ -311,4 +337,4 @@ export const accountView = async (id: string, strategy?: StrategyId) => {
  * Shares the endpoint with `accountView`; here we keep the recommendation list (what the agents suggest, with a
  * one-click intent) rather than the portfolio shape.
  */
-export const accountRecommendations = readAccount;
+export const accountRecommendations = readOrLastGood;

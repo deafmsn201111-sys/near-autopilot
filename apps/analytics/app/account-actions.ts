@@ -26,11 +26,11 @@ export async function walletSummary(account: unknown): Promise<WalletPortfolio |
   const id = accountOf(account);
   if (!id.success) return null;
   const strategy = savedStrategy((await cookies()).get(STRATEGY_COOKIE)?.value, id.data);
-  const [{ data }, icons] = await Promise.all([
+  const [{ data, stale }, icons] = await Promise.all([
     accountView(id.data, strategy),
     tokenIcons(['wrap.near']),
   ]);
-  if (!data) return null;
+  if (!data || stale) return null;
   return {
     account: id.data,
     netWorthUsd: data.totals.netWorthUsd,

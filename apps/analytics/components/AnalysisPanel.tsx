@@ -12,6 +12,7 @@ import {
 import { CopyButton } from './CopyButton';
 import { findingsOf, verdictOf, type Finding } from '../lib/analysis-view';
 import { ago } from '../lib/format';
+import { aiFailure } from '../lib/plain-error';
 import type { AccountRecommendation } from '../lib/product';
 import { Button, Chip, ProvenanceMark } from './primitives';
 import { useNow } from './DepositDialog';
@@ -110,7 +111,7 @@ export function AnalysisPanel({
   loanValued: boolean;
   hasLp: boolean;
   portfolioChanged: boolean;
-  error: string | null;
+  error: { error: string; status?: number } | null;
   onRun: () => void;
 }) {
   const running = startedAt !== null;
@@ -129,6 +130,13 @@ export function AnalysisPanel({
     incomplete: findings.filter((f) => f.incomplete).map((f) => f.agent),
   });
   const aiRanked = analysis?.source === 'llm';
+  const failure = running
+    ? null
+    : error
+      ? aiFailure({ status: error.status })
+      : !aiRanked && analysis?.fallback
+        ? aiFailure({ fallback: analysis.fallback })
+        : null;
   const checks = !running ? analysis?.run?.checks : null;
 
   return (
@@ -173,15 +181,24 @@ export function AnalysisPanel({
         </div>
       </header>
 
-      {analysis?.note && analysis.fallback !== 'nothing_to_rank' && !running && (
+      {analysis?.note && analysis.fallback !== 'nothing_to_rank' && !running && !failure && (
         <p className="an-note">{analysis.note}</p>
       )}
       {portfolioChanged && (
         <p className="an-note">Your portfolio changed — run the AI analysis again.</p>
       )}
-      {error && (
-        <div className="callout warn an-note" role="alert">
-          AI analysis failed: {error}
+      {failure && (
+        <div className="an-fail" role="alert">
+          {ICON.alert}
+          <p>
+            <b>{failure.title}</b> {failure.detail}
+          </p>
+          {failure.retry && aiAllowed && (
+            <Button size="sm" onClick={onRun}>
+              {ICON.refresh}
+              Try again
+            </Button>
+          )}
         </div>
       )}
 

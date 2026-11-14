@@ -9,7 +9,7 @@ export function RetryButton({ label = 'Try again' }: { label?: string }) {
   return (
     <button
       type="button"
-      className="btn secondary"
+      className="ds-btn ds-btn-secondary ds-btn-sm"
       disabled={pending}
       onClick={() => start(() => router.refresh())}
     >
@@ -44,6 +44,25 @@ export function ErrorState({
           <RetryButton />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A read failed but an older one is on screen, or the prices behind it stopped updating (#256): say how old it is and
+ * why, and offer a retry. Amber, because the numbers may be off; never a blank page.
+ */
+export function StaleNotice({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="stale-notice" role="status">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 6v6l4 2" />
+      </svg>
+      <p>
+        <b>{title}</b> {detail}
+      </p>
+      <RetryButton />
     </div>
   );
 }

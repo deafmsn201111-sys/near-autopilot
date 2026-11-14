@@ -1,0 +1,125 @@
+import { ago } from './format';
+
+/**
+ * A failed read in plain words. Only a missing account is about what the visitor typed; a rate limit, our server or
+ * NEAR not answering is never their fault.
+ */
+export function plainReadError(
+  status: number | null,
+  error: string | null,
+): { text: string; blamesInput: boolean } {
+  if (status === 404 && error) return { text: `${capitalize(error)}.`, blamesInput: true };
+  if (status === 429)
+    return {
+      text: 'We are serving a lot of reads from your network right now. Wait a minute and try again.',
+      blamesInput: false,
+    };
+  if (status === 0)
+    return {
+      text: 'Our server is not answering right now. Nothing in your wallet is affected; try again in a minute.',
+      blamesInput: false,
+    };
+  if (status === 502)
+    return {
+      text: 'NEAR did not answer when we read the account. This is usually temporary; try again in a minute.',
+      blamesInput: false,
+    };
+  return {
+    text: 'Something failed on our side while reading it. Nothing in your wallet is affected; try again in a minute.',
+    blamesInput: false,
+  };
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+const RULES = 'Below is the rule-based result: the same agents and checks, without the AI ranking.';
+
+/** The API's fallback codes that mean the AI run itself failed (not "off", "not the owner" or "nothing to rank"). */
+const FAILED = {
+  busy: 'busy',
+  deadline: 'slow',
+  model_error: 'failed',
+  invalid_output: 'failed',
+  loop_limit: 'failed',
+  empty: 'failed',
+  cancelled: 'failed',
+  cap: 'paused',
+} as const;
+
+const TEXT = {
+  busy: ['The AI is busy right now.', `Try again in a few minutes. ${RULES}`],
+  slow: ['The AI took too long.', `Run it again; it usually answers within a minute. ${RULES}`],
+  unreachable: [
+    'The AI could not be reached.',
+    `Our server did not answer; try again in a minute. ${RULES}`,
+  ],
+  failed: ['The AI run failed.', `Run it again. ${RULES}`],
+  paused: ['AI analysis is paused for today.', `The daily AI budget is used up. ${RULES}`],
+} as const;
+
+/**
+ * A failed AI run (#256): a transport failure has a status, a run the API ended on its side has a fallback code.
+ * Null when the run did not fail.
+ */
+export function aiFailure({
+  status,
+  fallback,
+}: {
+  status?: number;
+  fallback?: string | null;
+}): { title: string; detail: string; retry: boolean } | null {
+  const kind = fallback
+    ? (FAILED[fallback as keyof typeof FAILED] ?? null)
+    : status === 429
+      ? 'busy'
+      : status === 504
+        ? 'slow'
+        : status === 0 || status === 502 || status === 503
+          ? 'unreachable'
+          : 'failed';
+  if (!kind) return null;
+  const [title, detail] = TEXT[kind];
+  return { title, detail, retry: kind !== 'paused' };
+}
+
+const clock = (iso: string) => `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+
+/** Prices this many collector cycles old get a warning: one missed cycle is normal. */
+const STALE_PRICE_CYCLES = 3;
+
+/** What the page warns about when it shows an older read or prices that stopped updating (#256). */
+export function staleNotices({
+  read,
+  prices,
+  now,
+}: {
+  read: { stale: boolean; asOf: string | null; status: number | null; error: string | null };
+  prices: { dataAsOf: string | null; intervalSeconds: number } | null;
+  now: string;
+}): { title: string; detail: string }[] {
+  const out: { title: string; detail: string }[] = [];
+  if (read.stale)
+    out.push({
+      title: "Couldn't refresh.",
+      detail: `${read.asOf ? `Showing data from ${clock(read.asOf)} (${ago(read.asOf, now)}). ` : ''}${plainReadError(read.status, read.error).text}`,
+    });
+  const at = prices?.dataAsOf;
+  if (at && Date.parse(now) - Date.parse(at) > STALE_PRICE_CYCLES * prices.intervalSeconds * 1000)
+    out.push({
+      title: 'Prices may be out of date.',
+      detail: `The price feed last updated at ${clock(at)} (${ago(at, now)}); the values below use those prices.`,
+    });
+  return out;
+}
+
+/** "Add funds" could not open HOT's popup (D42): a plain line by the button, never a frozen modal. */
+export function bridgeOpenError(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  if (/429|too many/i.test(message))
+    return 'HOT is busy right now. Wait a minute and press Add funds again.';
+  return 'HOT did not load. Check your connection and press Add funds again.';
+}
+
+export const NO_NEAR_ACCOUNT = 'Connect your NEAR wallet first, then add funds.';
+export const CONNECT_FAILED = 'The wallet list did not open. Check your connection and try again.';
+export const CONNECT_CLOSED = 'No NEAR wallet was connected.';

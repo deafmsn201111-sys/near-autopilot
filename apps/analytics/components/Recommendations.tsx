@@ -61,11 +61,13 @@ export function Recommendations({
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   // Kept per strategy instead of remounting on a switch, which would drop the focus off the strategy control (#288);
-  // a run that ends after a switch lands under the strategy it started with.
-  const [runs, setRuns] = useState<Partial<Record<StrategyId, AiRun>>>({});
-  const [errors, setErrors] = useState<Partial<Record<StrategyId, string>>>({});
+  // a run that ends after a switch lands under the strategy it started with. Null: the last run failed (#256).
+  const [runs, setRuns] = useState<Partial<Record<StrategyId, AiRun | null>>>({});
+  const [errors, setErrors] = useState<
+    Partial<Record<StrategyId, { error: string; status?: number }>>
+  >({});
   const [live, setLive] = useState<Pipeline | null>(null);
-  const ai = runs[strategy] ?? restore(saved);
+  const ai = runs[strategy] === undefined ? restore(saved) : runs[strategy];
   const error = errors[strategy] ?? null;
   const running = startedAt !== null;
   const signature = portfolioSignature(initial, holdings);
@@ -84,7 +86,11 @@ export function Recommendations({
         ...all,
         [ranFor]: { analysis: r.analysis, signature, run: Date.now() },
       }));
-    else setErrors((e) => ({ ...e, [ranFor]: r.error }));
+    else {
+      // The panel then says the rule-based result is shown, so an older AI ranking must not stay on screen.
+      setRuns((all) => ({ ...all, [ranFor]: null }));
+      setErrors((e) => ({ ...e, [ranFor]: r }));
+    }
     setLive(null);
     setStartedAt(null);
   }

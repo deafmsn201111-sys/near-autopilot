@@ -118,3 +118,19 @@ describe('allocSegments', () => {
     expect(segs.map((s) => s.color)).toEqual(['var(--series-4)', '#00e29a', 'var(--series-5)']);
   });
 });
+
+describe('a loan that could not be valued', () => {
+  it('gets a neutral "Unknown" chip, never the at-risk colours', () => {
+    const out = html({
+      health: {
+        healthFactor: null,
+        level: 'high',
+        label: 'Unknown',
+        sentence: 'The loan could not be valued: a price or a risk parameter is missing.',
+      },
+    });
+    expect(out).toMatch(/class="ds-chip[^"]*"[^>]*>.*Unknown/);
+    expect(out).not.toMatch(/ds-chip-(liq|act|watch)/);
+    expect(out).toContain('could not be valued');
+  });
+});

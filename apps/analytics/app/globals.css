@@ -5424,5 +5424,106 @@ html[data-refreshing] .ht-row {
     50% {
       opacity: 0.4;
     }
+
+/* ------------------------------------------------------------------ missing states: stale data, AI failure, skeleton */
+.stale-notice,
+.an-fail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--watch-line);
+  border-radius: var(--r-m);
+  background: var(--watch-bg);
+}
+.stale-notice {
+  margin-bottom: var(--s4);
+}
+.an-fail {
+  margin: var(--s4) var(--s6) 0;
+}
+.stale-notice > svg,
+.an-fail > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--watch);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.stale-notice p,
+.an-fail p {
+  flex: 1 1 260px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+.stale-notice b,
+.an-fail b {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.connect-note {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+.sk-ctx,
+.sk-row,
+.sk-hold {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+}
+.sk-ctx {
+  margin-bottom: var(--s6);
+}
+.sk-row {
+  justify-content: space-between;
+}
+.sk-sum > div {
+  gap: var(--s3);
+}
+.sk-panel {
+  display: grid;
+  gap: var(--s5);
+  margin-bottom: var(--s8);
+}
+.sk-verdict {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: var(--s4);
+  align-items: center;
+}
+.sk-col {
+  display: grid;
+  gap: var(--s2);
+}
+.sk-finds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s2);
+}
+.sk-hold {
+  height: 56px;
+  border-top: 1px solid var(--line-subtle);
+}
+.sk-hold > :last-child {
+  margin-left: auto;
+}
+@media (max-width: 900px) {
+  .sk-finds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .sk-panel {
+    padding-inline: var(--s4);
+  }
+  .an-fail {
+    margin-inline: var(--s4);
   }
 }

@@ -339,7 +339,7 @@ export async function runAnalysis(
   strategy: StrategyId,
   onProgress: (p: Pipeline | null) => void = () => {},
   signature?: string,
-): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string }> {
+): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string; status?: number }> {
   const post = (accept: string) =>
     fetch('/api/analysis', {
       method: 'POST',
@@ -357,7 +357,7 @@ export async function runAnalysis(
       res = await post('application/json');
     }
   } catch {
-    return { ok: false, error: 'network error' };
+    return { ok: false, error: 'network error', status: 0 };
   }
   const json: unknown = await res.json().catch(() => ({}));
   const parsed = analysisSchema.safeParse(json);
@@ -366,6 +366,7 @@ export async function runAnalysis(
   return {
     ok: false,
     error: typeof error === 'string' ? error : `analysis failed (HTTP ${res.status})`,
+    status: res.status,
   };
 }
 
