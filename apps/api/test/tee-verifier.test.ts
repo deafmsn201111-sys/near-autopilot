@@ -77,13 +77,14 @@ describe('TeeVerifier', () => {
       reason: null,
       chatIds: ['c1'],
     });
-    const att = new URL(href(fetch.mock.calls[0]![0]));
+    const [report, sig] = ['/attestation/', '/signature/'].map((p) =>
+      fetch.mock.calls.find(([u]) => href(u).includes(p)),
+    );
+    const att = new URL(href(report![0]));
     expect(att.searchParams.get('model')).toBe(MODEL);
     expect(att.searchParams.get('nonce')).toMatch(/^[0-9a-f]{64}$/);
-    expect(fetch.mock.calls[0]![1]?.headers).toMatchObject({ 'x-no-aliasing': 'true' });
-    expect(href(fetch.mock.calls[1]![0])).toBe(
-      'https://cloud-api.near.ai/v1/signature/c1?signing_algo=ecdsa',
-    );
+    expect(report![1]?.headers).toMatchObject({ 'x-no-aliasing': 'true' });
+    expect(href(sig![0])).toBe('https://cloud-api.near.ai/v1/signature/c1?signing_algo=ecdsa');
   });
 
   it('counts several reports with the same key as one attested key', async () => {
@@ -149,6 +150,16 @@ describe('TeeVerifier', () => {
     const fetch = fakeFetch(attested(KEY), (url) =>
       n++ === 0
         ? new Response('{}', { status: 404 })
+        : Response.json(signature(url.pathname.split('/').pop()!)),
+    );
+    await expect(verifier(fetch).verify([reply('c1')])).resolves.toMatchObject({ verified: true });
+  });
+
+  it('retries a server error while the signature is being recorded', async () => {
+    let n = 0;
+    const fetch = fakeFetch(attested(KEY), (url) =>
+      n++ === 0
+        ? new Response('busy', { status: 503 })
         : Response.json(signature(url.pathname.split('/').pop()!)),
     );
     await expect(verifier(fetch).verify([reply('c1')])).resolves.toMatchObject({ verified: true });

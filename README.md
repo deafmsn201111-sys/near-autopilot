@@ -286,7 +286,7 @@ response bytes we received)`;
 3. recovers the EIP-191 signer (secp256k1) and requires it to be an attested key.
 
 Every reply passes → the "How the AI got here" header says **Private AI · signed in TEE**; anything else (no signature
-within ~3 s, wrong hash, unknown signer, a nonce not echoed, the gateway down) → **Private AI** with the reason on hover,
+within ~3 s, wrong hash, unknown signer, a nonce not echoed, the gateway down) → **Private AI · signature not verified** with the reason on hover,
 and the cards are still shown. The mark links to the model's attestation at
 [cloud.near.ai/verify](https://cloud.near.ai/verify) and the panel lists the reply ids, so anyone can fetch and check
 the same signatures (`curl -H "authorization: Bearer $KEY" https://cloud-api.near.ai/v1/signature/<id>?signing_algo=ecdsa`).

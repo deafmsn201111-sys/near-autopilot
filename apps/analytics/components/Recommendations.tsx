@@ -331,7 +331,6 @@ function AiTrace({
         </ol>
       </Panel>
     );
-  const who = 'The AI';
   const mark = model ? privacyMark(privacy, model) : null;
   const current = stage;
   const state = (i: number): StageState =>
@@ -347,11 +346,11 @@ function AiTrace({
         : `${plural(trace.length, 'agent')} ran`
       : asked.length > 0
         ? `Asking ${plural(asked.length, 'agent')}`
-        : `${who} picks the agents to ask`;
+        : 'The AI picks the agents to ask';
   const status = [
     'Reading the wallet on-chain',
-    asked.length > 0 ? agentsTitle : `${who} is choosing which agents to ask`,
-    `${who} is ranking the answers`,
+    asked.length > 0 ? agentsTitle : 'The AI is choosing which agents to ask',
+    'The AI is ranking the answers',
     'Code is checking the answer',
     'Done',
   ][current];
@@ -403,7 +402,7 @@ function AiTrace({
         </Stage>
         <Stage
           state={state(2)}
-          title={state(2) === 'done' ? `${who} ranked them` : `${who} ranks them`}
+          title={state(2) === 'done' ? 'The AI ranked them' : 'The AI ranks them'}
         >
           {state(2) === 'active' && (
             <span className="ai-step-note ai-thinking">Ordering the answers and writing why…</span>
