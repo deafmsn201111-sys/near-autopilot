@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { MarketHttpError, type HttpJsonClient } from '../market-data/http';
 
 /**
- * NEAR Intents 1Click API, REAL quotes for an inbound deposit (`dry: false`). Separate from the dry-quote client in
- * `one-click.ts` on purpose: a real quote returns a deposit address that receives real money, so the base URL is a
- * constant (never ONE_CLICK_URL), and every field the user will rely on is checked against what we asked for.
- * Nothing here builds or signs a NEAR transaction; the user sends the deposit from their own wallet on the origin chain.
+ * NEAR Intents 1Click API, REAL quotes for a withdrawal to another chain (`dry: false`). Separate from the dry-quote
+ * client in `one-click.ts` on purpose: a real quote returns a deposit address that receives real money, so the base
+ * URL is a constant (never ONE_CLICK_URL), and every field the user will rely on is checked against what we asked for.
+ * Nothing here signs: the NEAR transfer to the quote's deposit address is a cascade the user signs in their wallet
+ * (D36). Deposits from other chains go through HOT Kit's bridge popup instead (D42).
  */
 export const ONE_CLICK_BASE_URL = 'https://1click.chaindefuser.com';
 const TOKENS_TTL_MS = 10 * 60_000;
