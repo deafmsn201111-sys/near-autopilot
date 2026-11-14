@@ -127,6 +127,7 @@ const app = buildAnalyticsServer(
             oneClick,
             store: depositQuotes,
             destinationTokens,
+            refreshEveryMs: 60_000,
             ...(icons ? { icon: (t: string) => icons.get(t) } : {}),
           },
         }

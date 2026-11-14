@@ -32,7 +32,7 @@ export default async function OneClickAdminPage() {
     <>
       <PageHeader
         title="1Click deposits"
-        lead="Quotes from other chains and their latest status. A status is stored while the user's deposit screen is open, so check when it was last seen. Unpaid 30 min past the deadline counts as expired."
+        lead="Quotes from other chains and their latest status. The server re-checks unfinished deposits every 1–10 minutes; “Checked” is the last check. Unpaid 30 min past the deadline counts as expired."
       />
       <Section title="Last 7 days" note="UTC days, by quote time.">
         <Facts

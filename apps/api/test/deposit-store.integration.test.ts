@@ -101,6 +101,40 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
     });
   });
 
+  it('lists unfinished quotes whose deadline is not before the cutoff', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    const MIN = 60_000;
+    await store.save(quote('never-checked', NOW));
+    await store.save(quote('pending', NOW));
+    await store.saveStatus('pending', 'PENDING_DEPOSIT', NOW);
+    await store.save(quote('processing', NOW));
+    await store.saveStatus('processing', 'PROCESSING', NOW);
+    for (const s of ['SUCCESS', 'REFUNDED', 'FAILED'] as const) {
+      await store.save(quote(s, NOW));
+      await store.saveStatus(s, s, NOW);
+    }
+    const old = new Date(NOW.getTime() - 10 * MIN - 1);
+    await store.save(quote('expired', old));
+    await store.save(quote('expired-pending', old));
+    await store.saveStatus('expired-pending', 'PENDING_DEPOSIT', NOW);
+    await store.save(quote('late-processing', old));
+    await store.saveStatus('late-processing', 'PROCESSING', NOW);
+    await store.save(quote('edge', new Date(NOW.getTime() - 10 * MIN)));
+    const rows = await store.unfinished(NOW);
+    expect(rows.map((r) => r.id).sort()).toEqual([
+      'edge',
+      'late-processing',
+      'never-checked',
+      'pending',
+      'processing',
+    ]);
+    expect(rows.find((r) => r.id === 'pending')).toEqual({
+      id: 'pending',
+      createdAt: NOW,
+      statusAt: NOW,
+    });
+  });
+
   it('purges quotes older than 30 days only', async () => {
     const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
     await store.save(quote('old', new Date(NOW.getTime() - 30 * DAY - 1)));
