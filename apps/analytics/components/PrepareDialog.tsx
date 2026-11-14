@@ -39,14 +39,18 @@ export function PrepareDialog({
   request,
   label,
   signingEnabled = false,
+  once = false,
 }: {
   request: PrepareRequest;
   label: string;
   signingEnabled?: boolean;
+  /** One payment (a 1Click withdrawal): once a step is sent, it is never offered to build again. */
+  once?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<'idle' | 'loading' | 'signing' | 'updating'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
+  const [spent, setSpent] = useState(false);
   const [error, setError] = useState<{ message: string; reasons?: readonly string[] } | null>(null);
   const [progress, setProgress] = useState<{
     preview: readonly string[];
@@ -91,6 +95,7 @@ export function PrepareDialog({
     );
     if (!r.ok && r.hashes.length === at)
       setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
+    if (once && r.hashes.length > 0) setSpent(true);
     if (r.ok) {
       // The transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
       // show the new state (the card updates or disappears).
@@ -103,14 +108,18 @@ export function PrepareDialog({
 
   return (
     <div className="prepare">
-      <button
-        type="button"
-        className="btn primary small"
-        onClick={() => void run()}
-        disabled={state === 'loading'}
-      >
-        {state === 'loading' ? 'Building transaction…' : label}
-      </button>
+      {spent ? (
+        <p className="muted-note">Sent from your wallet. Do not send it again.</p>
+      ) : (
+        <button
+          type="button"
+          className="btn primary small"
+          onClick={() => void run()}
+          disabled={state === 'loading'}
+        >
+          {state === 'loading' ? 'Building transaction…' : label}
+        </button>
+      )}
 
       {error && (
         <div className="callout warn" role="alert" style={{ marginTop: 10 }}>

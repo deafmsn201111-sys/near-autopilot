@@ -66,6 +66,7 @@ function WithdrawQuote({
           request={{ account, intent: { action: 'withdraw_1click', quoteId: q.id } }}
           label="Build transaction"
           signingEnabled={signingEnabled}
+          once
         />
       )}
       <dl className="deposit-facts">
