@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import Anthropic from '@anthropic-ai/sdk';
-import type { LlmModel } from '@near-autopilot/config';
+import { LLM_MODELS } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
 import { createDatabase } from '@near-autopilot/db';
 import { NearRpcClient } from '@near-autopilot/near-adapter';
@@ -10,33 +9,25 @@ import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { registerAccountView } from '../analytics/account-view';
 import { analyseAccount, analysisMemo, type LlmCallRecord } from '../analytics/ai-analysis';
-import { AnthropicToolLlm, type AnthropicLlmConfig } from './anthropic-client';
+import { NearAiToolLlm } from './near-ai-client';
 
 /**
- * MODEL COMPARISON (issue #16; not part of the server). Runs the real analysis (tool-use loop) on mainnet accounts
+ * MODEL COMPARISON (issues #16, #232; not part of the server). Runs the real analysis (tool-use loop) on mainnet accounts
  * with each config, RUNS times, and prints cost, latency, outcome and picks. Reads the chain and the local
- * collector's prices; spends real Anthropic credit and stops before MAX_SPEND_USD.
+ * collector's prices; spends real NEAR AI Cloud credit and stops before MAX_SPEND_USD.
  *
  *   node --env-file=../../.env --import tsx src/llm/compare-models.ts autopilot-test.near hodl13.near
  *
  * The ownership proof is skipped on purpose: this runs on the owner's machine with the owner's key, never as a route.
  */
-const CONFIGS: readonly {
-  label: string;
-  model: LlmModel;
-  effort?: AnthropicLlmConfig['effort'];
-}[] = [
-  { label: 'haiku-5.5 default', model: 'claude-haiku-5-5' },
-  { label: 'sonnet-5.5 low', model: 'claude-sonnet-5-5', effort: 'low' },
-  { label: 'sonnet-5.5 default', model: 'claude-sonnet-5-5' },
-];
+const CONFIGS = LLM_MODELS.map((model) => ({ label: model, model }));
 const RUNS = 3;
 const MAX_TOKENS = 4096;
 const MAX_SPEND_USD = 2;
 
 const env = z
   .object({
-    ANTHROPIC_API_KEY: z.string().min(8),
+    NEAR_AI_API_KEY: z.string().min(8),
     DATABASE_URL: z.string().url(),
     MAINNET_READ_RPC_URL: z.string().url(),
     MAINNET_READ_RPC_API_KEY: z.string().optional(),
@@ -72,7 +63,6 @@ const { analysisInputs } = registerAccountView(app, new CollectorStore(database.
     tokenB: accountId(p.tokenB),
   })),
 });
-const sdk = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 120_000, maxRetries: 0 });
 
 let spentMicro = 0n;
 let calls: LlmCallRecord[] = [];
@@ -139,10 +129,10 @@ measure: for (const account of accounts) {
       }
       calls = [];
       const { wrapped, seen } = observed(
-        new AnthropicToolLlm(sdk, {
+        new NearAiToolLlm(globalThis.fetch, {
+          apiKey: env.NEAR_AI_API_KEY,
           model: config.model,
           maxTokens: MAX_TOKENS,
-          effort: config.effort,
         }),
       );
       const started = Date.now();

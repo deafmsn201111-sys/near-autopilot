@@ -650,3 +650,33 @@ a send the button is replaced by the transaction link, so one quote is not paid 
 status polling follows the deposit. The API hands a quote's transfer out once (#214): `transfer_issued_at` on
 `deposit_quotes` is set by a conditional update, and a second request (another tab) gets 409. Only the dialog that saw
 its wallet reject the send (declined, no gas, no token, refused by the network) asks again with `retry=1`. Bitcoin and TRON wallets stay manual (stretch).
+
+## D35 — The analysis runs on NEAR AI Cloud private inference: GLM 5.3 Flash in a TEE (#232)
+
+**Context:** the hackathon's Privacy & Private AI track is tagged NEAR AI Cloud / TEE, and a wallet's positions,
+strategy and advice are financial data. NEAR AI Cloud (`https://cloud-api.near.ai/v1`, OpenAI-compatible) serves
+open-weight models inside Intel TDX + NVIDIA TEEs and signs every reply with the enclave key; it also proxies
+Anthropic / OpenAI models, but those are not private and not attested. Research: `docs/NEAR_AI_MIGRATION.md`.
+**Measured** with `llm:compare` (14 Nov 2026, the two wallets of D17, 3 runs each, `reasoning_effort: low`):
+
+| Wallet              | Model         | $ / analysis | Latency, s (3 runs) | AI answer, no fallback | "why" replaced | Loan warning first |
+| ------------------- | ------------- | ------------ | ------------------- | ---------------------- | -------------- | ------------------ |
+| autopilot-test.near | GLM 5.3 Flash | $0.0003      | 4.8 / 13.2 / 20.7   | 3/3                    | 1              | 3/3                |
+| hodl13.near         | GLM 5.3 Flash | $0.0002      | 3.5 / 3.6 / 4.5     | 3/3                    | 0              | n/a                |
+| autopilot-test.near | Qwen3.8 27B   | $0.0098      | 45 (deadline) x3    | 0/3                    | -              | -                  |
+| hodl13.near         | Qwen3.8 27B   | $0.0008      | 12.4 / 12.8 / 32.4  | 3/3                    | 2              | n/a                |
+| both (D17, direct)  | Haiku 5.5     | $0.0005-6    | 2.6-4.4             | 6/6                    | 0              | 3/3                |
+
+GLM 5.3 (Tinfoil TEE) and Haiku through the gateway answered "model not found" for our key. At its default reasoning
+GLM 5.3 Flash reasoned up to `max_tokens` (15-28 s per analysis; a short prompt took 66 s); `low` gives the same
+picks in seconds. One earlier run failed zod on a stray empty key (`"id_note": ""`).
+**Decision:** `LLM_MODELS = ['z-ai/glm-5.3-flash']`, one provider, `reasoning_effort: low`, plain `fetch` (the TEE
+signature covers the exact request and response bytes, which #233 checks), header `x-no-aliasing: true`. No fallback
+to any non-TEE model: a silent switch would make the privacy claim false; on any failure the labelled heuristics stay.
+The reply schema now drops keys it did not ask for instead of rejecting the answer; only `id`, `why` and `ranking`
+are read, each still validated. `@anthropic-ai/sdk` and `ANTHROPIC_*` are gone (env: `NEAR_AI_API_KEY`,
+`LLM_MODEL`, `LLM_MAX_TOKENS`). Supersedes D17's "no open models".
+**Consequences:** the safety net is unchanged (code computes every number; zod, policy and `validateCascade`; the
+numbers check replaces a "why" with code's own text), so a weaker model costs wording, never safety. Latency varies
+more than Haiku's (up to ~21 s seen, deadline 45 s). The spend cap holds a worst case of about $0.010 per call. Until
+#233 the server does not verify the reply signatures itself.

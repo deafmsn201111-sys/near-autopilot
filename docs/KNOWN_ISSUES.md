@@ -5,7 +5,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 ## Honest limitations (not bugs, by design today)
 
 - **LLM only ranks and explains.** On a connected wallet the central LLM calls the deterministic agents as tools (architecture C, D13); it computes nothing. `LlmAgent` (an LLM as a proposal agent) is still not wired. No "AI confidence" exists.
-- **The LLM spend cap is per UTC day and held in one process.** Each model call in flight holds one worst-case call (≈ $0.012 on Haiku 5.5) against the cap in memory, which works because the analytics API runs as one process; a second replica would need a reservation row. A call aborted on the deadline is recorded at its worst case, and a request that could pass 100K input tokens is never sent. `ANTHROPIC_API_KEY` is on the public server (only in `analytics-api`), capped by `LLM_DAILY_CAP_USD`; live since `85f628b` (#72).
+- **The LLM spend cap is per UTC day and held in one process.** Each model call in flight holds one worst-case call (≈ $0.010 on GLM 5.3 Flash) against the cap in memory, which works because the analytics API runs as one process; a second replica would need a reservation row. A call aborted on the deadline is recorded at its worst case, and a request that could pass 100K input tokens is never sent. `NEAR_AI_API_KEY` is on the public server (only in `analytics-api`), capped by `LLM_DAILY_CAP_USD` (#72, #232).
+- **Private inference is claimed, not yet checked per reply.** The model runs in a NEAR AI Cloud TEE (D35), and each reply has an enclave signature, but until #233 the server does not verify it; anyone can check a reply at cloud.near.ai/verify.
 - **No autonomous execution.** `loadSigner()` is null; dry-run only. Mainnet execution requires the (unbuilt) Guard contract + review.
 - **Owner-signs path is branch-only.** `feat/mainnet-wallet-confirm` is local, never pushed/merged.
 - **Single-operator model.** No per-user accounts/policies/sessions yet.

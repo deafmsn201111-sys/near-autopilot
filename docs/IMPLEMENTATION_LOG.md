@@ -764,3 +764,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Migration 0026 adds `deposit_quotes.transfer_issued_at`. `GET /v1/deposit/transfer/:id` sets it with
   `UPDATE … WHERE transfer_issued_at IS NULL RETURNING`, after every other check, so two tabs on one quote cannot both
   prompt a wallet: the second gets 409. The dialog that saw its wallet reject the send asks again with `retry=1`.
+
+## 2026-11-14 — The AI analysis runs on NEAR AI Cloud private inference (#232)
+
+- `apps/api/src/llm/near-ai-client.ts`: `NearAiToolLlm` over `POST https://cloud-api.near.ai/v1/chat/completions`
+  with plain `fetch` (`x-no-aliasing: true`, `reasoning_effort: low`, 120 s timeout, no retry); zod on the reply;
+  any finish other than `stop` / `tool_calls`, an empty answer, bad tool arguments or an HTTP error throws (the body is
+  not echoed). Replaces `anthropic-client.ts` and `@anthropic-ai/sdk`.
+- Env `NEAR_AI_API_KEY`, `LLM_MODEL` (allowlist `z-ai/glm-5.3-flash`), `LLM_MAX_TOKENS`; NEAR AI prices in
+  `pricing.ts`; `llm:compare` runs every allowlisted model. The reply schema drops unknown keys (D35).
+- UI shows "GLM 5.3 Flash"; admin asks for the NEAR AI Cloud credit balance.
+
+**Tests run:** `pnpm verify` (green); new `near-ai-llm.test.ts` (mocked `fetch`), stray-key case in
+`ai-analysis.test.ts`; `llm:compare` on autopilot-test.near and hodl13.near through NEAR AI Cloud (table in D35).

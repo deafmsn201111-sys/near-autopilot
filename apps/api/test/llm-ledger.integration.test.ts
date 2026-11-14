@@ -20,7 +20,7 @@ const NOW = new Date('2026-11-12T10:00:00Z');
 const call = (over: Partial<LlmCallRecord> = {}): LlmCallRecord => ({
   at: NOW,
   accountId: accountId('alice.near'),
-  model: 'claude-haiku-5-5',
+  model: 'z-ai/glm-5.3-flash',
   inputTokens: 2000,
   outputTokens: 200,
   costMicroUsd: 300n,
@@ -65,7 +65,7 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     expect(rows).toMatchObject([
       {
         accountId: 'alice.near',
-        model: 'claude-haiku-5-5',
+        model: 'z-ai/glm-5.3-flash',
         inputTokens: 2000,
         outputTokens: 200,
         costMicroUsd: 300n,
@@ -135,7 +135,7 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     await ledger().record(call({ costMicroUsd: 1_000n }));
     await ledger().record(call({ at: new Date('2026-11-01T00:00:00Z') }));
     expect(await ledger().recentCalls(new Date('2026-11-06T00:00:00Z'))).toEqual([
-      { at: NOW, model: 'claude-haiku-5-5', costMicroUsd: 1_000n },
+      { at: NOW, model: 'z-ai/glm-5.3-flash', costMicroUsd: 1_000n },
     ]);
   });
 
@@ -184,7 +184,7 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     expect(q.last[0]).toEqual({
       at: '2026-11-12T00:24:00.000Z',
       accountId: 'alice.near',
-      model: 'claude-haiku-5-5',
+      model: 'z-ai/glm-5.3-flash',
       latencyMs: 24,
       outcome: 'ok',
       tools: ['liquidation_guardian'],

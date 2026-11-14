@@ -137,7 +137,7 @@ export default async function AdminPage() {
         </ControlForm>
         <ControlForm action={setDeposit} submit="Save balance">
           <label htmlFor="depositUsd">
-            Anthropic credit balance now, USD (copy it from console.anthropic.com → Billing)
+            NEAR AI Cloud credit balance now, USD (copy it from cloud.near.ai → Credits)
           </label>
           <input
             id="depositUsd"
