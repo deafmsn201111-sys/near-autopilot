@@ -107,7 +107,7 @@ export class NearAiToolLlm implements ToolLlm {
             id: c.id,
             name: c.function.name,
             // A function with no parameters may come back with `arguments: ""`.
-            input: JSON.parse(c.function.arguments.trim() || '{}') as unknown,
+            input: parseJson(c.function.arguments.trim() || '{}', 'tool arguments'),
           }));
           return { kind: 'tool_calls', calls };
         }
@@ -133,9 +133,18 @@ export class NearAiToolLlm implements ToolLlm {
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
     const text = await res.text();
-    // The body is not echoed: it may carry account details and ends up in logs.
+    // The body is never echoed: it may carry account details and ends up in logs.
     if (!res.ok) throw new Error(`NEAR AI Cloud answered HTTP ${res.status}`);
+    return parseJson(text, 'reply');
+  }
+}
+
+/** A fixed message on failure: a SyntaxError quotes the start of the text, which may carry account details. */
+function parseJson(text: string, what: string): unknown {
+  try {
     return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`NEAR AI Cloud ${what} is not JSON`);
   }
 }
 

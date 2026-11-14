@@ -162,6 +162,17 @@ describe('NearAiToolLlm', () => {
     ).rejects.toThrow();
   });
 
+  it('fails closed on a 200 that is not JSON without echoing the body', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(new Response('<html>alice.near holds', { status: 200 }));
+    const send = new NearAiToolLlm(fetch, config)
+      .open({ system: 's', prompt: 'p', tools: [] })
+      .send(null);
+    await expect(send).rejects.toThrow('reply is not JSON');
+    await expect(send).rejects.not.toThrow('alice');
+  });
+
   it('fails closed on a reply that is not a chat completion', async () => {
     const fetch = fakeFetch({ choices: [] });
     await expect(
