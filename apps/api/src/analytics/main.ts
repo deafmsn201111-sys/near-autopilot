@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { llmEnvSchema, oneClickEnvSchema, shieldEnvSchema } from '@near-autopilot/config';
+import { llmEnvSchema, oneClickEnvSchema } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
 import { NearContractViewer, NearRpcClient } from '@near-autopilot/near-adapter';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
@@ -7,8 +7,6 @@ import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
 import { EvidenceStore } from '../evidence/store';
 import { OneClickDepositClient } from '../gateway/one-click-deposit';
-import { ShieldClient } from '../gateway/shield';
-import { createJsonLogger } from '../logger';
 import { HttpJsonClient } from '../market-data/http';
 import { nearAiToolLlmFromEnv } from '../llm/near-ai-client';
 import { TeeVerifier } from '../llm/tee-verifier';
@@ -71,16 +69,6 @@ const oneClick = new OneClickDepositClient({
   http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 15_000 }),
   jwt: ONE_CLICK_JWT,
 });
-const { SHIELD_JWT, SHIELD_URL } = shieldEnvSchema.parse(process.env);
-const log = createJsonLogger(process.env.LOG_LEVEL ?? 'info');
-const shield = SHIELD_JWT
-  ? new ShieldClient({
-      http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 5_000 }),
-      jwt: SHIELD_JWT,
-      baseUrl: SHIELD_URL,
-      onError: (err) => log.warn('SHIELD incident feed unavailable', { err: String(err) }),
-    })
-  : undefined;
 const solanaFees = new SolanaTransferFees({
   http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 5_000 }),
   url: SOLANA_RPC_URL,
@@ -154,7 +142,6 @@ const app = buildAnalyticsServer(
             store: depositQuotes,
             destinationTokens,
             refreshEveryMs: 60_000,
-            ...(shield ? { shield } : {}),
             solanaFees,
             ...(icons ? { icon: (t: string) => icons.get(t) } : {}),
           },

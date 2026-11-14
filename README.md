@@ -78,9 +78,19 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 
 **Try it**
 
-1. Run `pnpm demo:attack`. You see 8 attacks stopped and 2 control actions allowed, ending in `signed 0, broadcast 0`.
-   - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
-     approval and a full-access key.
+1. Run `pnpm demo:attack`. You see 19 attacks stopped and 4 control actions allowed, ending in `signed 0, broadcast 0`.
+   Each attack runs through the check that stops it in production.
+   - Agent path (policy engine, output parser, gateway, executor): two prompt injections, a foreign recipient, an
+     extra Withdraw, a stale price, a thin pool, a forged approval and a full-access key.
+   - AI replies (`TeeVerifier`): a reply signed by a key the TEE attestation does not name, and an answer swapped
+     after signing. Both are labelled unverified, never shown as private.
+   - 1Click withdrawals: an `ft_transfer` redirected away from the quote's deposit address (`validateCascade`), and
+     a quote that expires too soon, belongs to another account or has a tampered deposit address (`withdrawLookup`).
+     Deposits from other chains are built and checked by HOT Kit's bridge popup (D42), not by our server.
+   - Signed cascades (`validateCascade`): a method or a receiver outside the allowlist, gas over the cap, a deposit
+     over the cap.
+   - Prompt injection through a token symbol: the full AI analysis with a fake model. The model never sees the
+     symbol, and the card it is told to pick is dropped.
    - The log is in `docs/evidence/demo-attack.log.jsonl`.
 2. Open `:3001/activity?account=autopilot-test.near`. You see the transactions that account signed through the app,
    each confirmed by NEAR RPC, with what really happened ("Repaid 5.01 USDC on Burrow") and an explorer link.
@@ -100,8 +110,8 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 ### DeFi track: protect the position, refuse value-losing actions
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
-route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
-from and withdrawals to another chain (below), in a separate client.
+route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for withdrawals
+to another chain (below), in a separate client; deposits are quoted by HOT Kit's bridge popup.
 
 **What works**
 
@@ -256,7 +266,7 @@ The pipeline fills in live while the analysis runs: the browser asks for `text/e
 event per real step (`read`, `asked` when the model picks the agents to call, an `agent` event as each tool result
 comes back, `ranked`, `checked`), then `done` with the same analysis the JSON reply carries. All four stages show
 from the first event: the current one pulses, later ones are dimmed, each agent the model asked for waits on a
-placeholder until its result arrives, and a clock runs until the end. The events are the same server-built lines, never raw tool output. A cached result or a rule-based list arrives as a single `done`, so it appears at once (a cached one is labelled
+placeholder until its result arrives, and a clock runs until the end. The events are the same server-built lines; the raw model input comes only with the final result. A cached result or a rule-based list arrives as a single `done`, so it appears at once (a cached one is labelled
 "from a run N min ago"); a stream that breaks falls back
 to the plain JSON request.
 
@@ -297,6 +307,14 @@ the NVIDIA GPU evidence: that is what the official
 [nearai-cloud-verifier](https://github.com/nearai/nearai-cloud-verifier) does. So "signed in TEE" means "signed by
 the key NEAR AI's attestation names for this model", not "we verified the hardware quote ourselves".
 
+**What the AI saw** (#271). Under "How this was decided", the proven owner can open the exact input of a run that
+answered: the body of its last request to NEAR AI Cloud as the client serialised it (`onRequest` in
+`apps/api/src/llm/near-ai-client.ts`), which holds the whole conversation: the system prompt with their strategy, the
+request, the model's own tool requests, every tool result as sent (their positions, prices and the candidate actions)
+and the tool list. Only the `model` field is removed (users never see the model name). That is all the model gets: no
+account id, no history, no IP. It comes only with the owner's analysis (same NEP-413 gate) and is kept only in the
+saved analysis (#190, 30 days), never in `llm_calls` or the logs.
+
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
 page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
@@ -307,7 +325,7 @@ days are deleted (on start, then hourly). One `events` row per wallet connect (r
 client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
 cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
 written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
-prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
+prepared) and 1Click withdrawal quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
 there is. Fonts are served by the site itself; the only third-party requests are the wallet connector you choose.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
@@ -354,7 +372,8 @@ committed in `thesis/data/raw/`: CSV, SVG charts and the document with every num
 outputs differ from what the raw data gives. `pnpm thesis:fetch` re-reads the raw data (archival RPC, view calls only).
 
 `pnpm demo:attack` runs labelled attack fixtures (prompt injection, foreign recipient, extra Withdraw, stale price,
-thin pool, forged approval, full-access key) through the real defences. Every attack is stopped and the log is
+thin pool, forged approval, full-access key, forged AI replies, redirected or replayed 1Click withdrawals, cascades
+outside the allowlists or caps, an injected token symbol) through the real defences. Every attack is stopped and the log is
 written to `docs/evidence/demo-attack.log.jsonl`. See
 [docs/security.md](docs/security.md).
 

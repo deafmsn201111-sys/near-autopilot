@@ -906,6 +906,50 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   and each reply id open that reply in NEAR AI's Verification Center (`#receipt=`), plus a copy button; the steps say "The AI"; `modelName()` removed. README Privacy section, D43.
 - Live: one GLM 5.3 Flash reply verified in 735 ms.
 
+## 2026-11-14 — Analysis panel: one focal verdict (#251)
+
+- `components/AnalysisPanel.tsx` replaces the AI trace panel on `/`: header (AI-ranked / Rules only chip, Run AI
+  analysis with fixed width, busy state and "Updated N ago"), a verdict tile + 28px sentence in a live region, the
+  strategy control (moved from above the hero into the panel), four agent finding cards, the "Code checked the AI"
+  strip and the five-step decision pipeline on an inset footer.
+- `lib/analysis-view.ts` (pure, tested): `verdictOf` (urgent → orange ⚠, open moves → violet count, a check that did
+  not finish → amber, else mint ✓) and `findingsOf`. Without an AI run the API has no per-agent line, so a card is
+  derived from the rule cards (warning → act, info → watch, none → passed) plus "no loan" / "no DCL position" for
+  not-applicable; after a run its sentence and pick chip come from the trace. A loan without a health factor is
+  "not valued", never "safe".
+- Run AI analysis is locked with its reason for a visitor who has not proved ownership (the API already refused).
+- Out: the suggestion cards themselves and an "all moves done" verdict belong to #252.
+
+## 2026-11-14 — Deposit quote and incidents API removed (#261)
+
+- After D42 nothing calls `POST /v1/deposit/quote` or `GET /v1/deposit/incidents`; both are gone, with the SHIELD
+  client (`gateway/shield.ts`), `SHIELD_JWT` / `SHIELD_URL`, and `paymentToken` (the deposit QR's payment link). A
+  `SHIELD_JWT` left in a server `.env` is ignored.
+- Withdraw keeps `GET /v1/deposit/assets`, `GET /v1/deposit/status/:id`, `mint` and `deposit_quotes`. The quote
+  tests that guarded `mint` (no fee, refused quote, store failure, 1Click failure, Solana fee tokens) now run
+  against `POST /v1/withdraw/quote`.
+
+## 2026-11-14 — Attack demo covers the wallet path, AI replies and 1Click (#270)
+
+- `apps/api/src/demo/wallet-attacks.ts`: 11 new attacks and 2 controls, each through the production check:
+  `TeeVerifier` (forged signer, swapped answer; fixture secp256k1 keys over a fake NEAR AI fetch), `withdrawLookup`
+  (expiring, foreign, tampered quote), `validateCascade` (redirected withdrawal `ft_transfer`, method, receiver, gas,
+  deposit), and `analyseAccount` with a fake model for a token symbol carrying a prompt injection (the run fails
+  unless the model really got the token, under our label only, and the forged pick is dropped).
+- The deposit-rebuild scenario from the issue was replaced: D42 removed that endpoint (HOT Kit builds deposits).
+- `pnpm demo:attack`: 19/19 attacks stopped, 4 controls allowed, signed 0, broadcast 0; log regenerated.
+
+## 2026-11-14 — "What the AI saw": the owner sees the exact model input (#271)
+
+- `ToolLlm.open` takes `onRequest`: the NEAR AI client reports the exact body of every request before posting it.
+  `run.input` is the last one (the whole conversation, tool results with their `Error: ` prefix, the tool list)
+  without `model`. A test drives the real client over a fake fetch and compares `run.input` with the posted bytes.
+  A first version rebuilt the input in the `metered` wrapper; review showed it missed the model's own turns, the
+  error prefix and the tool schemas, so it was replaced.
+- Only in the owner's analysis (same NEP-413 gate) and its saved copy (#190, 30 days); not in `llm_calls`, not
+  logged. A run that fell back shows none (no `run`).
+- The panel's "How this was decided" has a collapsible "What the AI saw" block (JSON re-indented, Copy all).
+
 ## 2026-11-14 — Thesis window extended to 180 days (#273)
 
 - `thesis:fetch --days 180` (end 2026-11-05, same as the 90-day version) and `extend.ts` re-read the raw data from

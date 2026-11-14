@@ -5,7 +5,6 @@ import {
   loadApiEnv,
   loadDashboardEnv,
   oneClickEnvSchema,
-  shieldEnvSchema,
 } from '../src';
 
 const valid = {
@@ -174,19 +173,5 @@ describe('oneClickEnvSchema', () => {
     const own = 'https://solana.example.org/rpc';
     expect(oneClickEnvSchema.parse({ SOLANA_RPC_URL: own }).SOLANA_RPC_URL).toBe(own);
     expect(oneClickEnvSchema.safeParse({ SOLANA_RPC_URL: 'http://x.example' }).success).toBe(false);
-  });
-});
-
-describe('shieldEnvSchema', () => {
-  it('treats unset and empty SHIELD_JWT as the feature off', () => {
-    expect(shieldEnvSchema.parse({})).toEqual({});
-    expect(shieldEnvSchema.parse({ SHIELD_JWT: '', SHIELD_URL: '' })).toEqual({});
-  });
-
-  it('takes a key and refuses anything that could break the header', () => {
-    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl';
-    expect(shieldEnvSchema.parse({ SHIELD_JWT: jwt }).SHIELD_JWT).toBe(jwt);
-    for (const bad of ['short', `${jwt}\r\nx-evil: 1`, `${jwt} `])
-      expect(shieldEnvSchema.safeParse({ SHIELD_JWT: bad }).success).toBe(false);
   });
 });
