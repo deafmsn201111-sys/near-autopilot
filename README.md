@@ -332,13 +332,13 @@ healthy containers, with no manual edits, and `pnpm verify` passed (measured bef
 
 Four pages for a person, and one area for reviewers.
 
-| Page              | What you see and do                                                                                                                                                                                                                        |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision |
-| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                       |
+| Page              | What you see and do                                                                                                                                                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision                             |
+| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                   |
 | **Activity**      | What you did through the app for your account, newest first: each prepared cascade with what NEAR says really happened for every signed step, confirmed by RPC. Anyone sees the confirmed transactions; analyses and unsigned cascades only after you verify ownership |
-| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                    |
-| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                        |
+| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                                |
+| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                                                    |
 
 **Live data, simulated demo.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two demo
 portfolios ($500 and $5,000) on Home are simulated and labelled as such.

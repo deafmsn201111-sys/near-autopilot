@@ -440,7 +440,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   verdict; `wallet/outcome.ts` turns receipts' logs into "Repaid 5.01 USDC on Burrow" and, on failure, the contract,
   its error and the funds' fate; `wallet/confirm.ts` is `POST /v1/wallet/confirm` (D25).
 - `apps/api/src/analytics/events.ts`: `POST /v1/events` (connect), `GET /v1/analytics/account/:id/events`, `GET
-  /v1/analytics/policy/cascades`; analyse, verified and 1Click quote writers. `/v1/analytics/agent-activity` removed.
+/v1/analytics/policy/cascades`; analyse, verified and 1Click quote writers. `/v1/analytics/agent-activity` removed.
 - `apps/analytics`: `/api/events` and `/api/confirm` (JSON only, rate-limited); the sign dialog shows each step ⏳ → ✓/✗
   and stops after a failed one; Activity and /policy rebuilt on events; shadow-mode text removed from Home and
   Opportunities.
