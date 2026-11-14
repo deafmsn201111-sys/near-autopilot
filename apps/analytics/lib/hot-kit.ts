@@ -1,7 +1,7 @@
 'use client';
 import type { HotKit } from '@hot-labs/kit';
 import type { OmniWallet } from '@hot-labs/kit/core';
-import type { NearConnector } from '@hot-labs/near-connect';
+import type { EventMap, NearConnector } from '@hot-labs/near-connect';
 import { walletChainOf, type DepositTransfer, type SendFailure } from './deposit';
 
 /**
@@ -22,6 +22,7 @@ export interface OriginWallet {
 const TYPE_BY_CHAIN: Record<OriginChain, number> = { evm: 1, solana: 1001 };
 const CHAIN_BY_TYPE: Record<number, OriginChain> = { 1: 'evm', 1001: 'solana' };
 export const NEAR_WALLET_TYPE = 1010;
+export type NearSignIn = EventMap['wallet:signIn'];
 
 interface Loaded {
   kit: HotKit;
@@ -40,8 +41,14 @@ function nearConnector(Base: typeof NearConnector): NearConnector {
       globalThis.document?.querySelector<HTMLScriptElement>('script[nonce]')?.nonce || undefined,
   });
   // kit 2.0.0 calls connect(walletId), near-connect 0.8's form; 0.12 takes { walletId } and would open its own picker.
+  // The kit lists every manifest wallet, so the `features` filter is applied here.
   const connect = near.connect.bind(near);
-  near.connect = (input) => connect(typeof input === 'string' ? { walletId: input } : input);
+  near.connect = (input) => {
+    if (typeof input !== 'string') return connect(input);
+    if (!near.availableWallets.some((w) => w.manifest.id === input))
+      return Promise.reject(new Error('This wallet cannot connect without adding a key.'));
+    return connect({ walletId: input });
+  };
   return near;
 }
 

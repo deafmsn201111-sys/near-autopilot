@@ -668,4 +668,5 @@ only on "Connect wallet" or when `selected-wallet` exists. No Tron (not a deposi
 because `walletChainOf` would also open a wallet send on BTC, which D34 keeps manual.
 **Consequences:** first-load JS fell by 15 kB on `/` and `/activity` (near-connect left the page bundle); a visitor
 with a NEAR session now loads the kit core (~110 kB gzip, lazy) after hydration. The near-connect wallet type is cast
-to the kit's 0.8.2 type; a kit upgrade must re-check that `connect(id)` shim.
+to the kit's 0.8.2 type; a kit upgrade must re-check that `connect(id)` shim. On a NEAR connect the kit also reads that account's token
+balances client-side (public chain data, read-only); it signs nothing on connect.

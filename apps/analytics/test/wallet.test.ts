@@ -17,6 +17,8 @@ const fake = vi.hoisted(() => {
     disconnected: [] as number[],
     pick: null as { type: number; address: string } | null,
     nearSignedOut: false,
+    hang: false,
+    connectorsRequested: false,
   };
   const events = new Map<string, Set<Listener>>();
   const emit = (name: string, payload: unknown) => {
@@ -35,6 +37,12 @@ const fake = vi.hoisted(() => {
     async getConnectedWallet() {
       if (!state.account) throw new Error('No wallet selected');
       return { wallet: baseWallet, accounts: [{ accountId: state.account }] };
+    }
+    get availableWallets() {
+      return [{ manifest: { id: 'hot-wallet' } }];
+    }
+    off(name: string, l: Listener) {
+      events.get(name)?.delete(l);
     }
     async connect(input: unknown) {
       state.walletIdAsked = input;
@@ -73,7 +81,11 @@ const fake = vi.hoisted(() => {
     onDisconnect() {
       return () => undefined;
     }
+    async requestConnectors() {
+      state.connectorsRequested = true;
+    }
     async connect() {
+      if (state.hang) return new Promise(() => undefined);
       const w = state.pick;
       if (!w) throw new Error('User rejected');
       state.kitWallets = [...state.kitWallets, w];
@@ -122,6 +134,8 @@ async function fresh({ session = null as string | null } = {}) {
     disconnected: [],
     pick: null,
     nearSignedOut: false,
+    hang: false,
+    connectorsRequested: false,
   });
   localStorage.clear();
   if (session) localStorage.setItem('selected-wallet', 'hot-wallet');
@@ -167,6 +181,15 @@ describe('NEAR wallet through HOT Kit', () => {
     expect(fake.state.walletIdAsked).toEqual({ walletId: 'hot-wallet' });
   });
 
+  it('refuses a wallet the near-connect features filter leaves out', async () => {
+    await fresh({ session: 'alice.near' });
+    const { currentAccount } = await import('../lib/wallet');
+    await currentAccount();
+    const base = fake.state.nearBase as { connect: (id: string) => Promise<unknown> };
+    await expect(base.connect('adds-a-key-wallet')).rejects.toThrow(/without adding a key/);
+    expect(fake.state.walletIdAsked).toBeUndefined();
+  });
+
   it('reports account changes and sign-out', async () => {
     const m = await fresh({ session: 'alice.near' });
     const seen: unknown[] = [];
@@ -194,11 +217,14 @@ describe('NEAR wallet through HOT Kit', () => {
 
   it('only the latest of several open connect clicks gets the account', async () => {
     const m = await fresh();
+    fake.state.hang = true;
     const first = m.connect();
-    await flush();
-    fake.state.pick = { type: NEAR, address: 'carol.near' };
     const second = m.connect();
+    await vi.waitFor(() => expect(fake.events.get('wallet:signIn')?.size).toBe(3));
+    fake.state.account = 'carol.near';
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
     expect(await Promise.all([first, second])).toEqual([null, 'carol.near']);
+    expect(fake.events.get('wallet:signIn')?.size).toBe(1);
   });
 
   it('disconnect signs out of every connected wallet', async () => {
@@ -208,6 +234,7 @@ describe('NEAR wallet through HOT Kit', () => {
     m.watchAccount((id) => seen.push(id));
     await vi.waitFor(() => expect(seen).toEqual(['alice.near']));
     await m.disconnect();
+    expect(fake.state.connectorsRequested).toBe(true);
     expect(fake.state.nearSignedOut).toBe(true);
     expect(fake.state.disconnected).toEqual([EVM]);
     expect(seen.at(-1)).toBeNull();

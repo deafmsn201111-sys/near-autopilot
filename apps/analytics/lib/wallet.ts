@@ -1,5 +1,5 @@
 'use client';
-import { loadKit, NEAR_WALLET_TYPE } from './hot-kit';
+import { loadKit, NEAR_WALLET_TYPE, type NearSignIn } from './hot-kit';
 
 /**
  * WALLET CONNECTION through the one HOT Kit (lib/hot-kit.ts): its picker connects the NEAR account (HOT, Meteor,
@@ -72,14 +72,17 @@ let attempt = 0;
 export async function connect(): Promise<string | null> {
   const mine = ++attempt;
   const { kit, near: connector } = await near();
-  const signedIn = new Promise<string | null>((resolve) =>
-    connector.once('wallet:signIn', (t) => resolve(t.accounts[0]?.accountId ?? null)),
-  );
+  let onSignIn: (t: NearSignIn) => void = () => undefined;
+  const signedIn = new Promise<string | null>((resolve) => {
+    onSignIn = (t) => resolve(t.accounts[0]?.accountId ?? null);
+    connector.on('wallet:signIn', onSignIn);
+  });
   const picked = kit.connect().then(
     (w) => (Number(w.type) === NEAR_WALLET_TYPE ? w.address : null),
     () => null,
   );
   const id = await Promise.race([signedIn, picked]);
+  connector.off('wallet:signIn', onSignIn);
   return mine === attempt ? id : null;
 }
 
@@ -93,6 +96,7 @@ export async function disconnect(): Promise<void> {
   try {
     if (!subscribed && !hasSession()) return;
     const { kit, near: connector } = await near();
+    await kit.requestConnectors();
     // The NEAR sign-out goes to near-connect itself: the kit's NEAR connector does not await it.
     await Promise.allSettled([
       connector.disconnect(),
