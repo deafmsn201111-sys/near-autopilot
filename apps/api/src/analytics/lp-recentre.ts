@@ -2,6 +2,7 @@ import type { AccountId } from '@near-autopilot/core';
 import type { LiquiditySegment } from '@near-autopilot/financial-engine';
 import type { AgentObservation, LpPositionView } from '@near-autopilot/orchestrator';
 import {
+  POINT_MAX,
   Q96,
   SQRT_RATE_X96,
   assertValidRange,
@@ -182,26 +183,21 @@ export function lpObservation(input: {
 export class RecentreRefused extends Error {}
 
 const LN_POINT = Math.log(1.0001);
+/** A range wider than this (a price ratio of e^20) is never a re-centre; it guards the contract's range limit. */
+const MAX_RANGE_POINTS = 200_000;
 
 /**
  * Where our own swap leaves the pool, so the add's minimums allow for it. The quote's average price sits about halfway
  * between the old and the new marginal price, so the move is about twice the quote's distance from the spot (fees
- * count as move: the bound only gets looser). Clamped inside the new range.
+ * count as move: the estimate only gets more cautious). A move past the slippage refuses the re-centre.
  */
-function pointAfterSwap(
-  cur: number,
-  sell: 'x' | 'y',
-  amountIn: bigint,
-  quoted: bigint,
-  leftPoint: number,
-  rightPoint: number,
-): number {
+function pointAfterSwap(cur: number, sell: 'x' | 'y', amountIn: bigint, quoted: bigint): number {
   const yPerX =
     sell === 'x' ? Number(quoted) / Number(amountIn) : Number(amountIn) / Number(quoted);
   const execPoint = Math.log(yPerX) / LN_POINT;
   const after = Math.round(cur + 2 * (execPoint - cur));
   if (!Number.isFinite(after)) throw new RecentreRefused('the rebalancing quote is unusable');
-  return Math.min(rightPoint - 1, Math.max(leftPoint, after));
+  return after;
 }
 
 /**
@@ -232,9 +228,14 @@ export async function recentreSteps(input: {
   } catch (e) {
     throw new RecentreRefused(e instanceof Error ? e.message : String(e));
   }
+  if (rightPoint >= POINT_MAX || rightPoint - leftPoint > MAX_RANGE_POINTS)
+    throw new RecentreRefused('the new range is outside what the pool accepts');
+  if (pool.state !== 'Running') throw new RecentreRefused(`pool ${pos.pool_id} is not running`);
   const cur = pool.current_point;
   if (cur < leftPoint || cur >= rightPoint)
     throw new RecentreRefused('the price moved out of the new range; refresh the recommendation');
+  if (cur >= pos.left_point && cur < pos.right_point)
+    throw new RecentreRefused('the position is back in range; refresh the recommendation');
   const keep = BigInt(10_000 - input.maxSlippageBps);
   const atLeast = (v: bigint) => (v * keep) / 10_000n;
   const freed = dclPositionAmounts(pos, cur);
@@ -288,7 +289,13 @@ export async function recentreSteps(input: {
       amountY -= swap.amountIn;
       amountX += minOut;
     }
-    afterSwapPoint = pointAfterSwap(cur, swap.sell, swap.amountIn, quoted, leftPoint, rightPoint);
+    afterSwapPoint = pointAfterSwap(cur, swap.sell, swap.amountIn, quoted);
+    if (Math.abs(afterSwapPoint - cur) > input.maxSlippageBps)
+      throw new RecentreRefused(
+        'the rebalancing swap would move the price by more than the slippage; the position is too large for this pool',
+      );
+    if (afterSwapPoint < leftPoint || afterSwapPoint >= rightPoint)
+      throw new RecentreRefused('the rebalancing swap would push the price out of the new range');
   }
   const liquidity = computeLiquidity({
     leftPoint,

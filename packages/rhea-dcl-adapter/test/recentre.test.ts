@@ -15,7 +15,7 @@ describe('alignRange', () => {
     });
     expect(alignRange(799_000, 900_000, 40, 799_500)).toEqual({
       leftPoint: 799_000,
-      rightPoint: POINT_MAX,
+      rightPoint: POINT_MAX - 40,
     });
   });
 

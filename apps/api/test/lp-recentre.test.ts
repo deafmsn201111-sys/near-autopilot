@@ -120,6 +120,8 @@ describe('recentreSteps', () => {
     symbolY: 'wNEAR',
   };
   const freed = dclPositionAmounts(position, CUR);
+  const atSpot = (amountIn: bigint, impact = 0) =>
+    BigInt(Math.floor((Number(amountIn) / 1.0001 ** CUR) * (1 - impact)));
   const minY = (freed.y * 9_950n) / 10_000n;
 
   it('removes, withdraws, swaps the surplus wNEAR, deposits both and adds at the new range', async () => {
@@ -129,7 +131,7 @@ describe('recentreSteps', () => {
       quote: async (tokenIn, tokenOut, amountIn) => {
         expect([tokenIn, tokenOut]).toEqual([WNEAR, USDC]);
         quotes.push(amountIn);
-        return 1_000_000n;
+        return atSpot(amountIn);
       },
     });
     expect(r.steps.map((s) => s.intentId)).toEqual([
@@ -143,20 +145,21 @@ describe('recentreSteps', () => {
     const [sold] = quotes;
     // about half the freed wNEAR is sold; the deposits follow the min-out, not the quote
     expect(Number(sold) / Number(minY)).toBeCloseTo(0.5, 1);
-    expect(r.amountX).toBe(995_000n);
+    const minOut = (atSpot(sold!) * 9_950n) / 10_000n;
+    expect(r.amountX).toBe(minOut);
     expect(r.amountY).toBe(minY - sold!);
     const swapMsg = JSON.parse(String(r.steps[2]!.tx.actions[0]!.args['msg'])) as {
       Swap: { min_output_amount: string };
     };
-    expect(swapMsg.Swap.min_output_amount).toBe('995000');
+    expect(swapMsg.Swap.min_output_amount).toBe(minOut.toString());
     const add = r.steps[5]!.tx.actions[0]!.args;
     expect(add).toMatchObject({
       pool_id: POOL_ID,
       left_point: CUR - 600,
       right_point: CUR + 600,
-      amount_x: '995000',
+      amount_x: minOut.toString(),
     });
-    expect(BigInt(String(add['min_amount_x']))).toBeLessThanOrEqual(995_000n);
+    expect(BigInt(String(add['min_amount_x']))).toBeLessThanOrEqual(minOut);
 
     const cascade = assembleCascade(ALICE, r.steps);
     expect(
@@ -169,16 +172,33 @@ describe('recentreSteps', () => {
   });
 
   it("loosens the add's minimums by the price move its own swap causes", async () => {
-    const atSpot = (amountIn: bigint) => BigInt(Math.floor(Number(amountIn) / 1.0001 ** CUR));
     const minY = async (impact: number) => {
       const r = await recentreSteps({
         ...base,
-        quote: async (_in, _out, amountIn) =>
-          BigInt(Math.floor(Number(atSpot(amountIn)) * (1 - impact))),
+        quote: async (_in, _out, amountIn) => atSpot(amountIn, impact),
       });
       return BigInt(String(r.steps.at(-1)!.tx.actions[0]!.args['min_amount_y']));
     };
-    expect(await minY(0.02)).toBeLessThan(await minY(0));
+    expect(await minY(0.002)).toBeLessThan(await minY(0));
+  });
+
+  it('refuses when its own swap would move the price by more than the slippage', async () => {
+    await expect(
+      recentreSteps({ ...base, quote: async (_in, _out, amountIn) => atSpot(amountIn, 0.02) }),
+    ).rejects.toThrow(/more than the slippage/);
+  });
+
+  it('refuses a position back in range, a paused pool and a range at the top bound', async () => {
+    const quote = async (_in: unknown, _out: unknown, amountIn: bigint) => atSpot(amountIn);
+    await expect(
+      recentreSteps({ ...base, position: { ...position, right_point: CUR + 1 }, quote }),
+    ).rejects.toThrow(/back in range/);
+    await expect(
+      recentreSteps({ ...base, pool: { ...pool, state: 'Paused' }, quote }),
+    ).rejects.toThrow(/not running/);
+    await expect(recentreSteps({ ...base, rightPoint: 800_000, quote })).rejects.toBeInstanceOf(
+      RecentreRefused,
+    );
   });
 
   it('refuses when the price is outside the new range', async () => {

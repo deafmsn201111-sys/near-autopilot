@@ -7,7 +7,7 @@ const MIN_SWAP_SHARE = 200n;
 
 /**
  * A range in log-1.0001 ticks (an agent's proposal) as DCL points: widened outward to multiples of the pool's point
- * delta and clamped to the contract's bounds. Throws unless the result holds `currentPoint`, so a re-centre always
+ * delta and clamped to the contract's bounds (the right end one delta short: the deposit math reads `right + 1`). Throws unless the result holds `currentPoint`, so a re-centre always
  * lands in range.
  */
 export function alignRange(
@@ -19,7 +19,10 @@ export function alignRange(
   if (!Number.isInteger(tickLower) || !Number.isInteger(tickUpper))
     throw new RangeError('ticks must be integers');
   const leftPoint = Math.max(POINT_MIN, Math.floor(tickLower / pointDelta) * pointDelta);
-  const rightPoint = Math.min(POINT_MAX, Math.ceil(tickUpper / pointDelta) * pointDelta);
+  const rightPoint = Math.min(
+    POINT_MAX - pointDelta,
+    Math.ceil(tickUpper / pointDelta) * pointDelta,
+  );
   assertValidRange(leftPoint, rightPoint, pointDelta);
   if (currentPoint < leftPoint || currentPoint >= rightPoint)
     throw new RangeError(`current point ${currentPoint} is outside [${leftPoint}, ${rightPoint})`);

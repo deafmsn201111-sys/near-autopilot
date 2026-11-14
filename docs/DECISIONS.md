@@ -472,6 +472,12 @@ every wallet DCL position in an allowlisted pool.
   v1 rule (numeric `pool_id` in `rhea.pools`). Caps are unchanged.
 - **One card per position:** the re-centre when it pays back within `maxPaybackDays` (14), else the exit, now titled
   as an exit.
-  **Consequences:** The cost and fee numbers are estimates (volume persists, fixed time in range, no IL). Swap price
-  impact moves the pool before the add; a move bigger than the slippage fails the add and leaves the tokens in the
-  user's Rhea balance.
+- **Our own swap moves the pool** before the add: the add's minimums allow for the move implied by the quote, and a
+  move larger than the slippage refuses the re-centre (409) rather than loosening the minimums. Prepare also refuses
+  a position back in range, a paused pool, and a range at the top point bound or wider than 200 000 points.
+- **wNEAR stays wNEAR:** the DCL contract pays withdrawals and swap output with `ft_transfer` (ref-ui passes no unwrap
+  flag to `withdraw_asset`; no `near_withdraw` in 100 recent mainnet receipts), so the later wNEAR deposit is funded.
+
+**Consequences:** The cost and fee numbers are estimates (volume persists, fixed time in range, no IL). A position too
+large for the pool's depth gets the card but prepare refuses it. If the add still fails, the tokens sit in the
+user's Rhea balance.
