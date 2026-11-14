@@ -32,7 +32,7 @@ So most assembly already exists; the engine's job is to (a) unify builders behin
 
 ### Phase 4 status — backend transaction engine COMPLETE
 
-`POST /v1/wallet/prepare` turns an intent into a precise, unsigned, signable cascade for **8 actions**: `supply`, `repay`, `swap`, `add_liquidity` (v1 50/50), `reposition_dcl` (safe exit), `unwrap`, `borrow`, `withdraw`. Every cascade passes an independent `validateCascade` safety gate (signer, receiver allowlist, method allowlist, gas ≤ 300 Tgas, per-action deposit ≤ 0.15 / cascade ≤ 0.3 NEAR, well-formed transfers) and the server holds no key (`signed: false`). Each intent was verified live against mainnet. Remaining Phase 4 piece: **client one-click signing** (wallet signs the cascade via HOT Connector + pre-sign preview + on-chain result verification), which lands with the Phase 5 UI.
+`POST /v1/wallet/prepare` turns an intent into a precise, unsigned, signable cascade for **8 actions**: `supply`, `repay`, `swap`, `add_liquidity` (v1 50/50), `reposition_dcl` (safe exit), `unwrap`, `borrow`, `withdraw`. Added since: `recentre_dcl` (remove an out-of-range DCL position and add it back around the price, D26), `repay_from_collateral` and `repay_with_collateral` (withdraw → swap → repay, D25), `supply_all`. Every cascade passes an independent `validateCascade` safety gate (signer, receiver allowlist, method allowlist, gas ≤ 300 Tgas, per-action deposit ≤ 0.15 / cascade ≤ 0.3 NEAR, well-formed transfers) and the server holds no key (`signed: false`). Each intent was verified live against mainnet. Client one-click signing shipped with the Phase 5 UI: the wallet signs the cascade through HOT Kit after a pre-sign preview, and the result is checked on chain.
 
 ## Staged plan
 
@@ -49,9 +49,9 @@ So most assembly already exists; the engine's job is to (a) unify builders behin
 - ✅ All builders behind the `prepare` endpoint's `Intent → PlannedTransaction[]` assembler.
 - ✅ Gaps filled: Burrow **borrow** + **withdraw** (priced via `execute_with_pyth`, D29), Rhea **v1 add liquidity** (50/50, floored, ratio-matched), **unwrap**, **reposition_dcl** (safe exit).
 - ✅ Independent `validateCascade` safety gate on every assembled cascade; every builder covered by tests; each intent live-verified on mainnet. No server key, no autonomy.
-- ⬜ Client: one click → wallet signs the cascade (HOT Connector); a **clear pre-sign preview** of exactly what will be signed; on-chain verification after. _(lands with Phase 5 UI.)_
+- ✅ Client: one click → wallet signs the cascade (HOT Kit); a review-and-sign sheet shows the outcome and exactly what will be signed; on-chain verification after.
 
-**Phase 5 — UX / design (full rework).** Premium, friendly, uncluttered DeFi UI. IA: **Home** (2 demos $5k/$500 + connected-wallet portfolio), **Opportunities/Recommendations**, **Portfolio**, **Activity**. One-click actions from recommendation cards. Design system, mobile, a11y.
+**Phase 5 — UX / design (full rework).** Premium, friendly, uncluttered DeFi UI. IA as shipped: **Portfolio**, **Opportunities**, **Activity** (plus the two simulated demo portfolios). One-click actions from recommendation cards. Design system, mobile, a11y.
 
 **Phase 6 — Real mainnet verification + hardening.** On the connected wallet, run real cascades with small amounts; independent review of the builders; e2e; security.
 

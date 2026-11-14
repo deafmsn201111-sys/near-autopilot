@@ -1,5 +1,8 @@
 # Audit evidence: the hash chain and replay
 
+_Covers the agent runs on the simulated demo portfolios (dry runs), not the wallet path: there the user signs in their
+own wallet and the record is the `events` table (D28)._
+
 Two kinds of evidence are kept in Postgres. Both can be checked by anyone with read access to the database, with one
 command each. Nothing is fetched or executed.
 

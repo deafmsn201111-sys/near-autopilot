@@ -341,7 +341,7 @@ Delivery is a port (`Notifier`). No concrete pager, chat or email implementation
    - Tests: `apps/api/test/orchestrator-stores.integration.test.ts` (restart with read-only, restart mid-execution,
      repeated and concurrent keys, stale loosening, database unreachable, history append-only, chain intact).
    - The in-process audit chain remains in memory; the durable one is `audit_events` (write-through, fails closed).
-2. **Wired into the collector** through `wire()` with `AUTOPILOT_ENGINE=orchestrator` (dry-run only), with the snapshot
+2. **Wired into the collector** through `wire()` with `AUTOPILOT_ENGINE=orchestrator` (dry-run only, demo portfolios), with the snapshot
    service over the simulated demo portfolio, a reference `MarketProvider` fed by the collector's mainnet market data,
    the Rhea quoter, the planner registry, the policy engine, the Shadow Gateway executor and the durable stores above.
    LP position views do not exist yet, so the LP Optimizer reports `insufficient_data`.

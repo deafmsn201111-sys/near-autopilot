@@ -173,7 +173,8 @@ A failure there is a finding (deployment retired or interface changed), not a fl
 
 - The repository ships **no signer** (the server holds no key; users sign in their own wallet) and the adapter has no key handling.
 - `loadApiEnv` rejects `EXECUTION_MODE=live` together with `NEAR_NETWORK=mainnet`, and `wire()` re-checks it. There is
-  no override. Mainnet is therefore dry-run only: it plans and reads, and never signs.
+  no override. The server plans and reads and never signs; the Burrow cascades it builds are signed by the user in
+  their own wallet.
 - The live Burrow test reads no key material and sends no transaction.
 
 ## 10. Known gaps

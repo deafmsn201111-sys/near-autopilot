@@ -1,69 +1,55 @@
 # SECURITY_THREAT_MODEL
 
-_Phase 0 deliverable. Threat model for the autonomous DeFi platform. Anchored to the non-negotiable rules in brief §21. Current verified posture is read-only/dry-run; this model governs everything added toward execution._
+_Threat model for the product as built: a server that reads a mainnet account, ranks advice and builds **unsigned**
+transaction cascades, and a user who signs them in their own wallet. The server holds no key and has no signer (D8,
+D9). Controls are listed with the code that enforces them and the test or demo that proves it._
 
-## 1. Assets to protect
+## Assets
 
-- User's on-chain funds (primary wallet balances, Burrow collateral, LP positions).
-- The agent's execution authority (any access key or Guard permission).
-- Integrity of the decision/audit record (no forged approvals, no silent limit changes).
-- Secrets: RPC keys, `API_TOKEN`, DB credentials, (future) Guard owner keys.
+- The user's funds: wallet balances, Burrow supply/collateral/loans, Rhea v1 and DCL positions, staking.
+- The user's trust in what they sign: a cascade must do exactly what its preview says.
+- Spend on the LLM provider and the RPC quota.
+- Secrets: RPC keys, `NEAR_AI_API_KEY`, the admin token, DB credentials.
 
-## 2. Trust boundaries
+## Trust boundaries
 
 ```
- user wallet (trusted, user-controlled)
-      │ signs / delegates a *restricted* key
-      ▼
- Guard contract (on-chain, independent of AI/backend/frontend)  ← enforcement point
-      ▲
-      │ typed, validated operation requests only
- backend / agents (semi-trusted: can propose, cannot authorize)
-      ▲
-      │ HTTP /v1/*
- frontend (untrusted for financial values)
+ user's wallet  (trusted, the only place anything is signed)
+      ▲  unsigned cascade + preview
+ validateCascade  (server, fails closed: no cascade at all if any check fails)
+      ▲  PlannedTransaction[] from the builders
+ builders / agents / LLM  (untrusted proposers: they can propose, never authorise)
+      ▲  on-chain reads, market data, 1Click quotes  (untrusted input, zod-parsed)
+ browser  (untrusted: its values are never used as amounts; the server re-reads the chain)
 ```
 
-Core principle: **enforcement is on-chain in the Guard**, not in AI, backend, or UI code.
+Enforcement points: the user's wallet; `validateCascade` (`apps/api/src/wallet/validate-cascade.ts`); the policy engine
+on the demo portfolios' agent runs; zod at every external boundary. An LLM only ranks and explains what the
+deterministic agents already returned.
 
-## 3. Threats (STRIDE-flavored) and controls
+## Threats
 
-| #   | Threat                                                       | Control                                                                                                                                                                          |
-| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T1  | Forged/elevated agent permissions (agent grants itself more) | Guard validates agent authorization every op; agents cannot modify policy; keys are FunctionCall-restricted, never FullAccess.                                                   |
-| T2  | Operation on unknown protocol/token                          | Guard protocol+token allowlists; policy-engine allowlists in backend as defense-in-depth.                                                                                        |
-| T3  | Excessive amount / daily-volume / daily-loss bypass          | Guard per-op, daily-volume and daily-loss limits; reserve-before-execute.                                                                                                        |
-| T4  | Replay / concurrent limit bypass (TOCTOU)                    | Unique operation IDs; Guard replay protection; serialized limit reservation. (A TOCTOU race was already found + fixed in the wallet hand-off; same discipline applies on-chain.) |
-| T5  | Expired session used                                         | Session expiration validated on-chain; UI shows session expiry.                                                                                                                  |
-| T6  | Stale/oracle-manipulated prices drive a bad trade            | Freshness + confidence checks (Pyth ≤1% band); risk agent can reject; slippage/min-output constraints.                                                                           |
-| T7  | Malicious/compromised protocol callback                      | Verify callbacks; reconcile actual results; pending-operation state machine; never mark success before confirmation.                                                             |
-| T8  | Frontend supplies forged financial values                    | Backend never trusts client financial values as authoritative (brief §16); server recomputes.                                                                                    |
-| T9  | AI hallucinates a protocol/opportunity                       | Agents constrained to allowlisted protocols/pairs; quoter only returns routable swaps; schema-validated agent outputs.                                                           |
-| T10 | Model explanation treated as authorization                   | Execution authorization is a separate, explicit step; no model output signs.                                                                                                     |
-| T11 | Emergency Stop fails to halt in-flight ops                   | Stop blocks new ops; already-submitted external calls handled via explicit pending-op state; user can always revoke the agent key.                                               |
-| T12 | Secret leakage (logs, images, git)                           | No secrets in logs; `.dockerignore` + image scan; env-only; separate per-env secrets.                                                                                            |
-| T13 | Unsafe Guard upgrade / owner compromise                      | Ownership via multisig and/or timelock; critical upgrades reviewed; no mainnet deploy without independent audit.                                                                 |
-| T14 | Simulated/demo data mistaken for live                        | Hard demo/live separation; simulation never mints a txHash; UI banners; provenance tiers.                                                                                        |
+| #   | Threat                                                             | Check that stops it                                                                                                                                                                                             | Proof                                                                                  |
+| --- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| T1  | The server signs or moves funds on its own                         | No signer exists; `EXECUTION_MODE=live` is refused at load (`packages/config`) and again in `wire()`. Only the user's wallet signs.                                                                             | `wiring.test.ts`, `packages/config/test/env.test.ts`                                   |
+| T2  | A cascade step calls an unexpected contract or method              | `validateCascade`: signer = the account, receiver allowlist (the protocol + the tokens in play), method allowlist, allowlisted pools only                                                                       | `validate-cascade.test.ts`; `pnpm demo:attack` (`storage_unregister`, `attacker.near`) |
+| T3  | A step burns gas or attaches too much NEAR                         | ≤ 300 Tgas per action, ≤ 0.15 NEAR per action (beyond the 1-yocto confirmation), ≤ 0.3 NEAR per cascade; loosening needs a `DECISIONS.md` entry                                                                 | `validate-cascade.test.ts`; `pnpm demo:attack` (301 Tgas, 0.2 NEAR)                    |
+| T4  | A withdrawal is redirected to an attacker                          | `ft_transfer` is allowed only to the stored 1Click quote's deposit address, which must be a NEAR implicit account; the quote must belong to the account and not be near expiry (D36)                            | `withdraw.test.ts`; `pnpm demo:attack` (`withdraw-*`)                                  |
+| T5  | A 1Click quote is altered or replayed                              | The server checks 1Click's echo of `recipient` and `refundTo` against what it asked; refunds go to the user (`refundTo` = their account). Each quote's transfer is handed out once (`transfer_issued_at`, #214) | `one-click-deposit.test.ts`, `withdraw.test.ts`                                        |
+| T6  | A deposit from another chain lands in someone else's account       | HOT Kit's bridge popup with the recipient locked to the connected NEAR account, opened only after the connected account matches the page (D42)                                                                  | `apps/analytics/test/signing-lock.test.ts`                                             |
+| T7  | Prompt injection through token names or market data steers the LLM | The model sees our own token labels only; its reply is zod-parsed and every pick must be a candidate id a tool returned; anything else falls back to the rule-based list                                        | `ai-analysis.test.ts`; `pnpm demo:attack` (`symbol-injection`)                         |
+| T8  | A forged or tampered AI reply is shown as private inference        | Every reply's TEE signature is checked against the attested key over the exact request and answer (D43); a failed check is labelled unverified                                                                  | `tee-verifier.test.ts`; `pnpm demo:attack` (`tee-*`)                                   |
+| T9  | Someone runs paid AI analysis for an account they do not own       | NEP-413 ownership proof: a fixed message signed by a full-access key of the account, 24 h, checked per request (D12)                                                                                            | `ownership.test.ts`                                                                    |
+| T10 | LLM spend runs away                                                | Per-UTC-day cap (`LLM_DAILY_CAP_USD`, admin override); each call reserves its worst case first; model allowlist (D14, D38)                                                                                      | `llm-ledger.integration.test.ts`, `llm-pricing.test.ts`                                |
+| T11 | A script drains the RPC quota or loads the server                  | Per-visitor and global sliding-window limits on account reads and `/api/prepare`, keyed on the IP Caddy sets; JSON-only prepare; 60 s read cache (D10)                                                          | `apps/analytics/test/rate-limit.test.ts`                                               |
+| T12 | A bad price or thin pool turns into a bad trade                    | Quotes are re-read on the server; slippage floors on every swap; price-impact gate before signing; unverified tokens never a swap output (D44)                                                                  | `swap-cost.test.ts`, `prepare-pool-allowlist.test.ts`                                  |
+| T13 | Secrets leak                                                       | Env-only, validation errors name variables never values, generic public errors (D11); gitleaks on every branch in CI; leaked keys are rotated (D15); admin on loopback only (D16)                               | `public-errors.test.ts`, CI `secrets` job                                              |
+| T14 | Simulated demo data is mistaken for a real account                 | Demo portfolios are labelled simulated; every displayed number carries its provenance tier                                                                                                                      | `packages/core/test/provenance.test.ts`                                                |
 
-## 4. Non-negotiable rules (brief §21) — enforcement notes
+## What is not covered
 
-- Never request/store seed phrases — not collected anywhere; wallet sign-in only.
-- Never expose private keys to agents — agents receive no keys; execution goes through Guard/wallet.
-- Never grant FullAccess — only restricted FunctionCall keys, Guard-scoped.
-- Never bypass Guard — execution engine's only path to chain is through the Guard client.
-- Never hide risks/fees, never invent yield/tx results — provenance tiers + confirmation-before-success.
-- Never silently change limits/permissions — all changes audited; limit changes are explicit, user-authorized, on-chain.
-- Never claim an audit occurred unless an independent audit actually happened.
-- Never deploy unsafe code to mainnet.
-
-## 5. Current state vs. this model
-
-- Today: no signer, dry-run only, allowlists + audit + rate-limited public demo → **most execution threats are not yet reachable** because nothing is sent.
-- The model becomes load-bearing the moment Approve/Autonomous modes or the Guard are introduced. Each such change references the relevant threats above in its PR and tests.
-
-## 6. Required before any mainnet execution
-
-1. Guard contract implemented, adversarially tested in a local sandbox (brief §18 scenarios).
-2. Independent security review (no self-declared audit).
-3. Explicit, revocable user authorization; autonomous off by default.
-4. Rollback/kill plan (Emergency Stop + key revocation) rehearsed.
+- A compromised wallet or browser extension: the wallet is the trust root. The preview shows outcome, amounts and
+  contracts so the user can refuse.
+- The TEE hardware quote is not verified on our server (see `KNOWN_ISSUES.md`).
+- A cascade is one wallet prompt per step, not atomic across contracts (NEAR cannot do that); a failed step stops the
+  rest.

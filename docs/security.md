@@ -2,6 +2,9 @@
 
 ## Threat model (what the design defends against)
 
+This table covers the agent runs on the simulated demo portfolios (policy engine, dry runs). The wallet path, where
+the user signs, is in [SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md).
+
 | Threat                                             | Control                                                                                         |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | Buggy/compromised agent proposes a harmful action  | Policy re-values the action itself, checks allowlists, limits, slippage, oracle deviation       |
@@ -35,27 +38,13 @@ you build yourself, strongest first:
 2. A **function-call access key** restricted to one contract and its methods, with a gas allowance.
 3. Never place a full-access private key in an environment variable or config file.
 
-Use a dedicated account holding only what the autopilot should be allowed to move.
+Use a dedicated account holding only what such a signer should be allowed to move.
 
-### Full-access keys are refused (enforced, not advice)
+### Legacy key guard (unreachable)
 
-The live executor never signs with a full-access key (`packages/tx-execution/src/key-guard.ts`). It checks twice:
-
-- **At start-up:** with `EXECUTION_MODE=live`, the composition root reads the signing key's permission
-  (`view_access_key`). A full-access key stops the process before any cycle runs.
-- **Before every signature:** the permission arrives in the same chain query as the nonce.
-
-**What is refused:**
-
-- `full_access`: always.
-- `function_call`: refused unless the key's receiver is the transaction's receiver, the key allows the method, and no
-  action attaches a deposit. The NEAR runtime rejects a function-call key on a call with a deposit anyway; refusing
-  first gives a clear reason instead of a failed receipt.
-
-**Consequence: no current plan can be signed autonomously.** Every plan the planners build is an `ft_transfer_call`,
-which NEP-141 requires to carry exactly 1 yoctoNEAR, so none passes this guard. This is intended: an autopilot holding
-a full-access key has no ceiling. Live autonomous execution needs a custody design that does not hand it one, such as
-an MPC or delegated signer with its own limits. Until then every deployment runs dry-run.
+`packages/tx-execution/src/key-guard.ts` refuses full-access keys for a live executor, but live execution is refused at
+start-up, so nothing in the running product reaches it; `pnpm demo:attack` still exercises it with a fake signer. Real
+transactions are cascades the user signs in their own wallet, checked by `validateCascade` first.
 
 ## Attack demo: `pnpm demo:attack`
 

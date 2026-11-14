@@ -1,5 +1,8 @@
 # Mainnet read-only shadow analysis
 
+_Describes the agent runs on the simulated demo portfolios, not the wallet path (a connected account's cascades are
+signed by the user in their own wallet)._
+
 `./scripts/quickstart.sh` (or `docker compose up -d --build`) → Postgres, the collector, the analytics API on
 `127.0.0.1:4003` and the site on `127.0.0.1:3001`. The public server runs the same collector as `shadow-collector`
 (`deploy/public/docker-compose.yml`).
