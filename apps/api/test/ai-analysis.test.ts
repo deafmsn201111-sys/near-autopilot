@@ -793,6 +793,44 @@ describe('analyseAccount', () => {
     expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
   });
 
+  it('offers a supply for every idle token, most dollars a year first, with the yearly earnings', async () => {
+    let tools: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        tools = results;
+        return final([{ id: 'capital-allocator:supply:wrap.near', why: 'Earn on it.' }]);
+      },
+    ]);
+    const obs = observation();
+    const both: AgentObservation = {
+      ...obs,
+      market: {
+        ...obs.market!,
+        estimatedYieldWad: new Map([
+          [USDT, 8n * 10n ** 16n],
+          [WNEAR, 2n * 10n ** 16n],
+        ]),
+      },
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => both,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    const shown = JSON.stringify(tools);
+    expect(shown.indexOf('capital-allocator:supply:usdt.tether-token.near')).toBeGreaterThan(-1);
+    expect(shown.indexOf('capital-allocator:supply:usdt.tether-token.near')).toBeLessThan(
+      shown.indexOf('capital-allocator:supply:wrap.near'),
+    );
+    expect(shown).toContain('about $8.00 a year');
+    expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')).toMatchObject({
+      intent: { action: 'supply', token: WNEAR },
+    });
+  });
+
   it.each([
     ['invalid JSON', (): LlmToolTurn => ({ kind: 'final', text: 'not json' })],
     ['a model error', (): Promise<LlmToolTurn> => Promise.reject(new Error('529'))],

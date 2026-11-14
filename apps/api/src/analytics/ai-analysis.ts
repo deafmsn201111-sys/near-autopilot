@@ -287,6 +287,7 @@ const SYSTEM = [
   'Call every tool once; they take no input. Each returns candidate actions whose numbers were computed by code.',
   'Rank the candidates by what matters most for this wallet: liquidation risk first, then concentration risk, then yield.',
   'Leave out candidates that are not worth the user’s attention.',
+  'Idle-token supplies come most dollars a year first; if you rank a later one above the first, its "why" says why.',
   'Reply with ONE JSON object and nothing else: {"picks":[{"id":"<candidate id>","why":"<one or two plain sentences>"}]}.',
   'Use only candidate ids that a tool returned. In "why" use only numbers that appear in the tool results; never compute new ones.',
   'Write "why" to the wallet owner about that one action; never mention tools, candidates or what other tools found.',
@@ -490,6 +491,8 @@ function allocatorTool(
           continue;
         }
         const aprPct = apr.toFixed(1);
+        const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
+        const yearly = money((value * Number(yieldWad)) / 1e18);
         const id = `capital-allocator:supply:${p.token}`;
         byCandidate.set(id, {
           text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
@@ -501,7 +504,7 @@ function allocatorTool(
           agent: 'Capital Allocator',
           severity: 'info',
           title: `Put ${money(view.approxUsd)} of your idle ${view.symbol} to work`,
-          why: `${view.symbol} in your wallet earns nothing. Supplying ${view.amount} ${view.symbol} on Burrow earns about ${aprPct}% a year, and you can withdraw it any time.`,
+          why: `${view.symbol} in your wallet earns nothing. Supplying ${view.amount} ${view.symbol} on Burrow earns about ${aprPct}% a year, about ${yearly} a year, and you can withdraw it any time.`,
           intent: {
             action: 'supply',
             token: p.token,

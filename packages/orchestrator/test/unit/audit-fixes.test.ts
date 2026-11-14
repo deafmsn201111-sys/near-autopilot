@@ -286,6 +286,33 @@ describe('capital allocator: deposits idle tokens into Burrow when enabled', () 
       token: WNEAR_ID,
     });
   });
+  it('proposes a supply for every idle token, the most dollars a year first', async () => {
+    const { CapitalAllocatorAgent } = await import('../../src');
+    const w = makeWorld({
+      lending: null,
+      wallet: { near: 100, usdt: 300 }, // ~$500 wNEAR at 2 % ($10 a year) vs $300 USDt at 10 % ($30)
+      yields: { near: 2, usdt: 10 },
+      config: {
+        allocation: { assets: [{ token: WNEAR_ID }, { token: USDT_ID }], supplyIdle: true },
+      },
+    });
+    const snapshot = w.buildSnapshot();
+    const obs: AgentObservation = {
+      now: NOW,
+      accountId: ALICE,
+      snapshot,
+      market: w.buildMarket(),
+      risk: assessRisk(snapshot, w.config),
+      config: w.config,
+    };
+    const out = (await new CapitalAllocatorAgent().propose(obs)) as {
+      proposals: { kind: string; token?: string }[];
+    };
+    expect(out.proposals.filter((p) => p.kind === 'lending.supply').map((p) => p.token)).toEqual([
+      USDT_ID,
+      WNEAR_ID,
+    ]);
+  });
   it('is off by default, and a deposit too small to clear the hurdle is rejected as BELOW_HURDLE', async () => {
     const off = await world(false, 500).orchestrator.runCycle('supply-off');
     expect(off.decision?.ranked.some((r) => r.action.kind === 'lending.supply') ?? false).toBe(

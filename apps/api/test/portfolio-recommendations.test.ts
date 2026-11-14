@@ -380,6 +380,26 @@ describe('portfolioRecommendations', () => {
     });
   });
 
+  it('supplies the idle token that earns the most dollars a year and names the runner-up', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        idleEarn: [
+          { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 2 },
+          { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 500, aprPct: 8 },
+        ],
+      }),
+    );
+    const i = r.find((x) => x.kind === 'put_idle_to_work');
+    expect(i?.intent).toEqual({
+      action: 'supply',
+      token: 'usdt.tether-token.near',
+      approxUsd: 500,
+    });
+    expect(i?.title).toBe('$500 of USDt is sitting idle');
+    expect(i?.why).toContain('about $40.00 a year');
+    expect(i?.why).toContain('$600 of USDC would earn about $12.00');
+  });
+
   it('flags an out-of-range DCL position with a reposition intent', () => {
     const r = portfolioRecommendations(
       ctx({ dclOutOfRange: [{ lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120 }] }),

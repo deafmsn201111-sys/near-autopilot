@@ -22,23 +22,23 @@ export class CapitalAllocatorAgent implements ProposalAgent {
 
   async propose(obs: AgentObservation): Promise<unknown> {
     const swap = (await this.proposeSwap(obs)) as { proposals: Record<string, unknown>[] };
-    const supply = obs.config.allocation.supplyIdle ? this.proposeSupply(obs) : null;
-    if (!supply) return swap;
+    const supplies = obs.config.allocation.supplyIdle ? this.proposeSupplies(obs) : [];
+    if (supplies.length === 0) return swap;
     // A real proposal makes the swap path's "no action" redundant; the engine ranks the rest by net benefit.
     const rest = swap.proposals.filter((p) => p['kind'] !== 'no_action');
-    return envelope(this.id, obs, [supply, ...rest]);
+    return envelope(this.id, obs, [...supplies, ...rest]);
   }
 
   /**
-   * Idle wallet tokens earn nothing; Burrow pays its supply rate on them. Proposes depositing the held allocation
-   * asset that earns the most in dollars a year (rate x deposit value), the whole held balance: the swap size limit
-   * does not apply to a deposit the user can withdraw (D23). The decision engine applies the same hurdle as for a swap
-   * (gas in and out against the yield over the horizon); the policy engine decides the rest.
+   * Idle wallet tokens earn nothing; Burrow pays its supply rate on them. Proposes depositing each held allocation
+   * asset, the whole held balance, the most dollars a year first (rate x deposit value): the swap size limit does not
+   * apply to a deposit the user can withdraw (D23). The decision engine applies the same hurdle as for a swap (gas in
+   * and out against the yield over the horizon); the policy engine decides the rest.
    */
-  private proposeSupply(obs: AgentObservation): Record<string, unknown> | null {
+  private proposeSupplies(obs: AgentObservation): Record<string, unknown>[] {
     const { snapshot, market, config } = obs;
-    if (!market) return null;
-    let best: { token: TokenId; amount: bigint; yieldWad: bigint; earns: bigint } | null = null;
+    if (!market) return [];
+    const idle: { token: TokenId; amount: bigint; yieldWad: bigint; earns: bigint }[] = [];
     for (const a of config.allocation.assets) {
       const held = snapshot.walletBalances
         .filter((b) => b.token === a.token)
@@ -47,15 +47,16 @@ export class CapitalAllocatorAgent implements ProposalAgent {
       if (held <= 0n || y === undefined || y <= 0n || !snapshot.prices.has(a.token)) continue;
       // Dollars a year, not the rate: a higher rate on dust must not beat a large idle balance.
       const earns = tokenValueUsd(snapshot.prices, a.token, held) * y;
-      if (!best || earns > best.earns) best = { token: a.token, amount: held, yieldWad: y, earns };
+      idle.push({ token: a.token, amount: held, yieldWad: y, earns });
     }
-    if (!best) return null;
-    return {
-      kind: 'lending.supply',
-      token: best.token,
-      amount: best.amount.toString(),
-      rationale: `${best.token} sits idle in the wallet; Burrow pays an estimated ${(Number(best.yieldWad / 10n ** 12n) / 1e4).toFixed(2)}% a year on it`,
-    };
+    return idle
+      .sort((x, y) => (y.earns > x.earns ? 1 : y.earns < x.earns ? -1 : 0))
+      .map((i) => ({
+        kind: 'lending.supply',
+        token: i.token,
+        amount: i.amount.toString(),
+        rationale: `${i.token} sits idle in the wallet; Burrow pays an estimated ${(Number(i.yieldWad / 10n ** 12n) / 1e4).toFixed(2)}% a year on it`,
+      }));
   }
 
   private async proposeSwap(obs: AgentObservation): Promise<unknown> {
