@@ -149,12 +149,25 @@ export class HttpJsonClient {
             },
       );
     } catch {
+      clearTimeout(timer);
       throw controller.signal.aborted
         ? new MarketHttpError('timeout', `no response within ${this.o.timeoutMs} ms`, true)
         : new MarketHttpError('unavailable', 'network error', true);
+    }
+    // The timer also covers the body: a server that sends headers and then stalls must not hold the caller.
+    try {
+      return await this.parse(response);
+    } catch (error) {
+      if (error instanceof MarketHttpError) throw error;
+      throw controller.signal.aborted
+        ? new MarketHttpError('timeout', `no full body within ${this.o.timeoutMs} ms`, true)
+        : new MarketHttpError('unavailable', 'body read failed', true);
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  private async parse(response: Response): Promise<unknown> {
     const s = response.status;
     if (s === 429 || s === 503) {
       const after = parseRetryAfter(response.headers.get('retry-after'), Date.now());

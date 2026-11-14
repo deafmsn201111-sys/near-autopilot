@@ -168,6 +168,15 @@ describe('oneClickEnvSchema', () => {
     for (const bad of ['short', `${jwt}\r\nx-evil: 1`, `${jwt} `])
       expect(oneClickEnvSchema.safeParse({ ONE_CLICK_JWT: bad }).success).toBe(false);
   });
+
+  it('reads Solana mints from the public mainnet RPC unless an https URL is set', () => {
+    expect(oneClickEnvSchema.parse({ SOLANA_RPC_URL: '' }).SOLANA_RPC_URL).toBe(
+      'https://api.mainnet-beta.solana.com',
+    );
+    const own = 'https://solana.example.org/rpc';
+    expect(oneClickEnvSchema.parse({ SOLANA_RPC_URL: own }).SOLANA_RPC_URL).toBe(own);
+    expect(oneClickEnvSchema.safeParse({ SOLANA_RPC_URL: 'http://x.example' }).success).toBe(false);
+  });
 });
 
 describe('shieldEnvSchema', () => {

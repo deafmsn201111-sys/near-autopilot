@@ -422,6 +422,19 @@ describe('DefiLlamaSource', () => {
     expect(e).toBeInstanceOf(MarketHttpError);
     expect(e instanceof MarketHttpError && e.kind).toBe('unavailable');
   });
+  it('times out a body that stops halfway, not only a missing response', async () => {
+    const stall: typeof fetch = async (_i, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"result":'));
+          init?.signal?.addEventListener('abort', () => c.error(new Error('aborted')));
+        },
+      });
+      return new Response(body, { status: 200 });
+    };
+    const http = new HttpJsonClient({ fetchImpl: stall, timeoutMs: 10, maxRetries: 0, ...noSleep });
+    await expect(http.postJson('https://x.test', {})).rejects.toMatchObject({ kind: 'timeout' });
+  });
   it('24h range is computed from hourly points and skipped when history is short', async () => {
     const prices = Array.from({ length: 25 }, (_, i) => ({
       timestamp: nowS - 3600 * (24 - i),

@@ -583,3 +583,22 @@ agents' routable pairs: a demo may now propose USDC↔USDt, which its policy all
 it is not in `policy.allowedTokens`). The pool is listed once per pair because the registry models two-token pools
 (ponytail: a `tokens[]` entry once a fourth stablecoin route is needed). A loan in any of the three stablecoins can be
 repaid from either of the other two in one cascade.
+
+## D32 — Solana mints that can change a transfer are not deposit origins (#185)
+
+**Context:** A Token-2022 mint with a `transferFeeConfig` (NEARKAT: 300 bps) delivers less than the `EXACT_INPUT`
+quote to the 1Click deposit address, so the deposit is refunded after the deadline, while the QR (#128) presents it
+as the exact amount. Other extensions (transfer hook, pausable, default frozen state, permanent delegate,
+non-transferable) can block or take a transfer the same way.
+**Decision:** The API reads every Solana mint 1Click lists with one jsonParsed `getMultipleAccounts` call per 100
+mints (`gateway/solana-transfer-fee.ts`, `SOLANA_RPC_URL`, public mainnet RPC by default, one attempt, 5 s timeout),
+cached 10 minutes. A mint is offered only when every extension is on a harmless allowlist (metadata, groups, close
+authority, a transfer fee of 0 in both the older and newer setting, a transfer hook with no program); anything else,
+an account that is not a mint, or a non-native token with no mint is dropped from `/v1/deposit/assets` and refused by
+`/v1/deposit/quote` (both use the same list). A live check, not a denylist, so a mint that adds a fee later is caught.
+A read older than 10 minutes is answered at once and refreshed in the background; a failed read keeps the last answer
+(at most an hour) and is retried after a minute; a mint never read, or listed with a malformed address, is not
+offered. `HttpJsonClient`'s timeout now also covers the body, so a stalled RPC cannot hold a request. On 14 Nov all 22 listed mints were read: only
+NEARKAT has a non-harmless extension.
+**Consequences:** One more outbound, read-only call from the analytics API. If the Solana RPC is down from start,
+only native SOL is offered on Solana. EVM fee-on-transfer tokens are not detected.

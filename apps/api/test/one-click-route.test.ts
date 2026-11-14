@@ -72,13 +72,15 @@ function setup(
     quote?: () => Promise<DepositQuote>;
     icon?: DepositDeps['icon'];
     shield?: DepositDeps['shield'];
+    tokens?: OneClickToken[];
+    solanaFees?: DepositDeps['solanaFees'];
   } = {},
 ) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
   const deposit: DepositDeps = {
     oneClick: {
-      tokens: async () => TOKENS,
+      tokens: async () => o.tokens ?? TOKENS,
       quote: async (r) => {
         asked.push(r);
         return (o.quote ?? (async () => quoted()))();
@@ -96,6 +98,7 @@ function setup(
     newId: () => 'dq_1',
     ...(o.icon ? { icon: o.icon } : {}),
     ...(o.shield ? { shield: o.shield } : {}),
+    ...(o.solanaFees ? { solanaFees: o.solanaFees } : {}),
   };
   const app = buildAnalyticsServer({
     apiToken: API_TOKEN,
@@ -203,6 +206,57 @@ describe('GET /v1/deposit/assets', () => {
       'nep141:zzz.omft.near',
     ]);
     expect(json.destinations.map((d) => d.symbol)).toEqual(['wNEAR', 'USDC']);
+  });
+
+  describe('Solana tokens that take a fee on every transfer', () => {
+    const NEARKAT = '6UtY9iTZMQQ5QZVrbzFnNaJntV7oySm9k97mvwnuZcxr';
+    const USDC_SOL = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+    const sol = (symbol: string, contractAddress?: string): OneClickToken => ({
+      assetId: `nep141:sol-${symbol.toLowerCase()}.omft.near`,
+      decimals: 6,
+      blockchain: 'sol',
+      symbol,
+      ...(contractAddress ? { contractAddress } : {}),
+    });
+    const tokens = [
+      ...TOKENS,
+      { ...sol('SOL'), assetId: 'nep141:sol.omft.near', decimals: 9 },
+      sol('USDC', USDC_SOL),
+      sol('NEARKAT', NEARKAT),
+      sol('NOMINT'),
+    ];
+    const asked: string[][] = [];
+    const solanaFees: DepositDeps['solanaFees'] = {
+      unsafe: async (mints) => {
+        asked.push([...mints]);
+        return new Set(mints.filter((m) => m === NEARKAT));
+      },
+    };
+
+    it('are not listed; native SOL and a plain mint are; a non-native token with no mint is not', async () => {
+      const res = await setup({ tokens, solanaFees }).app.inject({
+        url: '/v1/deposit/assets',
+        headers: { authorization: `Bearer ${API_TOKEN}` },
+      });
+      const symbols = res
+        .json<{ origins: { symbol: string; chain: string }[] }>()
+        .origins.filter((o) => o.chain === 'sol')
+        .map((o) => o.symbol);
+      expect(symbols).toEqual(['USDC', 'SOL']);
+      expect(asked.at(-1)).toEqual([USDC_SOL, NEARKAT]);
+    });
+
+    it('are refused for a quote before 1Click is called', async () => {
+      const { post, asked: quoted } = setup({ tokens, solanaFees });
+      const res = await post({
+        ...body,
+        originAsset: sol('NEARKAT').assetId,
+        refundTo: '5KXDF6QnqhBj72hDtJNkkpFaQVUfbFXNybMsp3DiK6tD',
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'Unknown origin token.' });
+      expect(quoted).toEqual([]);
+    });
   });
 
   it('gives every listed token the logo of its NEAR token (nep141 id), or null', async () => {
