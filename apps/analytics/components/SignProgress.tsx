@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import type { StepState } from '../lib/sign-progress';
+import { Button, Receipt } from './primitives';
 
 const ICON: Record<StepState['kind'], string> = {
   waiting: '•',
@@ -94,16 +95,17 @@ export function SignProgress({
           </li>
         ))}
       </ol>
-      <p role="status">{footer}</p>
+      <div role="status">
+        {!busy && steps.length > 0 && steps.every((s) => s.kind === 'done') ? (
+          <Receipt>{footer}</Receipt>
+        ) : (
+          <p>{footer}</p>
+        )}
+      </div>
       <div className="modal-actions">
-        <button
-          type="button"
-          className="btn small"
-          disabled={busy}
-          onClick={() => ref.current?.close()}
-        >
+        <Button size="sm" disabled={busy} onClick={() => ref.current?.close()}>
           Close
-        </button>
+        </Button>
       </div>
     </dialog>
   );

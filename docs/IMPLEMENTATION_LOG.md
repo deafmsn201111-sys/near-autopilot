@@ -832,6 +832,20 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   theme-color in `lib/theme.ts`), weights ≤ 600. D41: first visit dark, Geist via `next/font`, CSP without Google.
 - Lands `apps/analytics/DESIGN.md`, `PRODUCT.md` and `docs/design/portfolio-ux-prototype.html`.
 
+## 2026-11-14 — UI primitives from DESIGN.md (#248)
+
+- `components/primitives.tsx`: `Button` (primary / secondary / ghost, small), `SignButton` (52px violet, pen when
+  ready, lock and a reason line it is described by when not), `Chip` (neutral, safe / watch / act / liq, AI, demo with
+  hatch, large), `ProvenanceMark` (on-chain dot, estimate ring, simulated hatch), `Panel`, `Card` (top, urgent),
+  `Receipt`, `FactsStrip`, `LoanGauge` (buffer = 1 − 1/HF on a 0–60% axis, zones from the strategy, urgent label above,
+  others below, its sentence) and `Segmented` (native radio fieldset). Styles are the `ds-*` block at the end of
+  `globals.css`, so the old `.btn` / `.chip` layers do not leak in; #257 deletes them.
+- Used one-to-one on `/` without changing layouts (#250–#252 own those): the buttons of the analysis, cards and
+  sign dialog, the AI-ranked chip, the loan-safety chip plus gauge, the strategy picker, the carry provenance, the AI
+  trace panel, the cascade facts, the "every step confirmed" receipt. `Status` / `Level` / `Meter` / `Tile` stay on
+  the reviewer pages for #257.
+- `test/primitives.test.tsx` renders each variant with `react-dom/server` (vitest now compiles `.tsx`).
+
 ## 2026-11-14 — Deposit through HOT Kit's bridge popup (#260)
 
 - **Deposit** opens `openDepositBridge(account)` directly: `kit.openBridge` with the NEAR account as

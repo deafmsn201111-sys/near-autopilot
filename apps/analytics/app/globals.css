@@ -1794,10 +1794,6 @@ main.page {
 }
 .ai-trace {
   margin: 8px 0 16px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-l);
-  background: var(--bg-surface);
   font-size: 13px;
   color: var(--text-2);
 }
@@ -3594,17 +3590,6 @@ main.page {
   gap: 8px 12px;
   margin-bottom: 16px;
 }
-.strategy-picker .segmented a {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1.25;
-}
-.strategy-lines {
-  font-size: 11px;
-  font-weight: 500;
-  opacity: 0.75;
-}
 .strategy-note {
   flex-basis: 100%;
   margin: 0;
@@ -3634,4 +3619,471 @@ main.page {
   .disclaimer {
     padding: 16px;
   }
+}
+
+/* ------------------------------------------------------------------ primitives (components/primitives.tsx, DESIGN.md → Components) */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line-strong);
+  background: var(--bg-raised);
+  color: var(--text-1);
+  font: inherit;
+  font-weight: 500;
+  font-size: var(--fs-m);
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    transform 0.16s var(--ease-out);
+}
+.ds-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ds-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ds-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.ds-btn-primary {
+  background: var(--neutral-solid);
+  color: var(--neutral-ink);
+  border-color: transparent;
+}
+.ds-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+}
+.ds-btn-sm {
+  height: 32px;
+  padding: 0 10px;
+  font-size: var(--fs-s);
+}
+.ds-btn-sign {
+  width: 100%;
+  height: 52px;
+  gap: 8px;
+  background: var(--sign);
+  color: var(--sign-ink);
+  border-color: transparent;
+  font-size: var(--fs-l);
+  font-weight: 600;
+}
+.ds-btn:disabled {
+  background: var(--bg-raised);
+  color: var(--text-dis);
+  border-color: var(--line-subtle);
+  cursor: not-allowed;
+}
+.ds-sign-reason {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-s);
+  color: var(--text-2);
+  text-align: center;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ds-btn:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--bg-raised), var(--text-1) 6%);
+  }
+  .ds-btn-primary:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--neutral-solid), var(--bg-page) 12%);
+  }
+  .ds-btn-ghost:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--text-1);
+  }
+  .ds-btn-sign:hover:not(:disabled) {
+    background: var(--sign-hover);
+  }
+}
+
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ds-chip-safe {
+  background: var(--safe-bg);
+  color: var(--safe);
+  border-color: var(--safe-line);
+}
+.ds-chip-watch {
+  background: var(--watch-bg);
+  color: var(--watch);
+  border-color: var(--watch-line);
+}
+.ds-chip-act {
+  background: var(--act-bg);
+  color: var(--act);
+  border-color: var(--act-line);
+}
+.ds-chip-liq {
+  background: var(--liq-bg);
+  color: var(--liq);
+  border-color: var(--liq-line);
+}
+.ds-chip-ai {
+  background: var(--accent-muted);
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.ds-chip-demo {
+  background: var(--bg-overlay);
+  color: var(--text-1);
+  border-color: var(--line-control);
+}
+.ds-chip-lg {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--fs-s);
+  font-weight: 600;
+}
+:root:not([data-theme='light']) .ds-chip-lg.ds-chip-safe {
+  background: color-mix(in oklch, var(--safe) 20%, transparent);
+}
+:root:not([data-theme='light']) .ds-chip-lg.ds-chip-watch {
+  background: color-mix(in oklch, var(--watch) 20%, transparent);
+}
+:root:not([data-theme='light']) .ds-chip-lg.ds-chip-act {
+  background: color-mix(in oklch, var(--act) 20%, transparent);
+}
+:root:not([data-theme='light']) .ds-chip-lg.ds-chip-liq {
+  background: color-mix(in oklch, var(--liq) 20%, transparent);
+}
+.ds-hatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  background: repeating-linear-gradient(45deg, currentColor 0 1.5px, transparent 1.5px 3px);
+  flex: none;
+}
+
+.ds-prov {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.ds-prov::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+}
+.ds-prov-on_chain::before {
+  background: var(--text-3);
+}
+.ds-prov-estimate::before {
+  border: 1.5px dashed var(--text-3);
+}
+.ds-prov-simulated::before {
+  border-radius: 1px;
+  border: 1px solid var(--text-3);
+  background: repeating-linear-gradient(45deg, var(--text-3) 0 1.5px, transparent 1.5px 3px);
+}
+
+.ds-panel,
+.ds-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  padding: var(--s5) var(--s6);
+}
+.ds-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--s4);
+}
+.ds-card-act {
+  border-color: var(--act-line);
+}
+.ds-card-top {
+  background: var(--bg-raised);
+  border-color: transparent;
+  box-shadow: var(--elev-1);
+}
+.ds-card-top::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: var(--s6);
+  bottom: var(--s6);
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+.ds-card-top.ds-card-act::before {
+  background: var(--act);
+}
+.ds-card-top.ds-card-act {
+  box-shadow:
+    0 0 0 1px var(--act-line),
+    var(--elev-1);
+}
+.ds-receipt {
+  display: grid;
+  gap: 4px;
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-s);
+  background: var(--safe-bg);
+  border: 1px solid var(--safe-line);
+}
+
+.ds-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin: 0;
+  border-radius: var(--r-s);
+  background: color-mix(in oklch, var(--bg-surface), var(--text-1) 3%);
+  border: 1px solid var(--line-subtle);
+}
+.ds-card-top .ds-facts {
+  background: color-mix(in oklch, var(--bg-raised), var(--text-1) 3.5%);
+}
+.ds-facts > div {
+  display: grid;
+  gap: 2px;
+  padding: var(--s3) var(--s4);
+  min-width: 0;
+}
+.ds-facts > div + div {
+  border-left: 1px solid var(--line-subtle);
+}
+.ds-facts dt {
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.ds-facts dd {
+  margin: 0;
+  font-size: var(--fs-h);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+.ds-facts dd.good {
+  color: var(--safe);
+}
+.ds-facts dd small {
+  font-size: var(--fs-s);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+
+.ds-gauge-wrap {
+  display: grid;
+}
+.ds-gauge {
+  position: relative;
+  height: 8px;
+  margin: var(--s8) 0 var(--s6);
+  border-radius: 4px;
+  background: var(--bg-inset);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ds-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.ds-zone-liq {
+  left: 0;
+  background: var(--zone-liq);
+  border-radius: 4px 0 0 4px;
+}
+.ds-zone-watch {
+  background: var(--zone-watch);
+}
+.ds-zone-safe {
+  right: 0;
+  background: var(--zone-safe);
+  border-radius: 0 4px 4px 0;
+}
+.ds-mk {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--line-mark);
+}
+.ds-mk em {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ds-mk-first em {
+  left: 0;
+  transform: none;
+}
+.ds-mk-up em {
+  top: auto;
+  bottom: 16px;
+}
+.ds-gauge-you {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--text-1);
+  box-shadow: 0 0 0 3px var(--bg-page);
+  transition: left 0.6s var(--ease);
+}
+.ds-panel .ds-gauge-you {
+  box-shadow: 0 0 0 3px var(--bg-surface);
+}
+.ds-card-top .ds-gauge-you {
+  box-shadow: 0 0 0 3px var(--bg-raised);
+}
+.ds-gauge-sentence {
+  margin: 0;
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.ds-gauge-sentence b {
+  color: var(--text-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-seg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  margin: 0;
+  padding: 3px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg-inset);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ds-seg label {
+  position: relative;
+  height: 32px;
+  padding: 0 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-size: var(--fs-s);
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s,
+    transform 0.16s var(--ease-out);
+}
+.ds-seg label:active {
+  transform: scale(0.97);
+}
+.ds-seg input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.ds-seg label:has(input:checked) {
+  background: var(--accent-muted);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.ds-seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ds-seg:disabled label {
+  cursor: progress;
+  opacity: 0.7;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ds-seg label:hover:not(:has(input:checked)) {
+    color: var(--text-1);
+  }
+}
+
+@media (max-width: 640px) {
+  .ds-btn {
+    height: 44px;
+  }
+  .ds-btn-sm {
+    height: 40px;
+  }
+  .ds-btn-sign {
+    height: 52px;
+  }
+  .ds-panel,
+  .ds-card {
+    padding: var(--s4);
+  }
+  .ds-seg {
+    display: grid;
+    width: 100%;
+  }
+  .ds-seg label {
+    height: 40px;
+    padding: 0 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-btn:active:not(:disabled),
+  .ds-seg label:active {
+    transform: none;
+  }
+  .ds-gauge-you {
+    transition: none;
+  }
+}
+.hero-safe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.eyebrow .ds-prov {
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0;
 }

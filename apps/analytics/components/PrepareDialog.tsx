@@ -17,6 +17,7 @@ import { mayContinue, progressFooter, stepAfterCheck, type StepState } from '../
 import { withoutModal } from '../lib/modal';
 import { signCascade } from '../lib/wallet-sign';
 import { SignProgress } from './SignProgress';
+import { Button, FactsStrip, SignButton } from './primitives';
 
 /** The sized amounts a cascade reports, for the compact "After this move" panel. Display only — the real
  *  per-action deposits and gas stay in the "Exactly what you would sign" table; nothing here is fabricated. */
@@ -119,14 +120,14 @@ export function PrepareDialog({
             : 'Not sent, as far as the wallet reported. Check your wallet activity; to try again, get a new quote.'}
         </p>
       ) : (
-        <button
-          type="button"
-          className="btn primary small"
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => void run()}
           disabled={state === 'loading'}
         >
           {state === 'loading' ? 'Building transaction…' : label}
-        </button>
+        </Button>
       )}
 
       {error && (
@@ -182,16 +183,15 @@ export function PrepareDialog({
                   ))}
                 </div>
               )}
-              <div className="pa-facts">
-                <div>
-                  <span>Steps to sign</span>
-                  <b>{cascade.transactions.length}</b>
-                </div>
-                <div>
-                  <span>NEAR attached</span>
-                  <b>{trimDecimals(totalDepositNear(cascade.transactions))}</b>
-                </div>
-              </div>
+              <FactsStrip
+                items={[
+                  { label: 'Steps to sign', value: cascade.transactions.length },
+                  {
+                    label: 'NEAR attached',
+                    value: trimDecimals(totalDepositNear(cascade.transactions)),
+                  },
+                ]}
+              />
             </aside>
           </div>
 
@@ -227,40 +227,24 @@ export function PrepareDialog({
           </details>
 
           <div className="prepare-sign">
-            {signingEnabled ? (
-              <>
-                <button
-                  type="button"
-                  className="btn primary small"
-                  onClick={(e) => void sign(e.currentTarget.closest('dialog'))}
-                  disabled={state === 'signing' || state === 'updating'}
-                >
-                  {state === 'signing'
-                    ? 'Waiting for your wallet…'
-                    : state === 'updating'
-                      ? 'Updating portfolio…'
-                      : 'Sign in your wallet'}
-                </button>
-                <span className="muted-note">
-                  {cascade.transactions.length}{' '}
-                  {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
-                  you. Autopilot never holds your keys or moves funds on its own. Review every
-                  action in your wallet: you are responsible for what you sign.
-                </span>
-              </>
-            ) : (
-              <>
-                <button type="button" className="btn primary small" disabled title={cascade.note}>
-                  🔒 Sign in your wallet
-                </button>
-                <span className="muted-note">
-                  {cascade.transactions.length}{' '}
-                  {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
-                  you. Autopilot never holds your keys or moves funds on its own. Review every
-                  action in your wallet: you are responsible for what you sign.
-                </span>
-              </>
-            )}
+            <SignButton
+              ready={signingEnabled}
+              disabled={state === 'signing' || state === 'updating'}
+              reason={cascade.note}
+              onClick={(e) => void sign(e.currentTarget.closest('dialog'))}
+            >
+              {state === 'signing'
+                ? 'Waiting for your wallet…'
+                : state === 'updating'
+                  ? 'Updating portfolio…'
+                  : 'Sign in your wallet'}
+            </SignButton>
+            <span className="muted-note">
+              {cascade.transactions.length}{' '}
+              {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by you.
+              Autopilot never holds your keys or moves funds on its own. Review every action in your
+              wallet: you are responsible for what you sign.
+            </span>
           </div>
         </div>
       )}
