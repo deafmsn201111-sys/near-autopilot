@@ -230,7 +230,7 @@ const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {
 export const walletChainOf = (chain: string): 'evm' | 'solana' | null =>
   WALLET_CHAIN[chain] ?? null;
 
-/** Which connected wallet's address fills the refund (or withdrawal recipient) on a chain. Never enables a send (D34). */
+/** Which connected wallet's address fills the refund address of a deposit from a chain. Never enables a send (D34). */
 export const refundChainOf = (chain: string): 'evm' | 'solana' | 'btc' | null =>
   chain === 'btc' ? 'btc' : walletChainOf(chain);
 

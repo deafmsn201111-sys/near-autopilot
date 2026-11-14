@@ -794,6 +794,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 **Tests run:** `pnpm verify` (green); new `near-ai-llm.test.ts` (mocked `fetch`), stray-key case in
 `ai-analysis.test.ts`; `llm:compare` on autopilot-test.near and hodl13.near through NEAR AI Cloud (table in D38).
+
 ## 2026-11-14 — Bitcoin wallet in the HOT Kit picker (#229)
 
 - The kit's `utxo` connector (UniSat, Xverse, Leather, Ctrl, Vultisig) joins the picker; a connected Bitcoin wallet fills

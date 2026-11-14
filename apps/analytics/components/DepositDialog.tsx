@@ -619,21 +619,19 @@ export function OriginWallets({
 
   return (
     <div className="origin-wallets">
-      {wallets
-        .filter((w) => chains.includes(w.chain))
-        .map((w) => (
-          <span key={w.chain} className="origin-wallet">
-            <span className="muted-note">{CHAIN_LABEL[w.chain]}</span>{' '}
-            <code title={w.address}>{shortHash(w.address)}</code>{' '}
-            <button
-              type="button"
-              className="btn secondary small"
-              onClick={() => void disconnectOriginWallet(w).catch(() => undefined)}
-            >
-              Disconnect
-            </button>
-          </span>
-        ))}
+      {wallets.map((w) => (
+        <span key={w.chain} className="origin-wallet">
+          <span className="muted-note">{CHAIN_LABEL[w.chain]}</span>{' '}
+          <code title={w.address}>{shortHash(w.address)}</code>{' '}
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={() => void disconnectOriginWallet(w).catch(() => undefined)}
+          >
+            Disconnect
+          </button>
+        </span>
+      ))}
       {chains
         .filter((c) => !wallets.some((w) => w.chain === c))
         .map((c) => (
