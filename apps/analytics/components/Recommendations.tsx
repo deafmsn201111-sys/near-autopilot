@@ -449,10 +449,21 @@ function AiTrace({
           )}
         </Stage>
       </ol>
-      {mark && mark.chatIds.length > 0 && (
+      {mark && mark.replies.length > 0 && (
         <p className="muted-note ai-replies">
-          Reply ids, to check each signature on NEAR AI Cloud: <code>{mark.chatIds.join(' ')}</code>{' '}
-          <CopyButton text={mark.chatIds.join('\n')} label="Copy ids" />
+          Check each reply on NEAR AI Cloud:{' '}
+          {mark.replies.map(({ id, href }) => (
+            <code key={id}>
+              {href ? (
+                <a href={href} target="_blank" rel="noreferrer">
+                  {id}
+                </a>
+              ) : (
+                id
+              )}{' '}
+            </code>
+          ))}
+          <CopyButton text={mark.replies.map((r) => r.id).join('\n')} label="Copy ids" />
         </p>
       )}
     </Panel>

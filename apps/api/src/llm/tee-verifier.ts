@@ -12,6 +12,16 @@ export interface PrivacyCheck {
   /** Why not, in a fixed phrase (never provider text); null when verified. */
   readonly reason: string | null;
   readonly chatIds: readonly string[];
+  /** One per reply, only when verified: what NEAR AI's Verification Center needs to check that reply on its own. */
+  readonly receipts: readonly Receipt[];
+}
+
+export interface Receipt {
+  readonly chatId: string;
+  /** The recovered signer, lowercase. */
+  readonly signingAddress: string;
+  readonly signedText: string;
+  readonly signature: string;
 }
 
 export interface TeeVerifierConfig {
@@ -69,15 +79,17 @@ export class TeeVerifier {
       const signing = Promise.all(replies.map((r) => this.signer(r, signal)));
       signing.catch(() => undefined);
       let keys = await this.attestedKeys(signal, false);
-      const signed = await signing;
-      if (signed.some((s) => !keys.has(s))) keys = await this.attestedKeys(signal, true);
-      if (signed.some((s) => !keys.has(s))) throw new Unverified('signer is not the attested key');
-      return { verified: true, reason: null, chatIds };
+      const receipts = await signing;
+      const unattested = () => receipts.some((r) => !keys.has(r.signingAddress));
+      if (unattested()) keys = await this.attestedKeys(signal, true);
+      if (unattested()) throw new Unverified('signer is not the attested key');
+      return { verified: true, reason: null, chatIds, receipts };
     } catch (e) {
       return {
         verified: false,
         reason: e instanceof Unverified ? e.message : 'check failed',
         chatIds,
+        receipts: [],
       };
     }
   }
@@ -106,14 +118,19 @@ export class TeeVerifier {
     return keys;
   }
 
-  /** The recovered address that signed this reply, once its text is exactly ours. */
-  private async signer(reply: SignedReply, signal: AbortSignal): Promise<string> {
+  /** The reply's signature with its recovered signer, once the signed text is exactly ours. */
+  private async signer(reply: SignedReply, signal: AbortSignal): Promise<Receipt> {
     const sig = await this.signature(reply.chatId, signal);
     if (sig.signature_kind !== 'provider_tee')
       throw new Unverified('signature is not from the TEE');
     if (sig.text !== `${this.config.model}:${reply.requestSha256}:${reply.responseSha256}`)
       throw new Unverified('signed text does not match the reply');
-    return recoverEip191(sig.text, sig.signature);
+    return {
+      chatId: reply.chatId,
+      signingAddress: recoverEip191(sig.text, sig.signature),
+      signedText: sig.text,
+      signature: sig.signature,
+    };
   }
 
   /** A signature may be recorded a moment after the reply: any non-signature answer is retried until the deadline. */

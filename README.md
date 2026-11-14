@@ -287,9 +287,10 @@ response bytes we received)`;
 
 Every reply passes → the "How the AI got here" header says **Private AI · signed in TEE**; anything else (no signature
 within ~3 s, wrong hash, unknown signer, a nonce not echoed, the gateway down) → **Private AI · signature not verified** with the reason on hover,
-and the cards are still shown. The mark links to the model's attestation at
-[cloud.near.ai/verify](https://cloud.near.ai/verify) and the panel lists the reply ids, so anyone can fetch and check
-the same signatures (`curl -H "authorization: Bearer $KEY" https://cloud-api.near.ai/v1/signature/<id>?signing_algo=ecdsa`).
+and the cards are still shown. A verified mark opens the final reply in NEAR AI's
+[Verification Center](https://cloud.near.ai/verify) (`?model=<id>#receipt=<signer, signed text, signature>`), which
+re-checks that signature and the model's hardware evidence on its own; every reply id in the panel is such a link, and
+anyone can also fetch the same signatures (`curl -H "authorization: Bearer $KEY" https://cloud-api.near.ai/v1/signature/<id>?signing_algo=ecdsa`).
 The result is stored with the `llm_calls` row. Users never see the model's name; it stays in the admin spend split and
 in this README. **Not checked in our code:** the Intel TDX quote (DCAP), the RTMR3 event-log replay, MRCONFIGID, and
 the NVIDIA GPU evidence: that is what the official

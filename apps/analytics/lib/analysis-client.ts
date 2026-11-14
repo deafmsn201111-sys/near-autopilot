@@ -89,6 +89,17 @@ const privacySchema = z.object({
   verified: z.boolean(),
   reason: z.string().max(80).nullable(),
   chatIds: z.array(z.string().max(200)).max(20),
+  receipts: z
+    .array(
+      z.object({
+        chatId: z.string().regex(/^[\w-]{1,200}$/),
+        signingAddress: z.string().regex(/^0x[0-9a-f]{40}$/),
+        signedText: z.string().max(400),
+        signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
+      }),
+    )
+    .max(20)
+    .default([]),
 });
 export type Privacy = z.infer<typeof privacySchema>;
 
@@ -320,15 +331,39 @@ export async function runAnalysis(
 
 const VERIFY_URL = 'https://cloud.near.ai/verify';
 
-/** The header's privacy mark. Only a run whose every reply was signed by the attested TEE key says "signed in TEE". */
+/**
+ * The header's privacy mark. Only a run whose every reply was signed by the attested TEE key says "signed in TEE"; it
+ * opens NEAR AI's Verification Center on the final reply, which re-checks the signature and the hardware evidence.
+ */
 export function privacyMark(privacy: Privacy | null, model: string) {
   if (!privacy) return null;
+  const attestation = `${VERIFY_URL}?model=${encodeURIComponent(model)}`;
+  const link = (r: Privacy['receipts'][number]) =>
+    `${attestation}#receipt=${receiptParam(r, model)}`;
+  const last = privacy.verified ? privacy.receipts.at(-1) : undefined;
   return {
     label: privacy.verified ? 'Private AI · signed in TEE' : 'Private AI · signature not verified',
-    href: `${VERIFY_URL}?model=${encodeURIComponent(model)}`,
+    href: last ? link(last) : attestation,
     title: privacy.verified
-      ? 'Every reply was signed by the key NEAR AI Cloud’s attestation names for this model’s TEE. We check the signatures; the hardware quote is checked by NEAR AI’s verifier. Open the attestation.'
-      : `The TEE signature could not be verified: ${privacy.reason ?? 'unknown'}. Open the attestation on NEAR AI Cloud.`,
-    chatIds: privacy.chatIds,
+      ? 'Every reply was signed by the key NEAR AI Cloud’s attestation names for this model’s TEE. We check the signatures; NEAR AI’s Verification Center also checks the hardware evidence. Open the final reply there.'
+      : `The TEE signature could not be verified: ${privacy.reason ?? 'unknown'}. Open the model’s attestation on NEAR AI Cloud.`,
+    replies: privacy.chatIds.map((id) => {
+      const receipt = privacy.verified ? privacy.receipts.find((r) => r.chatId === id) : undefined;
+      return { id, href: receipt ? link(receipt) : null };
+    }),
   };
+}
+
+/** The Verification Center's `#receipt=` value: base64url JSON, read only in the browser (a fragment never reaches a server). */
+function receiptParam(r: Privacy['receipts'][number], model: string): string {
+  const json = JSON.stringify({
+    completionId: r.chatId,
+    model,
+    signingAlgo: 'ecdsa',
+    signingAddress: r.signingAddress,
+    signedText: r.signedText,
+    signature: r.signature,
+    signatureKind: 'provider_tee',
+  });
+  return btoa(json).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

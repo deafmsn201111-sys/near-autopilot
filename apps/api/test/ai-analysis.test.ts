@@ -633,12 +633,13 @@ describe('analyseAccount', () => {
       verified: true,
       reason: null,
       chatIds: replies.map((r) => r.chatId),
+      receipts: [],
     }));
     const out = await analyseAccount(
       { ...ai(llm, l), verifier: { verify } },
       { ...ctx, heuristics: [heuristic], checks: [heuristic] },
     );
-    const privacy = { verified: true, reason: null, chatIds: ['chat-1', 'chat-2'] };
+    const privacy = { verified: true, reason: null, chatIds: ['chat-1', 'chat-2'], receipts: [] };
     expect(verify).toHaveBeenCalledWith([
       { chatId: 'chat-1', requestSha256: 'req', responseSha256: 'res' },
       { chatId: 'chat-2', requestSha256: 'req', responseSha256: 'res' },
@@ -653,7 +654,12 @@ describe('analyseAccount', () => {
       () => callAll,
       () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
     ]);
-    const unverified = { verified: false, reason: 'no signature', chatIds: ['chat-1', 'chat-2'] };
+    const unverified = {
+      verified: false,
+      reason: 'no signature',
+      chatIds: ['chat-1', 'chat-2'],
+      receipts: [],
+    };
     const out = await analyseAccount(
       { ...ai(llm, l), verifier: { verify: async () => unverified } },
       { ...ctx, heuristics: [heuristic], checks: [heuristic] },

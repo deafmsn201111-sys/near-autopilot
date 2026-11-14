@@ -72,10 +72,19 @@ describe('TeeVerifier', () => {
       attested(KEY),
       signs((id) => signature(id)),
     );
+    const signed = signature('c1');
     await expect(verifier(fetch).verify([reply('c1')])).resolves.toEqual({
       verified: true,
       reason: null,
       chatIds: ['c1'],
+      receipts: [
+        {
+          chatId: 'c1',
+          signingAddress: addressOf(KEY),
+          signedText: signed.text,
+          signature: expect.stringMatching(/^0x[0-9a-f]{130}$/) as string,
+        },
+      ],
     });
     const [report, sig] = ['/attestation/', '/signature/'].map((p) =>
       fetch.mock.calls.find(([u]) => href(u).includes(p)),
@@ -140,7 +149,7 @@ describe('TeeVerifier', () => {
   it('retries a missing signature, then gives up as unverified', async () => {
     const fetch = fakeFetch(attested(KEY), () => new Response('{}', { status: 404 }));
     const check = await verifier(fetch).verify([reply('c1')]);
-    expect(check).toMatchObject({ verified: false, reason: 'no signature' });
+    expect(check).toMatchObject({ verified: false, reason: 'no signature', receipts: [] });
     const tries = fetch.mock.calls.filter(([u]) => href(u).includes('/signature/'));
     expect(tries.length).toBeGreaterThan(1);
   });

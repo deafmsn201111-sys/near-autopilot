@@ -902,6 +902,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   hash and EIP-191 signer checks (`@noble/curves`). `NearAiToolLlm` hashes the exact request and received bytes and
   hands them over through the new `onReply` of the `ToolLlm` port.
 - `analyseAccount` checks a successful run before returning it; `run.privacy` and `llm_calls.privacy` (migration 0027).
-- UI: "Private AI · signed in TEE" / "Private AI" in the trace header, linking to the model's attestation, reply ids
-  with a copy button; the steps say "The AI"; `modelName()` removed. README Privacy section, D43.
+- UI: "Private AI · signed in TEE" / "Private AI · signature not verified" in the trace header; a verified mark
+  and each reply id open that reply in NEAR AI's Verification Center (`#receipt=`), plus a copy button; the steps say "The AI"; `modelName()` removed. README Privacy section, D43.
 - Live: one GLM 5.3 Flash reply verified in 735 ms.
