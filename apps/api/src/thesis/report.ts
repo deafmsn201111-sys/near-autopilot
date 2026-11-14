@@ -110,25 +110,58 @@ export function thesisSummary(d: ThesisData) {
   };
 }
 
+type Summary = ReturnType<typeof thesisSummary>;
+
+const held = (h: boolean) => `**${h ? 'holds' : 'falsified'}**`;
+
+function countResults(s: Summary): readonly [string, string, string] {
+  return [
+    `${s.close.length} of ${s.withNominal.length} within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp: ${held(s.h1)}`,
+    `ρ = ${s.rho === null ? 'n/a' : s.rho.toFixed(2)}: ${held(s.h2)}`,
+    `${s.bClose.length} of ${s.markets.length} within: ${held(s.h3)}`,
+  ];
+}
+
+/** The same rules over the last 90 days of the same raw data: does the verdict depend on the window? */
+function windowTable(d: ThesisData): string {
+  if (!d.last90) return '';
+  const whole = thesisSummary(d);
+  const recent = thesisSummary(d.last90);
+  const [a, b] = [countResults(whole), countResults(recent)];
+  const same = [whole.h1 === recent.h1, whole.h2 === recent.h2, whole.h3 === recent.h3];
+  const rows = ['H1', 'H2', 'H3'].map(
+    (h, i) => `| ${h} | ${a[i] ?? ''} | ${b[i] ?? ''} | ${same[i] ? 'yes' : '**no**'} |`,
+  );
+  return `
+**Does the verdict hold over a longer window?** The thesis was first tested on ${d.last90.manifest.days} days. The same
+rules over the whole ${d.manifest.days}-day window and over its last ${d.last90.manifest.days} days, from the same raw data and the same pool
+universe:
+
+| | ${d.manifest.days} days | Last ${d.last90.manifest.days} days | Same result |
+|---|---|---|---|
+${rows.join('\n')}
+
+Over ${d.manifest.days} days the verdict is ${whole.verdictText}; over the last ${d.last90.manifest.days} days it is ${recent.verdictText}.
+`;
+}
+
 export function thesisMarkdown(d: ThesisData): string {
+  const summary = thesisSummary(d);
+  const results = countResults(summary);
   const {
     pools,
     n,
     withNominal,
     above,
-    close,
-    h1,
     rho,
-    h2,
     markets,
     bClose,
-    h3,
     negative500,
     negativeHodl,
     spread,
     idle,
     verdictText,
-  } = thesisSummary(d);
+  } = summary;
   const first = d.manifest.blocks[0];
   const last = d.manifest.blocks[d.manifest.blocks.length - 1];
 
@@ -168,10 +201,10 @@ rules that would falsify each fixed in advance:
 
 | | Count | Falsified if | Result |
 |---|---|---|---|
-| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp of LP vs HODL in at least half the pools | ${close.length} of ${withNominal.length} within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp: **${h1 ? 'holds' : 'falsified'}** |
-| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \\|Spearman ρ\\| ≥ ${RULES.strongRho} | ρ = ${rho === null ? 'n/a' : rho.toFixed(2)}: **${h2 ? 'holds' : 'falsified'}** |
-| H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within ${(RULES.burrowCloseEnoughPp * 100).toFixed(1)} pp of realized in at least 3/4 of markets | ${bClose.length} of ${markets.length} within: **${h3 ? 'holds' : 'falsified'}** |
-
+| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp of LP vs HODL in at least half the pools | ${results[0]} |
+| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \\|Spearman ρ\\| ≥ ${RULES.strongRho} | ${results[1]} |
+| H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within ${(RULES.burrowCloseEnoughPp * 100).toFixed(1)} pp of realized in at least 3/4 of markets | ${results[2]} |
+${windowTable(d)}
 ## Evidence
 
 - **Universe.** ${d.manifest.universe.rule}; ${d.manifest.universe.candidates} candidate pools, ${n} analysed.
@@ -259,18 +292,18 @@ The full series are in \`thesis/out/pools.csv\`, \`thesis/out/pools-daily.csv\` 
 6. **"The sample is biased."** The universe is the top ${n} wNEAR pools by reserve at the END block. That is
    survivorship: pools that drained during the window are not in it, which flatters LP outcomes. So the gap is, if
    anything, understated.
-7. **"One quarter is one market regime."** Yes. Over these ${d.manifest.days} days NEAR moved from
+7. **"One window is one market regime."** Yes. Over these ${d.manifest.days} days NEAR moved from
    ${(() => {
      const s = d.daily.find((x) => x.pool === 4512);
      const e = [...d.daily].reverse().find((x) => x.pool === 4512);
      return s && e
        ? `${(1 / (s.priceNearPerOther * 1e6)).toFixed(3)} to ${(1 / (e.priceNearPerOther * 1e6)).toFixed(3)} USDC (pool #4512)`
        : 'n/a';
-   })()}, and the impermanent loss of NEAR pairs follows that move. Another quarter can give other numbers. The claim
+   })()}, and the impermanent loss of NEAR pairs follows that move. Another window can give other numbers. The claim
    is about what the displayed figures leave out, not about a fixed number.
 8. **"HODL is the wrong benchmark: compare with simply holding NEAR."** In NEAR terms an LP share of these pools
    returned a median ${p(med(pools.map((m) => m.lpReturnInNearApr)))} a year (\`lp_return_in_near_apr\` in \`pools.csv\`):
-   in a quarter when NEAR rose, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
+   when NEAR rises, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
    ${pools.filter((m) => m.lpReturnInNearApr < m.lpVsHodlApr).length} of ${n} pools did worse than against HODL. Neither benchmark
    closes the gap to the displayed APR, which counts no price risk at all.
 
@@ -281,7 +314,7 @@ ${cohortTable(d)}
 ${
   d.manifest.universe.startPools
     ? `The universe is the union of the top 15 at the first and at the last block. Ranking only at the end would keep
-the survivors: the pools that were still large after 90 days. ${shrunkText(d)} analysed with the same method and
+the survivors: the pools that were still large after ${d.manifest.days} days. ${shrunkText(d)} analysed with the same method and
 counted in every claim above.`
     : 'The universe was ranked at the last block only: pools that shrank during the window are not included (survivorship bias).'
 }

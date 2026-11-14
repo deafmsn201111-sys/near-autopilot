@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { z } from 'zod';
 import {
   burrowLine,
   burrowMetrics,
@@ -27,7 +28,10 @@ import { dumbbell, scatterLogX } from './svg';
  */
 const ROUND_TRIP_GAS = 4n * 180_000_000_000_000n; // swap, add, remove, swap; 180 Tgas attached each: an upper bound
 
-const lines = (file: string) =>
+const COMPARE_DAYS = 90;
+const heightOf = z.object({ height: z.number().int() });
+
+const readLines = (file: string) =>
   readFileSync(resolve(RAW_DIR, file), 'utf8')
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -43,6 +47,8 @@ export interface ThesisData {
   readonly gasPriceEnd: bigint;
   readonly tvlVsNet: number | null;
   readonly tvlVsNominal: number | null;
+  /** The whole thesis over the last 90 days of the same raw data, when the window is longer: does the verdict hold? */
+  readonly last90: ThesisData | null;
   /** The same metrics over the last 30 days, by pool id. */
   readonly pools30: ReadonlyMap<number, PoolMetrics>;
   /**
@@ -88,10 +94,17 @@ function cohort(key: Cohort['key'], label: string, list: readonly PoolMetrics[])
   };
 }
 
-export function computeThesis(): ThesisData {
-  const manifest = manifestSchema.parse(
+export function computeThesis(lastDays?: number): ThesisData {
+  const all = manifestSchema.parse(
     JSON.parse(readFileSync(resolve(RAW_DIR, 'manifest.json'), 'utf8')),
   );
+  const manifest =
+    lastDays === undefined
+      ? all
+      : { ...all, days: lastDays, blocks: all.blocks.slice(-(lastDays + 1)) };
+  const inWindow = new Set(manifest.blocks.map((b) => b.height));
+  const lines = (file: string) =>
+    readLines(file).filter((l) => inWindow.has(heightOf.parse(l).height));
   const times = new Map(manifest.blocks.map((b) => [b.height, Date.parse(b.timestamp)]));
   const admin = new Map(
     lines('rhea-metadata.jsonl').map((l) => {
@@ -176,6 +189,8 @@ export function computeThesis(): ThesisData {
   ];
   return {
     manifest,
+    last90:
+      lastDays === undefined && manifest.days > COMPARE_DAYS ? computeThesis(COMPARE_DAYS) : null,
     cohorts,
     pools,
     daily,

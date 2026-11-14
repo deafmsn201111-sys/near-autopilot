@@ -90,7 +90,7 @@ export default async function ThesisPage() {
     <>
       <PageHeader
         title="Investment thesis"
-        lead="TVL and the displayed APR do not tell you the yield an LP or a lender keeps. Tested on 90 days of NEAR mainnet data read at one block per day, with the rules that would falsify it fixed in advance."
+        lead={`TVL and the displayed APR do not tell you the yield an LP or a lender keeps. Tested on ${data.manifest.days} days of NEAR mainnet data read at one block per day, with the rules that would falsify it fixed in advance.`}
         meta={
           <>
             Blocks {data.manifest.first.height} → {data.manifest.last.height}

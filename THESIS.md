@@ -4,8 +4,8 @@
 > fails if this file differs from what the rebuild produces. Every number below can be recomputed offline from the
 > committed raw files, and every raw point names the mainnet block it was read at.
 
-**Verdict: SUPPORTED on all three counts.** Data: Rhea v1 and Burrow on NEAR mainnet, 91 daily blocks (90 days) from
-2026-08-06 (block 210237960) to 2026-11-04 (block 223087984).
+**Verdict: SUPPORTED on all three counts.** Data: Rhea v1 and Burrow on NEAR mainnet, 181 daily blocks (180 days) from
+2026-05-08 (block 197499765) to 2026-11-04 (block 223087984).
 
 ## The claim
 
@@ -15,23 +15,35 @@ rules that would falsify each fixed in advance:
 
 | | Count | Falsified if | Result |
 |---|---|---|---|
-| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within 2 pp of LP vs HODL in at least half the pools | 4 of 16 within 2 pp: **holds** |
-| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \|Spearman ρ\| ≥ 0.7 | ρ = 0.33: **holds** |
+| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within 2 pp of LP vs HODL in at least half the pools | 5 of 16 within 2 pp: **holds** |
+| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \|Spearman ρ\| ≥ 0.7 | ρ = 0.39: **holds** |
 | H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within 0.5 pp of realized in at least 3/4 of markets | 11 of 18 within: **holds** |
+
+**Does the verdict hold over a longer window?** The thesis was first tested on 90 days. The same
+rules over the whole 180-day window and over its last 90 days, from the same raw data and the same pool
+universe:
+
+| | 180 days | Last 90 days | Same result |
+|---|---|---|---|
+| H1 | 5 of 16 within 2 pp: **holds** | 4 of 16 within 2 pp: **holds** | yes |
+| H2 | ρ = 0.39: **holds** | ρ = 0.33: **holds** | yes |
+| H3 | 11 of 18 within: **holds** | 11 of 18 within: **holds** | yes |
+
+Over 180 days the verdict is SUPPORTED on all three counts; over the last 90 days it is SUPPORTED on all three counts.
 
 ## Evidence
 
-- **Universe.** v1 SIMPLE_POOLs with wrap.near on one side: the union of the top 15 by wrap.near reserve at the FIRST block (210237960) and at the LAST block, so pools that shrank during the window are included (survivorship bias); 5162 candidate pools, 16 analysed.
-- **Nominal above kept.** In **14 of 16** pools the nominal 24h APR on the last day is above the
+- **Universe.** v1 SIMPLE_POOLs with wrap.near on one side: the union of the top 15 by wrap.near reserve at the FIRST block (197499765) and at the LAST block, so pools that shrank during the window are included (survivorship bias); 5162 candidate pools, 16 analysed.
+- **Nominal above kept.** In **15 of 16** pools the nominal 24h APR on the last day is above the
   LP-vs-HODL return of the whole window. Median nominal 1.0%,
-  median realized fee APR 1.0%, median LP vs HODL -3.0%.
+  median realized fee APR 1.2%, median LP vs HODL -4.4%.
 - **The displayed number moves.** Over the window the daily nominal APR of a pool spans a median
-  16.0 pp between its lowest and highest day.
+  31.2 pp between its lowest and highest day.
 - **Impermanent loss decides.** 13 of 16 pools left their LPs behind simply holding the two tokens
   (LP vs HODL < 0): fees did not cover the impermanent loss.
 - **Size matters.** After round-trip costs (two half-swaps through the pool, gas upper bound), the net APR of a $500
   position is negative in 14 of 16 pools; costs fall per dollar as the position grows (table: $5,000).
-- **TVL.** Spearman ρ between TVL and LP vs HODL = 0.33; between TVL and nominal APR =
+- **TVL.** Spearman ρ between TVL and LP vs HODL = 0.39; between TVL and nominal APR =
   0.15.
 - **Idle liquidity.** 7 of 16 pools had a median daily nominal APR below 0.5%: large reserves, almost no
   trading (#5462 wNEAR/chill-129, #6065 wNEAR/ZEC, #79 wNEAR/REF, #4771 wNEAR/touched, #535 wNEAR/stNEAR, #6679 wNEAR/itlx, #5650 wNEAR/purge-558). TVL there is capital parked, not capital earning.
@@ -44,47 +56,47 @@ rules that would falsify each fixed in advance:
 
 ![Burrow supply APR shown vs accrued](thesis/out/charts/burrow-supply.svg)
 
-### Rhea pools (all figures annualised, simple; 90-day window unless marked)
+### Rhea pools (all figures annualised, simple; 180-day window unless marked)
 
 | Pool | TVL (end) | Fee bps | Nominal 24h APR (end) | Nominal, daily range | Fee APR realized | IL (window) | LP vs HODL | LP vs HODL 30d | Net APR $500 | Net APR $5,000 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| #4512 wNEAR/USDC | $2,013,975 | 30 | 19.4% | 1.2% – 76.9% | 14.0% | -9.0% | -20.8% | 6.8% | -22.3% | -22.1% |
-| #6458 wNEAR/RHEA | $1,003,022 | 30 | 20.1% | 0.9% – 277.3% | 34.0% | -4.7% | 9.6% | 5.3% | 8.1% | 8.4% |
-| #6724 wNEAR/npro | $406,924 | 30 | 0.9% | 0.1% – 13.5% | 1.3% | -5.4% | -20.6% | -1.5% | -22.0% | -21.8% |
-| #5462 wNEAR/chill-129 | $387,600 | 10 | 0.0% | 0.0% – 0.3% | 0.0% | -0.0% | -0.1% | 0.0% | -0.7% | -0.5% |
-| #6065 wNEAR/ZEC | $267,962 | 0 | 0.0% | 0.0% – 0.0% | 0.0% | -0.1% | -0.2% | -8.5% | -0.4% | -0.2% |
-| #5469 wNEAR/AURORA | $240,308 | 30 | 8.6% | 2.0% – 372.7% | 19.9% | -0.3% | 16.2% | 8.4% | 14.7% | 15.0% |
-| #79 wNEAR/REF | $235,231 | 40 | 0.0% | 0.0% – 3.7% | 0.3% | -0.6% | -2.2% | -0.1% | -4.1% | -3.8% |
-| #4525 wNEAR/FRAX | $188,155 | 30 | 10.9% | 0.7% – 32.2% | 7.1% | -9.1% | -29.8% | -2.4% | -31.3% | -31.0% |
-| #4771 wNEAR/touched | $169,643 | 30 | 0.0% | 0.0% – 0.7% | 0.0% | -0.0% | -0.1% | 0.0% | -1.5% | -1.3% |
-| #4 wNEAR/USDT.e | $160,457 | 30 | 14.4% | 1.0% – 54.0% | 12.1% | -9.0% | -24.4% | 1.4% | -25.8% | -25.6% |
-| #535 wNEAR/stNEAR | $158,906 | 30 | 0.0% | 0.0% – 18.5% | 0.4% | -0.0% | 0.4% | 0.2% | -1.1% | -0.8% |
-| #6679 wNEAR/itlx | $131,026 | 30 | 0.8% | 0.0% – 4.3% | 0.2% | -0.4% | -1.5% | -3.3% | -2.9% | -2.7% |
-| #2 wNEAR/DAI | $130,795 | 30 | 13.4% | 0.9% – 48.3% | 10.0% | -9.0% | -26.7% | -0.3% | -28.1% | -27.9% |
-| #5650 wNEAR/purge-558 | $128,901 | 10 | 0.0% | 0.0% – 1.3% | 0.1% | -1.9% | -7.6% | -0.6% | -8.2% | -8.0% |
-| #852 wNEAR/52a047ee… | $90,301 | 30 | 1.2% | 0.0% – 2.4% | 0.7% | -1.1% | -3.7% | -0.0% | -5.2% | -4.9% |
-| #6503 wNEAR/token | $55,053 | 30 | 5.1% | 0.3% – 304.7% | 20.4% | -11.3% | -27.0% | -23.2% | -28.4% | -28.1% |
+| #4512 wNEAR/USDC | $2,013,975 | 30 | 19.4% | 1.2% – 85.1% | 12.7% | -9.8% | -6.1% | 6.8% | -6.8% | -6.7% |
+| #6458 wNEAR/RHEA | $1,003,022 | 30 | 20.1% | 0.9% – 277.3% | 26.0% | -5.8% | 10.6% | 5.3% | 9.9% | 10.0% |
+| #6724 wNEAR/npro | $406,924 | 30 | 0.9% | 0.1% – 43.9% | 1.9% | -7.7% | -14.0% | -1.5% | -14.7% | -14.6% |
+| #5462 wNEAR/chill-129 | $387,600 | 10 | 0.0% | 0.0% – 0.3% | 0.0% | -0.0% | -0.0% | 0.0% | -0.3% | -0.2% |
+| #6065 wNEAR/ZEC | $267,962 | 0 | 0.0% | 0.0% – 0.0% | 0.0% | -0.4% | -0.7% | -8.5% | -0.9% | -0.8% |
+| #5469 wNEAR/AURORA | $240,308 | 30 | 8.6% | 1.2% – 372.7% | 13.6% | -2.1% | 8.3% | 8.4% | 7.6% | 7.7% |
+| #79 wNEAR/REF | $235,231 | 40 | 0.0% | 0.0% – 6.8% | 0.2% | -2.8% | -5.4% | -0.1% | -6.4% | -6.3% |
+| #4525 wNEAR/FRAX | $188,155 | 30 | 10.9% | 0.6% – 52.4% | 10.5% | -10.0% | -13.0% | -2.4% | -13.7% | -13.6% |
+| #4771 wNEAR/touched | $169,643 | 30 | 0.0% | 0.0% – 0.7% | 0.0% | -0.0% | -0.0% | 0.0% | -0.8% | -0.6% |
+| #4 wNEAR/USDT.e | $160,457 | 30 | 14.4% | 1.0% – 75.7% | 11.8% | -9.9% | -8.2% | 1.4% | -8.9% | -8.8% |
+| #535 wNEAR/stNEAR | $158,906 | 30 | 0.0% | 0.0% – 18.5% | 0.2% | -0.0% | 0.2% | 0.2% | -0.5% | -0.4% |
+| #6679 wNEAR/itlx | $131,026 | 30 | 0.8% | 0.0% – 4.3% | 0.1% | -1.7% | -3.4% | -3.3% | -4.2% | -4.0% |
+| #2 wNEAR/DAI | $130,795 | 30 | 13.4% | 0.9% – 50.4% | 9.3% | -9.9% | -10.8% | -0.3% | -11.5% | -11.4% |
+| #5650 wNEAR/purge-558 | $128,901 | 10 | 0.0% | 0.0% – 9.0% | 0.1% | -17.1% | -34.5% | -0.6% | -34.8% | -34.7% |
+| #852 wNEAR/52a047ee… | $90,301 | 30 | 1.2% | 0.0% – 3.8% | 0.6% | -1.4% | -2.1% | -0.0% | -2.9% | -2.7% |
+| #6503 wNEAR/token | $55,053 | 30 | 5.1% | 0.3% – 304.7% | 8.4% | -42.5% | -79.2% | -23.2% | -79.9% | -79.7% |
 
 ### Burrow supply markets (largest gap first)
 
-| Market | Supply APR shown (end) | Shown, daily range | Realized (90d) | Shown − realized | Utilization (end) |
+| Market | Supply APR shown (end) | Shown, daily range | Realized (180d) | Shown − realized | Utilization (end) |
 |---|---|---|---|---|---|
-| USDC | 11.93% | 3.49% – 27.84% | 8.98% | 2.9 pp | 86% |
-| USDt | 11.13% | 3.68% – 29.40% | 8.24% | 2.9 pp | 86% |
-| USDT.e | 8.31% | 3.97% – 11.93% | 6.29% | 2.0 pp | 82% |
-| DAI | 4.61% | 3.40% – 13.33% | 6.50% | -1.9 pp | 79% |
-| FRAX | 13.74% | 5.23% – 37.29% | 15.19% | -1.5 pp | 87% |
-| USDC.e | 8.03% | 3.56% – 18.77% | 7.04% | 1.0 pp | 82% |
-| eth | 1.03% | 0.02% – 1.71% | 0.41% | 0.6 pp | 47% |
-| nbtc | 0.50% | 0.18% – 0.55% | 0.30% | 0.2 pp | 33% |
-| wNEAR | 0.33% | 0.17% – 1.08% | 0.40% | -0.1 pp | 17% |
-| ZEC | 0.08% | 0.01% – 0.32% | 0.11% | -0.0 pp | 8% |
-| WBTC | 1.02% | 0.92% – 1.03% | 0.99% | 0.0 pp | 45% |
+| USDC | 11.93% | 0.00% – 27.84% | 7.16% | 4.8 pp | 86% |
+| USDt | 11.13% | 0.00% – 29.40% | 6.41% | 4.7 pp | 86% |
+| USDT.e | 8.31% | 0.00% – 45.70% | 5.88% | 2.4 pp | 82% |
+| USDC.e | 8.03% | 0.00% – 50.56% | 6.63% | 1.4 pp | 82% |
+| DAI | 4.61% | 0.00% – 13.38% | 5.97% | -1.4 pp | 79% |
+| FRAX | 13.74% | 0.00% – 38.95% | 14.59% | -0.9 pp | 87% |
+| eth | 1.03% | 0.00% – 1.71% | 0.29% | 0.7 pp | 47% |
+| nbtc | 0.50% | 0.00% – 0.55% | 0.21% | 0.3 pp | 33% |
+| WBTC | 1.02% | 0.00% – 1.03% | 0.94% | 0.1 pp | 45% |
+| wNEAR | 0.33% | 0.00% – 1.08% | 0.40% | -0.1 pp | 17% |
+| AURORA | 0.13% | 0.00% – 0.29% | 0.12% | 0.0 pp | 6% |
 | qtc | 0.00% | 0.00% – 0.05% | 0.01% | -0.0 pp | 0% |
-| AURORA | 0.13% | 0.11% – 0.29% | 0.13% | 0.0 pp | 6% |
+| ZEC | 0.08% | 0.00% – 0.32% | 0.07% | 0.0 pp | 8% |
 | xtoken | 0.00% | 0.00% – 0.00% | 0.00% | 0.0 pp | 0% |
-| stNEAR | 0.00% | 0.00% – 0.00% | 0.00% | -0.0 pp | 0% |
 | lst | 0.00% | 0.00% – 0.00% | 0.00% | -0.0 pp | 0% |
+| stNEAR | 0.00% | 0.00% – 0.00% | 0.00% | -0.0 pp | 0% |
 | LiNEAR | 0.00% | 0.00% – 0.00% | 0.00% | -0.0 pp | 0% |
 | 4691937a… | 0.00% | 0.00% – 0.00% | 0.00% | 0.0 pp | 100% |
 
@@ -99,7 +111,7 @@ The full series are in `thesis/out/pools.csv`, `thesis/out/pools-daily.csv` and 
 - **Pricing.** Each Rhea pool is valued in NEAR at its own price (wNEAR reserve / other reserve), so no external
   price enters any yield figure. For a constant-product pool TVL = 2 × wNEAR reserve. NEAR/USD is used only to size the
   $500 and $5,000 positions and to state TVL in USD. It is the mean of DefiLlama (coingecko:near) and the Coinbase
-  5-minute candle when they agree within 150 bps; 90 of 91 days are priced.
+  5-minute candle when they agree within 150 bps; 180 of 181 days are priced.
   End price: $4.0049.
 - **Nominal APR (24h)** = gross fees of the day (cumulative input volumes × `total_fee`) / TVL × 365. This is the
   usual "24h fee APR" of a pool list. The number in Rhea's own interface was not available to compare against.
@@ -120,12 +132,12 @@ The full series are in `thesis/out/pools.csv`, `thesis/out/pools-daily.csv` and 
    realized fee APR is that average, measured (the LP share, after the admin fee). The gap to LP vs HODL remains, because the average still leaves
    out impermanent loss.
 2. **"Impermanent loss is temporary."** It is temporary only if the price returns. The 30-day column next to the
-   90-day one shows how much the result depends on the window. LP vs HODL is what an LP who entered at
+   180-day one shows how much the result depends on the window. LP vs HODL is what an LP who entered at
    the start and left at the end actually had.
 3. **"A pool's own price can be manipulated."** These are daily points, not a single trade. As a check, pool #4512
-   (wNEAR/USDC) priced NEAR within a median 16 bps
+   (wNEAR/USDC) priced NEAR within a median 12 bps
    (max 78 bps) of the external two-source NEAR/USD across
-   90 daily points.
+   180 daily points.
 4. **"Farms and boosts pay LPs and lenders more."** They do, and they are excluded here on both sides: neither Rhea farm
    rewards nor Burrow incentives are counted. A displayed APR that includes rewards would sit further above the
    realized base yield, and the reward token's own price risk would come on top.
@@ -134,26 +146,26 @@ The full series are in `thesis/out/pools.csv`, `thesis/out/pools-daily.csv` and 
 6. **"The sample is biased."** The universe is the top 16 wNEAR pools by reserve at the END block. That is
    survivorship: pools that drained during the window are not in it, which flatters LP outcomes. So the gap is, if
    anything, understated.
-7. **"One quarter is one market regime."** Yes. Over these 90 days NEAR moved from
-   1.658 to 4.012 USDC (pool #4512), and the impermanent loss of NEAR pairs follows that move. Another quarter can give other numbers. The claim
+7. **"One window is one market regime."** Yes. Over these 180 days NEAR moved from
+   1.593 to 4.012 USDC (pool #4512), and the impermanent loss of NEAR pairs follows that move. Another window can give other numbers. The claim
    is about what the displayed figures leave out, not about a fixed number.
 8. **"HODL is the wrong benchmark: compare with simply holding NEAR."** In NEAR terms an LP share of these pools
-   returned a median -48.9% a year (`lp_return_in_near_apr` in `pools.csv`):
-   in a quarter when NEAR rose, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
-   12 of 16 pools did worse than against HODL. Neither benchmark
+   returned a median -38.8% a year (`lp_return_in_near_apr` in `pools.csv`):
+   when NEAR rises, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
+   14 of 16 pools did worse than against HODL. Neither benchmark
    closes the gap to the displayed APR, which counts no price risk at all.
 
 ## Survivorship and pool types
 
 | Group | Pools | Gross: fee APR (median) | After IL: LP vs HODL (median) | Net, $5,000 (median) | Negative net |
 |---|---|---|---|---|---|
-| still in the top 15 at the end | 15 | 0.7% | -2.2% | -3.8% | 13 of 15 |
-| in the top 15 at the start only (shrank) | 1 | 20.4% | -27.0% | -28.1% | 1 of 1 |
-| wNEAR / stablecoin | 4 | 11.0% | -25.5% | -26.7% | 4 of 4 |
-| wNEAR / volatile token | 12 | 0.3% | -0.9% | -2.0% | 10 of 12 |
+| still in the top 15 at the end | 15 | 0.6% | -3.4% | -4.0% | 13 of 15 |
+| in the top 15 at the start only (shrank) | 1 | 8.4% | -79.2% | -79.7% | 1 of 1 |
+| wNEAR / stablecoin | 4 | 11.2% | -9.5% | -10.1% | 4 of 4 |
+| wNEAR / volatile token | 12 | 0.2% | -1.4% | -1.7% | 10 of 12 |
 
 The universe is the union of the top 15 at the first and at the last block. Ranking only at the end would keep
-the survivors: the pools that were still large after 90 days. One pool was large at the start but dropped out of the top 15; it is analysed with the same method and
+the survivors: the pools that were still large after 180 days. One pool was large at the start but dropped out of the top 15; it is analysed with the same method and
 counted in every claim above.
 
 Gross is the fee APR LPs earned; after IL is LP vs HODL (fees minus impermanent loss); net also subtracts the
