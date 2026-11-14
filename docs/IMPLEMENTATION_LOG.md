@@ -430,3 +430,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   they complete), placeholders for the agents the model asked for (`asked` event, `onCalls` in the tool loop), a
   running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
   `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.
+
+## 2026-11-14 — AI "nothing to do" says why (#143)
+
+- `apps/api/src/analytics/ai-analysis.ts`: a nothing-to-act-on AI run carries `note` = the proposing agents' own
+  lines joined in call order (no model text); the guardian's safe-loan line names the strategy line ("Health factor
+  1.37; safe from 1.25 on Aggressive").
+- `apps/analytics/components/Recommendations.tsx`: that note replaces the generic "Nothing to improve right now".

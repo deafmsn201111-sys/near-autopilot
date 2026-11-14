@@ -58,6 +58,9 @@ export function Recommendations({
     setStartedAt(null);
   }
 
+  const nothingToDo =
+    analysis?.source === 'llm' && analysis.recommendations.length === 0 && analysis.note;
+
   return (
     <>
       <div className="block-head">
@@ -85,7 +88,7 @@ export function Recommendations({
                 ? 'AI-ranked'
                 : 'AI-checked · nothing to act on'}
           </span>
-          {analysis.note && <small> {analysis.note}</small>}
+          {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
       {live ? (
@@ -110,7 +113,9 @@ export function Recommendations({
       )}
       {recommendations.length === 0 && skipped.length === 0 && (
         <p className="muted-note">
-          Nothing to improve right now — the portfolio looks balanced at current prices.
+          {nothingToDo
+            ? `Nothing to do: ${analysis.note}`
+            : 'Nothing to improve right now — the portfolio looks balanced at current prices.'}
         </p>
       )}
       {skipped.length > 0 && (

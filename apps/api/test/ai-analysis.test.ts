@@ -467,8 +467,38 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('llm');
     expect(out.fallback).toBeNull();
     expect(out.recommendations).toEqual([]);
-    expect(out.note).toBeNull();
+    expect(out.note).toMatch(/^No Burrow loan; nothing to do · Nothing idle to put to work/);
     expect(out.calledTools.length).toBeGreaterThan(0);
+  });
+
+  it('says in code-built words why a safe loan on Aggressive leaves nothing to do', async () => {
+    const { llm } = fake([() => checkAll, () => final([])]);
+    const safeLoan = async () => {
+      const o = observation('aggressive');
+      const snapshot = { ...o.snapshot, walletBalances: [] };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: safeLoan,
+      strategy: 'aggressive',
+      heuristics: [],
+      checks: [],
+      concentration: { token: WNEAR, pct: 60 },
+    });
+    expect(out.source).toBe('llm');
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'Health factor 1.37; safe from 1.25 on Aggressive',
+    );
+    expect(out.note).toBe(
+      [
+        'Health factor 1.37; safe from 1.25 on Aggressive',
+        'Nothing idle to put to work',
+        '60% of your portfolio is in wNEAR; no swap from the wallet suggested',
+        'No position out of range; nothing to do',
+        'Nothing on Burrow to move to the wallet',
+      ].join(' · '),
+    );
   });
 
   it('still falls back when the model calls no tool and ranks nothing', async () => {

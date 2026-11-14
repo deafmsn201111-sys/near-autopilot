@@ -339,9 +339,11 @@ function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
   carry: PortfolioRecommendation['carry'],
+  strategy: StrategyId,
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
+  const { label, healthyAt } = STRATEGIES[strategy];
   const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
   return {
     spec: {
@@ -414,7 +416,7 @@ function guardianTool(
               : { text: 'No Burrow loan; nothing to do', provenance: null }
             : {
                 text: safe
-                  ? `Health factor ${hf}; nothing to do`
+                  ? `Health factor ${hf}; safe from ${healthyAt} on ${label}`
                   : `Health factor ${hf} is below target; ${noRepayWhy}`,
                 provenance: 'calculated_estimate',
               },
@@ -813,7 +815,7 @@ export async function analyseAccount(
   };
   const run = async () => {
     const tools = [
-      guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
+      guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
       allocatorTool(obs, found, steps),
       marketTool(obs, steps),
       walletTool(
@@ -932,7 +934,7 @@ export async function analyseAccount(
   const analysis: Analysis = {
     source: 'llm',
     fallback: null,
-    note: null,
+    note: nothingToActOn ? whyNothing(trace, steps) : null,
     recommendations,
     calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
     trace: traceSteps(trace, steps, recommendations, kept),
@@ -948,6 +950,14 @@ export async function analyseAccount(
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });
   return analysis;
+}
+
+/** Why there is nothing to do, in the proposing agents' own lines, in call order: no model text. */
+function whyNothing(trace: readonly ToolTraceEntry[], steps: Steps): string {
+  return [...new Set(trace.map((t) => t.tool))]
+    .filter((tool) => PROPOSING_TOOLS.includes(tool))
+    .flatMap((tool) => steps.get(tool)?.none.text ?? [])
+    .join(' · ');
 }
 
 function stepLine(steps: Steps, tool: string, ok: boolean): StepLine & { ok: boolean } {
