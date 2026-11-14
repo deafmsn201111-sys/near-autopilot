@@ -705,3 +705,8 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   tokens have any price, the indexer estimate included; its value is then called an estimate. Re-centring (D26)
   stays on allowlisted pools. The exit cascade and `validateCascade` limits are unchanged.
 - Prepare reads a token missing from our metadata table with `ft_metadata` instead of assuming 24 decimals.
+
+## 2026-11-14 — A model that picks nothing keeps the warnings (#202)
+
+- `runModel`: left-out warnings are put back before the empty check, so "picked nothing" with a Guardian warning is
+  an AI result (`restored: 1`), not "Heuristic (AI unavailable)". Only no card at all is the `empty` fallback.

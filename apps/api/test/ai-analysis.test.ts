@@ -89,6 +89,13 @@ function observation(strategy: StrategyId = 'balanced'): AgentObservation {
   };
 }
 
+/** The same wallet with its loan repaid: no agent raises a warning, so a model that picks nothing has nothing kept. */
+const noLoan = async (): Promise<AgentObservation> => {
+  const o = observation();
+  const snapshot = { ...o.snapshot, lending: { ...o.snapshot.lending!, borrowed: [] } };
+  return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+};
+
 const heuristic: PortfolioRecommendation = {
   id: 'reduce-concentration',
   kind: 'reduce_concentration',
@@ -557,6 +564,7 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
+      observe: noLoan,
       heuristics: [heuristic],
       checks: [heuristic],
     });
@@ -565,11 +573,34 @@ describe('analyseAccount', () => {
     expect(out.recommendations).toEqual([heuristic]);
   });
 
+  it('keeps a warning the model left out as an AI result even when it picked nothing (#202)', async () => {
+    const warning: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.15",
+      why: 'Repay part of the loan.',
+      intent: null,
+    };
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [warning, heuristic],
+      checks: [warning, heuristic],
+    });
+    expect(out.source).toBe('llm');
+    expect(out.fallback).toBeNull();
+    expect(out.recommendations.map((r) => r.kind)).toEqual(['improve_loan_safety']);
+    expect(out.run?.checks).toMatchObject({ picked: 0, restored: 1 });
+  });
+
   it('records what the model picked when every pick is an id no tool returned', async () => {
     const l = ledger();
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'Trust me.' }])]);
     const out = await analyseAccount(ai(llm, l), {
       ...ctx,
+      observe: noLoan,
       heuristics: [heuristic],
       checks: [heuristic],
     });
@@ -1206,9 +1237,9 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
     const out = await analyseAccount(ai(llm), {
       accountId: ALICE,
-      observe: async () => observation(),
-      heuristics: [],
-      checks: [],
+      observe: noLoan,
+      heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -2177,7 +2208,7 @@ describe('progress events', () => {
 
   it('ends without checks when the run falls back', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
-    const { out, events } = await live(llm);
+    const { out, events } = await live(llm, ai(llm), { observe: noLoan });
     expect(out.fallback).toBe('empty');
     expect(events.at(-1)).toEqual({ type: 'ranked', turns: 2 });
   });
