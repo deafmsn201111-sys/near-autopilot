@@ -691,7 +691,8 @@ mainnet contract defaults are built in.
 - The server holds no key and never signs: `EXECUTION_MODE=live` is refused at start-up, and there is no signer in
   the code. Users sign in their own wallet, only when `MAINNET_WALLET_SIGNING=1`, and only cascades that pass
   `validateCascade`.
-- Generate `API_TOKEN` and `POSTGRES_PASSWORD` locally (`openssl rand -hex 32`); never reuse example values.
+- Generate `API_TOKEN`, `POSTGRES_PASSWORD` and `ANALYSIS_ENCRYPTION_KEY` locally (`openssl rand -hex 32`;
+  `quickstart.sh` does it); never reuse example values.
 - All published ports bind to `127.0.0.1`. Details and threat model: [docs/security.md](docs/security.md).
 
 ## HTTP API

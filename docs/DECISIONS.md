@@ -898,4 +898,5 @@ account does not open. A row that is plaintext, under another key or tampered re
 `scripts/quickstart.sh` and `deploy/public/setup.sh` generate the key into `.env`; only `analytics-api` gets it.
 **Consequences:** a DB dump alone reveals only account id, strategy, time and page signature. The key is on the same
 server, so the server operator can still decrypt; client-side encryption is out of scope. Losing or rotating the key
-drops the saved analyses (the next run saves a new one); rows written before this change are no longer shown.
+drops the saved analyses (the next run saves a new one). Rows written before this change are never shown and the
+hourly purge deletes them.

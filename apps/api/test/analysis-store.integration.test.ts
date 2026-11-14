@@ -108,10 +108,23 @@ describe.skipIf(!adminUrl)('DrizzleAnalysisStore (PostgreSQL)', () => {
     ).toBeNull();
   });
 
-  it('reads a plaintext row as none', async () => {
+  it('reads a plaintext row as none and purges it', async () => {
+    const BOB = accountId('bob.near');
+    await store.save(BOB, 'balanced', {
+      key: 'kb',
+      signature: null,
+      at: NOW,
+      analysis: analysis('plain'),
+    });
     await handle.db.execute(
-      sql`UPDATE account_analyses SET analysis = ${JSON.stringify(analysis('plain'))}::jsonb WHERE account_id = 'alice.near' AND strategy = 'balanced'`,
+      sql`UPDATE account_analyses SET analysis = ${JSON.stringify(analysis('plain'))}::jsonb WHERE account_id = 'bob.near'`,
     );
-    expect(await store.latest(ALICE, 'balanced')).toBeNull();
+    expect(await store.latest(BOB, 'balanced')).toBeNull();
+    await store.purge();
+    const left = await handle.db.execute(
+      sql`SELECT 1 FROM account_analyses WHERE account_id = 'bob.near'`,
+    );
+    expect(left.rows).toHaveLength(0);
+    expect(await store.latest(ALICE, 'balanced')).not.toBeNull();
   });
 });

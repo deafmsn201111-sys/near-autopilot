@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { accountAnalyses, and, eq, lt, type Database } from '@near-autopilot/db';
+import { accountAnalyses, and, eq, lt, or, sql, type Database } from '@near-autopilot/db';
 import type { AccountId } from '@near-autopilot/core';
 import type { StrategyId } from '@near-autopilot/core/strategy';
 import { z } from 'zod';
@@ -10,7 +10,7 @@ export const ANALYSES_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 /** 32-byte AES-256-GCM key as 64 hex characters (quickstart.sh / deploy setup.sh generate it). */
 export const analysisKeySchema = z
   .string()
-  .regex(/^[0-9a-f]{64}$/, 'must be 64 hex characters (openssl rand -hex 32)')
+  .regex(/^[0-9a-f]{64}$/i, 'must be 64 hex characters (openssl rand -hex 32)')
   .transform((hex) => Buffer.from(hex, 'hex'));
 
 // A full 16-byte tag only: without authTagLength Node also accepts truncated tags, which are easier to forge.
@@ -105,6 +105,11 @@ export class DrizzleAnalysisStore implements AnalysisStore {
   async purge(): Promise<void> {
     await this.db
       .delete(accountAnalyses)
-      .where(lt(accountAnalyses.at, new Date(this.now().getTime() - ANALYSES_KEEP_MS)));
+      .where(
+        or(
+          lt(accountAnalyses.at, new Date(this.now().getTime() - ANALYSES_KEEP_MS)),
+          sql`${accountAnalyses.analysis}->>'v' IS NULL`,
+        ),
+      );
   }
 }
