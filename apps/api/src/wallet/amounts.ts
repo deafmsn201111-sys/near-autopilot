@@ -20,6 +20,7 @@ export function toRawUnits(human: number, decimals: number): bigint {
     throw new RangeError('amount must be a non-negative finite number');
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36)
     throw new RangeError('invalid decimals');
+  if (human >= 1e21) return BigInt(human) * 10n ** BigInt(decimals); // toFixed is exponential here; already integral
   const fixed = human.toFixed(decimals + 6); // round far below `decimals`, then drop the extra to truncate
   const [whole, frac = ''] = fixed.split('.');
   const fracTrunc = frac.slice(0, decimals).padEnd(decimals, '0');
@@ -27,32 +28,44 @@ export function toRawUnits(human: number, decimals: number): bigint {
   return BigInt(digits);
 }
 
+const toHuman = (raw: bigint, decimals: number) => Number(raw) / 10 ** decimals;
+
+/** Cap a floored raw amount at `maxRaw` in bigint: the float→raw conversion can round a large balance up. */
+function capped(human: number, decimals: number, maxRaw?: bigint): ResolvedAmount {
+  const raw = toRawUnits(human, decimals);
+  if (maxRaw === undefined || raw <= maxRaw) return { rawAmount: raw, humanAmount: human };
+  return { rawAmount: maxRaw, humanAmount: toHuman(maxRaw, decimals) };
+}
+
 /**
  * Resolve an approximate USD intent into an exact raw amount of `token`, given its USD price and decimals. Capped at
- * `maxHuman` when provided (e.g. the wallet balance), so a "~$X" intent can never exceed what the user holds.
+ * `maxRaw` when provided (e.g. the wallet balance), so a "~$X" intent can never exceed what the user holds.
  */
 export function resolveIntentAmount(
   approxUsd: number,
   priceUsd: number,
   decimals: number,
-  maxHuman?: number,
+  maxRaw?: bigint,
 ): ResolvedAmount {
   if (!(priceUsd > 0)) throw new RangeError('a positive USD price is required to size the amount');
-  let humanAmount = approxUsd / priceUsd;
-  if (maxHuman !== undefined && humanAmount > maxHuman) humanAmount = maxHuman;
-  return { rawAmount: toRawUnits(humanAmount, decimals), humanAmount };
+  const wanted = approxUsd / priceUsd;
+  const maxHuman = maxRaw === undefined ? Infinity : toHuman(maxRaw, decimals);
+  return capped(Math.min(wanted, maxHuman), decimals, maxRaw);
 }
 
 /** An amount an orchestrator agent already sized in base units, capped at what the wallet holds. */
 export function exactAmount(amount: bigint, walletRaw: bigint, decimals: number): ResolvedAmount {
   const rawAmount = amount < walletRaw ? amount : walletRaw;
-  return { rawAmount, humanAmount: Number(rawAmount) / 10 ** decimals };
+  return { rawAmount, humanAmount: toHuman(rawAmount, decimals) };
 }
 
 /** One side of a balanced liquidity deposit. */
-export interface LpSide {
-  readonly rawAmount: bigint;
-  readonly humanAmount: number;
+export type LpSide = ResolvedAmount;
+
+/** The least the pool must consume of each side (99.5%), so a reserve-ratio shift between preview and signing
+ *  makes `add_liquidity` fail instead of minting shares at a worse ratio. */
+export function lpMinAmounts(amounts: readonly [bigint, bigint]): [bigint, bigint] {
+  return [(amounts[0] * 995n) / 1000n, (amounts[1] * 995n) / 1000n];
 }
 
 /**
@@ -60,10 +73,11 @@ export interface LpSide {
  * CURRENT reserve ratio, so the contract consumes both fully and nothing is stranded — this is what "equal
  * halves" means for a balanced pool, where each side is ~half the value. The total value targets `budgetUsd`,
  * then each side is capped at the wallet holding; if a cap binds, BOTH sides scale down together so the ratio
- * (and thus "no leftover") is preserved. Amounts are floored, never rounded up.
+ * (and thus "no leftover") is preserved. Amounts are floored, never rounded up, and each is clamped to its raw
+ * balance in bigint, which can move the ratio by a rounding unit.
  *
- * `reserve*` are raw pool reserves (as `get_pool` reports), `price*` USD per whole token, `wallet*Human` the
- * signer's holdings in whole tokens.
+ * `reserve*` are the pool reserves in whole tokens, `price*` USD per whole token, `wallet*Raw` the signer's
+ * holdings in raw units.
  */
 export function resolveBalancedLpAmounts(args: {
   readonly budgetUsd: number;
@@ -73,8 +87,8 @@ export function resolveBalancedLpAmounts(args: {
   readonly price1Usd: number;
   readonly decimals0: number;
   readonly decimals1: number;
-  readonly wallet0Human: number;
-  readonly wallet1Human: number;
+  readonly wallet0Raw: bigint;
+  readonly wallet1Raw: bigint;
 }): { readonly side0: LpSide; readonly side1: LpSide } {
   const { budgetUsd, reserve0Human, reserve1Human, price0Usd, price1Usd } = args;
   if (!(budgetUsd > 0)) throw new RangeError('budget must be positive');
@@ -89,14 +103,16 @@ export function resolveBalancedLpAmounts(args: {
   let x0 = x1 * ratio;
   // Cap by wallet holdings, scaling BOTH sides by the tightest binding ratio to preserve the pool ratio.
   let scale = 1;
-  if (x0 > args.wallet0Human) scale = Math.min(scale, args.wallet0Human / x0);
-  if (x1 > args.wallet1Human) scale = Math.min(scale, args.wallet1Human / x1);
+  const wallet0Human = toHuman(args.wallet0Raw, args.decimals0);
+  const wallet1Human = toHuman(args.wallet1Raw, args.decimals1);
+  if (x0 > wallet0Human) scale = Math.min(scale, wallet0Human / x0);
+  if (x1 > wallet1Human) scale = Math.min(scale, wallet1Human / x1);
   if (scale < 1) {
     x0 *= scale;
     x1 *= scale;
   }
   return {
-    side0: { rawAmount: toRawUnits(x0, args.decimals0), humanAmount: x0 },
-    side1: { rawAmount: toRawUnits(x1, args.decimals1), humanAmount: x1 },
+    side0: capped(x0, args.decimals0, args.wallet0Raw),
+    side1: capped(x1, args.decimals1, args.wallet1Raw),
   };
 }

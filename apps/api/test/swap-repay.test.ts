@@ -221,16 +221,22 @@ describe('prepareSwapRepay', () => {
       debt: { ...base.debt, storageMin: 1_250_000_000_000_000_000_000n },
     });
     const cascade = assembleCascade(ACCOUNT, r.steps);
+    const roles = new Map([
+      [BURROW, 'burrow'],
+      [RHEA, 'rhea'],
+    ] as const);
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,
         allowedReceivers: new Set([BURROW, RHEA, WNEAR, USDC]),
+        roles,
       }),
     ).toMatchObject({ ok: true, reasons: [] });
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,
         allowedReceivers: new Set([BURROW, WNEAR, USDC]),
+        roles,
       }).ok,
     ).toBe(false);
   });

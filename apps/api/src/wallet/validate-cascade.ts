@@ -21,30 +21,44 @@ export const MAX_ACTION_DEPOSIT = 150_000_000_000_000_000_000_000n; // 0.15 NEAR
 /** Largest total NEAR a whole cascade may attach: 0.3 NEAR. Caps the worst case even if every step attaches storage. */
 export const MAX_CASCADE_DEPOSIT = 300_000_000_000_000_000_000_000n; // 0.3 NEAR
 
-/** The only methods a prepared cascade is ever allowed to call. */
-export const ALLOWED_METHODS = new Set([
+/** What a receiver is, which decides the methods a cascade may call on it. Any receiver the context does not map
+ *  is a plain NEP-141 token. */
+export type ReceiverRole = 'token' | 'wrap' | 'burrow' | 'rhea' | 'dcl';
+
+const TOKEN_METHODS = [
   'storage_deposit',
   'ft_transfer_call',
-  'add_liquidity',
-  'execute',
-  // DCL (concentrated liquidity): exit an out-of-range position, or re-centre it (remove, then add_liquidity).
-  'remove_liquidity',
-  'withdraw_asset',
-  'burn_v_liquidity',
-  // wrap native NEAR -> wNEAR (before a swap), and unwrap wNEAR -> native NEAR.
-  'near_deposit',
-  'near_withdraw',
-  // priced Burrow borrow / withdraw / repay from collateral: Burrow fetches its own prices (D29).
-  'execute_with_pyth',
   // a 1Click withdrawal, only to the stored quote's deposit address (`transferTo`, D36).
   'ft_transfer',
-]);
+];
+
+/** The only methods a prepared cascade may call, per receiver role. */
+export const METHODS_BY_ROLE: Readonly<Record<ReceiverRole, ReadonlySet<string>>> = {
+  token: new Set(TOKEN_METHODS),
+  // wrap native NEAR -> wNEAR (before a swap), and unwrap wNEAR -> native NEAR; wNEAR is also a token.
+  wrap: new Set([...TOKEN_METHODS, 'near_deposit', 'near_withdraw']),
+  // priced borrow / withdraw / repay from collateral go through execute_with_pyth: Burrow fetches its own prices (D29).
+  burrow: new Set(['storage_deposit', 'execute', 'execute_with_pyth']),
+  rhea: new Set(['storage_deposit', 'add_liquidity']),
+  // DCL (concentrated liquidity): exit an out-of-range position, or re-centre it (remove, then add_liquidity).
+  dcl: new Set([
+    'storage_deposit',
+    'add_liquidity',
+    'remove_liquidity',
+    'withdraw_asset',
+    'burn_v_liquidity',
+  ]),
+};
+
+const TRANSFER_CALL_TARGETS: ReadonlySet<ReceiverRole> = new Set(['burrow', 'rhea', 'dcl']);
 
 export interface CascadeValidationContext {
   /** The account that will sign — every transaction must be stamped with exactly this signer. */
   readonly signerId: string;
   /** Receivers this cascade is allowed to touch: the protocol contract(s) and the specific token(s) in play. */
   readonly allowedReceivers: ReadonlySet<string>;
+  /** The role of each protocol contract and of the wrap contract; every other receiver is a token. */
+  readonly roles: ReadonlyMap<string, ReceiverRole>;
   /** Rhea v1 pools `add_liquidity` may target (config `rhea.pools`). Absent means no pool is allowed. */
   readonly allowedPools?: ReadonlySet<number> | undefined;
   /** The DCL contract and the DCL pools (string ids, config `rhea.dclPools`) its `add_liquidity` may target. */
@@ -92,6 +106,9 @@ function isDecimalString(v: unknown): v is string {
   return typeof v === 'string' && /^\d+$/.test(v);
 }
 
+const roleOf = (receiverId: string, ctx: CascadeValidationContext): ReceiverRole =>
+  ctx.roles.get(receiverId) ?? 'token';
+
 function checkAction(
   a: FunctionCallAction,
   receiverId: string,
@@ -99,25 +116,31 @@ function checkAction(
   fail: Fail,
 ): bigint {
   const where = `${receiverId}#${a.methodName}`;
-  if (!ALLOWED_METHODS.has(a.methodName)) fail('methods', `${where}: method is not allowlisted`);
+  const role = roleOf(receiverId, ctx);
+  if (!METHODS_BY_ROLE[role].has(a.methodName))
+    fail('methods', `${where}: method is not allowlisted for a ${role} receiver`);
   if (a.gas <= 0n || a.gas > MAX_ACTION_GAS) fail('gas', `${where}: gas ${a.gas} out of range`);
   if (a.deposit < 0n) fail('deposit', `${where}: negative deposit`);
   // near_deposit WRAPS the signer's own NEAR into wNEAR 1:1 — the attached deposit IS the value being wrapped (not a
   // fee or a loss; it is recoverable by unwrapping), so it is deliberately exempt from the storage-sized deposit caps.
-  // The receiver allowlist still confines it to the wrap contract, and the wallet shows the amount for approval.
-  const isWrap = a.methodName === 'near_deposit';
+  // The method allowlist confines it to the wrap contract, and the wallet shows the amount for approval.
+  const isWrap = a.methodName === 'near_deposit' && role === 'wrap';
   if (!isWrap && a.deposit > 1n && a.deposit > MAX_ACTION_DEPOSIT)
     fail('deposit', `${where}: deposit ${a.deposit} exceeds the per-action cap`);
   if (isWrap && a.deposit <= 0n)
     fail('deposit', `${where}: near_deposit must attach a positive amount`);
-  // ft_transfer_call carries the real value transfer; check its shape and that it is addressed to an allowed receiver.
+  // ft_transfer_call carries the real value transfer; check its shape and that it is addressed to an allowed protocol.
   if (a.methodName === 'ft_transfer_call') {
     if (a.deposit !== 1n)
       fail('deposit', `${where}: ft_transfer_call must attach exactly 1 yoctoNEAR`);
     if (!isDecimalString(a.args['amount']))
       fail('arguments', `${where}: amount must be a non-negative integer string`);
     const to = a.args['receiver_id'];
-    if (typeof to !== 'string' || !ctx.allowedReceivers.has(to))
+    const isProtocol =
+      typeof to === 'string' &&
+      ctx.allowedReceivers.has(to) &&
+      TRANSFER_CALL_TARGETS.has(roleOf(to, ctx));
+    if (!isProtocol)
       fail('receivers', `${where}: transfers to an unexpected receiver ${String(to)}`);
     if (typeof a.args['msg'] !== 'string') fail('arguments', `${where}: msg must be a string`);
   }

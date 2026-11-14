@@ -216,6 +216,8 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - Rotate every real leak at its provider; no history rewrite. Once public, forks, clones and GitHub's
   `refs/pull/*` keep old commits anyway, so a rewrite does not unpublish anything, and it breaks every open
   branch and worktree four days before the deadline. A rotated key is worthless whatever history shows.
+- A key counts as rotated only once a request with the old key really returns 403 at the provider; until then it is
+  treated as live.
 - CI job `secrets` runs gitleaks 8.30.1 (pinned, checksum-checked binary) over the full history of the checked-out commit on every PR and every push to `main`.
   False positives go to `.gitleaks.toml` (public NEAR token ids, a test key) with a reason; a rotated leak goes to
   `.gitleaksignore` by fingerprint.
@@ -857,7 +859,22 @@ Burrow's (409); when Burrow cannot be read it fails closed (502).
 still listed with its estimate. An LP position with one unverified leg counts its verified leg only; its row reads
 "Unverified part not counted".
 
-## D45 — One owner-named account's saved AI analysis is public (#24)
+## D45 — The cascade check allowlists methods per receiver role; add_liquidity has a 99.5% floor (#142)
+
+**Context:** the pre-publication audit (#142). `validateCascade` had one global method list and one receiver set that
+mixed protocols and tokens, so its comments promised more than it checked: `near_deposit` (exempt from the deposit
+caps) was not tied to `wrap.near`, and `ft_transfer_call` could name a token id as `receiver_id`. Builders hardcode
+receivers, so nothing was exploitable, but the check must hold before an LLM or a new builder proposes actions.
+**Decision:** the context carries `roles` (Burrow, Rhea v1, DCL, the wrap contract; every other receiver is a token)
+and each role has its own methods (`METHODS_BY_ROLE`). `near_deposit`/`near_withdraw` pass only on the wrap
+contract, and only there is the deposit uncapped. `ft_transfer_call` must go to an allowlisted protocol. v1
+`add_liquidity` sends `min_amounts` at 99.5% of each side. "Max" amounts are capped at the raw wallet balance in
+bigint. Only tightens; no cap changed.
+**Consequences:** a new builder must name its protocol's role, or its calls fail `methods`. A pool ratio move over
+0.5% between preview and signing makes `add_liquidity` revert; the deposited tokens stay in the user's Rhea exchange
+balance, withdrawable.
+
+## D46 — One owner-named account's saved AI analysis is public (#24)
 
 **Context:** Judges without a wallet could not see the AI at all: the saved analysis is served to the proven owner
 only (D12, #190).

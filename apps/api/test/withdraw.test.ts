@@ -145,7 +145,12 @@ describe('validateCascade — ft_transfer', () => {
       ],
     },
   ];
-  const ctx = { signerId: ALICE, allowedReceivers: new Set([USDC]), transferTo: DEPOSIT };
+  const ctx = {
+    signerId: ALICE,
+    allowedReceivers: new Set([USDC]),
+    roles: new Map(),
+    transferTo: DEPOSIT,
+  };
 
   it('passes a 1-yocto transfer to the quoted deposit address', () => {
     expect(validateCascade(tx({ receiver_id: DEPOSIT, amount: '1000000' }), ctx).ok).toBe(true);
@@ -155,6 +160,7 @@ describe('validateCascade — ft_transfer', () => {
     const r = validateCascade(tx({ receiver_id: DEPOSIT, amount: '1' }), {
       signerId: ALICE,
       allowedReceivers: new Set([USDC, DEPOSIT]),
+      roles: new Map(),
     });
     expect(r.ok).toBe(false);
     expect(r.reasons.join()).toMatch(/unexpected receiver/);

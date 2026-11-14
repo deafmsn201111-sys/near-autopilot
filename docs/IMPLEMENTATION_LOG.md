@@ -1086,10 +1086,20 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `DepositDialog.tsx` split: `DepositButton.tsx`, `TokenPicker.tsx`, `lib/use-now.ts`; the old modal CSS is gone.
 - "Add funds" in the empty-wallet state. DESIGN.md / PRODUCT.md / README no longer describe the old deposit form.
 
+## 2026-11-14 — Security audit fixes: amounts, cascade roles, scripts (#142)
+
+- `wallet/amounts.ts`: "max" amounts are capped at the raw wallet balance in bigint (`resolveIntentAmount` and
+  `resolveBalancedLpAmounts` take raw balances); `toRawUnits` handles 1e21 and above; `lpMinAmounts` gives the 99.5%
+  `min_amounts` that v1 `add_liquidity` now sends.
+- `validateCascade`: `roles` in the context and `METHODS_BY_ROLE`; `near_deposit` only on the wrap contract;
+  `ft_transfer_call` only to a protocol (D45).
+- `deploy/public/setup.sh` checks the IP argument and stops instead of `chmod 777`; `scripts/start-issue.sh` takes a
+  numeric issue only; D15 says when a key counts as rotated. Accepted items in KNOWN_ISSUES.
+
 ## 2026-11-14 — The demo account's saved AI analysis for visitors without a wallet (#24, lite)
 
 - env `PUBLIC_ANALYSIS_ACCOUNT` (config `llmEnvSchema`, both compose files and `.env.example`s).
 - `GET /v1/analytics/account/:id/analysis` serves that one account's saved result to anyone, through
   `AnalysisStore.latest`, with `run.input` nulled for non-owners; kill switch still applies. `POST` unchanged.
 - UI asks for the saved result without a proof too; the panel shows "The owner's AI run · Updated … ago" to a visitor.
-- D45. The server-refreshed version with a spend cap stays for after the hackathon.
+- D46. The server-refreshed version with a spend cap stays for after the hackathon.
