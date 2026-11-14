@@ -764,3 +764,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Migration 0026 adds `deposit_quotes.transfer_issued_at`. `GET /v1/deposit/transfer/:id` sets it with
   `UPDATE … WHERE transfer_issued_at IS NULL RETURNING`, after every other check, so two tabs on one quote cannot both
   prompt a wallet: the second gets 409. The dialog that saw its wallet reject the send asks again with `retry=1`.
+
+## 2026-11-14 — One wallet connector: HOT Kit for NEAR, EVM and Solana (#189)
+
+- `lib/hot-kit.ts` owns the one kit; its NEAR connector wraps our near-connect 0.12 (CSP nonce, no access key, D35).
+  `lib/wallet.ts` keeps its interface (`currentAccount`, `watchAccount`, `connect`, `connectedWallet`, `disconnect`).
+- "Connect wallet" opens the kit's list of all chains; Disconnect signs out of all of them.
+- The kit loads only on click or with a stored session: first-load JS `/` 170 → 155 kB, `/activity` 158 → 143 kB.
+- Tests: `test/wallet.test.ts` (no load without a session, restore, account change, sign-out of all, cascade unchanged).

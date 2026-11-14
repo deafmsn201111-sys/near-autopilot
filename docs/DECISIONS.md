@@ -650,3 +650,23 @@ a send the button is replaced by the transaction link, so one quote is not paid 
 status polling follows the deposit. The API hands a quote's transfer out once (#214): `transfer_issued_at` on
 `deposit_quotes` is set by a conditional update, and a second request (another tab) gets 409. Only the dialog that saw
 its wallet reject the send (declined, no gas, no token, refused by the network) asks again with `retry=1`. Bitcoin and TRON wallets stay manual (stretch).
+
+## D35 — One HOT Kit connects every wallet; its NEAR connector runs on our near-connect 0.12 (#189)
+
+**Context:** #189. After #126 there were two connectors: near-connect for the NEAR account and HOT Kit for EVM /
+Solana. The kit's own NEAR connector creates near-connect 0.8.2, which cannot pass the CSP nonce to the wallet iframes
+(D11): under our nonce CSP no NEAR wallet would load.
+**Decision:** `lib/hot-kit.ts` creates one kit with NEAR, EVM and Solana connectors. The NEAR one is the kit's
+connector built on our own near-connect 0.12 instance (`network: mainnet`, `signInWithoutAddKey`, `cspNonce`), the only
+place near-connect is imported; a one-line shim turns the kit's `connect(walletId)` (0.8 form) into 0.12's
+`{ walletId }`, or 0.12 would open its own second list. The session stays near-connect's `selected-wallet` key, so a
+wallet connected before #189 stays connected. "Connect wallet" opens the kit's all-chains list and settles on a NEAR
+sign-in, so the 2.0.0 bug (D33: the list may never settle) cannot hang the button; connecting only an EVM / Solana
+wallet leaves the page without a NEAR account. Disconnect signs out of every kit wallet. Signing is unchanged:
+`lib/wallet-sign.ts` signs on the same near-connect wallet, cascades still pass `validateCascade`. The kit is loaded
+only on "Connect wallet" or when `selected-wallet` exists. No Tron (not a deposit origin); Bitcoin is a follow-up
+because `walletChainOf` would also open a wallet send on BTC, which D34 keeps manual.
+**Consequences:** first-load JS fell by 15 kB on `/` and `/activity` (near-connect left the page bundle); a visitor
+with a NEAR session now loads the kit core (~110 kB gzip, lazy) after hydration. The near-connect wallet type is cast
+to the kit's 0.8.2 type; a kit upgrade must re-check that `connect(id)` shim. On a NEAR connect the kit also reads that account's token
+balances client-side (public chain data, read-only); it signs nothing on connect.
