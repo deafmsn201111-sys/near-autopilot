@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { portfolioMode } from '../lib/portfolio-mode';
+import { isAccountView, portfolioMode } from '../lib/portfolio-mode';
 
 const base = {
   isAccount: true,
@@ -98,5 +98,21 @@ describe('portfolioMode on an older read', () => {
       stale: true,
     });
     expect(m.note).toMatch(/^Showing an older read/);
+  });
+});
+
+describe('isAccountView', () => {
+  it('opens the connected wallet, not a demo, on the bare portfolio page', () => {
+    expect(isAccountView(undefined, '', 'alice.near')).toBe(true);
+    expect(isAccountView(undefined, '', '')).toBe(false);
+  });
+
+  it('opens an account named in the link without p=account', () => {
+    expect(isAccountView(undefined, 'autopilot-test.near', '')).toBe(true);
+  });
+
+  it('keeps an explicitly chosen demo and an explicit account view', () => {
+    expect(isAccountView('demo-5000', '', 'alice.near')).toBe(false);
+    expect(isAccountView('account', '', '')).toBe(true);
   });
 });
