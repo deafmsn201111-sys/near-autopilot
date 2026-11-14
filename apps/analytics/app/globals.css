@@ -4682,6 +4682,25 @@ main.page {
 .an-replies code {
   overflow-wrap: anywhere;
 }
+.an-saw {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.an-saw summary {
+  cursor: pointer;
+  color: var(--text-1);
+}
+.an-saw h4 {
+  margin: var(--s8) 0 0;
+  font-size: var(--fs-xs);
+}
+.an-saw pre {
+  margin: 0;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .an-ranking {
   margin: 0;
   font-size: var(--fs-xs);

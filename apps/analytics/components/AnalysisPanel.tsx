@@ -1,8 +1,14 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import type { StrategyId } from '@near-autopilot/core/strategy';
-import { useEffect, useState, type ReactNode } from 'react';
-import { pipelineOf, privacyMark, type Analysis, type Pipeline } from '../lib/analysis-client';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import {
+  pipelineOf,
+  privacyMark,
+  type Analysis,
+  type ModelInput,
+  type Pipeline,
+} from '../lib/analysis-client';
 import { CopyButton } from './CopyButton';
 import { findingsOf, verdictOf, type Finding } from '../lib/analysis-view';
 import { ago } from '../lib/format';
@@ -378,6 +384,7 @@ function DecisionPipeline({
           <CopyButton text={mark.replies.map((r) => r.id).join('\n')} label="Copy ids" />
         </p>
       )}
+      {!running && analysis?.run?.input && <ModelInputView input={analysis.run.input} />}
       {ranking && (
         <p className="an-ranking">
           Why this order: {ranking}{' '}
@@ -389,6 +396,49 @@ function DecisionPipeline({
     </div>
   );
 }
+
+function ModelInputView({ input }: { input: ModelInput }) {
+  const toolOf = new Map(
+    input.messages.flatMap((m) => (m.tool_calls ?? []).map((c) => [c.id, c.function.name])),
+  );
+  const heading = (m: ModelInput['messages'][number]) =>
+    m.role === 'tool'
+      ? `${toolOf.get(m.tool_call_id ?? '') ?? 'tool'} answered`
+      : m.tool_calls?.length
+        ? `The AI asked: ${m.tool_calls.map((c) => c.function.name).join(', ')}`
+        : m.role === 'system'
+          ? 'Instructions'
+          : m.role === 'user'
+            ? 'Request'
+            : 'The AI';
+  return (
+    <details className="an-saw">
+      <summary>What the AI saw</summary>
+      <p>
+        The last request sent to the model for this run, which holds the whole conversation. Only
+        you see it. <CopyButton text={JSON.stringify(input, null, 2)} label="Copy all" />
+      </p>
+      {input.messages.map((m, i) => (
+        <Fragment key={i}>
+          <h4>{heading(m)}</h4>
+          {m.content && <pre>{indented(m.content)}</pre>}
+        </Fragment>
+      ))}
+      <h4>Agents it could ask</h4>
+      <pre>
+        {input.tools.map((t) => `${t.function.name}: ${t.function.description}`).join('\n')}
+      </pre>
+    </details>
+  );
+}
+
+const indented = (json: string) => {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch {
+    return json;
+  }
+};
 
 function Updated({ iso }: { iso: string }) {
   const now = useNow();

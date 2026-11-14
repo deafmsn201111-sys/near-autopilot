@@ -294,9 +294,16 @@ export interface RunSummary {
   readonly ranking: string | null;
   /** Whether every reply was signed in the attested TEE; null when not checked. */
   readonly privacy: PrivacyCheck | null;
+  /**
+   * The last request body as sent, which holds the whole conversation, without `model` (#233): only its owner sees it
+   * ("What the AI saw"). Null when the provider reports no body, and in analyses saved before #271.
+   */
+  readonly input: ModelInput | null;
 }
 
-/** A called agent's key number as a short line built on the server: raw tool output never reaches the browser. */
+export type ModelInput = Readonly<Record<string, unknown>>;
+
+/** A called agent's key number as a short line built on the server; the raw tool output reaches only the owner, in `run.input`. */
 export interface TraceStep {
   readonly tool: string;
   readonly agent: string;
@@ -1096,6 +1103,7 @@ async function runModel(
     if (unreported) charge(worstCall);
     ended = true;
   };
+  let lastRequest: string | null = null;
   const metered: ToolLlm = {
     open: (request) => {
       let nextInput =
@@ -1103,6 +1111,7 @@ async function runModel(
       const chat = ai.llm.open({
         ...request,
         onReply: (r) => replies.push(r),
+        onRequest: (body) => (lastRequest = body),
         onUsage: (u) => {
           if (ended) return;
           unreported = false;
@@ -1287,11 +1296,17 @@ async function runModel(
       checks,
       ranking: honestRanking,
       privacy,
+      input: lastRequest === null ? null : withoutModel(lastRequest),
     },
     read,
     cachedAt: null,
   };
   return keep(analysis);
+}
+
+function withoutModel(body: string): ModelInput {
+  const { model: _, ...rest } = JSON.parse(body) as Record<string, unknown>;
+  return rest;
 }
 
 /** This wallet state's result from the last 10 minutes: from this process, or saved before a restart. */

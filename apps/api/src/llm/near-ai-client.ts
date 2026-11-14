@@ -87,6 +87,7 @@ export class NearAiToolLlm implements ToolLlm {
             ...(tools.length ? { tools } : {}),
           },
           request.signal,
+          request.onRequest,
         );
         const { usage } = usageSchema.parse(raw.json);
         request.onUsage?.({
@@ -127,8 +128,13 @@ export class NearAiToolLlm implements ToolLlm {
   }
 
   /** No retry: a retried request is billed, but only the last reply's usage would be seen. */
-  private async post(body: unknown, signal: AbortSignal | undefined) {
+  private async post(
+    body: unknown,
+    signal: AbortSignal | undefined,
+    onRequest: ((body: string) => void) | undefined,
+  ) {
     const requestBody = JSON.stringify(body);
+    onRequest?.(requestBody);
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
     const res = await this.fetch(`${NEAR_AI_URL}/chat/completions`, {
       method: 'POST',

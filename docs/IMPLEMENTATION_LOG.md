@@ -951,3 +951,23 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `components/RowFlash.tsx`: rows whose amount changed flash once after a refresh, after any open sign sheet closes.
 - API: Burrow holdings carry `aprPct` (supply rate, or borrow rate on a loan), positions carry `kind` and DCL
   positions `inRange`, on both the account and the demo portfolio views.
+
+## 2026-11-14 — "What the AI saw": the owner sees the exact model input (#271)
+
+- `ToolLlm.open` takes `onRequest`: the NEAR AI client reports the exact body of every request before posting it.
+  `run.input` is the last one (the whole conversation, tool results with their `Error: ` prefix, the tool list)
+  without `model`. A test drives the real client over a fake fetch and compares `run.input` with the posted bytes.
+  A first version rebuilt the input in the `metered` wrapper; review showed it missed the model's own turns, the
+  error prefix and the tool schemas, so it was replaced.
+- Only in the owner's analysis (same NEP-413 gate) and its saved copy (#190, 30 days); not in `llm_calls`, not
+  logged. A run that fell back shows none (no `run`).
+- The panel's "How this was decided" has a collapsible "What the AI saw" block (JSON re-indented, Copy all).
+
+## 2026-11-14 — Thesis window extended to 180 days (#273)
+
+- `thesis:fetch --days 180` (end 2026-11-05, same as the 90-day version) and `extend.ts` re-read the raw data from
+  FastNEAR's archival RPC: 181 daily blocks, 16 pools (the same set as the 90-day version), 180 of 181 days priced. Burrow was paused (no accrual) on the first 4 days; THESIS.md says so.
+- `computeThesis(lastDays)` recomputes the whole thesis on the last N days of the same raw files; THESIS.md shows each
+  count over 180 days and over the last 90. Both: supported on all three counts (H1 5→4 of 16 within 2 pp, ρ 0.39 /
+  0.33, H3 11 of 18 both).
+- Window-specific wording ("after 90 days", "one quarter") now follows the window; the thesis page lead too.

@@ -110,25 +110,71 @@ export function thesisSummary(d: ThesisData) {
   };
 }
 
-export function thesisMarkdown(d: ThesisData): string {
+type Summary = ReturnType<typeof thesisSummary>;
+
+const held = (h: boolean) => `**${h ? 'holds' : 'falsified'}**`;
+
+function countResults(s: Summary): readonly [string, string, string] {
+  return [
+    `${s.close.length} of ${s.withNominal.length} within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp: ${held(s.h1)}`,
+    `ρ = ${s.rho === null ? 'n/a' : s.rho.toFixed(2)}: ${held(s.h2)}`,
+    `${s.bClose.length} of ${s.markets.length} within: ${held(s.h3)}`,
+  ];
+}
+
+function windowTable(d: ThesisData, last: ThesisData | null): string {
+  if (!last) return '';
+  const whole = thesisSummary(d);
+  const recent = thesisSummary(last);
+  const [a, b] = [countResults(whole), countResults(recent)];
+  const same = [whole.h1 === recent.h1, whole.h2 === recent.h2, whole.h3 === recent.h3];
+  const rows = ['H1', 'H2', 'H3'].map(
+    (h, i) => `| ${h} | ${a[i] ?? ''} | ${b[i] ?? ''} | ${same[i] ? 'yes' : '**no**'} |`,
+  );
+  return `
+**Does the verdict hold over a longer window?** The same rules over the whole ${d.manifest.days}-day window and over its
+last ${last.manifest.days} days, from the same raw data and the same pool universe:
+
+| | ${d.manifest.days} days | Last ${last.manifest.days} days | Same result |
+|---|---|---|---|
+${rows.join('\n')}
+
+Over ${d.manifest.days} days the verdict is ${whole.verdictText}; over the last ${last.manifest.days} days it is ${recent.verdictText}.
+`;
+}
+
+function pausedText(d: ThesisData, last: ThesisData | null): string {
+  const paused = d.burrowPausedHeights;
+  if (paused.length === 0) return '';
+  const blocks = d.manifest.blocks.filter((b) => paused.includes(b.height));
+  const range = `${blocks[0]?.timestamp.slice(0, 10) ?? ''} – ${blocks[blocks.length - 1]?.timestamp.slice(0, 10) ?? ''}`;
+  return `- Burrow reported a supply APR below 0.0001% on every market, and balances did not accrue, on ${paused.length} of
+  ${d.manifest.blocks.length} days (${range}, blocks ${paused.join(', ')}). These days are in the window as read from the
+  chain; they pull the realized supply APR down.${
+    last && last.burrowPausedHeights.length === 0
+      ? ` The last ${last.manifest.days} days contain none of them and give the same H3 result (table above).`
+      : ''
+  }
+`;
+}
+
+export function thesisMarkdown(d: ThesisData, recent: ThesisData | null = null): string {
+  const summary = thesisSummary(d);
+  const results = countResults(summary);
   const {
     pools,
     n,
     withNominal,
     above,
-    close,
-    h1,
     rho,
-    h2,
     markets,
     bClose,
-    h3,
     negative500,
     negativeHodl,
     spread,
     idle,
     verdictText,
-  } = thesisSummary(d);
+  } = summary;
   const first = d.manifest.blocks[0];
   const last = d.manifest.blocks[d.manifest.blocks.length - 1];
 
@@ -168,10 +214,10 @@ rules that would falsify each fixed in advance:
 
 | | Count | Falsified if | Result |
 |---|---|---|---|
-| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp of LP vs HODL in at least half the pools | ${close.length} of ${withNominal.length} within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp: **${h1 ? 'holds' : 'falsified'}** |
-| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \\|Spearman ρ\\| ≥ ${RULES.strongRho} | ρ = ${rho === null ? 'n/a' : rho.toFixed(2)}: **${h2 ? 'holds' : 'falsified'}** |
-| H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within ${(RULES.burrowCloseEnoughPp * 100).toFixed(1)} pp of realized in at least 3/4 of markets | ${bClose.length} of ${markets.length} within: **${h3 ? 'holds' : 'falsified'}** |
-
+| H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp of LP vs HODL in at least half the pools | ${results[0]} |
+| H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \\|Spearman ρ\\| ≥ ${RULES.strongRho} | ${results[1]} |
+| H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within ${(RULES.burrowCloseEnoughPp * 100).toFixed(1)} pp of realized in at least 3/4 of markets | ${results[2]} |
+${windowTable(d, recent)}
 ## Evidence
 
 - **Universe.** ${d.manifest.universe.rule}; ${d.manifest.universe.candidates} candidate pools, ${n} analysed.
@@ -256,21 +302,25 @@ The full series are in \`thesis/out/pools.csv\`, \`thesis/out/pools-daily.csv\` 
    realized base yield, and the reward token's own price risk would come on top.
 5. **"The gas cost is overstated."** It is an upper bound. For $5,000 the cost per dollar is small. The $500 column
    shows where costs matter, and the cost figures are in \`pools.csv\`.
-6. **"The sample is biased."** The universe is the top ${n} wNEAR pools by reserve at the END block. That is
-   survivorship: pools that drained during the window are not in it, which flatters LP outcomes. So the gap is, if
-   anything, understated.
-7. **"One quarter is one market regime."** Yes. Over these ${d.manifest.days} days NEAR moved from
+6. **"The sample is biased."** ${
+     d.manifest.universe.startPools
+       ? `Ranking at the end only would keep the survivors. The universe also takes the top pools at the FIRST block, so
+   pools that drained during the window are in it (see "Survivorship and pool types" below).`
+       : `The universe is the top ${n} wNEAR pools by reserve at the END block. That is survivorship: pools that drained
+   during the window are not in it, which flatters LP outcomes. So the gap is, if anything, understated.`
+   }
+7. **"One window is one market regime."** Yes. Over these ${d.manifest.days} days NEAR moved from
    ${(() => {
      const s = d.daily.find((x) => x.pool === 4512);
      const e = [...d.daily].reverse().find((x) => x.pool === 4512);
      return s && e
        ? `${(1 / (s.priceNearPerOther * 1e6)).toFixed(3)} to ${(1 / (e.priceNearPerOther * 1e6)).toFixed(3)} USDC (pool #4512)`
        : 'n/a';
-   })()}, and the impermanent loss of NEAR pairs follows that move. Another quarter can give other numbers. The claim
+   })()}, and the impermanent loss of NEAR pairs follows that move. Another window can give other numbers. The claim
    is about what the displayed figures leave out, not about a fixed number.
 8. **"HODL is the wrong benchmark: compare with simply holding NEAR."** In NEAR terms an LP share of these pools
    returned a median ${p(med(pools.map((m) => m.lpReturnInNearApr)))} a year (\`lp_return_in_near_apr\` in \`pools.csv\`):
-   in a quarter when NEAR rose, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
+   when NEAR rises, a pool sells NEAR on the way up and ends with less of it. Measured against NEAR alone,
    ${pools.filter((m) => m.lpReturnInNearApr < m.lpVsHodlApr).length} of ${n} pools did worse than against HODL. Neither benchmark
    closes the gap to the displayed APR, which counts no price risk at all.
 
@@ -281,7 +331,7 @@ ${cohortTable(d)}
 ${
   d.manifest.universe.startPools
     ? `The universe is the union of the top 15 at the first and at the last block. Ranking only at the end would keep
-the survivors: the pools that were still large after 90 days. ${shrunkText(d)} analysed with the same method and
+the survivors: the pools that were still large after ${d.manifest.days} days. ${shrunkText(d)} analysed with the same method and
 counted in every claim above.`
     : 'The universe was ranked at the last block only: pools that shrank during the window are not included (survivorship bias).'
 }
@@ -291,7 +341,7 @@ round-trip cost of a $5,000 position.
 
 ## Limitations
 
-- Daily granularity; simple annualisation; constant-product (v1 SIMPLE_POOL) pools only. Concentrated-liquidity (DCL)
+${pausedText(d, recent)}- Daily granularity; simple annualisation; constant-product (v1 SIMPLE_POOL) pools only. Concentrated-liquidity (DCL)
   and stable pools are not modelled.
 - Rewards and incentives are excluded (counterargument 4).
 - Burrow balances are in the contract's inner units; the share-price ratio is unit-free, so this does not affect the

@@ -166,9 +166,9 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 
 ### Thesis track: displayed APR and TVL are not the yield you keep
 
-[THESIS.md](THESIS.md) tests three counts on 90 days of NEAR mainnet data: Rhea v1 and Burrow, 91 daily blocks, from
-2026-08-06 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
-counter-evidence written out.
+[THESIS.md](THESIS.md) tests three counts on 180 days of NEAR mainnet data: Rhea v1 and Burrow, 181 daily blocks,
+from 2026-05-08 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
+counter-evidence written out. The same rules over the last 90 days alone give the same result on every count.
 
 **Try it**
 
@@ -182,7 +182,7 @@ counter-evidence written out.
 
 - Rhea DCL pools are not part of the thesis yet: they are in the dashboard only.
 - No BigQuery or Intents Explorer data: the thesis uses archival RPC view calls only.
-- The window is 90 days.
+- The window is 180 days.
 
 ## What it does
 
@@ -266,7 +266,7 @@ The pipeline fills in live while the analysis runs: the browser asks for `text/e
 event per real step (`read`, `asked` when the model picks the agents to call, an `agent` event as each tool result
 comes back, `ranked`, `checked`), then `done` with the same analysis the JSON reply carries. All four stages show
 from the first event: the current one pulses, later ones are dimmed, each agent the model asked for waits on a
-placeholder until its result arrives, and a clock runs until the end. The events are the same server-built lines, never raw tool output. A cached result or a rule-based list arrives as a single `done`, so it appears at once (a cached one is labelled
+placeholder until its result arrives, and a clock runs until the end. The events are the same server-built lines; the raw model input comes only with the final result. A cached result or a rule-based list arrives as a single `done`, so it appears at once (a cached one is labelled
 "from a run N min ago"); a stream that breaks falls back
 to the plain JSON request.
 
@@ -306,6 +306,14 @@ in this README. **Not checked in our code:** the Intel TDX quote (DCAP), the RTM
 the NVIDIA GPU evidence: that is what the official
 [nearai-cloud-verifier](https://github.com/nearai/nearai-cloud-verifier) does. So "signed in TEE" means "signed by
 the key NEAR AI's attestation names for this model", not "we verified the hardware quote ourselves".
+
+**What the AI saw** (#271). Under "How this was decided", the proven owner can open the exact input of a run that
+answered: the body of its last request to NEAR AI Cloud as the client serialised it (`onRequest` in
+`apps/api/src/llm/near-ai-client.ts`), which holds the whole conversation: the system prompt with their strategy, the
+request, the model's own tool requests, every tool result as sent (their positions, prices and the candidate actions)
+and the tool list. Only the `model` field is removed (users never see the model name). That is all the model gets: no
+account id, no history, no IP. It comes only with the owner's analysis (same NEP-413 gate) and is kept only in the
+saved analysis (#190, 30 days), never in `llm_calls` or the logs.
 
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
