@@ -21,13 +21,31 @@ const emit = (id: string | null) => {
 };
 
 // near-connect's session key: without it there is nothing to restore, so the kit is not loaded on page load.
+const SESSION_KEY = 'selected-wallet';
 function hasSession(): boolean {
   try {
-    return localStorage.getItem('selected-wallet') !== null;
+    return localStorage.getItem(SESSION_KEY) !== null;
   } catch {
     return false;
   }
 }
+
+// near-connect writes the key before the wallet's sign-in and keeps it when that sign-in is cancelled. While a
+// connect() still waits for a sign-in, a missing account only means the wallet has not answered yet.
+function forgetCancelledSignIn() {
+  if (waiting > 0) return;
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // storage blocked: hasSession() is false anyway
+  }
+}
+
+// Answers that mean "no account": near-connect's own Error, and the plain string HOT sends after a cancelled sign-in. Any
+// other failure (network, a wallet frame that did not load) keeps the key, so a valid session is never dropped.
+// ponytail: wallets with another wording keep loading the kit on each page; add their answer here when seen.
+const hasNoAccount = (e: unknown) =>
+  /^(No accounts found|Connect NEAR)/.test(e instanceof Error ? e.message : String(e));
 
 let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
 function near() {
@@ -47,9 +65,13 @@ export async function currentAccount(): Promise<string | null> {
   if (!subscribed && !hasSession()) return null;
   try {
     const { accounts } = await (await near()).near.getConnectedWallet();
-    return accounts[0]?.accountId ?? null;
-  } catch {
-    return null; // nothing connected
+    // MyNearWallet answers a cancelled sign-in with [{ accountId: '' }].
+    const id = accounts[0]?.accountId || null;
+    if (!id) forgetCancelledSignIn();
+    return id;
+  } catch (e) {
+    if (hasNoAccount(e)) forgetCancelledSignIn();
+    return null;
   }
 }
 
@@ -66,23 +88,49 @@ export function watchAccount(onChange: (accountId: string | null) => void): () =
  * Opens the kit's wallet list (NEAR, EVM, Solana). Resolves with the NEAR account signed in there; null when the list
  * was closed or only another chain's wallet was connected. A NEAR sign-in also settles it: in kit 2.0.0 the list may
  * never settle after its nested chain list is closed, so a later click opens it again; only the latest click gets the
- * account.
+ * account. A NEAR sign-in still pending in its wallet when the list closed goes to `onLateSignIn` once it lands,
+ * unless another click came first.
  */
 let attempt = 0;
-export async function connect(): Promise<string | null> {
+let waiting = 0;
+let dropLate: () => void = () => undefined;
+export async function connect(
+  onLateSignIn: (accountId: string) => void = () => undefined,
+): Promise<string | null> {
   const mine = ++attempt;
+  dropLate();
   const { kit, near: connector } = await near();
   let onSignIn: (t: NearSignIn) => void = () => undefined;
   const signedIn = new Promise<string | null>((resolve) => {
     onSignIn = (t) => resolve(t.accounts[0]?.accountId ?? null);
     connector.on('wallet:signIn', onSignIn);
   });
+  waiting++;
+  let listening = true;
+  const stop = () => {
+    if (!listening) return;
+    listening = false;
+    waiting--;
+    connector.off('wallet:signIn', onSignIn);
+  };
+  let closed = false;
   const picked = kit.connect().then(
     (w) => (Number(w.type) === NEAR_WALLET_TYPE ? w.address : null),
-    () => null,
+    () => {
+      closed = true;
+      return null;
+    },
   );
   const id = await Promise.race([signedIn, picked]);
-  connector.off('wallet:signIn', onSignIn);
+  if (id === null && closed && mine === attempt) {
+    dropLate = stop;
+    void signedIn.then((late) => {
+      stop();
+      if (late && mine === attempt) onLateSignIn(late);
+    });
+    return null;
+  }
+  stop();
   return mine === attempt ? id : null;
 }
 
