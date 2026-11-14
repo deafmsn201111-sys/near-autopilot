@@ -51,6 +51,15 @@ describe('watchStep', () => {
     ).toEqual([false, false, false, false, true]);
   });
 
+  it('fires when the first token lands on an empty wallet and when the last one leaves', () => {
+    expect(run([tok(1, ''), tok(2, ''), tok(3, 'usdc:5'), tok(4, '')])).toEqual([
+      false,
+      false,
+      true,
+      true,
+    ]);
+  });
+
   it('fires once when NEAR and a token move together', () => {
     expect(run([tok(1, 'usdc:0'), { ...at(2, 9), tokens: 'usdc:3' }])).toEqual([false, true]);
   });
@@ -82,9 +91,35 @@ describe('readTokens', () => {
     expect(await readTokens('alice.near')).toBe('usdt.tether-token.near:4|wrap.near:0');
   });
 
+  it('is an empty fingerprint for a wallet with no tokens', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ tokens: [] }))),
+    );
+    expect(await readTokens('alice.near')).toBe('');
+  });
+
+  it('drops a malformed token entry and keeps the rest', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              tokens: [
+                { contract_id: 'x', balance: 5 },
+                { contract_id: 'wrap.near', balance: '2' },
+              ],
+            }),
+          ),
+      ),
+    );
+    expect(await readTokens('alice.near')).toBe('wrap.near:2');
+  });
+
   it('is null on a malformed answer, an HTTP error or no network', async () => {
     const stub = (f: () => Promise<Response>) => vi.stubGlobal('fetch', vi.fn(f));
-    stub(async () => new Response(JSON.stringify({ tokens: [{ contract_id: 'x', balance: 5 }] })));
+    stub(async () => new Response(JSON.stringify({ tokens: 'none' })));
     expect(await readTokens('alice.near')).toBeNull();
     stub(async () => new Response('slow down', { status: 429 }));
     expect(await readTokens('alice.near')).toBeNull();

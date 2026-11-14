@@ -35,14 +35,13 @@ export async function readAccount(account: string): Promise<Reading | null> {
   }
 }
 
-const ftAnswer = z.object({
-  tokens: z.array(z.object({ contract_id: z.string(), balance: z.string() })),
-});
+const ftAnswer = z.object({ tokens: z.array(z.unknown()) });
+const ftToken = z.object({ contract_id: z.string(), balance: z.string() });
 
 /**
  * Every fungible-token balance of the account, from FastNEAR's indexer (the source the API discovers tokens from, D18),
  * as one comparable string. An incoming token transfer does not move the native balance, so readAccount misses it.
- * Null on any network, HTTP or shape error: the tick keeps its token baseline.
+ * Null on any network, HTTP or shape error: the tick keeps its token baseline. A malformed entry is dropped, not the read.
  */
 export async function readTokens(account: string): Promise<string | null> {
   try {
@@ -51,7 +50,10 @@ export async function readTokens(account: string): Promise<string | null> {
     const parsed = ftAnswer.safeParse(await res.json());
     if (!parsed.success) return null;
     return parsed.data.tokens
-      .map((t) => `${t.contract_id}:${t.balance}`)
+      .flatMap((entry) => {
+        const t = ftToken.safeParse(entry);
+        return t.success ? [`${t.data.contract_id}:${t.data.balance}`] : [];
+      })
       .sort()
       .join('|');
   } catch {
@@ -77,6 +79,8 @@ export function watchStep(
   const moved =
     last !== null &&
     (visible(reading.amount) !== visible(last.amount) ||
-      (!!reading.tokens && !!last.tokens && reading.tokens !== last.tokens));
+      (typeof reading.tokens === 'string' &&
+        typeof last.tokens === 'string' &&
+        reading.tokens !== last.tokens));
   return { last: { ...reading, tokens }, fire: moved && !quiet };
 }
