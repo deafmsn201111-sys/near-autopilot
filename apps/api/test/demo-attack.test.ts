@@ -72,7 +72,7 @@ describe('demo:attack (fixtures against the real defences)', () => {
     ] as const)
       expect(by[attack]).toMatchObject({ verdict: 'BLOCK', failed: [rule] });
     expect(by['symbol-injection']).toMatchObject({ outcome: 'DISCARDED' });
-    expect(by['symbol-injection']?.failed).toEqual(['injected text never sent', 'pick dropped']);
+    expect(by['symbol-injection']?.failed).toEqual(['SYMBOL_NOT_SENT', 'UNKNOWN_CANDIDATE']);
     expect(entries.filter((e) => e.kind === 'attack')).toHaveLength(19);
     expect(entries.filter((e) => e.kind === 'control')).toHaveLength(4);
   });
