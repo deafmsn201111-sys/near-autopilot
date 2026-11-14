@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultDestination,
+  defaultOrigin,
   describeStatus,
   formatUnits,
   loadDepositStatus,
+  searchTokens,
   STATUS_MAX_CHECKS,
   statusDelayMs,
   stopReason,
@@ -207,5 +209,47 @@ describe('stopReason', () => {
     expect(stopReason(st('PROCESSING'), STATUS_MAX_CHECKS - 1)).toBeNull();
     expect(stopReason(st('PROCESSING'), STATUS_MAX_CHECKS)).toBe('limit');
     expect(stopReason(null, STATUS_MAX_CHECKS)).toBe('limit');
+  });
+});
+
+describe('defaultOrigin', () => {
+  const t = (symbol: string, chain: string) => ({
+    assetId: `${chain}:${symbol}`,
+    symbol,
+    decimals: 6,
+    chain,
+    chainName: chain,
+  });
+  const origins = [
+    t('USDC', 'eth'),
+    t('ETH', 'eth'),
+    t('ETH', 'arb'),
+    t('BTC', 'btc'),
+    t('PEPE', 'sol'),
+  ];
+
+  it('takes USDC on the chain, else its native token, else the first there', () => {
+    expect(defaultOrigin(origins, 'eth')?.assetId).toBe('eth:USDC');
+    expect(defaultOrigin(origins, 'arb')?.assetId).toBe('arb:ETH');
+    expect(defaultOrigin(origins, 'btc')?.assetId).toBe('btc:BTC');
+    expect(defaultOrigin(origins, 'sol')?.assetId).toBe('sol:PEPE');
+    expect(defaultOrigin(origins, 'base')).toBeUndefined();
+  });
+});
+
+describe('searchTokens', () => {
+  const list = ['USDT', 'USDC', 'ETH', 'steakUSDC', 'WETH'].map((symbol) => ({
+    assetId: symbol,
+    symbol,
+    decimals: 6,
+  }));
+
+  it('matches the symbol case-insensitively, symbols starting with the query first', () => {
+    expect(searchTokens(list, 'usd').map((x) => x.symbol)).toEqual(['USDT', 'USDC', 'steakUSDC']);
+    expect(searchTokens(list, ' eth ').map((x) => x.symbol)).toEqual(['ETH', 'WETH']);
+  });
+
+  it('keeps the whole list for an empty query', () => {
+    expect(searchTokens(list, '')).toEqual(list);
   });
 });

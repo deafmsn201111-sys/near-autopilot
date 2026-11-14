@@ -27,7 +27,7 @@ export const ALLOWED_METHODS = new Set([
   'ft_transfer_call',
   'add_liquidity',
   'execute',
-  // DCL (concentrated liquidity) reposition: exit an out-of-range position back to the wallet.
+  // DCL (concentrated liquidity): exit an out-of-range position, or re-centre it (remove, then add_liquidity).
   'remove_liquidity',
   'withdraw_asset',
   'burn_v_liquidity',
@@ -45,10 +45,44 @@ export interface CascadeValidationContext {
   readonly allowedReceivers: ReadonlySet<string>;
   /** Rhea v1 pools `add_liquidity` may target (config `rhea.pools`). Absent means no pool is allowed. */
   readonly allowedPools?: ReadonlySet<number> | undefined;
+  /** The DCL contract and the DCL pools (string ids, config `rhea.dclPools`) its `add_liquidity` may target. */
+  readonly dcl?: { readonly contract: string; readonly pools: ReadonlySet<string> } | undefined;
 }
 
-export type CascadeValidation =
-  { readonly ok: true } | { readonly ok: false; readonly reasons: string[] };
+export const CASCADE_RULES = [
+  'signer',
+  'receivers',
+  'methods',
+  'gas',
+  'deposit',
+  'arguments',
+] as const;
+export type CascadeRule = (typeof CASCADE_RULES)[number];
+
+export interface CascadeCheck {
+  readonly rule: CascadeRule;
+  readonly pass: boolean;
+  readonly messages: readonly string[];
+}
+
+/** What the checks saw, stored with the verdict for the policy page. Amounts in base units. */
+export interface CascadeSummary {
+  readonly signer: string;
+  readonly receivers: readonly string[];
+  readonly methods: readonly string[];
+  readonly gas: string;
+  readonly deposit: string;
+}
+
+export interface CascadeValidation {
+  readonly ok: boolean;
+  /** Every failure message in the order found; empty when ok. */
+  readonly reasons: readonly string[];
+  readonly checks: readonly CascadeCheck[];
+  readonly summary: CascadeSummary;
+}
+
+type Fail = (rule: CascadeRule, message: string) => void;
 
 function isDecimalString(v: unknown): v is string {
   return typeof v === 'string' && /^\d+$/.test(v);
@@ -58,57 +92,85 @@ function checkAction(
   a: FunctionCallAction,
   receiverId: string,
   ctx: CascadeValidationContext,
-  reasons: string[],
+  fail: Fail,
 ): bigint {
   const where = `${receiverId}#${a.methodName}`;
-  if (!ALLOWED_METHODS.has(a.methodName)) reasons.push(`${where}: method is not allowlisted`);
-  if (a.gas <= 0n || a.gas > MAX_ACTION_GAS) reasons.push(`${where}: gas ${a.gas} out of range`);
-  if (a.deposit < 0n) reasons.push(`${where}: negative deposit`);
+  if (!ALLOWED_METHODS.has(a.methodName)) fail('methods', `${where}: method is not allowlisted`);
+  if (a.gas <= 0n || a.gas > MAX_ACTION_GAS) fail('gas', `${where}: gas ${a.gas} out of range`);
+  if (a.deposit < 0n) fail('deposit', `${where}: negative deposit`);
   // near_deposit WRAPS the signer's own NEAR into wNEAR 1:1 — the attached deposit IS the value being wrapped (not a
   // fee or a loss; it is recoverable by unwrapping), so it is deliberately exempt from the storage-sized deposit caps.
   // The receiver allowlist still confines it to the wrap contract, and the wallet shows the amount for approval.
   const isWrap = a.methodName === 'near_deposit';
   if (!isWrap && a.deposit > 1n && a.deposit > MAX_ACTION_DEPOSIT)
-    reasons.push(`${where}: deposit ${a.deposit} exceeds the per-action cap`);
+    fail('deposit', `${where}: deposit ${a.deposit} exceeds the per-action cap`);
   if (isWrap && a.deposit <= 0n)
-    reasons.push(`${where}: near_deposit must attach a positive amount`);
+    fail('deposit', `${where}: near_deposit must attach a positive amount`);
   // ft_transfer_call carries the real value transfer; check its shape and that it is addressed to an allowed receiver.
   if (a.methodName === 'ft_transfer_call') {
     if (a.deposit !== 1n)
-      reasons.push(`${where}: ft_transfer_call must attach exactly 1 yoctoNEAR`);
+      fail('deposit', `${where}: ft_transfer_call must attach exactly 1 yoctoNEAR`);
     if (!isDecimalString(a.args['amount']))
-      reasons.push(`${where}: amount must be a non-negative integer string`);
+      fail('arguments', `${where}: amount must be a non-negative integer string`);
     const to = a.args['receiver_id'];
     if (typeof to !== 'string' || !ctx.allowedReceivers.has(to))
-      reasons.push(`${where}: transfers to an unexpected receiver ${String(to)}`);
-    if (typeof a.args['msg'] !== 'string') reasons.push(`${where}: msg must be a string`);
+      fail('receivers', `${where}: transfers to an unexpected receiver ${String(to)}`);
+    if (typeof a.args['msg'] !== 'string') fail('arguments', `${where}: msg must be a string`);
   }
   if (a.methodName === 'add_liquidity') {
     const pool = a.args['pool_id'];
-    if (typeof pool !== 'number' || !ctx.allowedPools?.has(pool))
-      reasons.push(`${where}: pool ${String(pool)} is not allowlisted`);
+    const allowed =
+      receiverId === ctx.dcl?.contract
+        ? typeof pool === 'string' && ctx.dcl.pools.has(pool)
+        : typeof pool === 'number' && ctx.allowedPools?.has(pool) === true;
+    if (!allowed) fail('arguments', `${where}: pool ${String(pool)} is not allowlisted`);
   }
   // A wrapping deposit is the user's own NEAR moving into their wNEAR balance; don't count it toward the cascade cap.
   return isWrap ? 0n : a.deposit;
 }
 
-/** Validate every transaction and action in a cascade. Returns ok, or every reason it failed. */
+/** Validate every transaction and action in a cascade: ok, every reason it failed, and the result per rule. */
 export function validateCascade(
   transactions: readonly PlannedTransaction[],
   ctx: CascadeValidationContext,
 ): CascadeValidation {
   const reasons: string[] = [];
-  if (transactions.length === 0) reasons.push('empty cascade');
-  let total = 0n;
+  const byRule = new Map<CascadeRule, string[]>(CASCADE_RULES.map((r) => [r, []]));
+  const fail: Fail = (rule, message) => {
+    reasons.push(message);
+    byRule.get(rule)?.push(message);
+  };
+  if (transactions.length === 0) fail('arguments', 'empty cascade');
+  let capped = 0n;
+  let attached = 0n;
+  let gas = 0n;
   for (const tx of transactions) {
     if (tx.signerId !== ctx.signerId)
-      reasons.push(`${tx.intentId}: signer ${tx.signerId} is not the connected account`);
+      fail('signer', `${tx.intentId}: signer ${tx.signerId} is not the connected account`);
     if (!ctx.allowedReceivers.has(tx.receiverId))
-      reasons.push(`${tx.intentId}: receiver ${tx.receiverId} is not allowlisted`);
-    if (tx.actions.length === 0) reasons.push(`${tx.intentId}: no actions`);
-    for (const a of tx.actions) total += checkAction(a, tx.receiverId, ctx, reasons);
+      fail('receivers', `${tx.intentId}: receiver ${tx.receiverId} is not allowlisted`);
+    if (tx.actions.length === 0) fail('arguments', `${tx.intentId}: no actions`);
+    for (const a of tx.actions) {
+      capped += checkAction(a, tx.receiverId, ctx, fail);
+      attached += a.deposit;
+      gas += a.gas;
+    }
   }
-  if (total > MAX_CASCADE_DEPOSIT)
-    reasons.push(`total attached deposit ${total} exceeds the cascade cap`);
-  return reasons.length === 0 ? { ok: true } : { ok: false, reasons };
+  if (capped > MAX_CASCADE_DEPOSIT)
+    fail('deposit', `total attached deposit ${capped} exceeds the cascade cap`);
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    checks: CASCADE_RULES.map((rule) => {
+      const messages = byRule.get(rule) ?? [];
+      return { rule, pass: messages.length === 0, messages };
+    }),
+    summary: {
+      signer: ctx.signerId,
+      receivers: [...new Set(transactions.map((t) => t.receiverId))],
+      methods: [...new Set(transactions.flatMap((t) => t.actions.map((a) => a.methodName)))],
+      gas: gas.toString(),
+      deposit: attached.toString(),
+    },
+  };
 }

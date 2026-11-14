@@ -48,6 +48,8 @@ export interface PreparedCascade {
   readonly amount?: PreparedAmount;
   readonly amounts?: readonly PreparedAmount[];
   readonly freed?: readonly PreparedAmount[];
+  /** The server's id for this cascade; a signed step is confirmed against it. */
+  readonly cascadeId?: string;
   readonly transactions: readonly PreparedTransaction[];
   /** Plain-language line per step — what the user is about to sign. */
   readonly preview: readonly string[];
@@ -107,6 +109,13 @@ export type PrepareRequestIntent =
       readonly amount: string;
       readonly withdraw?: string;
       readonly maxSlippageBps: number;
+    }
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
+      readonly maxSlippageBps?: number;
     };
 
 export interface PrepareRequest {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runAnalysis } from '../lib/analysis-client';
+import { pipelineOf, runAnalysis } from '../lib/analysis-client';
 
 const reply = (body: unknown) =>
   vi.stubGlobal(
@@ -79,25 +79,33 @@ describe('runAnalysis', () => {
         calledTools: ['liquidation_guardian', 'capital_allocator'],
         trace,
         run,
+        read: null,
         cachedAt: null,
       },
     });
   });
 
-  it('keeps the fallback code', async () => {
-    const nothing = { ...base, source: 'heuristic', fallback: 'nothing_to_rank' };
+  it('keeps the fallback code and what was read without a model run', async () => {
+    const nothing = {
+      ...base,
+      source: 'heuristic',
+      fallback: 'nothing_to_rank',
+      read: { tokens: 3, loan: true },
+    };
     reply(nothing);
-    expect(await runAnalysis('alice.near', 'balanced')).toEqual({
+    const out = await runAnalysis('alice.near', 'balanced');
+    expect(out).toEqual({
       ok: true,
       analysis: { ...nothing, calledTools: [], trace: [], run: null, cachedAt: null },
     });
+    expect(out.ok && pipelineOf(out.analysis).read).toEqual({ tokens: 3, loan: true });
   });
 
   it('accepts an older reply without them', async () => {
     reply(base);
     expect(await runAnalysis('alice.near', 'balanced')).toEqual({
       ok: true,
-      analysis: { ...base, calledTools: [], trace: [], run: null, cachedAt: null },
+      analysis: { ...base, calledTools: [], trace: [], run: null, read: null, cachedAt: null },
     });
   });
 

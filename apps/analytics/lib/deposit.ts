@@ -5,6 +5,7 @@ export interface DepositAsset {
   readonly assetId: string;
   readonly symbol: string;
   readonly decimals: number;
+  readonly icon?: string | null;
 }
 export interface DepositOrigin extends DepositAsset {
   readonly chain: string;
@@ -71,6 +72,35 @@ export function formatUnits(units: string, decimals: number): string {
   const whole = digits.slice(0, digits.length - decimals);
   const frac = digits.slice(digits.length - decimals).replace(/0+$/, '');
   return frac ? `${whole}.${frac}` : whole;
+}
+
+export const DEPOSIT_CHAINS = [
+  { id: 'eth', name: 'Ethereum', native: 'ETH' },
+  { id: 'base', name: 'Base', native: 'ETH' },
+  { id: 'arb', name: 'Arbitrum', native: 'ETH' },
+  { id: 'sol', name: 'Solana', native: 'SOL' },
+  { id: 'btc', name: 'Bitcoin', native: 'BTC' },
+] as const;
+
+/** The token to send by default on a chain: USDC, else the chain's native token, else the first listed there. */
+export function defaultOrigin(
+  origins: readonly DepositOrigin[],
+  chain: string,
+): DepositOrigin | undefined {
+  const here = origins.filter((o) => o.chain === chain);
+  const native = DEPOSIT_CHAINS.find((c) => c.id === chain)?.native;
+  return here.find((o) => o.symbol === 'USDC') ?? here.find((o) => o.symbol === native) ?? here[0];
+}
+
+/** Tokens whose symbol contains the query (any case), those starting with it first; the order is kept otherwise. */
+export function searchTokens<T extends DepositAsset>(list: readonly T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...list];
+  const hits = list.filter((t) => t.symbol.toLowerCase().includes(q));
+  return [
+    ...hits.filter((t) => t.symbol.toLowerCase().startsWith(q)),
+    ...hits.filter((t) => !t.symbol.toLowerCase().startsWith(q)),
+  ];
 }
 
 /** The token to receive by default: the same symbol when we list it, else USDC, else the first. */

@@ -8,11 +8,15 @@ import type { CollectorStore } from '../collector/store';
 import type { EvidenceStore } from '../evidence/store';
 import { registerAdmin, type AdminDeps } from './admin';
 import { registerDeposit, type DepositDeps } from './deposit';
+import { registerTokenIcons, type TokenIcons } from './token-icons';
 import { registerEvidence } from './evidence';
 import { registerSeries } from './series';
 import { registerActivity } from './activity';
 import { registerPortfolioView } from './portfolio-view';
 import { registerAccountView, type MainnetReadDeps } from './account-view';
+import { registerEvents, type EventStore } from './events';
+import { registerConfirm } from '../wallet/confirm';
+import { NearTransactionStatusReader } from '@near-autopilot/near-adapter';
 import { estimateDcl, type DclEstimate } from './dcl';
 import { rankOpportunities, type SimulationInput } from './opportunities';
 import { MAINNET_ASSETS } from '../market-data/assets';
@@ -38,6 +42,9 @@ export interface AnalyticsDeps {
   readonly admin?: AdminDeps;
   /** Real 1Click quotes for deposits from other chains (D19). Absent: /v1/deposit/* is not served. */
   readonly deposit?: DepositDeps;
+  /** What real users did (#32). Absent: nothing is recorded and /v1/events, /v1/wallet/confirm are not served. */
+  readonly events?: EventStore;
+  readonly icons?: TokenIcons;
 }
 
 const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
@@ -93,9 +100,31 @@ export function buildAnalyticsServer(
   registerSeries(app, deps.store, now);
   registerActivity(app, deps.store, deps.store.db, deps.intervalSeconds, now);
   registerPortfolioView(app, deps.store);
-  if (deps.mainnet) registerAccountView(app, deps.store, deps.mainnet);
+  if (deps.mainnet) registerAccountView(app, deps.store, deps.mainnet, deps.events);
   if (deps.admin?.token) registerAdmin(app, deps.admin, now);
-  if (deps.deposit) registerDeposit(app, deps.deposit, now);
+  if (deps.deposit)
+    registerDeposit(
+      app,
+      deps.events ? { ...deps.deposit, events: deps.events } : deps.deposit,
+      now,
+    );
+  if (deps.events) registerEvents(app, deps.events, now);
+  if (deps.events && deps.mainnet)
+    registerConfirm(app, {
+      events: deps.events,
+      txs: new NearTransactionStatusReader(deps.mainnet.rpc),
+      burrowId: deps.mainnet.burrowId,
+      rheaId: deps.mainnet.rheaId,
+      tokens: async () =>
+        new Map(
+          (await deps.store.tokenMetadata()).map((t) => [
+            t.token,
+            { symbol: t.symbol, decimals: t.decimals },
+          ]),
+        ),
+      now,
+    });
+  if (deps.icons) registerTokenIcons(app, deps.icons);
 
   /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */
   app.get('/v1/analytics/freshness', async () => {

@@ -14,7 +14,9 @@ import {
   afterRepay,
   buildLendingModel,
   CapitalAllocatorAgent,
+  evaluateLpReposition,
   LiquidationGuardianAgent,
+  LpOptimizerAgent,
   MarketIntelligenceAgent,
   orchestratorConfigSchema,
   heldTokens,
@@ -30,11 +32,13 @@ import {
   type ToolLlm,
   type ToolTraceEntry,
 } from '@near-autopilot/orchestrator';
+import { alignRange, pointToDecimalPrice } from '@near-autopilot/rhea-dcl-adapter';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
 import { analysisKey } from './analysis-key';
+import type { WalletObservation } from './lp-recentre';
 
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
 export const MAX_TURNS = 6;
@@ -150,7 +154,7 @@ class BudgetReached extends Error {
 export interface AnalysisContext {
   readonly accountId: AccountId;
   /** Reads the wallet for the agents; called only when a model is configured. */
-  readonly observe: () => Promise<AgentObservation>;
+  readonly observe: () => Promise<WalletObservation>;
   /** The account view's rule-based list, as the user sees it: the fallback. */
   readonly heuristics: readonly PortfolioRecommendation[];
   /** The same list with token names from our own labels only: what the two wallet tools return to the model. */
@@ -175,6 +179,8 @@ export interface Analysis {
   readonly trace: readonly TraceStep[];
   /** The model run behind an AI ranking; null for the rule-based list. */
   readonly run: RunSummary | null;
+  /** What the agents read, also when no model ran; null when they did not run. */
+  readonly read: RunSummary['read'] | null;
   /** When the reused AI result was computed; null for a fresh run or the rule-based list. */
   readonly cachedAt: string | null;
 }
@@ -240,7 +246,7 @@ const KINDS: Readonly<Record<string, PortfolioRecommendation['kind']>> = {
   liquidation_guardian: 'improve_loan_safety',
   capital_allocator: 'put_idle_to_work',
   portfolio_concentration: 'reduce_concentration',
-  liquidity_positions: 'reposition_dcl_position',
+  lp_optimizer: 'reposition_dcl_position',
   burrow_withdrawals: 'withdraw_from_burrow',
 };
 
@@ -249,7 +255,7 @@ const AGENTS: Readonly<Record<string, string>> = {
   capital_allocator: 'Capital Allocator',
   market_intelligence: 'Market Intelligence',
   portfolio_concentration: 'Portfolio Intelligence',
-  liquidity_positions: 'Liquidity Optimizer',
+  lp_optimizer: 'Liquidity Optimizer',
   burrow_withdrawals: 'Liquidation Guardian',
 };
 
@@ -283,6 +289,7 @@ const SYSTEM = [
   'Call every tool once; they take no input. Each returns candidate actions whose numbers were computed by code.',
   'Rank the candidates by what matters most for this wallet: liquidation risk first, then concentration risk, then yield.',
   'Leave out candidates that are not worth the user’s attention.',
+  'Idle-token supplies come most dollars a year first. Rank a later one above the first only for a reason about this wallet or strategy, and give that reason in its "why".',
   'Reply with ONE JSON object and nothing else: {"picks":[{"id":"<candidate id>","why":"<one or two plain sentences>"}]}.',
   'Use only candidate ids that a tool returned. In "why" use only numbers that appear in the tool results; never compute new ones.',
   'Write "why" to the wallet owner about that one action; never mention tools, candidates or what other tools found.',
@@ -342,9 +349,11 @@ function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
   carry: PortfolioRecommendation['carry'],
+  strategy: StrategyId,
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
+  const { label, healthyAt } = STRATEGIES[strategy];
   const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
   return {
     spec: {
@@ -431,7 +440,7 @@ function guardianTool(
               : { text: 'No Burrow loan; nothing to do', provenance: null }
             : {
                 text: safe
-                  ? `Health factor ${hf}; nothing to do`
+                  ? `Health factor ${hf}; safe from ${healthyAt.toFixed(2)} on ${label}`
                   : `Health factor ${hf} is below target; ${noRepayWhy}`,
                 provenance: 'calculated_estimate',
               },
@@ -486,6 +495,8 @@ function allocatorTool(
           continue;
         }
         const aprPct = apr.toFixed(1);
+        const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
+        const yearly = money((value * Number(yieldWad)) / 1e18);
         const id = `capital-allocator:supply:${p.token}`;
         byCandidate.set(id, {
           text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
@@ -497,7 +508,7 @@ function allocatorTool(
           agent: 'Capital Allocator',
           severity: 'info',
           title: `Put ${money(view.approxUsd)} of your idle ${view.symbol} to work`,
-          why: `${view.symbol} in your wallet earns nothing. Supplying ${view.amount} ${view.symbol} on Burrow earns about ${aprPct}% a year, and you can withdraw it any time.`,
+          why: `${view.symbol} in your wallet earns nothing. Supplying ${view.amount} ${view.symbol} on Burrow earns about ${aprPct}% a year, about ${yearly} a year, and you can withdraw it any time.`,
           intent: {
             action: 'supply',
             token: p.token,
@@ -511,7 +522,7 @@ function allocatorTool(
       steps.set('capital_allocator', {
         none: lowRate ?? {
           text: supplyProposed
-            ? 'Idle tokens found, but no supply rate or price to size them'
+            ? 'Idle tokens found, but none is worth supplying: under $1, or no rate or price'
             : 'Nothing idle to put to work',
           provenance: null,
         },
@@ -570,6 +581,100 @@ function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
             : { text: sentence(notes[0] ?? 'nothing to report'), provenance: null },
       });
       return { signals, gaps, notes };
+    },
+  };
+}
+
+const sig = (n: number) => n.toLocaleString('en-US', { maximumSignificantDigits: 4 });
+
+/**
+ * The LP Optimizer on the wallet: for each out-of-range DCL position it proposes a range around the price only if the
+ * extra fees repay the move in time (re-checked here with the same arithmetic). Positions it does not move keep the
+ * rule-based exit card. The range shown is the one prepare builds: the agent's ticks aligned to the pool's points.
+ */
+function lpTool(
+  obs: WalletObservation,
+  heuristics: readonly PortfolioRecommendation[],
+  found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
+): LoopTool {
+  return {
+    spec: {
+      name: 'lp_optimizer',
+      description:
+        'Orchestrator LP Optimizer: Rhea DCL liquidity positions that drifted out of range; proposes a new range around the price when the extra fees repay the move, else the exit to the wallet.',
+      inputSchema: noInputSchema,
+    },
+    input: noInput,
+    run: async () => {
+      const proposals = await propose(new LpOptimizerAgent(), obs);
+      const candidates: PortfolioRecommendation[] = [];
+      const byCandidate = new Map<string, StepLine>();
+      const usdOf = (raw: bigint, meta: { decimalsY: number; priceYUsd: number }) =>
+        (Number(raw) / 10 ** meta.decimalsY) * meta.priceYUsd;
+      for (const p of proposals) {
+        if (p.kind !== 'lp.reposition') continue;
+        const meta = obs.lp?.get(p.positionId);
+        const view = obs.market?.lpPositions.find((v) => v.id === p.positionId);
+        if (!meta || !view || meta.inRange) continue;
+        let range;
+        try {
+          range = alignRange(p.tickLower, p.tickUpper, meta.pointDelta, meta.currentPoint);
+        } catch {
+          continue;
+        }
+        const ev = evaluateLpReposition(view, range.leftPoint, range.rightPoint, obs.config);
+        if (!ev.ok) continue;
+        const yIn = (point: number) =>
+          sig(1 / pointToDecimalPrice(point, meta.decimalsX, meta.decimalsY));
+        const rangeText = `${meta.symbolY} between ${yIn(range.rightPoint)} and ${yIn(range.leftPoint)} ${meta.symbolX}`;
+        const days =
+          ev.paybackDays === 0n
+            ? 'less than a day'
+            : `about ${ev.paybackDays} day${ev.paybackDays === 1n ? '' : 's'}`;
+        const cost = money(usdOf(ev.costQuote, meta));
+        const perDay = money(usdOf(ev.extraFeesPerDayQuote, meta));
+        const id = `lp-optimizer:recentre:${p.positionId}`;
+        byCandidate.set(id, {
+          text: `Move ${meta.pair} to ${rangeText}: pays back in ${days}`,
+          provenance: 'calculated_estimate',
+        });
+        candidates.push({
+          id,
+          kind: 'reposition_dcl_position',
+          agent: 'Liquidity Optimizer',
+          severity: 'info',
+          title: `Move your ${meta.pair} liquidity back around the current price`,
+          why: `This position is out of range and earns no fees. Moving it to ${rangeText} costs about ${cost} and should earn about ${perDay} a day more in fees, so it pays back in ${days}. This is an estimate from the last 24 hours of trading.`,
+          intent: {
+            action: 'recentre_dcl',
+            lptId: p.positionId,
+            poolId: meta.poolId,
+            ...range,
+          },
+        });
+      }
+      const moved = new Set(
+        candidates.flatMap((c) => (c.intent?.action === 'recentre_dcl' ? [c.intent.lptId] : [])),
+      );
+      for (const h of heuristics)
+        if (h.intent?.action === 'reposition_dcl' && !moved.has(h.intent.lptId)) {
+          candidates.push(h);
+          const { lptId } = h.intent;
+          const costed = obs.market?.lpPositions.some((v) => v.id === lptId);
+          byCandidate.set(h.id, {
+            text: costed
+              ? 'Out of range; a new range would not pay back in time, so exit to the wallet'
+              : 'Out of range; no data to cost a new range, so exit to the wallet',
+            provenance: 'on_chain_verified',
+          });
+        }
+      for (const c of candidates) found.set(c.id, c);
+      steps.set('lp_optimizer', {
+        none: { text: 'No position out of range; nothing to do', provenance: null },
+        byCandidate,
+      });
+      return { candidates, notes: rationales(proposals) };
     },
   };
 }
@@ -670,6 +775,7 @@ export async function analyseAccount(
     calledTools: [],
     trace: [],
     run: null,
+    read: null,
     cachedAt: null,
   });
   if (!ai) return fallback('off');
@@ -707,7 +813,7 @@ export async function analyseAccount(
   });
   const early = (out: Analysis) => (clearTimeout(timer), out);
 
-  let obs: AgentObservation;
+  let obs: WalletObservation;
   try {
     obs = await Promise.race([ctx.observe(), deadline]);
   } catch (e) {
@@ -715,7 +821,7 @@ export async function analyseAccount(
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
-    guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
+    guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
     allocatorTool(obs, found, steps),
     marketTool(obs, steps),
     walletTool(
@@ -735,21 +841,7 @@ export async function analyseAccount(
         };
       },
     ),
-    walletTool(
-      'liquidity_positions',
-      'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
-      'reposition_dcl_position',
-      ctx.checks,
-      found,
-      steps,
-      ({ length: n }) =>
-        n > 0
-          ? {
-              text: `${n} position${n === 1 ? '' : 's'} out of range`,
-              provenance: 'on_chain_verified',
-            }
-          : { text: 'No position out of range; nothing to do', provenance: null },
-    ),
+    lpTool(obs, ctx.checks, found, steps),
     walletTool(
       'burrow_withdrawals',
       'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
@@ -767,6 +859,10 @@ export async function analyseAccount(
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS)
     return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  const read = {
+    tokens: heldTokens(obs).size,
+    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+  };
   // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
   if (ctx.heuristics.length === 0) {
     const offered = new Map<string, PortfolioRecommendation>();
@@ -775,19 +871,21 @@ export async function analyseAccount(
     const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
     if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
       const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
+      const trace = traceSteps(ran, checked, [], new Set());
       return early({
         ...fallback('nothing_to_rank'),
-        trace: traceSteps(ran, checked, [], new Set()),
+        note: trace
+          .filter((t) => t.tool !== 'market_intelligence')
+          .map((t) => t.text)
+          .join(' · '),
+        trace,
+        read,
       });
     }
   }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));
-  const read = {
-    tokens: heldTokens(obs).size,
-    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
-  };
   onEvent({ type: 'read', model: ai.model, ...read });
 
   // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
@@ -976,6 +1074,7 @@ export async function analyseAccount(
       read,
       checks,
     },
+    read,
     cachedAt: null,
   };
   ai.memo.results.set(key, { at: Date.now(), analysis });

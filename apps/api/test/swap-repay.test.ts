@@ -218,7 +218,7 @@ describe('prepareSwapRepay', () => {
         signerId: ACCOUNT,
         allowedReceivers: new Set([ORACLE, BURROW, RHEA, WNEAR, USDC]),
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true, reasons: [] });
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,

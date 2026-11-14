@@ -11,6 +11,7 @@ import {
   withdrawableToKeep,
   type RepaySizing,
   type RepaySource,
+  errorMessage,
   PreconditionError,
   STRATEGIES,
   STRATEGY_IDS,
@@ -36,8 +37,15 @@ import {
 } from '@near-autopilot/burrow-adapter';
 import { exactAmount, resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
 import { buildUnwrapNear } from '../wallet/wrap';
-import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
-import { validateCascade } from '../wallet/validate-cascade';
+import {
+  assembleCascade,
+  formatNear,
+  type CascadeStep,
+  type PreparedCascade,
+} from '../wallet/cascade';
+import type { CascadeValidationContext } from '../wallet/validate-cascade';
+import { sealCascade } from '../wallet/seal';
+import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
 import { prepareSwapRepay } from '../wallet/swap-repay';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
@@ -48,11 +56,7 @@ import {
   NearTokenReader,
   type NearRpcClient,
 } from '@near-autopilot/near-adapter';
-import {
-  assessRisk,
-  orchestratorConfigSchema,
-  type AgentObservation,
-} from '@near-autopilot/orchestrator';
+import { assessRisk, orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
@@ -82,16 +86,23 @@ import {
   buildRemoveLiquidity,
   buildWithdrawAssets,
   parsePoolId,
+  type DclMarketDepth,
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
+import {
+  RecentreRefused,
+  lpObservation,
+  recentreSteps,
+  type WalletObservation,
+} from './lp-recentre';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
-import { consensus } from './series';
+import { consensus, range24hBps } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
@@ -108,6 +119,8 @@ export interface MainnetReadDeps {
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
   /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
   readonly dclId?: AccountId | null;
+  /** Reviewed DCL pools (config `rhea.dclPools`): the only pools a re-centre may add liquidity to. */
+  readonly dclPools?: readonly string[];
   /** Indexers that find what the account holds outside the allowlists. Null or absent: only the allowlists are read. */
   readonly discovery?: AccountDiscovery | null;
   /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
@@ -333,6 +346,7 @@ async function readDclPositions(
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
+const DAY_MS = 24 * 60 * 60 * 1000;
 /** `valueAccount` lists native NEAR under this pseudo token; the snapshot reads it as `nativeBalance`. */
 const NATIVE_HOLDING = 'near';
 
@@ -425,6 +439,7 @@ export interface PositionRow {
   readonly key: string;
   readonly label: string;
   readonly sub: string;
+  readonly tokens: readonly { readonly token: string; readonly symbol: string }[];
   readonly amount: number | null;
   /** Null when no leg has a price; then the row is listed but adds nothing to the totals. */
   readonly usd: number | null;
@@ -446,7 +461,7 @@ export function accountPortfolio(p: AccountPositions) {
   const positions: PositionRow[] = [];
   const trust = p.trust ?? (() => ({ verified: true, estimate: false }));
   const position = (
-    row: Omit<PositionRow, 'usd' | 'verified' | 'estimate' | 'small'>,
+    row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
     protocol: string,
   ) => {
@@ -459,7 +474,14 @@ export function accountPortfolio(p: AccountPositions) {
         estimate ||= trust(x.token).estimate;
       }
     const verified = parts.every((x) => trust(x.token).verified);
-    positions.push({ ...row, usd, verified, estimate, small: isSmall(usd, row.amount, verified) });
+    positions.push({
+      ...row,
+      tokens: parts.map((x) => ({ token: x.token, symbol: x.symbol })),
+      usd,
+      verified,
+      estimate,
+      small: isSmall(usd, row.amount, verified),
+    });
   };
   for (const h of p.holdings) {
     if (h.usd === null || h.usd <= 0) continue;
@@ -537,7 +559,14 @@ export type RecommendationIntent =
       readonly sizing?: RepaySizing;
     }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
-  | SwapRepayIntent;
+  | SwapRepayIntent
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly poolId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
+    };
 
 /**
  * Repay a debt with another collateral token: withdraw it from Burrow (only what the wallet lacks), swap it on Rhea,
@@ -744,17 +773,23 @@ export function portfolioAdvice(
     }
   }
 
-  // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
+  // 3. Put idle cash to work: the wallet asset that earns the most dollars a year at its supply rate.
   const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
-  const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
+  const yearly = (a: (typeof earning)[number]) => (a.usd * a.aprPct) / 100;
+  const [idle, runnerUp] = earning
+    .filter((a) => a.usd >= MIN_ACTION_USD)
+    .sort((a, b) => yearly(b) - yearly(a));
   if (idle) {
+    const other = runnerUp
+      ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
+      : '';
     recs.push({
       id: 'put-idle-to-work',
       kind: 'put_idle_to_work',
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
-      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
+      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
     });
   } else if (earning[0] && earning[0].usd >= 0.1) {
@@ -772,8 +807,8 @@ export function portfolioAdvice(
       kind: 'reposition_dcl_position',
       agent: 'Liquidity Optimizer',
       severity: 'info',
-      title: `Your ${oor.pair} liquidity is out of range`,
-      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. Repositioning it around the current price puts it back to work.`,
+      title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
@@ -1130,7 +1165,9 @@ export function registerAccountView(
   app: FastifyInstance,
   store: CollectorStore,
   deps: MainnetReadDeps,
+  events?: EventStore,
 ) {
+  const record = eventRecorder(events, app.log);
   const viewer = new NearContractViewer(deps.rpc);
   const tokens = new NearTokenReader(viewer);
   const native = new NearAccountReader(deps.rpc);
@@ -1182,15 +1219,52 @@ export function registerAccountView(
   // Positive results only (junk proofs cost no memory), for 60 s: a revoked key or expired proof is honoured at most
   // that long.
   const owners = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
-  const isOwner = async (header: unknown, id: string) => {
+  const OWNER_CHECK_FAILED = "Couldn't check your signature right now. Try again in a moment.";
+  const isOwner = async (header: unknown, id: string, log: FastifyRequest['log']) => {
     if (typeof header !== 'string') return false;
     const key = `${id}:${header}`;
     const at = owners.get(key);
     if (at !== undefined && Date.now() - at < OWNER_CACHE_TTL_MS) return true;
-    const ok = await verifyOwnership(proofFromHeader(header), id, ownership);
-    if (ok) owners.set(key, Date.now());
-    else owners.delete(key);
+    const ok = await verifyOwnership(proofFromHeader(header), id, ownership).catch(
+      (err: unknown) => {
+        log.warn({ account: id, err: errorMessage(err) }, 'ownership key read failed');
+        return null;
+      },
+    );
+    if (ok) {
+      owners.set(key, Date.now());
+      const at = new Date();
+      // ponytail: check-then-insert; two first proofs in the same instant may both be stored.
+      if (events && !(await events.hasSince(id, 'verified', utcDay(at)).catch(() => true)))
+        await record({ at, kind: 'verified', accountId: id, source: 'server' });
+    } else owners.delete(key);
     return ok;
+  };
+
+  /** The unsigned cascade with its id, or a 422 when the safety check blocked it (stored either way). */
+  const seal = async (
+    reply: FastifyReply,
+    account: AccountId,
+    intent: Record<string, unknown>,
+    cascade: PreparedCascade,
+    ctx: CascadeValidationContext,
+    extra: Record<string, unknown>,
+  ) => {
+    const sealed = await sealCascade(record, account, intent, cascade, ctx);
+    if (!sealed.ok)
+      return reply
+        .code(422)
+        .send({ error: 'assembled cascade failed safety checks', reasons: sealed.reasons });
+    return {
+      account,
+      intent,
+      ...extra,
+      cascadeId: sealed.cascadeId,
+      transactions: sealed.transactions,
+      preview: cascade.preview,
+      signed: false,
+      note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+    };
   };
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
@@ -1818,24 +1892,72 @@ export function registerAccountView(
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
     const strategy = strategySchema.safeParse((req.query as { strategy?: unknown }).strategy);
     if (!strategy.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
-    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
+    const owner = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log);
     const fresh = freshQuery.safeParse(req.query).data?.fresh === '1';
     const out = await readAccount(parsed.data, req.log, strategy.data, fresh);
     if (out.status !== 200) return reply.code(out.status).send(out.body);
-    return { ...out.body, ownerVerified: await ownerVerified };
+    const ownerVerified = await owner;
+    return {
+      ...out.body,
+      ownerVerified: ownerVerified === true,
+      ...(ownerVerified === null && { ownerCheckFailed: true }),
+    };
   });
 
   /**
    * What the orchestrator agents see for this wallet: a fresh Burrow snapshot priced with the same confirmed collector
    * prices as the account view (so the agents' numbers match the portfolio table), today's Burrow supply rates as the
-   * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
-   * recent price). The context is as old as the collector snapshot it was priced from.
+   * yield estimates, Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
+   * recent price), and each priced token's 24 h range from the collector's own stored prices (see range24hBps). The
+   * context is as old as the collector snapshot it was priced from; so is the 24 h window.
    */
+  const dclAllowed = new Set(deps.dclPools ?? []);
+  /** The wallet's DCL positions as the LP Optimizer sees them; empty when DCL or the allowlist is off. */
+  const readLp = async (
+    id: AccountId,
+    prices: ReadonlyMap<string, number>,
+    decimals: (t: string) => number | undefined,
+  ) => {
+    if (!dcl || dclAllowed.size === 0) return null;
+    const positions = await dcl.listPositions(id).catch(() => []);
+    const poolIds = [...new Set(positions.map((p) => p.pool_id))].filter((p) => dclAllowed.has(p));
+    if (poolIds.length === 0) return null;
+    const [volumesUsd, reads] = await Promise.all([
+      deps.discovery?.dclVolumes24hUsd() ?? null,
+      Promise.all(
+        poolIds.map(async (pid) => {
+          const [pool, depth] = await Promise.all([
+            dcl.getPool(pid).catch(() => null),
+            dcl.getMarketDepth(pid).catch(() => null),
+          ]);
+          return { pid, pool, depth };
+        }),
+      ),
+    ]);
+    const pools = new Map<string, DclPool>();
+    const depths = new Map<string, DclMarketDepth>();
+    for (const r of reads) {
+      if (r.pool) pools.set(r.pid, r.pool);
+      if (r.depth) depths.set(r.pid, r.depth);
+    }
+    return lpObservation({
+      positions,
+      pools,
+      depths,
+      allowedPools: dclAllowed,
+      volumesUsd,
+      priceUsd: (t) => prices.get(t),
+      decimals,
+      label: modelTokenLabel,
+    });
+  };
+
   const observe = async (
     id: AccountId,
     held: readonly TokenId[],
     strategy: StrategyId,
-  ): Promise<AgentObservation> => {
+    log: FastifyRequest['log'],
+  ): Promise<WalletObservation> => {
     const [markets, meta, prices, collected] = await Promise.all([
       store.markets(),
       store.tokenMetadata(),
@@ -1883,9 +2005,23 @@ export function registerAccountView(
       const apr = m?.status === 'OK' ? parseDecimal(m.netSupplyApr ?? m.supplyApr ?? '') : null;
       if (apr && apr.mantissa > 0n) estimatedYieldWad.set(token, toWad(apr));
     }
-    const reference = await burrowOracle
-      .getPrices(priced)
-      .catch(() => ({ prices: new Map<TokenId, UnitPrice>() }));
+    const since = new Date(pricedAt.getTime() - DAY_MS);
+    const [reference, lp, ranges] = await Promise.all([
+      burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
+      readLp(id, prices, decimalsOf),
+      Promise.all(
+        priced.map(async (t) => {
+          try {
+            return [t, range24hBps(await store.priceHistory(t, since))] as const;
+          } catch (err) {
+            log.warn({ err, token: t }, 'price history read failed: no 24 h range');
+            return [t, null] as const;
+          }
+        }),
+      ),
+    ]);
+    const volatility24hBps = new Map<TokenId, number>();
+    for (const [t, bps] of ranges) if (bps !== null) volatility24hBps.set(t, bps);
     return {
       now: clock.now(),
       accountId: id,
@@ -1894,11 +2030,13 @@ export function registerAccountView(
         asOf: pricedAt,
         estimatedYieldWad,
         referencePrices: reference.prices,
-        volatility24hBps: new Map(),
-        lpPositions: [],
+        volatility24hBps,
+        lpPositions: lp?.views ?? [],
+        ...(lp && lp.notes.length > 0 && { notes: { lp: lp.notes.join('; ') } }),
       },
       risk: assessRisk(snapshot, config),
       config,
+      ...(lp && { lp: lp.meta }),
     };
   };
 
@@ -1923,6 +2061,7 @@ export function registerAccountView(
             ),
           ],
           strategy,
+          log,
         ),
       heuristics: view.body.recommendations,
       checks: view.forModel,
@@ -1932,23 +2071,49 @@ export function registerAccountView(
     };
   };
 
+  /** The account's timeline (#32). Public: RPC-confirmed transactions only; the owner's proof adds everything else. */
+  app.get('/v1/analytics/account/:id/events', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    if (!events) return { owner: false, items: [] };
+    const [owner, rows] = await Promise.all([
+      isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log).then((ok) => ok === true),
+      events.forAccount(parsed.data, 500),
+    ]);
+    return { owner, items: activityTimeline(rows, { owner }) };
+  });
+
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
-    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
+    const owner = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log);
     const inputs = await analysisInputs(parsed.data, req.log, body.data.strategy);
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
-    const run = async (onEvent?: (e: AnalysisEvent) => void) =>
-      analyseAccount(
+    const ownerVerified = await owner;
+    if (ownerVerified === null) return reply.code(503).send({ error: OWNER_CHECK_FAILED });
+    const run = async (onEvent?: (e: AnalysisEvent) => void) => {
+      const analysis = await analyseAccount(
         deps.ai ?? null,
-        { ...inputs, ownerVerified: await ownerVerified },
+        { ...inputs, ownerVerified },
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
       );
+      await record({
+        at: new Date(),
+        kind: 'analyse',
+        accountId: parsed.data,
+        source: 'server',
+        detail: {
+          source: analysis.source === 'llm' ? 'ai' : 'heuristic',
+          strategy: body.data.strategy,
+        },
+      });
+      return analysis;
+    };
     if (!req.headers.accept?.includes('text/event-stream')) return run();
     // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
     const out = new PassThrough();
@@ -2005,6 +2170,14 @@ export function registerAccountView(
           z.object({
             action: z.literal('reposition_dcl'),
             lptId: z.string().min(1),
+            maxSlippageBps: slip,
+          }),
+          // recentre_dcl: move a DCL position to a new range around the price (remove -> swap? -> add).
+          z.object({
+            action: z.literal('recentre_dcl'),
+            lptId: z.string().min(1).max(300),
+            leftPoint: z.number().int(),
+            rightPoint: z.number().int(),
             maxSlippageBps: slip,
           }),
           // unwrap: wNEAR -> native NEAR.
@@ -2141,36 +2314,23 @@ export function registerAccountView(
         });
 
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([deps.rheaId, token0, token1]),
-          allowedPools,
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amounts: [
-            { raw: side0.rawAmount.toString(), human: side0.humanAmount, symbol: sym0 },
-            { raw: side1.rawAmount.toString(), human: side1.humanAmount, symbol: sym1 },
-          ],
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([deps.rheaId, token0, token1]),
+            allowedPools,
+          },
+          {
+            amounts: [
+              { raw: side0.rawAmount.toString(), human: side0.humanAmount, symbol: sym0 },
+              { raw: side1.rawAmount.toString(), human: side1.humanAmount, symbol: sym1 },
+            ],
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2237,37 +2397,92 @@ export function registerAccountView(
         ];
 
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([dclId]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          position: { lptId: pos.lpt_id, poolId: pos.pool_id },
-          freed: [
-            { raw: freed.x.toString(), human: Number(freed.x) / 10 ** decX, symbol: symX },
-            { raw: freed.y.toString(), human: Number(freed.y) / 10 ** decY, symbol: symY },
-          ],
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([dclId]),
+          },
+          {
+            position: { lptId: pos.lpt_id, poolId: pos.pool_id },
+            freed: [
+              { raw: freed.x.toString(), human: Number(freed.x) / 10 ** decX, symbol: symX },
+              { raw: freed.y.toString(), human: Number(freed.y) / 10 ** decY, symbol: symY },
+            ],
+          },
+        );
       } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
+
+    // recentre_dcl — the LP Optimizer found a range around the current price whose extra fees repay the move. The
+    // position and pool are read fresh; the range must still hold the price, and the pool must be allowlisted.
+    if (intent.action === 'recentre_dcl') {
+      const dclId = deps.dclId;
+      if (!dcl || !dclId) return reply.code(409).send({ error: 'DCL is not configured' });
+      try {
+        const pos = (await dcl.listPositions(account)).find((p) => p.lpt_id === intent.lptId);
+        if (!pos)
+          return reply
+            .code(409)
+            .send({ error: `${account} does not own DCL position ${intent.lptId}` });
+        if (!dclAllowed.has(pos.pool_id))
+          return reply.code(409).send({ error: `pool ${pos.pool_id} is not allowlisted` });
+        if ((pos.v_liquidity ?? 0n) > 0n)
+          return reply.code(409).send({
+            error: `position ${intent.lptId} is staked in a farm; unstake it there before re-centring`,
+          });
+        if (pos.amount <= 0n)
+          return reply.code(409).send({ error: `position ${intent.lptId} is already empty` });
+        const pool = await dcl.getPool(pos.pool_id);
+        if (!pool) return reply.code(409).send({ error: `pool ${pos.pool_id} not found` });
+        const tokenX = accountIdSchema.parse(pool.token_x);
+        const tokenY = accountIdSchema.parse(pool.token_y);
+        // The withdraw and the swap pay out to the wallet: an unregistered token would stop the cascade halfway.
+        const registered = await Promise.all(
+          [tokenX, tokenY].map((t) => tokens.isStorageRegistered(t, account)),
+        );
+        if (registered.includes(false))
+          return reply.code(409).send({
+            error: `register ${account} with both pool tokens before re-centring`,
+          });
+        const built = await recentreSteps({
+          dcl: dclId,
+          position: pos,
+          pool,
+          leftPoint: intent.leftPoint,
+          rightPoint: intent.rightPoint,
+          maxSlippageBps: intent.maxSlippageBps,
+          tokenX,
+          tokenY,
+          symbolX: modelTokenLabel(tokenX),
+          symbolY: modelTokenLabel(tokenY),
+          quote: async (inputToken, outputToken, inputAmount) =>
+            (await dcl.quote({ poolIds: [pos.pool_id], inputToken, outputToken, inputAmount }))
+              .amount,
+        });
+        const cascade = assembleCascade(account, built.steps);
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([dclId, tokenX, tokenY]),
+            dcl: { contract: dclId, pools: dclAllowed },
+          },
+          {
+            position: { lptId: pos.lpt_id, poolId: pos.pool_id },
+            range: { leftPoint: intent.leftPoint, rightPoint: intent.rightPoint },
+          },
+        );
+      } catch (e) {
+        if (e instanceof RecentreRefused) return reply.code(409).send({ error: e.message });
         return prepareFailure(req, reply, e);
       }
     }
@@ -2300,32 +2515,19 @@ export function registerAccountView(
           },
         ];
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([WRAP]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([WRAP]),
+          },
+          {
+            amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2484,20 +2686,6 @@ export function registerAccountView(
         });
         if (!prepared.ok) return reply.code(409).send({ error: prepared.error });
         const cascade = assembleCascade(account, prepared.steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([
-            deployment.oracleId,
-            deps.burrowId,
-            deps.rheaId,
-            intent.collateralToken,
-            intent.token,
-          ]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
         const totalGas = cascade.transactions.reduce(
           (sum, t) => sum + t.actions.reduce((g, a) => g + a.gas, 0n),
           0n,
@@ -2508,34 +2696,36 @@ export function registerAccountView(
           human: Number(raw) / 10 ** f.decimals,
           symbol: f.symbol,
         });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amount: of(amounts.repayRaw, d),
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          cost: {
-            networkFeeMaxNear: Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6,
-            swap: {
-              slippageBps: intent.maxSlippageBps,
-              estReceived: of(amounts.estOutRaw, d),
-              minReceived: of(amounts.minOutRaw, d),
-              priceImpactPct: null,
-            },
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([
+              deployment.oracleId,
+              deps.burrowId,
+              deps.rheaId,
+              intent.collateralToken,
+              intent.token,
+            ]),
           },
-          healthFactor: prepared.hf,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          {
+            amount: of(amounts.repayRaw, d),
+            cost: {
+              networkFeeMaxNear:
+                Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6,
+              swap: {
+                slippageBps: intent.maxSlippageBps,
+                estReceived: of(amounts.estOutRaw, d),
+                minReceived: of(amounts.minOutRaw, d),
+                priceImpactPct: null,
+              },
+            },
+            healthFactor: prepared.hf,
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2635,32 +2825,19 @@ export function registerAccountView(
                 ];
 
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([deployment.oracleId]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([deployment.oracleId]),
+          },
+          {
+            amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2854,14 +3031,6 @@ export function registerAccountView(
       const cascade = assembleCascade(account, steps);
       const allowed = new Set<string>([deps.burrowId, deps.rheaId, intent.token]);
       if (intent.action === 'swap') allowed.add(intent.tokenOut);
-      const check = validateCascade(cascade.transactions, {
-        signerId: account,
-        allowedReceivers: allowed,
-      });
-      if (!check.ok)
-        return reply
-          .code(422)
-          .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
       // Upper-bound network fee: total prepaid gas × the minimum gas price (most of it is refunded in practice).
       const totalGas = cascade.transactions.reduce(
         (s, t) => s + t.actions.reduce((g, a) => g + a.gas, 0n),
@@ -2869,25 +3038,20 @@ export function registerAccountView(
       );
       const networkFeeMaxNear =
         Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6;
-      return {
+      return seal(
+        reply,
         account,
         intent,
-        amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
-        transactions: cascade.transactions.map((t) => ({
-          intentId: t.intentId,
-          receiverId: t.receiverId,
-          actions: t.actions.map((a) => ({
-            methodName: a.methodName,
-            args: a.args,
-            gas: a.gas.toString(),
-            deposit: a.deposit.toString(),
-          })),
-        })),
-        preview: cascade.preview,
-        cost: { networkFeeMaxNear, swap: swapCost },
-        signed: false,
-        note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-      };
+        cascade,
+        {
+          signerId: account,
+          allowedReceivers: allowed,
+        },
+        {
+          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+          cost: { networkFeeMaxNear, swap: swapCost },
+        },
+      );
     } catch (e) {
       return prepareFailure(req, reply, e);
     }

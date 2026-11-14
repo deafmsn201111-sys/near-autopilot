@@ -12,7 +12,9 @@ import {
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
-import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
+import { actionLabel, intentTokens, recommendationToPrepare } from '../lib/recommendation-intent';
+import { label } from '../lib/token-label';
+import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
 
@@ -27,6 +29,7 @@ export function Recommendations({
   recommendations: initial,
   skipped,
   holdings,
+  icons = {},
   signingEnabled,
 }: {
   account: string;
@@ -34,6 +37,7 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
+  icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -57,6 +61,8 @@ export function Recommendations({
     setLive(null);
     setStartedAt(null);
   }
+
+  const nothingToDo = analysis?.fallback === 'nothing_to_rank' && analysis.note;
 
   return (
     <>
@@ -91,7 +97,7 @@ export function Recommendations({
                 ? 'Nothing for the AI to rank'
                 : 'Heuristic (AI unavailable)'}
           </span>
-          {analysis.note && <small> {analysis.note}</small>}
+          {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
       {live ? (
@@ -103,6 +109,7 @@ export function Recommendations({
             ms={analysis.run?.ms ?? null}
             cachedAt={analysis.cachedAt}
             calledTools={analysis.calledTools}
+            why={nothingToDo ? analysis.note : null}
           />
         )
       )}
@@ -114,7 +121,7 @@ export function Recommendations({
           AI analysis failed: {error}
         </div>
       )}
-      {recommendations.length === 0 && skipped.length === 0 && (
+      {!nothingToDo && recommendations.length === 0 && skipped.length === 0 && (
         <p className="muted-note">
           Nothing to improve right now — the portfolio looks balanced at current prices.
         </p>
@@ -134,6 +141,10 @@ export function Recommendations({
         >
           {recommendations.map((r, i) => {
             const request = recommendationToPrepare(r.intent, account);
+            const logos = intentTokens(r.intent).map((t) => ({
+              icon: icons[t] ?? null,
+              symbol: holdings.find((h) => h.token === t)?.symbol ?? label(t, new Map()).symbol,
+            }));
             return (
               <article
                 className={`rec sev-${r.severity}${analysis ? ' rec-in' : ''}`}
@@ -145,6 +156,7 @@ export function Recommendations({
                   {r.agent}
                 </span>
                 <div className="rec-head">
+                  {logos.length > 0 && <TokenIcons tokens={logos} size={28} />}
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>
@@ -214,12 +226,15 @@ function AiTrace({
   ms = null,
   cachedAt = null,
   calledTools = [],
+  why = null,
 }: {
   pipeline: Pipeline;
   elapsedMs?: number | null;
   ms?: number | null;
   cachedAt?: string | null;
   calledTools?: readonly string[];
+  /** Why the model was not asked, built by code from the agents' lines. */
+  why?: string | null;
 }) {
   const { model, read, asked, trace, turns, checks } = pipeline;
   const live = elapsedMs !== null;
@@ -229,15 +244,41 @@ function AiTrace({
   }
   if (!live && !model)
     return (
-      <section className="ai-trace" aria-label="What the agents checked">
+      <section className="ai-trace" aria-label="How the AI got here">
         <header>
-          <h3>What the agents checked</h3>
+          <h3>How the AI got here</h3>
         </header>
-        <ul className="ai-agents">
-          {trace.map((step, i) => (
-            <AgentRow key={step.tool} agent={step.agent} step={step} index={i} />
-          ))}
-        </ul>
+        <ol className="ai-steps">
+          {read && (
+            <Stage state="done" title="Read the wallet on-chain">
+              <span className="ai-step-note">{readLine(read)}</span>
+            </Stage>
+          )}
+          <Stage state="done" title={`${plural(trace.length, 'agent')} ran`}>
+            <ul className="ai-agents">
+              {trace.map((step, i) => (
+                <AgentRow key={step.tool} agent={step.agent} step={step} index={i} />
+              ))}
+            </ul>
+          </Stage>
+          <Stage state="skipped" title="AI not asked: nothing worth ranking">
+            <span className="ai-step-note">
+              No paid model call.
+              {why && (
+                <>
+                  {' '}
+                  Why: {why}{' '}
+                  <span
+                    className="ai-tag"
+                    title={PROVENANCE_TIER_INFO.calculated_estimate.describe}
+                  >
+                    {PROVENANCE_TIER_INFO.calculated_estimate.label}
+                  </span>
+                </>
+              )}
+            </span>
+          </Stage>
+        </ol>
       </section>
     );
   const who = model ? modelName(model) : 'The AI';
@@ -292,12 +333,7 @@ function AiTrace({
       )}
       <ol className="ai-steps">
         <Stage state={state(0)} title="Read the wallet on-chain">
-          {read && (
-            <span className="ai-step-note ai-in">
-              {plural(read.tokens, 'token')} held in the wallet or on Burrow
-              {read.loan ? ', and a Burrow loan' : ', no loan'}
-            </span>
-          )}
+          {read && <span className="ai-step-note ai-in">{readLine(read)}</span>}
         </Stage>
         <Stage state={state(1)} title={agentsTitle}>
           {state(1) === 'active' && asked.length === 0 && (
@@ -356,12 +392,15 @@ function AiTrace({
   );
 }
 
+const readLine = (read: NonNullable<Pipeline['read']>) =>
+  `${plural(read.tokens, 'token')} held in the wallet or on Burrow${read.loan ? ', and a Burrow loan' : ', no loan'}`;
+
 function Stage({
   state,
   title,
   children,
 }: {
-  state: StageState;
+  state: StageState | 'skipped';
   title: string;
   children?: ReactNode;
 }) {

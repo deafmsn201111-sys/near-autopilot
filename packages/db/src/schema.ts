@@ -691,3 +691,39 @@ export const depositQuotes = pgTable(
     index('deposit_quotes_deposit_address_idx').on(t.depositAddress),
   ],
 );
+
+export const EVENT_KINDS = [
+  'connect',
+  'verified',
+  'analyse',
+  'prepare',
+  'prepare_blocked',
+  'signed',
+  'oneclick_quote',
+  'oneclick_final',
+] as const;
+
+/** What real users did through the app (migration 0021). Account id only, never an IP; kept 30 days. */
+export const events = pgTable(
+  'events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    at: ts('at').notNull(),
+    kind: text('kind', { enum: EVENT_KINDS }).notNull(),
+    accountId: text('account_id').notNull(),
+    cascadeId: text('cascade_id'),
+    intent: jsonb('intent').$type<Record<string, unknown>>(),
+    verdict: text('verdict', { enum: ['ALLOW', 'BLOCK'] }),
+    checks: jsonb('checks').$type<unknown[]>(),
+    txHash: text('tx_hash'),
+    /** `client` = reported by the browser, unproven; `server` = done by our API; `rpc` = confirmed by NEAR RPC. */
+    source: text('source', { enum: ['client', 'server', 'rpc'] }).notNull(),
+    detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [
+    index('events_account_at_idx').on(t.accountId, t.at),
+    index('events_at_idx').on(t.at),
+    index('events_cascade_idx').on(t.cascadeId),
+    uniqueIndex('events_tx_hash_idx').on(t.txHash),
+  ],
+);

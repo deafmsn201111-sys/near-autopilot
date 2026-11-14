@@ -16,7 +16,7 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **A demo portfolio's read-only mode has no switch back** (#13 removed `/v1/control/mode`). The orchestrator tightens
   a demo scope to `read_only` on its own (an in-doubt execution after a crash, 3 rejected dry runs in a row, an audit
   write failure) and the mode survives restarts. Rare; undo by hand:
-  `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope shown on `/activity`).
+  `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope = `demo-500` or `demo-5000`).
 - **The strategy preset is remembered per browser only** (one cookie for the last 20 accounts, #25). Another device or a cleared
   browser falls back to Balanced. → #100 (server-side per-account settings, written by the proven owner).
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence. → `T2.1`.
@@ -24,6 +24,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
 - **UX flows** flagged by owner as "not usable" (beyond theme). → `T4.1`.
 - **Guard/contract absent** → autonomy hard-blocked. → `T5.1`.
+- **Wallet-path 24 h range has no outlier filter** (#104 → #159): one bad collector print in a snapshot can widen it past
+  15% and raise a `volatility_spike`. Fail-safe (it only defers discretionary trades).
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
 
 ## Watch list (external)

@@ -462,6 +462,80 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   "AI unavailable". It still lists each agent's line under "What the agents checked". This replaces #130's model call
   for the same case (owner's choice, 14 Nov): a supply under 1% a year is no longer offered to the model either.
 
+## 2026-11-14 — LP Optimizer on the wallet path: DCL re-centre (#63)
+
+- `packages/rhea-dcl-adapter/src/recentre.ts`: `alignRange` (agent ticks → DCL points) and `recentreSwap` (surplus to
+  swap for a range's ratio), on the contract's own deposit math.
+- `apps/api/src/analytics/lp-recentre.ts`: `lpObservation` builds an `LpPositionView` per wallet DCL position
+  (liquidity converted to CLMM units, market depth as segments, 24 h volume and gas in token Y); `recentreSteps`
+  builds the cascade.
+- `apps/api/src/analytics/discovery.ts`: `dclVolumes24hUsd` from Rhea's indexer.
+- `ai-analysis.ts`: `lp_optimizer` tool replaces `liquidity_positions`; `account-view.ts`: `observe()` fills
+  `market.lpPositions`, prepare intent `recentre_dcl`; `validate-cascade.ts`: DCL `add_liquidity` allowlist (D26).
+- `apps/analytics`: "Prepare new range" button for `recentre_dcl`; the exit card reads as an exit.
+
+## 2026-11-14 — Market Intelligence: 24 h volatility on the wallet path (#104)
+
+- `apps/api/src/analytics/series.ts`: `range24hBps` — high-low range (bps) of an asset's per-snapshot consensus
+  price; null under 12 snapshots.
+- `apps/api/src/analytics/account-view.ts`: the wallet observation fills `volatility24hBps` for each priced held
+  token from the collector's last 24 h of `price_observations`; a failed read leaves the token without a range.
+- A range above 15% is a `volatility_spike` and the Market Intelligence trace line names it (D13 updated).
+
+## #124 — Token logos and a deposit picker
+
+- `packages/core/src/token-icon.ts`: `safeTokenIcon` (image data URIs only, 32 KB cap) (D27).
+- `apps/api/src/analytics/token-icons.ts`: `TokenIcons` (ft_metadata.icon, bounded cache, NEAR logo for
+  `near`/`wrap.near`) and `GET /v1/tokens/icons?ids=`; `/v1/deposit/assets` gives each token its `icon`; LP rows carry
+  their `tokens`.
+- `apps/analytics`: `TokenIcon` (img or letter placeholder, falls back on a load error) on holdings rows (two
+  overlapping on LP rows), recommendation cards (the intent's tokens) and the deposit quote. The deposit form is now
+  network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
+  Enter, Esc back).
+
+## 2026-11-14 — Both paths rank idle tokens by dollars a year (#139)
+
+- `packages/orchestrator/src/agents/capital-allocator.ts`: `proposeSupplies` proposes a supply for every idle
+  allocation asset, the most dollars a year (value × Burrow rate) first; the decision engine still ranks by net benefit.
+- `apps/api/src/analytics/ai-analysis.ts`: one supply candidate per idle token with its yearly earnings; the prompt
+  says a pick that skips the top earner explains why in its "why".
+- `apps/api/src/analytics/account-view.ts`: the rule-based idle card offers the top earner in dollars a year (not the
+  largest balance) and names the runner-up's yearly earnings.
+
+## 2026-11-14 — Ownership: a key read that could not run is not "not the owner" (#144)
+
+- `apps/api/src/wallet/ownership.ts`: `verifyOwnership` rethrows an `RpcError` from the access-key read that is not
+  the node's own answer (timeout, rate limit, HTTP error, node down); a missing or function-call key is still `false`.
+- `apps/api/src/analytics/account-view.ts`: such a failure is logged (`ownership key read failed`, account and error
+  text, never the proof); GET account answers `ownerVerified: false, ownerCheckFailed: true`, POST analysis 503.
+- `apps/analytics`: a read with `ownerCheckFailed` is cached 1 s, not 60 s (it used to hold "not verified" under the
+  new proof's key); `OwnershipCheck` says the check could not run, refreshes once after 2 s and offers "Check again".
+
+## 2026-11-14 — Real activity on an events table (#32)
+
+- `packages/db`: migration 0021 `events` (unique tx hash, 30-day purge in `analytics/main.ts`).
+- `packages/near-adapter/src/tx-status.ts`: final transaction status by hash + signer (zod), tested on recorded
+  mainnet answers (`test/fixtures/tx-*.json`: Burrow repay/supply, Rhea swaps, a failed oracle call, unknown hash).
+- `apps/api/src/wallet/validate-cascade.ts`: per-rule checks and a summary; `wallet/seal.ts` stores every prepare's
+  verdict; `wallet/outcome.ts` turns receipts' logs into "Repaid 5.01 USDC on Burrow" and, on failure, the contract,
+  its error and the funds' fate; `wallet/confirm.ts` is `POST /v1/wallet/confirm` (D28).
+- `apps/api/src/analytics/events.ts`: `POST /v1/events` (connect), `GET /v1/analytics/account/:id/events`, `GET
+/v1/analytics/policy/cascades`; analyse, verified and 1Click quote writers. `/v1/analytics/agent-activity` removed.
+- `apps/analytics`: `/api/events` and `/api/confirm` (JSON only, rate-limited); the sign dialog shows each step ⏳ → ✓/✗
+  and stops after a failed one; Activity and /policy rebuilt on events; shadow-mode text removed from Home and
+  Opportunities.
+- Found on the way: Burrow's `oracle_call` failed with "Price oracle disabled" on mainnet on 13 Nov (autopilot-test.near).
+
+## 2026-11-14 — "Nothing for the AI to rank" says why (#143)
+
+- On top of #119 (no model call when nothing to rank): `nothing_to_rank` carries `note` = the proposing agents' own
+  lines joined in order (no model text); the guardian's safe-loan line names the strategy ("Health factor 1.29; safe
+  from 1.25 on Aggressive").
+- `Recommendations.tsx`: the nothing-to-rank case keeps the "How the AI got here" timeline: wallet read (new
+  `read` on the analysis, set without a model run), the agents, and a neutral "AI not asked" step carrying the "Why: …"
+  line with a provenance tag; the generic "Nothing to improve right now" is gone for that case.
+- #143's original goal (a `source: 'llm'` result) is superseded by #119's decision not to call the model at all.
+
 ## 2026-11-14 — 1Click deposit status polling with limits (#29)
 
 - `OneClickDepositClient.status`: `GET /v0/status?depositAddress=…` (JWT if set), zod per field; an unknown status

@@ -163,8 +163,8 @@ export default async function OpportunitiesPage({
             <p className="note">
               <b>Pass the filters</b> means at least 1% yield a year, at least $50k liquidity,
               prices confirmed by two sources, a risk score under 50, and no simulated loss after
-              costs. It is a shortlist to study, not advice and not an instruction: in shadow mode
-              nothing is ever executed.
+              costs. It is a shortlist to study, not advice and not an instruction: nothing here is
+              executed; you prepare a move and sign it in your own wallet.
             </p>
             <p className="note">Not listed:</p>
             <ul className="note">

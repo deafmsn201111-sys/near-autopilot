@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "author": "liver.pool.near",
+    "header": {
+      "height": 224098679,
+      "hash": "9sGL3Yp7paz8YcL418SYTn2N14YM9jLiRTF8W7Ldorgf",
+      "timestamp": 1794419752555143086,
+      "timestamp_nanosec": "1794419752555143086"
+    },
+    "chunks": []
+  }
+}
