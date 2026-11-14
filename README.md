@@ -693,6 +693,9 @@ mainnet contract defaults are built in.
   `validateCascade`.
 - Generate `API_TOKEN`, `POSTGRES_PASSWORD` and `ANALYSIS_ENCRYPTION_KEY` locally (`openssl rand -hex 32`;
   `quickstart.sh` does it); never reuse example values.
+- `quickstart.sh` keeps `.env` owner-only (600). The example `API_TOKEN` is empty, so a copied `.env.example` is
+  refused at start-up instead of running with a known token. `.env`, `.pem` and `.key` files never enter a Docker image.
+- The live server accepts SSH keys only, no passwords.
 - All published ports bind to `127.0.0.1`. Details and threat model: [docs/security.md](docs/security.md).
 
 ## HTTP API

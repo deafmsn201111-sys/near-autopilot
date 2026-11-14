@@ -1096,6 +1096,15 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `deploy/public/setup.sh` checks the IP argument and stops instead of `chmod 777`; `scripts/start-issue.sh` takes a
   numeric issue only; D15 says when a key counts as rotated. Accepted items in KNOWN_ISSUES.
 
+## 2026-11-14 — Config hardening and SSH key-only (#142, #316)
+
+- `.env.example`: `API_TOKEN` is empty (the old 42-character placeholder passed `min(32)`); `quickstart.sh` runs under
+  `umask 077`, always sets `.env` to 600 and fills an empty `API_TOKEN` in an existing `.env`.
+- `.dockerignore`: `**/.env.*`, `**/*.pem`, `**/*.key`, `deploy/public/config/`. KNOWN_ISSUES: the cookie's `secure`
+  flag still follows `x-forwarded-proto`.
+- VPS: `sshd_config.d/00-keys-only.conf` (no passwords, root by key only). `hodl13.near` stays in D17/D38 as a
+  public benchmark account.
+
 ## 2026-11-14 — The demo account's saved AI analysis for visitors without a wallet (#24, lite)
 
 - env `PUBLIC_ANALYSIS_ACCOUNT` (config `llmEnvSchema`, both compose files and `.env.example`s).
