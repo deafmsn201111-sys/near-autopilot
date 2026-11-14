@@ -698,6 +698,8 @@ export const depositQuotes = pgTable(
     /** The latest 1Click `/v0/status` we saw (#29) and when; null until first checked. */
     status: text('status'),
     statusAt: ts('status_at'),
+    /** When `GET /v1/deposit/transfer/:id` last handed the transfer to a wallet (#214); null: never. */
+    transferIssuedAt: ts('transfer_issued_at'),
   },
   (t) => [
     index('deposit_quotes_created_at_idx').on(t.createdAt),

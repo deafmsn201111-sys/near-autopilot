@@ -46,6 +46,8 @@ export interface DepositQuoteStore {
   saveStatus(id: string, status: SwapStatus, at: Date): Promise<void>;
   /** Quotes with no final status, except unpaid ones whose deadline is before `since`. */
   unfinished(since: Date): Promise<UnfinishedQuote[]>;
+  /** Marks the quote's wallet transfer as handed out; false when it already was, unless `retry`. Atomic. */
+  issueTransfer(id: string, at: Date, retry: boolean): Promise<boolean>;
   /** Deletes quotes older than 30 days. */
   purge(): Promise<void>;
 }
@@ -100,6 +102,8 @@ const MAX_RECHECK_MS = 10 * 60_000;
 // A wallet prompt can stay open a while: a transfer must land well before 1Click's deadline.
 export const SEND_MARGIN_MS = 2 * 60_000;
 const ALREADY_SEEN = 'A deposit to this address was already seen. Do not send again.';
+const ALREADY_ISSUED =
+  'This transfer was already sent to a wallet, maybe from another tab. Check your wallet and do not send to this address again; if it shows nothing, get a new quote.';
 const MANUAL_ONLY = 'Send this deposit manually: your wallet cannot be asked for it here.';
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
 
@@ -260,6 +264,8 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     });
     return { origins, destinations };
   };
+
+  const transferQuery = z.object({ retry: z.literal('1').optional() }).catch({});
 
   const incidentQuery = z.object({
     origin: z.string().min(1).max(200),
@@ -434,6 +440,15 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       origin && isDepositChain(chain) && chain !== 'btc' ? paymentToken(chain, origin) : null;
     if (!origin || !payment || !isRefundAddress(chain as DepositChain, q.depositAddress))
       return reply.code(409).send({ error: MANUAL_ONLY });
+    // Two tabs on one quote must not both prompt a wallet; only a send the wallet rejected may ask again.
+    const retry = transferQuery.parse(req.query).retry === '1';
+    try {
+      if (!(await deps.store.issueTransfer(q.id, at, retry)))
+        return reply.code(409).send({ error: ALREADY_ISSUED });
+    } catch (err) {
+      req.log.warn({ err }, 'deposit transfer not marked');
+      return reply.code(502).send({ error: UNAVAILABLE });
+    }
     return {
       quoteId: q.id,
       chain,
@@ -639,6 +654,11 @@ export interface WithdrawTransfer {
   /** The quote's deposit address, a NEAR implicit account. */
   readonly receiver: string;
   readonly amount: bigint;
+  /**
+   * Marks the quote's transfer as handed out (#214), once all checks passed: false when it already was. One EXACT_INPUT
+   * quote built twice could be paid twice before 1Click sees the first transfer.
+   */
+  readonly claim: () => Promise<boolean>;
 }
 export type WithdrawLookup = (
   quoteId: string,
@@ -647,11 +667,9 @@ export type WithdrawLookup = (
 
 /**
  * The withdrawal a NEAR transfer may be built for: a stored quote of this account, from one of our tokens to a NEAR
- * implicit deposit address, sendable now (`sendRefusal`) and never built before.
+ * implicit deposit address and sendable now (`sendRefusal`); the caller claims it once its own checks pass.
  */
 export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLookup {
-  // One build per quote: a second cascade for one EXACT_INPUT quote could pay it twice before 1Click sees the first.
-  const built = new BoundedMap<string, true>(STATUS_CACHE_SIZE);
   return async (quoteId, account) => {
     const at = now();
     let q;
@@ -672,10 +690,6 @@ export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLook
       return { status: 409, error: 'This quote is not a withdrawal from NEAR.' };
     const refused = await sendRefusal(deps, q, at, () => undefined);
     if (refused) return refused;
-    // ponytail: in memory, so a restart forgets; 1Click's own status check above still refuses once it sees the send.
-    if (built.has(q.id))
-      return { status: 409, error: 'This quote was already built once. Get a new quote.' };
-    built.set(q.id, true);
     return {
       quoteId: q.id,
       token,
@@ -683,6 +697,7 @@ export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLook
       decimals: listed.decimals,
       receiver: q.depositAddress,
       amount: BigInt(q.amountIn),
+      claim: () => deps.store.issueTransfer(q.id, now(), false),
     };
   };
 }

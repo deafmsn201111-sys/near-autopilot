@@ -101,6 +101,7 @@ function depositDeps(
 ) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
+  const issued = new Set<string>();
   const deps: DepositDeps = {
     oneClick: {
       tokens: async () => TOKENS,
@@ -119,6 +120,7 @@ function depositDeps(
       find: async () => (o.row === undefined ? { ...stored(), status: null } : o.row),
       saveStatus: async () => undefined,
       unfinished: async () => [],
+      issueTransfer: async (id) => !issued.has(id) && Boolean(issued.add(id)),
     },
     destinationTokens: [USDC, 'wrap.near'],
     newId: () => 'wq_1',
@@ -278,7 +280,7 @@ describe('withdrawLookup', () => {
     withdrawLookup(depositDeps(o).deps, () => NOW);
 
   it('gives the token, receiver and amount of the stored quote', async () => {
-    expect(await lookup()('wq_1', ALICE)).toEqual({
+    expect(await lookup()('wq_1', ALICE)).toMatchObject({
       quoteId: 'wq_1',
       token: USDC,
       symbol: 'USDC',
@@ -286,12 +288,6 @@ describe('withdrawLookup', () => {
       receiver: DEPOSIT,
       amount: 1_000_000n,
     });
-  });
-
-  it('builds one quote once, so it cannot be paid twice before 1Click sees the first send', async () => {
-    const once = lookup();
-    expect(await once('wq_1', ALICE)).toMatchObject({ amount: 1_000_000n });
-    expect(await once('wq_1', ALICE)).toMatchObject({ status: 409, error: /already built/ });
   });
 
   it('refuses a quote of another account, an unknown one and a deposit quote', async () => {
@@ -324,13 +320,17 @@ describe('prepare withdraw_1click', () => {
       }),
     }) as unknown as NearRpcClient;
 
-  const prepare = (views: Record<string, unknown>, o: Parameters<typeof depositDeps>[0] = {}) =>
+  const prepare = (
+    views: Record<string, unknown>,
+    o: Parameters<typeof depositDeps>[0] = {},
+    deposit = depositDeps(o).deps,
+  ) =>
     buildAnalyticsServer({
       apiToken: API_TOKEN,
       store: {} as CollectorStore,
       intervalSeconds: 900,
       now: () => NOW,
-      deposit: depositDeps(o).deps,
+      deposit,
       mainnet: {
         rpc: rpc(views),
         burrowId: 'contract.main.burrow.near',
@@ -381,6 +381,15 @@ describe('prepare withdraw_1click', () => {
     const res = await prepare({ ...views, ft_balance_of: '999999' });
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: string }>().error).toMatch(/holds less/);
+  });
+
+  it('builds a quote once, and a failed build does not use it up', async () => {
+    const { deps } = depositDeps();
+    expect((await prepare({ ...views, ft_balance_of: '1' }, {}, deps)).statusCode).toBe(409);
+    expect((await prepare(views, {}, deps)).statusCode).toBe(200);
+    const again = await prepare(views, {}, deps);
+    expect(again.statusCode).toBe(409);
+    expect(again.json<{ error: string }>().error).toMatch(/already built/);
   });
 
   it('passes the lookup refusal through', async () => {

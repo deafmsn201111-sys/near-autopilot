@@ -647,7 +647,9 @@ wallet; the server never sees a key. `test/signing-lock.test.ts` keeps `.transfe
 until the user types another; the server still validates it. The QR / manual path stays for every quote.
 **Consequences:** no new caps: the amount and receiver are the quote's, which the user saw and 1Click verified. After
 a send the button is replaced by the transaction link, so one quote is not paid twice from the dialog; the existing
-status polling follows the deposit. Bitcoin and TRON wallets stay manual (stretch).
+status polling follows the deposit. The API hands a quote's transfer out once (#214): `transfer_issued_at` on
+`deposit_quotes` is set by a conditional update, and a second request (another tab) gets 409. Only the dialog that saw
+its wallet reject the send (declined, no gas, no token, refused by the network) asks again with `retry=1`. Bitcoin and TRON wallets stay manual (stretch).
 
 ## D35 — A withdrawal sends `ft_transfer` only to its stored 1Click quote's deposit address (#171)
 
@@ -665,9 +667,11 @@ belong to the signer, be a NEAR-origin quote of a listed token, be more than 2 m
 `storage_deposit { account_id: <deposit address>, registration_only: true }` (bounds.min, capped at 0.0125 NEAR like
 other registrations; skipped when registered) and `ft_transfer` of the quoted amount, 1 yocto. `validateCascade` allows
 `ft_transfer` only when the context names `transferTo`, and only to it, with exactly 1 yocto and a positive amount;
-every other cascade has no `transferTo`, so `ft_transfer` stays refused there. No cap changes. A quote is built at most once (kept in memory;
-after a restart the fresh 1Click status check remains), and the dialog offers one signing attempt per quote, so one
-EXACT_INPUT quote cannot be paid twice before 1Click sees the first transfer; after a decline the user gets a new quote.
+every other cascade has no `transferTo`, so `ft_transfer` stays refused there. No cap changes. A quote is built at most once:
+after every check passes, the build claims it with the same `transfer_issued_at` mark as a deposit transfer (#214), so
+a failed build does not use it up and a second build (another tab, a rebuild) gets 409; the dialog offers one signing
+attempt per quote. One EXACT_INPUT quote cannot be paid twice before 1Click sees the first transfer; after a decline
+the user gets a new quote.
 **Consequences:** A withdrawal is signed in the NEAR wallet like any cascade and confirmed step by step. Its status is
 the deposit status path (#29); the recipient address is kept in the `oneclick_quote` event, not in `deposit_quotes`.
 Native NEAR (needs a wrap first), Bitcoin and other chains are not offered yet.

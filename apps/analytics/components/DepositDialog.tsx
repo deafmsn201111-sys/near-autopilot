@@ -506,6 +506,7 @@ function WalletSend({
   const [error, setError] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [unsure, setUnsure] = useState<string | null>(null);
+  const [rejected, setRejected] = useState(false);
   const done = hash !== null || unsure !== null;
   useEffect(() => onState(done ? 'sent' : busy ? 'busy' : 'idle'), [done, busy, onState]);
   // Kept mounted past the deadline while the wallet is open or once it sent: a signed transfer is never lost.
@@ -519,17 +520,20 @@ function WalletSend({
       await withoutModal(dialog, async () => {
         if (!connected && !(await connectOriginWallet(chain)))
           return setError('No wallet was connected. Connect one, or send manually below.');
-        const t = await loadDepositTransfer(q);
-        if (!t.ok) return setError(t.error);
         if (expiresAt - Date.now() < SEND_MARGIN_MS)
           return setError('This quote expires too soon to send. Get a new one.');
+        const t = await loadDepositTransfer(q, rejected);
+        if (!t.ok) return setError(t.error);
         setHash(await sendOriginTransfer(t.data));
       });
     } catch (e) {
       const why = e instanceof Error ? e.message.slice(0, 200) : '';
       const failure = sendFailure(e);
       if (failure === 'unknown') setUnsure(why);
-      else setError(walletSendError(failure, q, why));
+      else {
+        setRejected(true);
+        setError(walletSendError(failure, q, why));
+      }
     } finally {
       setBusy(false);
     }

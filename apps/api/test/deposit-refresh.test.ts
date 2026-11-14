@@ -102,6 +102,7 @@ describe('background refresh of unfinished deposits', () => {
         save: async () => undefined,
         purge: async () => undefined,
         find: async (id) => ({ ...stored(id), status: 'PENDING_DEPOSIT' }),
+        issueTransfer: async () => true,
         saveStatus: async (id, _status, at) => {
           saved.push({ id, at });
         },

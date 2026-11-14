@@ -658,6 +658,33 @@ describe('portfolioRecommendations', () => {
     expect(d?.intent).toEqual({ action: 'reposition_dcl', lptId: 'lpt#1', poolId: 'p|q|60' });
   });
 
+  it('offers the exit for a $0.99 position: it costs only gas and earns nothing out of range (#226)', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#3', poolId: 'u|w|100', pair: 'USDC/wNEAR', usd: 0.99, estimate: false },
+        ],
+      }),
+    );
+    expect(r.find((x) => x.kind === 'reposition_dcl_position')?.intent).toEqual({
+      action: 'reposition_dcl',
+      lptId: 'lpt#3',
+      poolId: 'u|w|100',
+    });
+  });
+
+  it('says why a dust out-of-range position gets no card (#226)', () => {
+    const advice = portfolioAdvice(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#4', poolId: 'u|w|100', pair: 'USDC/wNEAR', usd: 0.05, estimate: false },
+        ],
+      }),
+    );
+    expect(advice.recommendations.some((x) => x.kind === 'reposition_dcl_position')).toBe(false);
+    expect(advice.skipped.join(' ')).toMatch(/USDC\/wNEAR.*out of range/);
+  });
+
   it('says the value of a meme-pool position is an estimate (#193)', () => {
     const r = portfolioRecommendations(
       ctx({
