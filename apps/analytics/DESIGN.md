@@ -340,7 +340,7 @@ A 7px glyph before the source label in Meta type, text-3: filled dot = on-chain 
 
 ### Loan safety gauge (signature)
 
-8px track with three zones (liquidation / watch / safe) whose boundaries come from the user's strategy, threshold marks at ≥3:1, "urgent" label above the bar and "liquidation"/"safe" below so they never collide, a 14px text-1 knob ringed in the surrounding surface. Always followed by a sentence: "Liquidation if X falls N%".
+8px track with three zones (liquidation / watch / safe) whose boundaries come from the user's strategy, threshold marks at ≥3:1, "urgent" label above the bar and "liquidation"/"safe" below, "safe" starting at its mark, so they never collide, a 14px text-1 knob ringed in the surrounding surface. Always followed by a sentence: "Liquidation if X falls N%".
 
 ### Analysis panel (signature)
 

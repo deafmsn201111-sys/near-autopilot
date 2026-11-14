@@ -36,12 +36,10 @@ import {
   money,
   portfolioView,
   savedAnalysis,
-  type Level,
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
 import { intentTokens } from '../lib/recommendation-intent';
-import { signedMoney } from '../lib/format';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
@@ -52,7 +50,7 @@ import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
-import { Chip, LoanGauge, ProvenanceMark } from '../components/primitives';
+import { PortfolioSummary } from '../components/PortfolioSummary';
 import {
   savedStrategy,
   STRATEGY_COOKIE,
@@ -61,18 +59,6 @@ import {
 } from '@near-autopilot/core/strategy';
 
 export const dynamic = 'force-dynamic';
-
-const HEALTH_TONE = { low: 'safe', medium: 'watch', high: 'act' } as const;
-
-/** "Unknown" (no health factor, not low) stays neutral; a loan at or below 1 is liquidation red. */
-const healthTone = ({ healthFactor, level }: { healthFactor: number | null; level: Level }) =>
-  healthFactor === null
-    ? level === 'low'
-      ? 'safe'
-      : undefined
-    : healthFactor <= 1
-      ? 'liq'
-      : HEALTH_TONE[level];
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -314,7 +300,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </>
     );
   const t = data.totals;
-  const monthly = signedMoney(data.earnings.monthlyNetUsd);
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
 
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
@@ -359,18 +344,15 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const unverifiedRows = allRows.filter((h) => !isSmall(h) && h.verified === false);
   const smallRows = allRows.filter(isSmall);
   const assetsTotal = t.assetsUsd || 1;
-  const alloc = data.metrics
-    ? data.metrics.byToken.map((b) => ({ symbol: b.symbol, pct: b.pct / 100 }))
-    : allocBySymbol(
-        allRows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
-        assetsTotal,
-      );
-  const allocTop = alloc.slice(0, 4);
-  const allocOther = alloc.slice(4).reduce((s, a) => s + a.pct, 0);
-  const allocSegs = [
-    ...allocTop.map((a, i) => ({ label: a.symbol, pct: a.pct, color: `var(--series-${i + 1})` })),
-    ...(allocOther > 0.0005 ? [{ label: 'Other', pct: allocOther, color: 'var(--series-5)' }] : []),
-  ];
+  const iconBySymbol = new Map(allRows.map((r) => [r.symbol, r.logos[0]?.icon ?? null]));
+  const alloc = (
+    data.metrics
+      ? data.metrics.byToken.map((b) => ({ symbol: b.symbol, pct: b.pct / 100 }))
+      : allocBySymbol(
+          allRows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
+          assetsTotal,
+        )
+  ).map((a) => ({ ...a, icon: iconBySymbol.get(a.symbol) ?? null }));
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
   const mode = portfolioMode({
     isAccount,
@@ -389,10 +371,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           withAccount
           account={cookieAccount || accountParam}
         />
-        <span className="sync-note">
-          <span className="dot" aria-hidden="true" />
-          {isAccount ? 'Synced from mainnet · just now' : `Updated ${ago(data.asOf)}`}
-        </span>
       </div>
 
       {isAccount && <AccountForm compact />}
@@ -408,33 +386,40 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           page fills in by itself.
         </div>
       )}
-      <section className="hero">
-        <div className="hero-main">
-          <span className="eyebrow">Net worth</span>
-          <div className="hero-mode">
-            <span className={`hero-live ${mode.mine ? 'is-live' : ''}`}>
-              <span className="dot" aria-hidden="true" />
-              {mode.label}
-            </span>
-            <span className="muted-note">{mode.note}</span>
-            {mode.backTo && (
-              <Link
-                className="btn secondary small"
-                href={`/?p=account&account=${encodeURIComponent(mode.backTo)}`}
-              >
-                ← Back to my wallet
-              </Link>
-            )}
-          </div>
-          <div className="hero-top">
-            <div className="hero-value num">{money(t.netWorthUsd, false)}</div>
-          </div>
-          <span className="muted-note">
-            {money(t.assetsUsd, false)} in assets − {money(t.debtUsd, false)} borrowed
-          </span>
-          {isAccount && accountParam && accountParam === cookieAccount && (
-            <div>
-              <DepositButton account={accountParam} label="Fund from another chain" />{' '}
+      <div className="hero-mode">
+        <span className={`hero-live ${mode.mine ? 'is-live' : ''}`}>
+          <span className="dot" aria-hidden="true" />
+          {mode.label}
+        </span>
+        <span className="muted-note">{mode.note}</span>
+        {mode.backTo && (
+          <Link
+            className="btn secondary small"
+            href={`/?p=account&account=${encodeURIComponent(mode.backTo)}`}
+          >
+            ← Back to my wallet
+          </Link>
+        )}
+      </div>
+      <PortfolioSummary
+        key={`summary:${isAccount ? accountParam : id}`}
+        netWorthUsd={t.netWorthUsd}
+        assetsUsd={t.assetsUsd}
+        debtUsd={t.debtUsd}
+        source={{
+          kind: isAccount ? 'on_chain' : 'simulated',
+          age: isAccount ? 'just now' : ago(data.asOf),
+        }}
+        alloc={alloc}
+        monthly={{ usd: data.earnings.monthlyNetUsd, sentence: data.earnings.sentence }}
+        health={data.health}
+        loanBy={isAccount ? 'your collateral' : 'NEAR'}
+        actions={
+          isAccount &&
+          accountParam &&
+          accountParam === cookieAccount && (
+            <>
+              <DepositButton account={accountParam} label="Add funds" />
               <WithdrawDialog
                 account={accountParam}
                 balances={data.holdings.flatMap((h) =>
@@ -442,61 +427,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                 )}
                 signingEnabled={signingEnabled}
               />
-            </div>
-          )}
-          {allocSegs.length > 0 && (
-            <>
-              <div className="alloc-bar" aria-hidden="true">
-                {allocSegs.map((s) => (
-                  <i key={s.label} style={{ width: `${s.pct * 100}%`, background: s.color }} />
-                ))}
-              </div>
-              <div className="alloc-legend">
-                {allocSegs.map((s) => (
-                  <span key={s.label}>
-                    <span className="sw" style={{ background: s.color }} />
-                    <b>{s.label}</b> {(s.pct * 100).toFixed(1)}%
-                  </span>
-                ))}
-              </div>
             </>
-          )}
-        </div>
-        <div className="hero-side">
-          <div className="hero-stat">
-            <span className="eyebrow">Monthly result now</span>
-            <div className={`hero-num num ${monthly.tone}`}>{monthly.text}</div>
-            <span className="muted-note">{data.earnings.sentence}</span>
-          </div>
-          <div className="hero-stat">
-            <span className="eyebrow">
-              Loan safety <ProvenanceMark kind={isAccount ? 'estimate' : 'simulated'} />
-            </span>
-            <div className="hero-safe">
-              <Chip tone={healthTone(data.health)} large>
-                {data.health.label}
-              </Chip>
-              {data.health.healthFactor !== null && (
-                <span className="muted-note num">
-                  Health factor {data.health.healthFactor.toFixed(2)}
-                </span>
-              )}
-            </div>
-            {data.health.healthFactor !== null &&
-            data.health.urgentBelow !== undefined &&
-            data.health.safeFrom !== undefined ? (
-              <LoanGauge
-                healthFactor={data.health.healthFactor}
-                urgentBelow={data.health.urgentBelow}
-                safeFrom={data.health.safeFrom}
-                by={isAccount ? 'your collateral' : 'NEAR'}
-              />
-            ) : (
-              <span className="muted-note">{data.health.sentence}</span>
-            )}
-          </div>
-        </div>
-      </section>
+          )
+        }
+      />
 
       {isAccount && recs && (
         <OwnershipCheck

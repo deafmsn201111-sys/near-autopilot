@@ -858,3 +858,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - hex-api.app refuses our origin (CORS 403), so the kit's 1Click and market calls go through `/api/hex/[...path]`: an
   allowlisted, rate-limited pass-through without the visitor's origin or cookies. Checked on a local stack: prices
   load and a quote reaches 1Click.
+
+## 2026-11-14 — Portfolio summary on the page (#250)
+
+- `components/PortfolioSummary.tsx`: the summary on `/` as in the prototype — no panel, 1.6fr / 1fr / 1fr with
+  hairlines, one violet glow; net worth 56px (44px phone) with cents in text-3, "assets − borrowed" and a provenance
+  mark with data age; a 10px allocation bar in token colours with icon legend; "Each month" KPI with sign and trend
+  arrow; loan safety as a large status chip, health factor and gauge, or "No loan".
+- An other-chains line ("+ $X on other chains · not analysed") renders only when given data; #265 fills it.
+- `components/CountUp.tsx`: net worth and the monthly result count up over 600ms when the value changes after a
+  refresh; the first render and reduced motion show the value at once. The summary is keyed by portfolio, so
+  switching views never animates.
+- Old layered `.hero*` / `.alloc-*` CSS removed. The gauge's "safe" label now starts at its mark so it no longer
+  runs into "liquidation" on the Aggressive strategy.
