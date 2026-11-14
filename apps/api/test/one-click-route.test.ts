@@ -664,7 +664,7 @@ describe('GET /v1/deposit/transfer/:id', () => {
     expect(again.statusCode).toBe(409);
     expect(again.json()).toEqual({
       error:
-        'This transfer was already sent to a wallet, maybe from another tab. Check your wallet; do not send to this address again.',
+        'This transfer was already sent to a wallet, maybe from another tab. Check your wallet and do not send to this address again; if it shows nothing, get a new quote.',
     });
     expect((await get(stored(), 'dq_1', undefined, issueTransfer, '?retry=1')).statusCode).toBe(
       200,

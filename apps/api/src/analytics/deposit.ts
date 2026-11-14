@@ -98,7 +98,7 @@ const MAX_RECHECK_MS = 10 * 60_000;
 export const SEND_MARGIN_MS = 2 * 60_000;
 const ALREADY_SEEN = 'A deposit to this address was already seen. Do not send again.';
 const ALREADY_ISSUED =
-  'This transfer was already sent to a wallet, maybe from another tab. Check your wallet; do not send to this address again.';
+  'This transfer was already sent to a wallet, maybe from another tab. Check your wallet and do not send to this address again; if it shows nothing, get a new quote.';
 const MANUAL_ONLY = 'Send this deposit manually: your wallet cannot be asked for it here.';
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
 
@@ -220,6 +220,8 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     });
     return { origins, destinations };
   };
+
+  const transferQuery = z.object({ retry: z.literal('1').optional() }).catch({});
 
   const incidentQuery = z.object({
     origin: z.string().min(1).max(200),
@@ -403,7 +405,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     if (!origin || !payment || !isRefundAddress(chain as DepositChain, q.depositAddress))
       return reply.code(409).send({ error: MANUAL_ONLY });
     // Two tabs on one quote must not both prompt a wallet; only a send the wallet rejected may ask again.
-    const retry = (req.query as { retry?: unknown }).retry === '1';
+    const retry = transferQuery.parse(req.query).retry === '1';
     try {
       if (!(await deps.store.issueTransfer(q.id, at, retry)))
         return reply.code(409).send({ error: ALREADY_ISSUED });

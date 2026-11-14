@@ -536,10 +536,10 @@ function WalletSend({
       await withKitPopup(dialog, async () => {
         if (!connected && !(await connectOriginWallet(chain)))
           return setError('No wallet was connected. Connect one, or send manually below.');
-        const t = await loadDepositTransfer(q, rejected);
-        if (!t.ok) return setError(t.error);
         if (expiresAt - Date.now() < SEND_MARGIN_MS)
           return setError('This quote expires too soon to send. Get a new one.');
+        const t = await loadDepositTransfer(q, rejected);
+        if (!t.ok) return setError(t.error);
         setHash(await sendOriginTransfer(t.data));
       });
     } catch (e) {
