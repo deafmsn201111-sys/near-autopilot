@@ -9,6 +9,13 @@
 # Secrets: each one goes only to the services that use it; never add a new secret to x-common-env.
 name: near-autopilot-public
 
+# Docker keeps logs per container and never trims them; cap each at 5 files of 20 MB (about a month).
+x-logging: &capped-logs
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
 x-common-env: &common-env
   NODE_ENV: production
   LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -42,6 +49,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *capped-logs
     environment:
       POSTGRES_USER: autopilot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -59,6 +67,7 @@ services:
     image: ${API_IMAGE:-near-autopilot-api:public}
     pull_policy: never
     restart: unless-stopped
+    logging: *capped-logs
     depends_on:
       analytics-api:
         condition: service_healthy
@@ -84,6 +93,7 @@ services:
     image: ${API_IMAGE:-near-autopilot-api:public}
     pull_policy: never
     restart: unless-stopped
+    logging: *capped-logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +130,7 @@ services:
     image: ${ANALYTICS_IMAGE:-near-autopilot-analytics:public}
     pull_policy: never
     restart: unless-stopped
+    logging: *capped-logs
     depends_on:
       analytics-api:
         condition: service_healthy
@@ -137,6 +148,7 @@ services:
     image: ${ANALYTICS_IMAGE:-near-autopilot-analytics:public}
     pull_policy: never
     restart: unless-stopped
+    logging: *capped-logs
     depends_on:
       analytics-api:
         condition: service_healthy
@@ -154,6 +166,7 @@ services:
     profiles: [caddy]
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *capped-logs
     depends_on:
       analytics:
         condition: service_healthy

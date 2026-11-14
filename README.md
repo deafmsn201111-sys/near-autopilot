@@ -275,7 +275,8 @@ days are deleted (on start, then hourly). One `events` row per wallet connect (r
 client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
 cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
 written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
-prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted.
+prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
+there is. The only third-party requests are Google Fonts and the wallet connector you choose.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
 answers 404) shows AI spend against the cap and has a kill switch and the cap field
