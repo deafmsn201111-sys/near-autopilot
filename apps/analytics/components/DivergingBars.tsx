@@ -50,7 +50,7 @@ export function DivergingBars({
                     top: -2,
                     bottom: -2,
                     width: 1,
-                    background: 'var(--axis)',
+                    background: 'var(--line-strong)',
                   }}
                 />
               )}
@@ -62,7 +62,7 @@ export function DivergingBars({
                     height: 8,
                     width: `${w}%`,
                     left: neg ? `${50 - w}%` : hasNeg ? '50%' : 0,
-                    background: neg ? 'var(--critical)' : 'var(--c1)',
+                    background: neg ? 'var(--liq)' : 'var(--series-1)',
                     borderRadius: neg ? '4px 0 0 4px' : '0 4px 4px 0',
                   }}
                 />

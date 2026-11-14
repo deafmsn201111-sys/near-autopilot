@@ -7,8 +7,8 @@ export function contentSecurityPolicy(nonce: string, dev: boolean): string {
   return [
     "default-src 'self'",
     `script-src 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     "img-src 'self' data: blob: https:",
     "connect-src 'self' https: wss:",
     "frame-src 'self' https:",

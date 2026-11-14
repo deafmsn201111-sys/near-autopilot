@@ -23,6 +23,11 @@ describe('content security policy', () => {
     expect(csp.get('frame-ancestors')).toEqual(["'none'"]);
   });
 
+  it('loads styles and fonts from this origin only (next/font)', () => {
+    expect(csp.get('style-src')).toEqual(["'self'", "'unsafe-inline'"]);
+    expect(csp.get('font-src')).toEqual(["'self'", 'data:']);
+  });
+
   it('allows eval only in development (React refresh)', () => {
     expect(contentSecurityPolicy('n', false)).not.toContain("'unsafe-eval'");
     expect(directives(contentSecurityPolicy('n', true)).get('script-src')).toContain(

@@ -776,3 +776,13 @@ no term.
 keeps its stricter check (30 days, gas in and out), so it may skip a small supply the wallet card shows. A rate under 1%
 is shown with two decimals (`ratePct`). Gas stays a fixed $0.05 estimate: above ~$1.85 a NEAR the round trip
 can cost more than that, so the gas would then need pricing from the live NEAR price.
+
+## D41 — The UI opens dark on a first visit, whatever the OS theme (#247)
+
+**Context:** #247 replaces three stacked themes with the DESIGN.md token set; the owner made dark the primary theme.
+**Decision:** `:root` is dark and `[data-theme='light']` is light. A first visit is always dark, not
+`prefers-color-scheme`; only the saved toggle choice switches it (`lib/theme.ts`, applied before paint). The browser
+`theme-color` follows the applied theme. Fonts are self-hosted through `next/font` (Geist, Geist Mono), so the CSP no
+longer allows Google Fonts.
+**Consequences:** A user with a light OS sees dark until they toggle. Old variable names were renamed onto the new
+roles, so the legacy accent is violet on screens #248–#256 have not redone yet.

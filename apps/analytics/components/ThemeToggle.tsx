@@ -1,23 +1,21 @@
 'use client';
 import { useEffect, useState } from 'react';
-
-type Theme = 'light' | 'dark';
+import { applyTheme, type Theme } from '../lib/theme';
 
 /**
- * Light (newsprint) / dark (fintech) theme switch. The theme is applied before paint by a tiny inline script in the
- * layout (from localStorage, else the OS preference); this button only flips it and remembers the choice. No flash,
- * no layout shift: the icon renders once the stored value is read on the client.
+ * Dark / light switch. THEME_SCRIPT applies the theme before paint; this button flips it and remembers the choice.
+ * The icon renders once the applied theme is read on the client, so there is no flash or layout shift.
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme | null>(null);
 
   useEffect(() => {
     const current = document.documentElement.getAttribute('data-theme');
-    setTheme(current === 'dark' ? 'dark' : 'light');
+    setTheme(current === 'light' ? 'light' : 'dark');
   }, []);
 
   const apply = (next: Theme) => {
-    document.documentElement.setAttribute('data-theme', next);
+    applyTheme(next);
     try {
       localStorage.setItem('theme', next);
     } catch {

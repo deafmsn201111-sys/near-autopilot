@@ -8,7 +8,7 @@ import { useMemo, useRef, useState, type PointerEvent } from 'react';
  */
 export interface Series {
   readonly name: string;
-  /** Categorical slot 1-3 (fixed order: blue, orange, aqua). */
+  /** Series slot 1-3, drawn in `--series-<slot>`. */
   readonly slot: 1 | 2 | 3;
   readonly points: readonly { readonly t: number; readonly v: number | null }[];
 }
@@ -138,7 +138,7 @@ export function LineChart({
         <div className="legend">
           {series.map((s) => (
             <span key={s.name}>
-              <i style={{ background: `var(--c${s.slot})` }} />
+              <i style={{ background: `var(--series-${s.slot})` }} />
               {s.name}
             </span>
           ))}
@@ -190,7 +190,7 @@ export function LineChart({
             key={s.name}
             className="series"
             d={path(s)}
-            style={{ stroke: `var(--c${s.slot})` }}
+            style={{ stroke: `var(--series-${s.slot})` }}
           />
         ))}
         {hover !== null && (
@@ -205,7 +205,7 @@ export function LineChart({
                   cx={x(hover)}
                   cy={y(v)}
                   r={4.5}
-                  style={{ fill: `var(--c${s.slot})` }}
+                  style={{ fill: `var(--series-${s.slot})` }}
                 />
               );
             })}
@@ -222,7 +222,7 @@ export function LineChart({
             const v = at(s, hover);
             return (
               <div className="r" key={s.name}>
-                <span className="k" style={{ background: `var(--c${s.slot})` }} />
+                <span className="k" style={{ background: `var(--series-${s.slot})` }} />
                 <b>{v === null ? '—' : fmt(v, unit)}</b>
                 <span className="dim">{s.name}</span>
               </div>

@@ -820,3 +820,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `MIN_SUPPLY_APR_PCT` is gone from the rule-based list and the AI allocator; both keep only the product-wide hurdle
   (`yearWorthTheFee`): a year of interest must clear $0.50 net and 3× gas. $10,000 of NEAR at 0.32% now gets a card;
   a ~$2 wallet still gets none. Mainnet gas, Burrow registration and rate swings measured in D40.
+
+## 2026-11-14 — Design tokens and base styles from DESIGN.md (#247)
+
+- `app/globals.css`: one dark `:root` and one `[data-theme='light']` token block copied from the prototype; the
+  token blocks of the "Premium" and "Signal Terminal" layers, the NEAR-mint brand, glows and accent gradient rules are
+  gone (their component rules stay until #248–#256 redo the screens). The wallet Sign button uses `--sign`. Old variable
+  names (`--ink`, `--grid`, `--critical`…) renamed onto the DESIGN.md roles. Base: Geist 15px/1.5, `b, strong` 600,
+  global `:focus-visible` accent outline, reduced-motion keeps colour and opacity transitions only.
+- `test/design-tokens.test.ts` guards it: colour literals only in the token blocks, no hex in components (except the
+  theme-color in `lib/theme.ts`), weights ≤ 600. D41: first visit dark, Geist via `next/font`, CSP without Google.
+- Lands `apps/analytics/DESIGN.md`, `PRODUCT.md` and `docs/design/portfolio-ux-prototype.html`.

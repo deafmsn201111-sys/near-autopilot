@@ -27,8 +27,6 @@ const TOKEN_KIND: Record<string, string> = {
   USDT: 'Stablecoin',
 };
 
-/** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
-const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {
@@ -356,10 +354,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const allocTop = alloc.slice(0, 4);
   const allocOther = alloc.slice(4).reduce((s, a) => s + a.pct, 0);
   const allocSegs = [
-    ...allocTop.map((a, i) => ({ label: a.symbol, pct: a.pct, color: ALLOC_COLORS[i] as string })),
-    ...(allocOther > 0.0005
-      ? [{ label: 'Other', pct: allocOther, color: ALLOC_COLORS[4] as string }]
-      : []),
+    ...allocTop.map((a, i) => ({ label: a.symbol, pct: a.pct, color: `var(--series-${i + 1})` })),
+    ...(allocOther > 0.0005 ? [{ label: 'Other', pct: allocOther, color: 'var(--series-5)' }] : []),
   ];
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
   const mode = portfolioMode({

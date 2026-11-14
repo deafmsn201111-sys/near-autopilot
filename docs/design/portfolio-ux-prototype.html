@@ -1,0 +1,1368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1013">
+<title>Autopilot portfolio UX prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* v5. Dark-first. Surfaces from measured references (Uniswap/Aave: hero on the page, cards ≈10% of area),
+   neutral tint H275, one violet voice (H282) for the AI decision → #1 suggestion → Sign. Status colour only on risk. */
+:root {
+  color-scheme: dark;
+  --bg-inset: oklch(.135 .005 275); --bg-page: oklch(.160 .005 275); --bg-surface: oklch(.192 .006 275);
+  --bg-raised: oklch(.228 .007 275); --bg-overlay: oklch(.255 .007 275);
+  --hover: rgb(255 255 255 / .05); --active: rgb(255 255 255 / .08);
+  --line-subtle: rgb(255 255 255 / .06); --line: rgb(255 255 255 / .085); --line-strong: rgb(255 255 255 / .15); --line-control: rgb(255 255 255 / .22);
+  --line-input: rgb(255 255 255 / .36); --line-mark: rgb(255 255 255 / .40);
+  --text-1: oklch(.985 .002 275); --text-2: oklch(.80 .008 275); --text-3: oklch(.66 .010 275); --text-dis: oklch(.48 .008 275);
+  --neutral-solid: oklch(.985 .002 275); --neutral-ink: oklch(.16 .005 275);
+  --accent: oklch(.74 .15 282); --accent-muted: oklch(.74 .15 282 / .13); --accent-line: oklch(.74 .15 282 / .60);
+  --sign: oklch(.57 .22 282); --sign-hover: oklch(.62 .22 282); --sign-ink: oklch(1 0 0); --sign-glow: 0 1px 2px rgb(0 0 0 / .4);
+  --glow: oklch(.74 .15 282 / .07);
+  --safe: oklch(.79 .12 160); --watch: oklch(.83 .13 82); --act: oklch(.76 .15 48); --liq: oklch(.72 .18 25);
+  --safe-bg: oklch(.79 .12 160 / .12); --watch-bg: oklch(.83 .13 82 / .12); --act-bg: oklch(.76 .15 48 / .13); --liq-bg: oklch(.72 .18 25 / .14);
+  --safe-line: oklch(.79 .12 160 / .35); --watch-line: oklch(.83 .13 82 / .35); --act-line: oklch(.76 .15 48 / .50); --liq-line: oklch(.72 .18 25 / .5);
+  --zone-liq: oklch(.66 .19 25 / .75); --zone-watch: oklch(.80 .14 75 / .55); --zone-safe: oklch(.74 .13 160 / .45);
+  --series-1: oklch(.74 .15 282); --series-2: oklch(.58 .13 282); --series-3: oklch(.45 .09 282); --series-4: oklch(.72 .006 275); --series-5: oklch(.50 .006 275);
+  --scrim: rgb(0 0 0 / .66); --pop-shadow: 0 0 0 1px rgb(255 255 255 / .10), 0 16px 48px rgb(0 0 0 / .55);
+  --elev-1: 0 0 0 1px rgb(255 255 255 / .09), 0 1px 2px rgb(0 0 0 / .4), 0 10px 30px -6px rgb(0 0 0 / .5);
+  --note: oklch(.80 .02 275); --note-bg: rgb(255 255 255 / .04);
+  --font: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --fs-meta: 12px; --fs-xs: 13px; --fs-s: 14px; --fs-m: 15px; --fs-l: 17px; --fs-h: 19px; --fs-xl: 24px; --fs-kpi: 30px; --fs-hero: 56px;
+  --r-xs: 6px; --r-s: 8px; --r-m: 12px; --r-l: 16px; --r-xl: 20px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s8: 32px; --s10: 40px;
+  --ease: cubic-bezier(.16, 1, .3, 1); --ease-out: cubic-bezier(.23, 1, .32, 1); --ease-drawer: cubic-bezier(.32, .72, 0, 1);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-inset: oklch(.962 .004 275); --bg-page: oklch(.982 .003 275); --bg-surface: oklch(1 0 0);
+  --bg-raised: oklch(1 0 0); --bg-overlay: oklch(1 0 0);
+  --hover: rgb(15 20 30 / .04); --active: rgb(15 20 30 / .07);
+  --line-subtle: rgb(15 20 30 / .06); --line: rgb(15 20 30 / .10); --line-strong: rgb(15 20 30 / .18); --line-control: rgb(15 20 30 / .30);
+  --line-input: rgb(15 20 30 / .50); --line-mark: rgb(15 20 30 / .50);
+  --text-1: oklch(.19 .010 275); --text-2: oklch(.42 .014 275); --text-3: oklch(.52 .014 275); --text-dis: oklch(.70 .010 275);
+  --neutral-solid: oklch(.19 .010 275); --neutral-ink: oklch(.985 .002 275);
+  --accent: oklch(.52 .20 282); --accent-muted: oklch(.52 .20 282 / .08); --accent-line: oklch(.50 .18 282 / .70);
+  --sign: oklch(.52 .22 282); --sign-hover: oklch(.47 .22 282); --sign-ink: oklch(1 0 0); --sign-glow: 0 1px 2px rgb(15 20 30 / .12);
+  --glow: oklch(.52 .20 282 / .05);
+  --safe: oklch(.50 .12 160); --watch: oklch(.50 .12 70); --act: oklch(.50 .16 45); --liq: oklch(.52 .19 25);
+  --safe-bg: oklch(.50 .12 160 / .08); --watch-bg: oklch(.70 .14 80 / .12); --act-bg: oklch(.56 .16 45 / .08); --liq-bg: oklch(.53 .19 25 / .07);
+  --safe-line: oklch(.50 .12 160 / .30); --watch-line: oklch(.50 .12 70 / .35); --act-line: oklch(.50 .16 45 / .45); --liq-line: oklch(.52 .19 25 / .40);
+  --zone-liq: oklch(.60 .20 25 / .70); --zone-watch: oklch(.78 .15 75 / .70); --zone-safe: oklch(.62 .13 160 / .45);
+  --series-1: oklch(.52 .20 282); --series-2: oklch(.66 .14 282); --series-3: oklch(.80 .08 282); --series-4: oklch(.40 .01 275); --series-5: oklch(.72 .01 275);
+  --scrim: rgb(10 14 20 / .4); --pop-shadow: 0 0 0 1px rgb(15 20 30 / .08), 0 16px 48px rgb(15 20 30 / .16);
+  --elev-1: 0 0 0 1px rgb(15 20 30 / .08), 0 1px 2px rgb(15 20 30 / .06), 0 10px 30px -8px rgb(15 20 30 / .14);
+  --note: oklch(.40 .02 275); --note-bg: rgb(15 20 30 / .03);
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg-page); scroll-padding-top: 80px; }
+body { margin: 0; background: var(--bg-page); color: var(--text-1); font: 400 var(--fs-m)/1.5 var(--font); -webkit-font-smoothing: antialiased; font-feature-settings: "ss01"; }
+::selection { background: var(--accent-muted); color: var(--text-1); }
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+input { caret-color: var(--accent); }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+input, select { font: inherit; color: inherit; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.012em; text-wrap: balance; }
+b, strong { font-weight: 600; }
+p { margin: 0; }
+a { color: inherit; text-underline-offset: 3px; }
+.num { font-variant-numeric: tabular-nums slashed-zero; }
+.mono { font-family: var(--mono); font-size: var(--fs-meta); }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.i.s { width: 14px; height: 14px; } .i.l { width: 20px; height: 20px; }
+
+/* prototype bar (not part of the product) */
+.proto { background: #000; color: #e7e9ec; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); font-size: 12.5px; border-bottom: 1px solid #222; }
+.proto-in { max-width: 1180px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.proto b { font-weight: 600; opacity: .6; letter-spacing: .04em; font-size: 11px; text-transform: uppercase; }
+.proto .grp { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.proto button { background: transparent; border: 1px solid #3a3d42; color: #e7e9ec; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+.proto button[aria-pressed="true"] { background: #e7e9ec; color: #000; border-color: #e7e9ec; }
+
+/* shell */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in oklch, var(--bg-page) 90%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line-subtle); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.top-in { max-width: 1180px; margin: 0 auto; height: 60px; display: flex; align-items: center; gap: var(--s6); }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--fs-l); letter-spacing: -0.015em; white-space: nowrap; }
+.logo svg { width: 22px; height: 22px; color: var(--accent); }
+.nav { display: flex; gap: 2px; }
+.nav a { padding: 6px 12px; border-radius: var(--r-s); color: var(--text-2); text-decoration: none; font-weight: 500; transition: background .15s, color .15s; }
+.nav a.on { color: var(--text-1); background: var(--active); }
+.top-right { margin-left: auto; display: flex; gap: var(--s2); align-items: center; position: relative; }
+
+/* controls */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: var(--r-s); border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--text-1); font-weight: 500; font-size: var(--fs-m); white-space: nowrap; transition: background .15s, border-color .15s, color .15s, box-shadow .2s, transform .16s var(--ease-out); }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn.primary { background: var(--neutral-solid); color: var(--neutral-ink); border-color: transparent; }
+.btn.sign { background: var(--sign); color: var(--sign-ink); border-color: transparent; height: 52px; font-size: var(--fs-l); font-weight: 600; gap: 8px; box-shadow: var(--sign-glow); }
+.btn:disabled, .btn.sign:disabled { background: var(--bg-raised); color: var(--text-dis); border-color: var(--line-subtle); cursor: not-allowed; box-shadow: none; }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.btn.small { height: 32px; padding: 0 10px; font-size: var(--fs-s); }
+.btn.block { width: 100%; }
+.btn.nudge { animation: nudge .32s var(--ease-out); }
+@keyframes nudge { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.link { border: 0; background: none; padding: 0; color: var(--text-1); font-weight: 500; text-decoration: underline; text-decoration-color: var(--line-control); text-underline-offset: 3px; min-height: 24px; }
+@media (hover: hover) and (pointer: fine) {
+  .nav a:hover { background: var(--hover); color: var(--text-1); }
+  .btn:hover:not(:disabled) { background: color-mix(in oklch, var(--bg-raised), var(--text-1) 6%); }
+  .btn.primary:hover:not(:disabled) { background: color-mix(in oklch, var(--neutral-solid), var(--bg-page) 12%); }
+  .btn.sign:hover:not(:disabled) { background: var(--sign-hover); }
+  .btn.ghost:hover:not(:disabled) { background: var(--hover); color: var(--text-1); }
+  .link:hover { text-decoration-color: var(--text-2); }
+  .wallet:hover { border-color: var(--line-control); }
+  .pop .row.btnrow:hover { background: var(--hover); }
+  .strat-opts label:hover { border-color: var(--line-control); }
+  .sh-head .x:hover { background: var(--hover); color: var(--text-1); }
+}
+
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: var(--r-xs); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; background: transparent; color: var(--text-2); border: 1px solid var(--line-strong); }
+.chip .i { width: 12px; height: 12px; stroke-width: 2; }
+.chip .i.good { color: var(--safe); }
+.chip.safe { background: var(--safe-bg); color: var(--safe); border-color: var(--safe-line); }
+.chip.watch { background: var(--watch-bg); color: var(--watch); border-color: var(--watch-line); }
+.chip.act { background: var(--act-bg); color: var(--act); border-color: var(--act-line); }
+.chip.liq { background: var(--liq-bg); color: var(--liq); border-color: var(--liq-line); }
+.chip.ai { background: var(--accent-muted); color: var(--accent); border-color: var(--accent-line); }
+.chip.demo { background: var(--bg-overlay); color: var(--text-1); border-color: var(--line-control); }
+.chip.big { height: 28px; padding: 0 10px; font-size: var(--fs-s); font-weight: 600; }
+:root:not([data-theme="light"]) .chip.big.safe { background: oklch(from var(--safe) l c h / .2); } :root:not([data-theme="light"]) .chip.big.watch { background: oklch(from var(--watch) l c h / .2); } :root:not([data-theme="light"]) .chip.big.act { background: oklch(from var(--act) l c h / .2); } :root:not([data-theme="light"]) .chip.big.liq { background: oklch(from var(--liq) l c h / .22); }
+
+.prov { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--text-3); font-weight: 400; white-space: nowrap; }
+.prov::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.prov.live::before { background: var(--text-3); }
+.prov.est::before { border: 1.5px dashed var(--text-3); width: 5px; height: 5px; }
+.prov.sim::before { background: repeating-linear-gradient(45deg, var(--text-3) 0 1.5px, transparent 1.5px 3px); border: 1px solid var(--text-3); width: 5px; height: 5px; }
+.chip .simk { width: 8px; height: 8px; border-radius: 2px; border: 1px solid currentColor; background: repeating-linear-gradient(45deg, currentColor 0 1.5px, transparent 1.5px 3px); flex: none; }
+
+.tok { width: 28px; height: 28px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; overflow: hidden; background: var(--bg-overlay); font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.tok img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tok.s { width: 18px; height: 18px; font-size: 9px; } .tok.l { width: 32px; height: 32px; }
+.pair { display: inline-flex; }
+.pair .tok + .tok { margin-left: -9px; box-shadow: 0 0 0 2px var(--bg-surface); }
+
+.wallet { display: flex; align-items: center; gap: var(--s2); height: 36px; padding: 0 10px 0 6px; border: 1px solid var(--line-strong); border-radius: var(--r-s); background: var(--bg-surface); transition: border-color .15s, transform .16s var(--ease-out); }
+.wallet:active { transform: scale(.97); }
+.wallet .stack { display: flex; }
+.wallet .stack .tok { box-shadow: 0 0 0 2px var(--bg-surface); }
+.wallet .stack .tok + .tok { margin-left: -6px; }
+.wallet .who { font-weight: 500; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wallet .i { color: var(--text-3); transition: transform .2s var(--ease-out); }
+.wallet[aria-expanded="true"] .i { transform: rotate(180deg); }
+
+.pop { position: absolute; top: calc(100% + 8px); right: 0; width: 360px; max-width: calc(100vw - 32px); background: var(--bg-overlay); border-radius: var(--r-m); box-shadow: var(--pop-shadow); padding: 6px; z-index: 40; transform-origin: top right; animation: pop .16s var(--ease-out); }
+@keyframes pop { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
+.pop h4 { margin: 10px 10px 4px; font-size: var(--fs-xs); color: var(--text-3); font-weight: 500; }
+.pop .row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-s); }
+.pop .row.btnrow { width: 100%; border: 0; background: transparent; text-align: left; min-height: 44px; }
+.pop .row small { display: block; color: var(--text-2); font-size: var(--fs-xs); }
+.pop .bal { margin-left: auto; text-align: right; font-weight: 500; white-space: nowrap; }
+.pop .bal small { font-weight: 400; color: var(--text-3); }
+.pop .sep { height: 1px; background: var(--line-subtle); margin: 6px 0; }
+.pop .acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px 4px; }
+
+/* page */
+.page { max-width: 1180px; margin: 0 auto; padding-block: var(--s6) 120px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: var(--s8); }
+.page > .note { margin-top: calc(var(--s6) * -1); }
+.panel { background: var(--bg-surface); border: 1px solid var(--line); border-radius: var(--r-l); }
+.ctx { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); }
+.ctx p { flex: 1 1 280px; color: var(--text-2); }
+.ctx p b { color: var(--text-1); font-weight: 500; }
+.ctx.demo, .ctx.ro { padding: var(--s3) var(--s4); border-radius: var(--r-m); border: 1px dashed var(--line-control); }
+
+.intro { display: grid; grid-template-columns: 1.35fr 1fr; overflow: hidden; }
+.intro > div { padding: var(--s6); }
+.intro h1 { font-size: var(--fs-xl); line-height: 1.25; margin-bottom: var(--s2); letter-spacing: -0.02em; }
+.intro .sub { color: var(--text-2); max-width: 62ch; font-size: var(--fs-m); }
+.intro ol { margin: var(--s5) 0 0; padding: 0; list-style: none; display: grid; gap: var(--s3); counter-reset: s; }
+.intro ol > li { display: grid; grid-template-columns: 28px 1fr; gap: var(--s3); counter-increment: s; color: var(--text-2); align-items: start; }
+.intro ol > li::before { content: counter(s); width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--accent-line); display: grid; place-items: center; font-weight: 600; font-size: var(--fs-xs); color: var(--accent); }
+.intro ol > li b { color: var(--text-1); font-weight: 500; }
+.trust { background: var(--bg-raised); border-left: 1px solid var(--line); display: grid; gap: var(--s3); align-content: start; }
+.trust h2 { font-size: var(--fs-l); display: flex; gap: var(--s2); align-items: center; }
+.trust h2 .i { color: var(--accent); }
+.trust ul { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--s2); color: var(--text-1); }
+.trust ul > li { display: grid; grid-template-columns: 18px 1fr; gap: var(--s2); }
+.trust ul > li .i { color: var(--text-2); margin-top: 3px; }
+
+/* hero: on the page, no panel */
+.hero { position: relative; isolation: isolate; display: grid; grid-template-columns: 1.6fr 1fr 1fr; padding-block: var(--s4) 0; }
+.hero::before { content: ""; position: absolute; z-index: -1; left: -120px; top: -100px; width: 720px; height: 420px; background: radial-gradient(closest-side, var(--glow), transparent); pointer-events: none; }
+.hero > div { padding: 0 var(--s6); display: grid; gap: var(--s2); align-content: start; min-width: 0; }
+.hero > div:first-child { padding-left: 0; }
+.hero > div + div { border-left: 1px solid var(--line); }
+.lbl { font-size: var(--fs-s); color: var(--text-2); display: flex; gap: var(--s2); align-items: center; justify-content: space-between; font-weight: 500; }
+.total { font-size: var(--fs-hero); font-weight: 500; letter-spacing: -0.035em; line-height: 1; margin-top: var(--s1); }
+.total .c { color: var(--text-3); font-size: .6em; letter-spacing: -0.02em; }
+.kpi { font-size: var(--fs-kpi); font-weight: 500; letter-spacing: -0.025em; line-height: 1.1; display: flex; align-items: center; gap: 8px; margin-top: var(--s1); }
+.kpi .i { width: 22px; height: 22px; stroke-width: 2.25; }
+.sub { color: var(--text-2); font-size: var(--fs-s); }
+.up { color: var(--safe); } .down { color: var(--liq); }
+.money-acts { display: flex; gap: var(--s2); margin-top: var(--s3); flex-wrap: wrap; }
+.alloc { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin-top: var(--s3); max-width: 520px; }
+.alloc span { display: block; height: 100%; transition: width .6s var(--ease); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--fs-s); color: var(--text-2); }
+.legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .tok.s { width: 16px; height: 16px; box-shadow: 0 0 0 1.5px var(--sw); }
+.legend span b { color: var(--text-1); font-weight: 500; }
+.other { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: var(--fs-s); color: var(--text-2); padding-top: var(--s3); border-top: 1px solid var(--line-subtle); margin-top: var(--s2); max-width: 520px; }
+.other .stack { display: inline-flex; }
+.other .stack .tok + .tok { margin-left: -5px; }
+.other b { color: var(--text-1); font-weight: 500; }
+
+.gauge { position: relative; height: 8px; border-radius: 4px; background: var(--bg-inset); margin: var(--s8) 0 var(--s6); box-shadow: inset 0 0 0 1px var(--line); }
+.gauge .zone { position: absolute; top: 0; bottom: 0; }
+.gauge .zone.u { left: 0; background: var(--zone-liq); border-radius: 4px 0 0 4px; }
+.gauge .zone.w { background: var(--zone-watch); }
+.gauge .zone.s { right: 0; background: var(--zone-safe); border-radius: 0 4px 4px 0; }
+.gauge .mk { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--line-mark); }
+.gauge .mk em { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; }
+.gauge .mk.first em { left: 0; transform: none; }
+.gauge .mk.up em { top: auto; bottom: 16px; }
+.gauge .you { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--text-1); box-shadow: 0 0 0 3px var(--bg-page); transition: left .6s var(--ease); }
+.panel .gauge .you { box-shadow: 0 0 0 3px var(--bg-surface); }
+.card.top .gauge .you { box-shadow: 0 0 0 3px var(--bg-raised); }
+
+/* analysis */
+.an-head { display: flex; flex-wrap: wrap; gap: var(--s3) var(--s4); align-items: center; padding: var(--s4) var(--s6); border-bottom: 1px solid var(--line-subtle); }
+.an-head h2 { font-size: var(--fs-h); }
+.an-meta { color: var(--text-2); font-size: var(--fs-s); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.run { margin-left: auto; display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; justify-content: flex-end; }
+.run .sub { color: var(--text-2); }
+.run .btn { min-width: 172px; }
+.run .btn.busy { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .6; } }
+.verdict { padding: var(--s6) var(--s6) var(--s2); display: grid; gap: 4px; }
+.verdict .v { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; display: flex; gap: var(--s2); align-items: center; }
+.verdict .v .i { width: 22px; height: 22px; }
+.verdict .sub { font-size: var(--fs-m); }
+.strat { padding: var(--s3) var(--s6) var(--s5); display: grid; gap: var(--s2); border: 0; margin: 0; min-width: 0; }
+.strat legend { font-size: var(--fs-s); font-weight: 500; color: var(--text-2); padding: 0; margin-bottom: var(--s2); }
+.strat-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
+.strat-opts label { position: relative; cursor: pointer; border: 1px solid var(--line-strong); background: transparent; border-radius: var(--r-s); padding: var(--s3) var(--s4); display: grid; gap: 2px; min-height: 64px; transition: border-color .15s, background .15s, transform .16s var(--ease-out); }
+.strat-opts label:active { transform: scale(.985); }
+.strat-opts input { position: absolute; opacity: 0; pointer-events: none; }
+.strat-opts label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.strat-opts b { font-size: var(--fs-m); font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
+.strat-opts span { font-size: var(--fs-s); color: var(--text-2); }
+.strat-opts b .i { color: var(--accent); opacity: 0; transform: scale(.6); transition: opacity .15s, transform .2s var(--ease-out); }
+.strat-opts label:has(input:checked) { border-color: var(--accent-line); background: var(--accent-muted); }
+.strat-opts label:has(input:checked) b .i { opacity: 1; transform: none; }
+
+.pipe-wrap { padding: var(--s5) var(--s6); display: grid; gap: var(--s4); border-top: 1px solid var(--line-subtle); }
+.pipe-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.pipe-head h3 { font-size: var(--fs-s); font-weight: 500; color: var(--text-2); }
+.pipe-head .sub { color: var(--text-3); }
+.pipe { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.pn { position: relative; display: grid; gap: 2px; padding: 24px var(--s4) 0 0; font-size: var(--fs-s); color: var(--text-3); align-content: start; transition: color .2s; }
+.pn .dot { position: absolute; top: 0; left: 0; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line-control); background: var(--bg-surface); z-index: 1; display: grid; place-items: center; color: var(--bg-surface); transition: background .2s, border-color .2s, transform .25s var(--ease-out); }
+.pn .dot .i { width: 10px; height: 10px; stroke-width: 3; stroke-dasharray: 24; stroke-dashoffset: 0; transition: stroke-dashoffset .3s .1s var(--ease-out); }
+.pn::after { content: ""; position: absolute; top: 7.5px; left: 20px; right: 4px; height: 1px; background: var(--line-strong); }
+.pn::before { content: ""; position: absolute; z-index: 1; top: 7.5px; left: 20px; right: 4px; height: 1px; background: var(--accent-line); transform: scaleX(0); transform-origin: left; transition: transform .45s var(--ease); }
+.pn:last-child::after, .pn:last-child::before { display: none; }
+.pn b { color: inherit; font-weight: 500; font-size: var(--fs-s); }
+.pn small { font-size: var(--fs-xs); }
+.pn em { font-style: normal; font-size: var(--fs-xs); color: var(--text-3); }
+.pn.done { color: var(--text-2); } .pn.done b { color: var(--text-1); }
+.pn.done .dot { background: var(--accent); border-color: var(--accent); }
+.pn.done::before { transform: scaleX(1); }
+.pn:not(.done) .dot .i { stroke-dashoffset: 24; }
+.pn.now { color: var(--text-1); } .pn.now .dot { border-color: var(--accent); border-right-color: transparent; animation: sp .8s linear infinite; }
+.pn.locked { color: var(--text-3); } .pn.locked .dot { border-style: dashed; color: var(--text-3); } .pn.locked .dot .i { stroke-dashoffset: 0; } .pn.locked::after { background: repeating-linear-gradient(90deg, var(--line-strong) 0 4px, transparent 4px 8px); }
+
+.checks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line-subtle); }
+.check { padding: var(--s4) var(--s6); display: grid; gap: 6px; align-content: start; border-left: 1px solid var(--line-subtle); min-width: 0; transition: opacity .25s; }
+.check:first-child { border-left: 0; }
+.check .who { font-size: var(--fs-s); color: var(--text-2); }
+.check .res { font-weight: 600; display: flex; gap: 6px; align-items: center; color: var(--text-1); font-size: var(--fs-l); }
+.check .res .i { width: 16px; height: 16px; stroke-width: 2.25; }
+.check p { font-size: var(--fs-s); color: var(--text-2); }
+.check.busy { opacity: .4; }
+.check .pick { justify-self: start; margin-top: 2px; }
+.ok-c { color: var(--text-2); } .watch-c { color: var(--watch); } .act-c { color: var(--act); } .liq-c { color: var(--liq); } .na-c { color: var(--text-3); }
+.res .ok-c, .res .na-c { color: var(--text-2); }
+.codechecks { margin: 0 var(--s6) var(--s5); display: flex; flex-wrap: wrap; gap: 6px var(--s4); font-size: var(--fs-s); color: var(--text-2); padding: var(--s3) var(--s4); background: var(--bg-raised); border-radius: var(--r-s); }
+.codechecks b { color: var(--text-1); font-weight: 500; display: flex; gap: 6px; align-items: center; }
+.codechecks b .i { color: var(--accent); }
+.codechecks span { display: inline-flex; gap: 6px; align-items: center; }
+.codechecks span .i { color: var(--text-2); width: 14px; height: 14px; }
+
+/* suggestions */
+.recs { display: grid; gap: var(--s3); }
+.sec-head { display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s1); }
+.sec-head h2 { font-size: var(--fs-h); }
+.sec-head span { color: var(--text-2); font-size: var(--fs-s); }
+.card { position: relative; padding: var(--s5) var(--s6); display: grid; gap: var(--s4); }
+.card.top { background: var(--bg-raised); border-color: transparent; box-shadow: var(--elev-1); }
+.card.top::before { content: ""; position: absolute; left: -1px; top: var(--s6); bottom: var(--s6); width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); }
+.card.top.act::before { background: var(--act); }
+.card.act { border-color: var(--act-line); }
+.card.top.act { box-shadow: 0 0 0 1px var(--act-line), 0 10px 30px -6px rgb(0 0 0 / .45); }
+.card.done { border-color: var(--line); }
+.card.done::before { display: none; }
+.card.working { border-color: var(--accent-line); }
+.card-top { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.card-top .rank { font-size: var(--fs-s); font-weight: 600; color: var(--accent); display: inline-flex; gap: 6px; align-items: center; }
+.card-top .agent { color: var(--text-2); font-size: var(--fs-s); }
+.card-top .right { margin-left: auto; display: flex; gap: var(--s2); align-items: center; }
+.card h3 { font-size: var(--fs-h); font-weight: 600; letter-spacing: -0.015em; display: flex; gap: var(--s3); align-items: center; line-height: 1.3; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0; border-radius: var(--r-s); background: color-mix(in oklch, var(--bg-surface), var(--text-1) 3%); border: 1px solid var(--line-subtle); }
+.card.top .facts { background: color-mix(in oklch, var(--bg-raised), var(--text-1) 3.5%); }
+.fact { display: grid; gap: 2px; padding: var(--s3) var(--s4); min-width: 0; }
+.fact + .fact { border-left: 1px solid var(--line-subtle); }
+.fact .k { font-size: var(--fs-s); color: var(--text-2); }
+.fact .v { font-weight: 600; font-size: var(--fs-h); letter-spacing: -0.01em; }
+.fact .v.good { color: var(--safe); }
+.fact .v small { font-weight: 400; color: var(--text-2); font-size: var(--fs-s); letter-spacing: 0; }
+.why { color: var(--text-1); max-width: 76ch; }
+.why b { font-weight: 600; }
+.card-foot { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; }
+.card-foot .tags { display: flex; gap: var(--s3); flex-wrap: wrap; margin-right: auto; }
+.receipt { display: grid; gap: 4px; padding: var(--s3) var(--s4); border-radius: var(--r-s); background: var(--safe-bg); border: 1px solid var(--safe-line); }
+.receipt b { color: var(--safe); font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
+.progress-line { display: flex; gap: var(--s2); align-items: center; color: var(--accent); font-weight: 500; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: sp .8s linear infinite; flex: none; }
+@keyframes sp { to { transform: rotate(360deg); } }
+
+.skipped summary { padding: var(--s4) var(--s6); cursor: pointer; font-weight: 500; display: flex; gap: var(--s3); align-items: center; list-style: none; min-height: 52px; }
+.skipped summary::-webkit-details-marker { display: none; }
+.skipped summary .i { color: var(--text-2); transition: transform .2s var(--ease); }
+.skipped[open] summary .i { transform: rotate(90deg); }
+.skipped summary span { color: var(--text-2); font-weight: 400; }
+.sk-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px var(--s4); padding: var(--s3) var(--s6); border-top: 1px solid var(--line-subtle); }
+.sk-row .t { font-weight: 500; }
+.sk-row .n { text-align: right; color: var(--text-1); }
+.sk-row p { grid-column: 1 / -1; color: var(--text-2); font-size: var(--fs-s); }
+
+/* holdings */
+.hold { overflow: hidden; }
+.hold-head { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: baseline; padding: var(--s4) var(--s6); }
+.hold-head h2 { font-size: var(--fs-h); }
+.hold-head span { color: var(--text-2); font-size: var(--fs-s); }
+.grp-h { display: flex; justify-content: space-between; gap: var(--s3); padding: var(--s4) var(--s6) var(--s2); font-size: var(--fs-s); font-weight: 600; color: var(--text-2); border-top: 1px solid var(--line-strong); }
+.grp-h .num { color: var(--text-1); font-weight: 500; }
+.grp-h.ext { color: var(--text-2); font-weight: 500; border-top: 1px dashed var(--line-control); }
+.hrow { display: grid; grid-template-columns: minmax(0, 2.2fr) 1.2fr 1.3fr 1fr; gap: var(--s3); align-items: center; padding: 0 var(--s6); height: 56px; border-top: 1px solid var(--line-subtle); }
+.grp-h + .hrow { border-top: 0; }
+.hrow.th { height: 36px; border-top: 0; font-size: var(--fs-meta); color: var(--text-3); font-weight: 500; }
+.asset { display: flex; gap: var(--s3); align-items: center; min-width: 0; }
+.asset b { display: block; font-weight: 500; }
+.asset small { color: var(--text-2); font-size: var(--fs-s); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-amt { color: var(--text-1); }
+.c-usd b { font-weight: 500; }
+.r { text-align: right; }
+.hold-foot { padding: var(--s3) var(--s6); border-top: 1px solid var(--line-subtle); display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); color: var(--text-2); font-size: var(--fs-s); align-items: center; }
+
+.notes-on .note { display: block; }
+.note { display: none; border-left: 2px solid var(--line-control); background: var(--note-bg); color: var(--text-2); padding: 10px 14px; border-radius: 0 var(--r-s) var(--r-s) 0; font-size: var(--fs-s); }
+.note::before { content: "UX · почему так"; display: block; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; color: var(--note); margin-bottom: 2px; }
+.foot { color: var(--text-3); font-size: var(--fs-xs); max-width: 90ch; }
+
+/* sheet: mounted once, content patched */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 50; display: grid; place-items: center; padding: var(--s4); animation: fade .2s var(--ease); }
+.scrim.closing { animation: fadeout .15s ease-in forwards; }
+.scrim.closing .sheet { animation: sink .15s ease-in forwards; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes fadeout { to { opacity: 0; } }
+@keyframes sink { to { transform: translateY(8px) scale(.985); opacity: 0; } }
+.sheet { width: min(620px, 100%); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; background: var(--bg-overlay); border-radius: var(--r-xl); box-shadow: var(--pop-shadow); display: grid; animation: rise .28s var(--ease); }
+.sheet > * { min-width: 0; }
+@keyframes rise { from { transform: translateY(12px) scale(.985); opacity: 0; } }
+.grab { display: none; }
+.sh-head { position: sticky; top: 0; background: var(--bg-overlay); padding: var(--s4) var(--s6) var(--s3); border-bottom: 1px solid var(--line-subtle); display: grid; gap: 4px; z-index: 1; }
+.sh-head .x { position: absolute; right: 12px; top: 12px; width: 36px; height: 36px; border-radius: var(--r-s); border: 0; background: transparent; color: var(--text-2); display: grid; place-items: center; transition: background .15s, color .15s; }
+.sh-head .ctxl { font-size: var(--fs-s); color: var(--text-2); padding-right: 44px; }
+.sh-head h2 { font-size: var(--fs-xl); padding-right: 44px; letter-spacing: -0.02em; line-height: 1.25; }
+.sh-body { padding: var(--s3) var(--s6); display: grid; gap: var(--s3); }
+.changes { border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; background: var(--bg-surface); }
+.changes h3 { font-size: var(--fs-xs); color: var(--text-2); font-weight: 500; padding: var(--s2) var(--s4); border-bottom: 1px solid var(--line-subtle); display: flex; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; }
+.chg { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: var(--s3) var(--s4); }
+.chg + .chg { border-top: 1px solid var(--line-subtle); }
+.chg .sgn { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; }
+.chg .sgn.out { background: var(--bg-raised); color: var(--text-1); } .chg .sgn.in { background: var(--safe-bg); color: var(--safe); } .chg .sgn.eq { background: var(--bg-raised); color: var(--text-2); }
+.chg .amt { font-size: var(--fs-l); font-weight: 600; display: flex; gap: var(--s2); align-items: center; min-width: 0; }
+.chg .usd { color: var(--text-2); font-size: var(--fs-s); text-align: right; }
+.warn { padding: var(--s3) var(--s4); border-radius: var(--r-m); display: grid; gap: var(--s2); border: 1px solid; }
+.warn.act { background: var(--act-bg); border-color: var(--act-line); }
+.warn.liq { background: var(--liq-bg); border-color: var(--liq-line); }
+.warn .wt { display: flex; gap: var(--s2); align-items: center; font-weight: 600; }
+.warn.act .wt { color: var(--act); } .warn.liq .wt { color: var(--liq); }
+.warn p { color: var(--text-1); font-size: var(--fs-s); }
+.ack { display: flex; gap: var(--s3); align-items: center; font-size: var(--fs-s); font-weight: 500; cursor: pointer; min-height: 44px; padding: var(--s1) 0; }
+.ack input { width: 18px; height: 18px; margin: 0; accent-color: var(--act); flex: none; }
+.inline-kv { display: flex; flex-wrap: wrap; gap: 6px var(--s6); font-size: var(--fs-s); color: var(--text-2); }
+.inline-kv b { color: var(--text-1); font-weight: 500; margin-left: 6px; }
+.sign-block { display: grid; gap: var(--s2); }
+.sign-block h3 { font-size: var(--fs-s); font-weight: 500; color: var(--text-2); }
+.steps { border: 1px solid var(--line); border-radius: var(--r-s); }
+.step { display: grid; grid-template-columns: 24px 1fr; gap: var(--s3); padding: var(--s3) var(--s4); align-items: start; }
+.step + .step { border-top: 1px solid var(--line-subtle); }
+.step .n { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-control); display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); transition: background .2s, border-color .2s, color .2s; }
+.step .n.ok { background: var(--safe); border-color: var(--safe); color: var(--bg-overlay); } .step .n.bad { background: var(--liq); border-color: var(--liq); color: var(--bg-overlay); } .step .n.run { border-color: var(--accent); color: var(--accent); }
+.step .n .i { width: 12px; height: 12px; stroke-width: 2.5; }
+.step small { display: block; color: var(--text-2); font-size: var(--fs-s); }
+.raw { border: 1px solid var(--line); border-radius: var(--r-s); }
+.raw summary { padding: 0 var(--s4); cursor: pointer; font-weight: 500; font-size: var(--fs-s); min-height: 44px; display: flex; align-items: center; gap: var(--s2); color: var(--text-2); list-style: none; }
+.raw summary::-webkit-details-marker { display: none; }
+.raw summary .i { transition: transform .2s var(--ease); }
+.raw[open] summary .i { transform: rotate(90deg); }
+.raw table { width: 100%; border-collapse: collapse; }
+.raw td { padding: var(--s2) var(--s4); border-top: 1px solid var(--line-subtle); font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-1); }
+.raw td:last-child { text-align: right; color: var(--text-2); }
+.safety-line { display: flex; flex-wrap: wrap; gap: 6px var(--s4); font-size: var(--fs-s); color: var(--text-2); padding: var(--s3) var(--s4); border-radius: var(--r-s); background: var(--bg-raised); align-items: center; }
+.safety-line span { display: inline-flex; gap: 5px; align-items: center; }
+.safety-line span .i { color: var(--text-2); width: 13px; height: 13px; stroke-width: 2.25; }
+.safety-line a { color: var(--accent); font-weight: 500; text-decoration: none; margin-left: auto; }
+.sh-foot { position: sticky; bottom: 0; background: var(--bg-overlay); padding: var(--s3) var(--s6) var(--s4); border-top: 1px solid var(--line-subtle); display: grid; gap: var(--s2); }
+.sh-foot .btn.ghost { white-space: normal; height: auto; min-height: 40px; padding-block: 6px; text-align: center; }
+.sh-foot .why-off { font-size: var(--fs-s); color: var(--text-2); text-align: center; }
+.sh-foot .why-off.gate { color: var(--act); font-weight: 500; }
+.result { padding: var(--s3) var(--s4); border-radius: var(--r-m); border: 1px solid; display: grid; gap: 2px; animation: fade .3s var(--ease); }
+.result.ok { background: var(--safe-bg); border-color: var(--safe-line); } .result.ok b { color: var(--safe); }
+.result.warn2 { background: var(--watch-bg); border-color: var(--watch-line); } .result.warn2 b { color: var(--watch); }
+.result.bad { background: var(--liq-bg); border-color: var(--liq-line); } .result.bad b { color: var(--liq); }
+.result span { color: var(--text-1); font-size: var(--fs-s); }
+.field { display: grid; gap: 6px; }
+.field label { font-size: var(--fs-s); color: var(--text-2); font-weight: 500; }
+.inbox { display: flex; gap: var(--s2); align-items: center; border: 1px solid var(--line-input); border-radius: var(--r-s); padding: 10px 12px; background: var(--bg-inset); transition: border-color .15s; }
+.inbox:focus-within { border-color: var(--accent); }
+.inbox input { border: 0; background: transparent; outline: none; font-size: var(--fs-xl); font-weight: 500; width: 100%; min-width: 0; }
+.inbox .pick { display: flex; gap: 6px; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--r-s); padding: 4px 10px 4px 4px; background: var(--bg-raised); font-weight: 500; white-space: nowrap; }
+.src { display: flex; gap: var(--s3); align-items: center; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--r-s); background: var(--bg-surface); }
+.src small { display: block; color: var(--text-2); font-size: var(--fs-xs); }
+.src .btn { margin-left: auto; }
+.qr { width: 168px; height: 168px; border-radius: var(--r-s); display: grid; place-items: center; background: #fff; padding: 12px; }
+.qr i { width: 100%; height: 100%; background: repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0/12px 12px; display: grid; place-items: center; border-radius: 4px; }
+.qr span { background: #fff; color: #111; padding: 3px 6px; border-radius: 4px; font-size: var(--fs-xs); font-weight: 600; font-style: normal; }
+.manual { display: grid; grid-template-columns: auto 1fr; gap: var(--s4); align-items: start; }
+.addr { font-family: var(--mono); font-size: var(--fs-s); word-break: break-all; padding: 10px 12px; background: var(--bg-inset); border: 1px solid var(--line); border-radius: var(--r-s); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: var(--s2) var(--s4); margin: 0; font-size: var(--fs-s); }
+.kv dt { color: var(--text-2); }
+.kv dd { margin: 0; text-align: right; font-weight: 500; }
+.timeline { display: grid; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 11.5px; top: 18px; bottom: 18px; width: 1px; background: var(--line-strong); }
+.tl { position: relative; display: grid; grid-template-columns: 24px 1fr; gap: var(--s3); padding: 7px 0; color: var(--text-3); align-items: center; transition: color .2s; }
+.tl i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--line-control); margin-left: 5px; background: var(--bg-overlay); transition: background .2s, border-color .2s; }
+.tl.done { color: var(--text-1); } .tl.done i { background: var(--accent); border-color: var(--accent); }
+.tl.now { color: var(--text-1); font-weight: 500; } .tl.now i { border-color: var(--accent); border-right-color: transparent; animation: sp .8s linear infinite; }
+
+#toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); background: var(--bg-overlay); color: var(--text-1); box-shadow: var(--pop-shadow); padding: 10px 14px; border-radius: 10px; z-index: 90; max-width: min(520px, calc(100vw - 32px)); font-size: var(--fs-s); transform: translate(-50%, 8px); opacity: 0; pointer-events: none; transition: opacity .2s, transform .25s var(--ease-out); }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* v5.2 analysis: one focal verdict, findings carry risk colour, strategy as a segmented control, pipeline demoted */
+.analysis .verdict { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: var(--s4); align-items: center; padding: var(--s6) var(--s6) var(--s5); }
+.vt { width: 48px; height: 48px; border-radius: var(--r-m); display: grid; place-items: center; background: var(--bg-raised); color: var(--text-1); font-size: var(--fs-xl); font-weight: 600; }
+.vt.ai { background: var(--accent-muted); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.vt.act { background: var(--act-bg); color: var(--act); box-shadow: inset 0 0 0 1px var(--act-line); }
+.vt.safe { background: var(--safe-bg); color: var(--safe); box-shadow: inset 0 0 0 1px var(--safe-line); }
+.vt .i.l { width: 24px; height: 24px; stroke-width: 2; }
+.vt .spin { width: 20px; height: 20px; color: var(--accent); }
+.analysis .verdict .v { font-size: 28px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; }
+.analysis .verdict .sub { font-size: var(--fs-m); color: var(--text-2); margin-top: 2px; }
+.analysis .strat { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); padding: 0 var(--s6) var(--s5); }
+.analysis .strat legend { float: left; margin: 0; font-size: var(--fs-s); color: var(--text-2); font-weight: 500; }
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 3px; gap: 2px; border-radius: 10px; background: var(--bg-inset); box-shadow: inset 0 0 0 1px var(--line); }
+.seg label { position: relative; height: 32px; padding: 0 14px; display: grid; place-items: center; border-radius: 7px; font-size: var(--fs-s); font-weight: 500; color: var(--text-2); cursor: pointer; white-space: nowrap; transition: background .15s, color .15s, box-shadow .15s, transform .16s var(--ease-out); }
+.seg label:active { transform: scale(.97); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--accent-muted); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.strat-why { flex: 1 1 260px; font-size: var(--fs-s); color: var(--text-2); }
+.strat-why b { color: var(--text-1); font-weight: 600; }
+.finds-h { padding: var(--s4) var(--s6) var(--s2); border-top: 1px solid var(--line-subtle); font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.analysis .checks { border-top: 0; gap: var(--s2); padding: 0 var(--s6) var(--s5); }
+.analysis .check { border: 1px solid var(--line); border-radius: var(--r-m); padding: var(--s4); gap: var(--s2); background: transparent; }
+.analysis .check:first-child { border-left: 1px solid var(--line); }
+.analysis .check .who { font-size: var(--fs-xs); color: var(--text-3); font-weight: 500; }
+.analysis .check .res { font-size: var(--fs-l); gap: var(--s2); line-height: 1.3; }
+.analysis .check p { color: var(--text-2); }
+.ci { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--bg-raised); color: var(--text-2); }
+.ci .i { width: 14px; height: 14px; stroke-width: 2.25; }
+.check.lv-warn { background: color-mix(in oklch, var(--watch) 6%, transparent); border-color: var(--watch-line); }
+.check.lv-warn .ci { background: var(--watch-bg); color: var(--watch); }
+.check.lv-bad { background: color-mix(in oklch, var(--act) 7%, transparent); border-color: var(--act-line); }
+.check.lv-bad .ci { background: var(--act-bg); color: var(--act); }
+.check.lv-ok .ci { color: var(--safe); }
+.check.lv-na { border-style: dashed; } .check.lv-na .res { color: var(--text-2); }
+.analysis .codechecks { margin-top: calc(var(--s2) * -1); }
+.analysis .pipe-wrap { background: var(--bg-inset); border-radius: 0 0 var(--r-l) var(--r-l); padding: var(--s4) var(--s6); gap: var(--s3); }
+.analysis .pn { font-size: var(--fs-xs); padding-top: 22px; }
+.analysis .pn b { font-size: var(--fs-xs); color: var(--text-2); }
+.analysis .pn.done b { color: var(--text-1); }
+.analysis .pn small, .analysis .pn em { font-size: var(--fs-xs); color: var(--text-3); }
+.analysis .pn .dot { width: 14px; height: 14px; }
+.analysis .pn::after, .analysis .pn::before { top: 6.5px; left: 18px; }
+.analysis .pn.done .dot, .analysis .pn .dot { background-clip: padding-box; }
+.analysis .pn:not(.done):not(.now) .dot { background: var(--bg-inset); }
+@media (max-width: 900px) { .analysis .checks { grid-template-columns: 1fr 1fr; } .analysis .check:nth-child(n) { border: 1px solid var(--line); } .analysis .check.lv-warn { border-color: var(--watch-line); } .analysis .check.lv-bad { border-color: var(--act-line); } .analysis .check.lv-na { border-style: dashed; } }
+@media (max-width: 640px) {
+  .analysis .verdict, .analysis .strat, .finds-h, .analysis .checks, .analysis .pipe-wrap { padding-left: var(--s4); padding-right: var(--s4); }
+  .analysis .verdict { grid-template-columns: 40px minmax(0, 1fr); gap: var(--s3); } .vt { width: 40px; height: 40px; }
+  .analysis .verdict .v { font-size: 22px; }
+  .seg { display: grid; width: 100%; } .seg label { height: 40px; padding: 0 6px; }
+  .analysis .checks { grid-template-columns: 1fr; padding-left: var(--s4); padding-right: var(--s4); }
+  .analysis .check { padding: var(--s3) var(--s4); }
+}
+
+/* v5.3 intro: steps as stages, trust as lead + detail */
+.intro ol { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); margin-top: var(--s6); }
+.intro ol > li { grid-template-columns: 1fr; gap: 4px; padding: var(--s4); border-radius: var(--r-m); background: var(--bg-raised); align-content: start; }
+.intro ol > li::before { width: 28px; height: 28px; margin-bottom: var(--s2); border: 0; background: var(--accent-muted); box-shadow: inset 0 0 0 1px var(--accent-line); font-size: var(--fs-s); }
+.intro ol > li b { font-size: var(--fs-l); font-weight: 600; color: var(--text-1); }
+.intro ol > li span { font-size: var(--fs-s); color: var(--text-2); }
+.trust ul { color: var(--text-2); gap: var(--s3); }
+.trust ul > li b { color: var(--text-1); font-weight: 600; }
+.trust ul > li .i { color: var(--accent); }
+.trust .link { justify-self: start; }
+.why { color: var(--text-2); }
+.why b { color: var(--text-1); }
+@media (max-width: 640px) { .intro ol { grid-template-columns: 1fr; } .intro ol > li { grid-template-columns: 28px 1fr; column-gap: var(--s3); } .intro ol > li::before { grid-row: span 2; margin: 0; } }
+
+.tabs { display: none; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr 1fr; row-gap: var(--s6); }
+  .hero > div:first-child { grid-column: 1 / -1; padding-right: 0; }
+  .hero > div:nth-child(2) { border-left: 0; padding-left: 0; }
+  .checks { grid-template-columns: 1fr 1fr; }
+  .check:nth-child(3) { border-left: 0; }
+  .check:nth-child(n+3) { border-top: 1px solid var(--line-subtle); }
+  .intro { grid-template-columns: 1fr; }
+  .trust { border-left: 0; border-top: 1px solid var(--line); }
+  .pipe { grid-template-columns: 1fr; gap: var(--s3); } .pn { padding: 0 0 0 28px; } .pn::after, .pn::before { display: none; }
+}
+@media (max-width: 640px) {
+  .nav { display: none; }
+  .top-in { height: 56px; gap: var(--s3); }
+  .wallet .who { max-width: 100px; }
+  .wallet { height: 44px; }
+  .btn { height: 44px; } .btn.small { height: 40px; } .btn.sign { height: 52px; }
+  .total { font-size: 44px; }
+  .hero { grid-template-columns: 1fr; row-gap: var(--s5); padding-top: 0; }
+  .hero > div { border-left: 0 !important; padding: 0; }
+  .hero > div + div { border-top: 1px solid var(--line); padding-top: var(--s5); }
+  .hero::before { left: -60px; width: 420px; }
+  .checks { grid-template-columns: 1fr; }
+  .check { border-left: 0 !important; border-top: 1px solid var(--line-subtle); padding: var(--s3) var(--s4); }
+  .check:first-child { border-top: 0; }
+  .an-head, .verdict, .strat, .pipe-wrap, .card, .hold-head { padding-left: var(--s4); padding-right: var(--s4); }
+  .verdict .v { font-size: 22px; }
+  .codechecks { margin-left: var(--s4); margin-right: var(--s4); }
+  .strat-opts { grid-template-columns: 1fr; } .strat-opts label { min-height: 56px; }
+  .run { margin-left: 0; justify-content: flex-start; width: 100%; }
+  .fact + .fact { border-left: 0; border-top: 1px solid var(--line-subtle); }
+  .hrow { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; height: auto; padding: 10px var(--s4); }
+  .hrow.th { display: none; }
+  .hrow .c-amt { grid-column: 1; grid-row: 2; padding-left: 40px; color: var(--text-2); font-size: var(--fs-s); text-align: left; }
+  .hrow .c-earn { grid-column: 2; grid-row: 2; justify-self: end; }
+  .hrow .c-usd { grid-column: 2; grid-row: 1; }
+  .grp-h, .sk-row, .hold-foot, .skipped summary { padding-left: var(--s4); padding-right: var(--s4); }
+  .scrim { padding: 0; place-items: end stretch; }
+  .sheet { width: 100%; max-height: 92dvh; border-radius: var(--r-xl) var(--r-xl) 0 0; animation: drawer .4s var(--ease-drawer); }
+  .scrim.closing .sheet { animation: drawerout .2s ease-in forwards; }
+  @keyframes drawer { from { transform: translateY(100%); } }
+  @keyframes drawerout { to { transform: translateY(100%); } }
+  .grab { display: block; position: sticky; top: 0; z-index: 2; height: 20px; margin-bottom: -20px; touch-action: none; cursor: grab; }
+  .grab::after { content: ""; position: absolute; left: 50%; top: 8px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line-control); }
+  .sh-head { padding-top: var(--s6); }
+  .sh-head .x { width: 44px; height: 44px; top: 14px; right: 8px; }
+  .sh-head, .sh-body, .sh-foot { padding-left: var(--s4); padding-right: var(--s4); }
+  .sh-foot { padding-bottom: max(var(--s5), env(safe-area-inset-bottom, 0px)); }
+  .manual { grid-template-columns: 1fr; justify-items: center; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: color-mix(in oklch, var(--bg-page) 92%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line-subtle); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .tabs a { display: grid; justify-items: center; gap: 4px; padding: 8px 0 10px; font-size: var(--fs-xs); font-weight: 500; color: var(--text-3); text-decoration: none; }
+  .tabs a.on { color: var(--text-1); }
+  .tabs a.on .i { color: var(--accent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .pop, .btn.nudge, .scrim.closing .sheet { animation-name: fade !important; }
+  .btn:active, .wallet:active, .strat-opts label:active { transform: none; }
+  .spin, .pn.now .dot, .tl.now i { animation: pulse 1.2s ease-in-out infinite; border-right-color: currentColor; }
+  .alloc span, .gauge .you, .pn::before, .pn .dot .i, .skipped summary .i, .raw summary .i { transition: none; }
+  #toast { transform: translate(-50%, 0); }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-alert-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M17 7 7 17"/><path d="M17 17H7V7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.38 3.62a1 1 0 0 1 3 3L7.37 18.64a2 2 0 0 1-.86.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.86z"/></symbol>
+  <symbol id="i-trend-up" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+  <symbol id="i-trend-down" viewBox="0 0 24 24"><path d="M22 17 13.5 8.5 8.5 13.5 2 7"/><path d="M16 17h6v-6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+  <symbol id="i-pie" viewBox="0 0 24 24"><path d="M21 12c.55 0 1-.45.95-1a10 10 0 0 0-8.95-8.95c-.55-.05-1 .4-1 .95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></symbol>
+</svg>
+<div class="proto" role="region" aria-label="Prototype controls">
+  <div class="proto-in">
+    <div class="grp"><b>Сценарий</b><span id="p-scen" class="grp"></span></div>
+    <div class="grp"><b>Подпись</b><span id="p-out" class="grp"></span></div>
+    <div class="grp"><b>Тема</b><button id="p-theme" aria-pressed="false">светлая</button></div>
+    <div class="grp"><b>Пояснения</b><button id="p-notes" aria-pressed="true">вкл</button></div>
+  </div>
+</div>
+<div id="app"></div>
+<div id="layer"></div>
+<script>
+const ICONS = {"NEAR": "data:image/jpeg;base64,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", "wNEAR": "data:image/jpeg;base64,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", "USDC": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz48IS0tIEdlbmVyYXRvcjogQWRvYmUgSWxsdXN0cmF0b3IgMjIuMC4xLCBTVkcgRXhwb3J0IFBsdWctSW4gLiBTVkcgVmVyc2lvbjogNi4wMCBCdWlsZCAwKSAtLT48c3ZnIHZlcnNpb249IjEuMSIgaWQ9IkxheWVyXzEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHg9IjBweCIgeT0iMHB4IiB2aWV3Qm94PSIwIDAgMjU2IDI1NiIgc3R5bGU9ImVuYWJsZS1iYWNrZ3JvdW5kOm5ldyAwIDAgMjU2IDI1NjsiIHhtbDpzcGFjZT0icHJlc2VydmUiPjxzdHlsZSB0eXBlPSJ0ZXh0L2NzcyI+IC5zdDB7ZmlsbDojMjc3NUNBO30gLnN0MXtmaWxsOiNGRkZGRkY7fQo8L3N0eWxlPjxjaXJjbGUgY2xhc3M9InN0MCIgY3g9IjEyOCIgY3k9IjEyOCIgcj0iMTI4Ii8+PHBhdGggY2xhc3M9InN0MSIgZD0iTTEwNCwyMTdjMCwzLTIuNCw0LjctNS4yLDMuOEM2MCwyMDguNCwzMiwxNzIuMiwzMiwxMjkuM2MwLTQyLjgsMjgtNzkuMSw2Ni44LTkxLjVjMi45LTAuOSw1LjIsMC44LDUuMiwzLjggdjcuNWMwLDItMS41LDQuMy0zLjQsNUM2OS45LDY1LjQsNDgsOTQuOSw0OCwxMjkuM2MwLDM0LjUsMjEuOSw2My45LDUyLjYsNzUuMWMxLjksMC43LDMuNCwzLDMuNCw1VjIxN3oiLz48cGF0aCBjbGFzcz0ic3QxIiBkPSJNMTM2LDE4OS4zYzAsMi4yLTEuOCw0LTQsNGgtOGMtMi4yLDAtNC0xLjgtNC00di0xMi42Yy0xNy41LTIuNC0yNi0xMi4xLTI4LjMtMjUuNWMtMC40LTIuMywxLjQtNC4zLDMuNy00LjMgaDkuMWMxLjksMCwzLjUsMS40LDMuOSwzLjJjMS43LDcuOSw2LjMsMTQsMjAuMywxNGMxMC4zLDAsMTcuNy01LjgsMTcuNy0xNC40YzAtOC42LTQuMy0xMS45LTE5LjUtMTQuNGMtMjIuNC0zLTMzLTkuOC0zMy0yNy4zIGMwLTEzLjUsMTAuMy0yNC4xLDI2LjEtMjYuM1Y2OS4zYzAtMi4yLDEuOC00LDQtNGg4YzIuMiwwLDQsMS44LDQsNHYxMi43YzEyLjksMi4zLDIxLjEsOS42LDIzLjgsMjEuOGMwLjUsMi4zLTEuMyw0LjQtMy43LDQuNCBoLTguNGMtMS44LDAtMy4zLTEuMi0zLjgtMi45Yy0yLjMtNy43LTcuOC0xMS4xLTE3LjQtMTEuMWMtMTAuNiwwLTE2LjEsNS4xLTE2LjEsMTIuM2MwLDcuNiwzLjEsMTEuNCwxOS40LDEzLjcgYzIyLDMsMzMuNCw5LjMsMzMuNCwyOGMwLDE0LjItMTAuNiwyNS43LTI3LjEsMjguM1YxODkuM3oiLz48cGF0aCBjbGFzcz0ic3QxIiBkPSJNMTU3LjIsMjIwLjhjLTIuOSwwLjktNS4yLTAuOC01LjItMy44di03LjVjMC0yLjIsMS4zLTQuMywzLjQtNWMzMC42LTExLjIsNTIuNi00MC43LDUyLjYtNzUuMSBjMC0zNC41LTIxLjktNjMuOS01Mi42LTc1LjFjLTEuOS0wLjctMy40LTMtMy40LTV2LTcuNWMwLTMsMi40LTQuNyw1LjItMy44QzE5Niw1MC4yLDIyNCw4Ni41LDIyNCwxMjkuMyBDMjI0LDE3Mi4yLDE5NiwyMDguNCwxNTcuMiwyMjAuOHoiLz48L3N2Zz4K", "USDC.e": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMzInIGhlaWdodD0nMzInIHZpZXdCb3g9JzAgMCAzMiAzMicgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48ZyBmaWxsPSdub25lJz48Y2lyY2xlIGN4PScxNicgY3k9JzE2JyByPScxNicgZmlsbD0nIzI3NzVDOScvPjxwYXRoIGQ9J00xNS43NSAyNy41QzkuMjYgMjcuNSA0IDIyLjI0IDQgMTUuNzVTOS4yNiA0IDE1Ljc1IDQgMjcuNSA5LjI2IDI3LjUgMTUuNzVBMTEuNzUgMTEuNzUgMCAwMTE1Ljc1IDI3LjV6bS0uNy0xNi4xMWEyLjU4IDIuNTggMCAwMC0yLjQ1IDIuNDdjMCAxLjIxLjc0IDIgMi4zMSAyLjMzbDEuMS4yNmMxLjA3LjI1IDEuNTEuNjEgMS41MSAxLjIycy0uNzcgMS4yMS0xLjc3IDEuMjFhMS45IDEuOSAwIDAxLTEuOC0uOTEuNjguNjggMCAwMC0uNjEtLjM5aC0uNTlhLjM1LjM1IDAgMDAtLjI4LjQxIDIuNzMgMi43MyAwIDAwMi42MSAyLjA4di44NGEuNzA1LjcwNSAwIDAwMS40MSAwdi0uODVhMi42MiAyLjYyIDAgMDAyLjU5LTIuNThjMC0xLjI3LS43My0yLTIuNDYtMi4zN2wtMS0uMjJjLTEtLjI1LTEuNDctLjU4LTEuNDctMS4xNCAwLS41Ni42LTEuMTggMS42LTEuMThhMS42NCAxLjY0IDAgMDExLjU5LjgxLjguOCAwIDAwLjcyLjQ2aC40N2EuNDIuNDIgMCAwMC4zMS0uNSAyLjY1IDIuNjUgMCAwMC0yLjM4LTJ2LS42OWEuNzA1LjcwNSAwIDAwLTEuNDEgMHYuNzR6bS04LjExIDQuMzZhOC43OSA4Ljc5IDAgMDA2IDguMzNoLjE0YS40NS40NSAwIDAwLjQ1LS40NXYtLjIxYS45NC45NCAwIDAwLS41OC0uODcgNy4zNiA3LjM2IDAgMDEwLTEzLjY1LjkzLjkzIDAgMDAuNTgtLjg2di0uMjNhLjQyLjQyIDAgMDAtLjU2LS40IDguNzkgOC43OSAwIDAwLTYuMDMgOC4zNHptMTcuNjIgMGE4Ljc5IDguNzkgMCAwMC02LTguMzJoLS4xNWEuNDcuNDcgMCAwMC0uNDcuNDd2LjE1YTEgMSAwIDAwLjYxLjkgNy4zNiA3LjM2IDAgMDEwIDEzLjY0IDEgMSAwIDAwLS42Ljg5di4xN2EuNDcuNDcgMCAwMC42Mi40NCA4Ljc5IDguNzkgMCAwMDUuOTktOC4zNHonIGZpbGw9JyNGRkYnLz48L2c+PC9zdmc+", "USDt": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nMTExJyBoZWlnaHQ9JzkwJyB2aWV3Qm94PScwIDAgMTExIDkwJyBmaWxsPSdub25lJyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnPjxwYXRoIGZpbGwtcnVsZT0nZXZlbm9kZCcgY2xpcC1ydWxlPSdldmVub2RkJyBkPSdNMjQuNDgyNSAwLjg2MjMwNUg4OC4wNDk2Qzg5LjU2NjMgMC44NjIzMDUgOTAuOTY3NSAxLjY0ODI3IDkxLjcyMzkgMi45MjMzOEwxMTAuMjQ0IDM0LjE0MTlDMTExLjIwNCAzNS43NjA5IDExMC45MTkgMzcuODA0MyAxMDkuNTQ5IDM5LjExNzFMNTguNTcyOSA4Ny45NzAzQzU2LjkyMTYgODkuNTUyOCA1NC4yNjUyIDg5LjU1MjggNTIuNjEzOSA4Ny45NzAzTDEuNzA2OTkgMzkuMTgzMUMwLjMwNTI2MiAzNy44Mzk4IDAuMDQyNzgxMiAzNS43MzY3IDEuMDczNTQgMzQuMTA3N0wyMC44Njk2IDIuODIzMjJDMjEuNjQwNiAxLjYwNDgzIDIzLjAwODcgMC44NjIzMDUgMjQuNDgyNSAwLjg2MjMwNVpNNzkuODQxOSAxNC44MDAzVjIzLjU1OTdINjEuNzM0M1YyOS42MzI5Qzc0LjQ1MTggMzAuMjgxOSA4My45OTM0IDMyLjk0NzUgODQuMDY0MiAzNi4xNDI1TDg0LjA2MzggNDIuODAzQzgzLjk5MyA0NS45OTggNzQuNDUxOCA0OC42NjM1IDYxLjczNDMgNDkuMzEyNVY2NC4yMTY4SDQ5LjcxMDVWNDkuMzEyNUMzNi45OTI5IDQ4LjY2MzUgMjcuNDUxMyA0NS45OTggMjcuMzgwNSA0Mi44MDNMMjcuMzgxIDM2LjE0MjVDMjcuNDUxNyAzMi45NDc1IDM2Ljk5MjkgMzAuMjgxOSA0OS43MTA1IDI5LjYzMjlWMjMuNTU5N0gzMS42MDI4VjE0LjgwMDNINzkuODQxOVpNNTUuNzIyNCA0NC43MzY3QzY5LjI5NDMgNDQuNzM2NyA4MC42MzgyIDQyLjQ4MjcgODMuNDE0MyAzOS40NzI3QzgxLjA2MDEgMzYuOTIwMiA3Mi41NDQ4IDM0LjkxMTQgNjEuNzM0MyAzNC4zNTk3VjQwLjcxODNDNTkuNzk2NiA0MC44MTcyIDU3Ljc4NTIgNDAuODY5MyA1NS43MjI0IDQwLjg2OTNDNTMuNjU5NSA0MC44NjkzIDUxLjY0ODEgNDAuODE3MiA0OS43MTA1IDQwLjcxODNWMzQuMzU5N0MzOC44OTk5IDM0LjkxMTQgMzAuMzg0NiAzNi45MjAyIDI4LjAzMDQgMzkuNDcyN0MzMC44MDY2IDQyLjQ4MjcgNDIuMTUwNCA0NC43MzY3IDU1LjcyMjQgNDQuNzM2N1onIGZpbGw9JyMwMDkzOTMnLz48L3N2Zz4=", "USDT.e": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPSczMicgaGVpZ2h0PSczMic+PGcgZmlsbD0nbm9uZScgZmlsbC1ydWxlPSdldmVub2RkJz48Y2lyY2xlIGN4PScxNicgY3k9JzE2JyByPScxNicgZmlsbD0nIzI2QTE3QicvPjxwYXRoIGZpbGw9JyNGRkYnIGQ9J00xNy45MjIgMTcuMzgzdi0uMDAyYy0uMTEuMDA4LS42NzcuMDQyLTEuOTQyLjA0Mi0xLjAxIDAtMS43MjEtLjAzLTEuOTcxLS4wNDJ2LjAwM2MtMy44ODgtLjE3MS02Ljc5LS44NDgtNi43OS0xLjY1OCAwLS44MDkgMi45MDItMS40ODYgNi43OS0xLjY2djIuNjQ0Yy4yNTQuMDE4Ljk4Mi4wNjEgMS45ODguMDYxIDEuMjA3IDAgMS44MTItLjA1IDEuOTI1LS4wNnYtMi42NDNjMy44OC4xNzMgNi43NzUuODUgNi43NzUgMS42NTggMCAuODEtMi44OTUgMS40ODUtNi43NzUgMS42NTdtMC0zLjU5di0yLjM2Nmg1LjQxNFY3LjgxOUg4LjU5NXYzLjYwOGg1LjQxNHYyLjM2NWMtNC40LjIwMi03LjcwOSAxLjA3NC03LjcwOSAyLjExOCAwIDEuMDQ0IDMuMzA5IDEuOTE1IDcuNzA5IDIuMTE4djcuNTgyaDMuOTEzdi03LjU4NGM0LjM5My0uMjAyIDcuNjk0LTEuMDczIDcuNjk0LTIuMTE2IDAtMS4wNDMtMy4zMDEtMS45MTQtNy42OTQtMi4xMTcnLz48L2c+PC9zdmc+", "STNEAR": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nOTYnIGhlaWdodD0nOTYnIHZpZXdCb3g9JzAgMCA5NiA5NicgZmlsbD0nbm9uZScgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cmVjdCB3aWR0aD0nOTYnIGhlaWdodD0nOTYnIHJ4PSc0OCcgZmlsbD0nd2hpdGUnLz48cGF0aCBmaWxsLXJ1bGU9J2V2ZW5vZGQnIGNsaXAtcnVsZT0nZXZlbm9kZCcgZD0nTTQ4LjAwMDYgMjBMNDEuMjU3NSAyNi43NDMxTDQ4LjAwMDYgMzMuNDg2Mkw1NC43NDM3IDI2Ljc0MzFMNDguMDAwNiAyMFpNMzcuMjgxIDMwLjcxODhMMzAuNzE0NCAzNy4yODUzTDQ3Ljk5OTggNTQuNTcwN0w2NS4yODUxIDM3LjI4NTNMNTguNzE4NiAzMC43MTg4TDQ3Ljk5OTggNDEuNDM3NkwzNy4yODEgMzAuNzE4OFpNMjYuNzM4NCA0MS4yNjFMMTkuOTk1MyA0OC4wMDQxTDQ3Ljk5OTUgNzYuMDA4M0w3Ni4wMDM3IDQ4LjAwNDFMNjkuMjYwNiA0MS4yNjExTDQ3Ljk5OTUgNjIuNTIyMUwyNi43Mzg0IDQxLjI2MVonIGZpbGw9JyMyMzFCNTEnLz48L3N2Zz4=", "stNEAR": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0nOTYnIGhlaWdodD0nOTYnIHZpZXdCb3g9JzAgMCA5NiA5NicgZmlsbD0nbm9uZScgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cmVjdCB3aWR0aD0nOTYnIGhlaWdodD0nOTYnIHJ4PSc0OCcgZmlsbD0nd2hpdGUnLz48cGF0aCBmaWxsLXJ1bGU9J2V2ZW5vZGQnIGNsaXAtcnVsZT0nZXZlbm9kZCcgZD0nTTQ4LjAwMDYgMjBMNDEuMjU3NSAyNi43NDMxTDQ4LjAwMDYgMzMuNDg2Mkw1NC43NDM3IDI2Ljc0MzFMNDguMDAwNiAyMFpNMzcuMjgxIDMwLjcxODhMMzAuNzE0NCAzNy4yODUzTDQ3Ljk5OTggNTQuNTcwN0w2NS4yODUxIDM3LjI4NTNMNTguNzE4NiAzMC43MTg4TDQ3Ljk5OTggNDEuNDM3NkwzNy4yODEgMzAuNzE4OFpNMjYuNzM4NCA0MS4yNjFMMTkuOTk1MyA0OC4wMDQxTDQ3Ljk5OTUgNzYuMDA4M0w3Ni4wMDM3IDQ4LjAwNDFMNjkuMjYwNiA0MS4yNjExTDQ3Ljk5OTUgNjIuNTIyMUwyNi43Mzg0IDQxLjI2MVonIGZpbGw9JyMyMzFCNTEnLz48L3N2Zz4=", "ETH": "data:image/png;base64,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", "SWEAT": "data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PScwIDAgMTAwIDEwMCcgZmlsbD0nbm9uZScgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJz48cmVjdCB3aWR0aD0nMTAwJyBoZWlnaHQ9JzEwMCcgcng9JzUwJyBmaWxsPScjRkYwRDc1Jy8+PGcgY2xpcC1wYXRoPSd1cmwoI2NsaXAwXzI4M18yNzg4KSc+PHBhdGggZD0nTTM5LjQ2NTMgNzcuNTQ1NUwxOS4wMDg5IDQwLjAyTDM1LjU0MTEgMjIuMjgwNUw1NS45OTc1IDU5LjgwNkwzOS40NjUzIDc3LjU0NTVaJyBzdHJva2U9J3doaXRlJyBzdHJva2Utd2lkdGg9JzEwJy8+PHBhdGggZD0nTTY2LjAyNTMgNzcuODUzMUw0NS41NjkgNDAuMzI3Nkw2Mi4xMDEyIDIyLjU4ODJMODIuNTU3NiA2MC4xMTM2TDY2LjAyNTMgNzcuODUzMVonIHN0cm9rZT0nd2hpdGUnIHN0cm9rZS13aWR0aD0nMTAnLz48L2c+PGRlZnM+PGNsaXBQYXRoIGlkPSdjbGlwMF8yODNfMjc4OCc+PHJlY3Qgd2lkdGg9JzEwMCcgaGVpZ2h0PSc1NicgZmlsbD0nd2hpdGUnIHRyYW5zZm9ybT0ndHJhbnNsYXRlKDAgMjIpJy8+PC9jbGlwUGF0aD48L2RlZnM+PC9zdmc+Cg==", "BASE": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMTEgMTExIj48Y2lyY2xlIGN4PSI1NS41IiBjeT0iNTUuNSIgcj0iNTUuNSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGZpbGw9IiMwMDUyRkYiIGQ9Ik01NC45MjEgMTEwLjAzNEM4NS4zNTkgMTEwLjAzNCAxMTAuMDM0IDg1LjQwMiAxMTAuMDM0IDU1LjAxN0MxMTAuMDM0IDI0LjYzMTkgODUuMzU5IDAgNTQuOTIxIDBDMjYuMDQzMiAwIDIuMzUyODEgMjIuMTcxNCAwIDUwLjM5MjNINzIuODQ2N1Y1OS42NDE2SDBDMi4zNTI4MSA4Ny44NjI1IDI2LjA0MzIgMTEwLjAzNCA1NC45MjEgMTEwLjAzNFoiLz48L3N2Zz4K", "SOL": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciICB2aWV3Qm94PSIwIDAgNjQgNjQiIHdpZHRoPSI5NnB4IiBoZWlnaHQ9Ijk2cHgiIGJhc2VQcm9maWxlPSJiYXNpYyI+PGxpbmVhckdyYWRpZW50IGlkPSIyeHlQOElUdncyQXlOOUo2MmRVQWJhIiB4MT0iMzIiIHgyPSIzMiIgeTE9IjE3LjkzNiIgeTI9IjQzLjA2OCIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzZkYzdmZiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2U2YWJmZiIvPjwvbGluZWFyR3JhZGllbnQ+PHBhdGggZmlsbD0idXJsKCMyeHlQOElUdncyQXlOOUo2MmRVQWJhKSIgZD0iTTQxLjgwNiwyNUgxNy4wMzJsNS4xNjEtNmgyNC43NzRMNDEuODA2LDI1eiBNMTcuMDMyLDQ1aDI0Ljc3NGw1LjE2MS02SDIyLjE5NEwxNy4wMzIsNDV6IE0xNy4wMzIsMjlsNS4xNjEsNmgyNC43NzRsLTUuMTYxLTZIMTcuMDMyeiIvPjxsaW5lYXJHcmFkaWVudCBpZD0iMnh5UDhJVHZ3MkF5TjlKNjJkVUFiYiIgeDE9IjMyIiB4Mj0iMzIiIHkxPSI4LjU1MyIgeTI9IjU1LjMzMSIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzFhNmRmZiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2M4MjJmZiIvPjwvbGluZWFyR3JhZGllbnQ+PHBhdGggZmlsbD0idXJsKCMyeHlQOElUdncyQXlOOUo2MmRVQWJiKSIgZD0iTTMyLDU4QzE3LjY2Myw1OCw2LDQ2LjMzNyw2LDMyCUM2LDE3LjY2NCwxNy42NjMsNiwzMiw2czI2LDExLjY2NCwyNiwyNkM1OCw0Ni4zMzcsNDYuMzM3LDU4LDMyLDU4eiBNMzIsOEMxOC43NjcsOCw4LDE4Ljc2Nyw4LDMyczEwLjc2NywyNCwyNCwyNHMyNC0xMC43NjcsMjQtMjQJUzQ1LjIzMyw4LDMyLDh6Ii8+PC9zdmc+"};
+const fmt = (n, d = 2) => n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const usd = (n, d) => { const dd = d ?? (Math.abs(n) >= 1000 ? 0 : Math.abs(n) >= 10 ? 0 : 2); return (n < 0 ? '−$' : '$') + fmt(Math.abs(n), dd); };
+const sgn = (n, d = 2) => (n >= 0 ? '+' : '−') + '$' + fmt(Math.abs(n), d);
+const money = (n) => { const [w, c] = fmt(Math.abs(n), 2).split('.'); return `${n < 0 ? '−' : ''}$${w}<span class="c">.${c}</span>`; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const STRATS = {
+  conservative: { label: 'Conservative', safe: 44, hf: 1.8, conc: 50 },
+  balanced: { label: 'Balanced', safe: 33, hf: 1.5, conc: 60 },
+  aggressive: { label: 'Aggressive', safe: 20, hf: 1.25, conc: 75 },
+};
+const URGENT = 23;
+
+const SCEN = {
+  demo5k: {
+    title: 'Демо $5k', ctx: 'demo', account: 'Demo · $5,000',
+    net: 3473.48, assets: 5471.60, debt: 1998, monthly: -21.01,
+    monthlyText: 'The loan costs more than your deposits earn.',
+    loan: { buffer: 27, by: 'NEAR' },
+    alloc: [['NEAR', 88.1], ['USDt', 11.9]],
+    groups: [
+      ['Burrow · lending', [
+        { s: 'NEAR', n: 'Collateral', a: 1150, u: 3825, e: ['plain', 'Collateral'] },
+        { s: 'USDt', n: 'Deposit', a: 50, u: 50, e: ['ok', 'Earning 8.5%'] },
+        { s: 'USDt', n: 'Loan', a: 2000, u: -1998, e: ['bad', 'Costs 13.6%'] },
+      ]],
+      ['Wallet', [
+        { s: 'NEAR', n: 'Native token', a: 300, u: 998, e: ['warn', 'Idle'] },
+        { s: 'USDt', n: 'Stablecoin', a: 600, u: 599, e: ['warn', 'Idle'], id: 'usdt-idle' },
+      ]],
+    ],
+    small: 0, unverified: 0,
+    checks: {
+      guardian: ['warn', 'Loan: watch', 'NEAR can fall 27% before liquidation.'],
+      intel: ['warn', '88% in NEAR', 'Above the 60% limit, but most of it is loan collateral.'],
+      alloc: ['warn', '$1,597 idle', '2 of 5 ways to use it clear the costs.'],
+      lp: ['na', 'No liquidity', 'No Rhea positions to check.'],
+    },
+    recs: [
+      { id: 'repay', sev: 'worth', agent: 'Liquidation Guardian · Capital Allocator', icon: 'USDt',
+        title: 'Repay $599 of the loan with your idle USDt',
+        facts: [['Saves', '+$6.67', '/ 30 days'], ['Loan buffer', '27% → 35%', ''], ['Cost', '≈ $0.01', 'gas']],
+        why: 'The loan costs <b>13.6% a year</b>; the USDt in your wallet earns nothing. Repaying saves that interest and moves the loan buffer above the <b>33%</b> your strategy counts as safe.',
+        tags: ['Net after costs', 'Protocol rates'], action: 'repay' },
+      { id: 'supply-usdt-demo', sev: 'worth', agent: 'Capital Allocator', icon: 'USDt',
+        title: 'Lend idle USDt on Burrow',
+        facts: [['Earns', '+$4.20', '/ 30 days'], ['Rate', '8.5%', 'a year'], ['Withdraw', 'Any time', '']],
+        why: 'Deposit the USDt sitting in your wallet and earn the Burrow supply rate. No swap needed. <b>Repaying the loan first saves more</b>, so this is second.',
+        tags: ['Net after costs', 'Protocol rates'], action: 'supply-demo' },
+    ],
+    skipped: [
+      ['Provide liquidity on Rhea (pool #4512)', '+$9.13 / 30 d', 'Highest gross number, but the gain is less than 3× the costs: too thin if the rate moves. Fees are past data, not a promise.'],
+      ['Swap idle NEAR to USDC and lend it', '+$1.61 / 30 d', 'The swap cost eats most of the gain; it clears the bar only after 3+ months.'],
+      ['Lend idle NEAR on Burrow', '+$0.17 / 30 d', 'NEAR earns 0.2% a year on Burrow; below the $0.50 minimum worth a transaction.'],
+    ],
+  },
+  risky: {
+    title: 'Мой: риск кредита', ctx: 'mine', account: 'autopilot-test.near', verified: true,
+    net: 45.27, assets: 54.31, debt: 9, monthly: 0.13,
+    monthlyText: 'Your Burrow deposits earn about $0.23 a month; the loan costs about $0.10.',
+    loan: { buffer: 13, by: 'your collateral', hf: 1.15 },
+    alloc: [['USDC', 63.2], ['NEAR', 19.5], ['USDT.e', 8.1], ['STNEAR', 6.1]],
+    groups: [
+      ['Burrow · lending', [
+        { s: 'USDC', n: 'Deposit', a: 14, u: 14, e: ['ok', 'Earning'] },
+        { s: 'USDC', n: 'Collateral', a: 11.91, u: 12, e: ['ok', 'Earning'] },
+        { s: 'USDt', n: 'Loan', a: 9.34, u: -9, e: ['bad', 'Costs 13.6%'] },
+      ]],
+      ['Liquidity', [{ s: 'USDC', s2: 'wNEAR', n: 'Rhea pool USDC/wNEAR', a: null, u: 15, e: ['ok', 'Earning fees'] }]],
+      ['Staking', [{ s: 'STNEAR', n: 'Liquid staking', a: 0.66, u: 3, e: ['ok', 'Staking'] }]],
+      ['Wallet', [
+        { s: 'USDT.e', n: 'Bridged stablecoin', a: 4.42, u: 4, e: ['warn', 'Idle'] },
+        { s: 'NEAR', n: 'Native token · gas', a: 0.86, u: 3, e: ['plain', 'Kept for fees'] },
+      ]],
+    ],
+    small: 2, unverified: 0,
+    checks: {
+      guardian: ['bad', 'Loan: act now', 'Collateral can fall only 13% before liquidation.'],
+      intel: ['ok', 'Spread is fine', '63% in USDC; stablecoins never count as a concentration.'],
+      alloc: ['ok', 'Nothing idle', 'USDT.e $4 is too small to beat the gas.'],
+      lp: ['ok', 'Pool in range', 'USDC/wNEAR earns fees; nothing to move.'],
+    },
+    recs: [
+      { id: 'guardian', sev: 'act', agent: 'Liquidation Guardian', icon: 'USDt',
+        title: 'Your loan is close to liquidation', gauge: true,
+        facts: [['Loan', '9.34 USDt', '≈ $9'], ['Liquidation if collateral falls', '13%', ''], ['Interest', '13.6%', 'a year ≈ $0.10/mo']],
+        why: 'To be safe under your strategy the loan buffer should be at least <b>{SAFE}%</b>. To repay you need <b>USDt</b>: your wallet holds none, and none of your collateral is USDt, so a one-click repay is not possible yet. Bring USDt from another chain, or swap your USDT.e first.',
+        tags: ['On-chain data', 'Heuristic'], action: 'deposit-usdt', actionLabel: 'Add USDt to repay', second: 'Why no one-click repay?' },
+    ],
+    skipped: [],
+  },
+  whaleRO: {
+    title: 'Чужой $231k', ctx: 'readonly', account: 'near',
+    net: 231736.12, assets: 231736.12, debt: 0, monthly: 0,
+    monthlyText: 'Nothing earns: every token sits in the wallet.',
+    loan: null,
+    alloc: [['NEAR', 99.8], ['USDt', 0.2]],
+    groups: [
+      ['Wallet', [
+        { s: 'NEAR', n: 'Native token', a: 69253.81, u: 231176, e: ['warn', 'Idle'], id: 'near-main' },
+        { s: 'USDt', n: 'Stablecoin', a: 383.87, u: 383, e: ['warn', 'Idle'], id: 'usdt-idle' },
+        { s: 'wNEAR', n: 'Wrapped NEAR', a: 21.33, u: 71, e: ['warn', 'Idle'] },
+        { s: 'USDC', n: 'Stablecoin', a: 29.2, u: 29, e: ['warn', 'Idle'] },
+        { s: 'USDC.e', n: 'Bridged stablecoin', a: 14.29, u: 14, e: ['warn', 'Idle'] },
+        { s: 'ETH', n: 'Bridged ETH', a: 0.001, u: 2, e: ['plain', 'Too small'] },
+      ]],
+    ],
+    small: 30, unverified: 2,
+    checks: {
+      guardian: ['na', 'No loan', 'Nothing borrowed, nothing to liquidate.'],
+      intel: ['bad', '99.8% in NEAR', 'A NEAR drop hits almost the whole portfolio.'],
+      alloc: ['warn', '$383 USDt idle', 'Earns nothing in the wallet.'],
+      lp: ['na', 'No liquidity', 'No Rhea positions to check.'],
+    },
+    recs: [
+      { id: 'rebalance', sev: 'worth', agent: 'Portfolio Intelligence', icon: 'NEAR', icon2: 'USDC',
+        title: 'Move half of your NEAR into USDC',
+        facts: [['You give', '34,543 NEAR', '≈ $115,307'], ['You get at least', '101,764 USDC', ''], ['NEAR share', '99.8% → ~50%', '']],
+        why: 'A 100% position in NEAR means a fall in NEAR hits almost your whole portfolio. Swapping about half brings it toward the <b>{CONC}%</b> limit of your strategy. <b>Warning:</b> at this size the Rhea pool moves the price a lot; see the cost before signing.',
+        tags: ['Live pool quote', 'Heuristic'], action: 'rebalance' },
+      { id: 'supply', sev: 'worth', agent: 'Capital Allocator', icon: 'USDt',
+        title: 'Lend $383 of idle USDt on Burrow',
+        facts: [['Earns', '+$2.78', '/ month'], ['Rate', '8.7%', 'a year'], ['Withdraw', 'Any time', '']],
+        why: 'USDt in the wallet earns nothing. Supplying it on Burrow <b>earns the supply rate, and you can withdraw at any time</b>. A stablecoin pool would need to pay more after costs; none is tracked yet.',
+        tags: ['Protocol rate', 'Heuristic'], action: 'supply' },
+    ],
+    skipped: [],
+  },
+  small: {
+    title: 'Мало денег $500', ctx: 'demo', account: 'Demo · $500',
+    net: 349.10, assets: 549.22, debt: 200, monthly: -2.13,
+    monthlyText: 'The loan costs more than your deposits earn.',
+    loan: { buffer: 30, by: 'NEAR' },
+    alloc: [['NEAR', 90.9], ['USDt', 9.1]],
+    groups: [
+      ['Burrow · lending', [
+        { s: 'NEAR', n: 'Collateral', a: 120, u: 399, e: ['plain', 'Collateral'] },
+        { s: 'USDt', n: 'Loan', a: 200, u: -200, e: ['bad', 'Costs 13.6%'] },
+      ]],
+      ['Wallet', [
+        { s: 'NEAR', n: 'Native token', a: 30, u: 100, e: ['warn', 'Idle'] },
+        { s: 'USDt', n: 'Stablecoin', a: 50, u: 50, e: ['warn', 'Idle'] },
+      ]],
+    ],
+    small: 0, unverified: 0,
+    checks: {
+      guardian: ['warn', 'Loan: watch', 'NEAR can fall 30% before liquidation.'],
+      intel: ['warn', '91% in NEAR', 'Mostly loan collateral; a swap would cost more than it protects.'],
+      alloc: ['warn', '$150 idle', '1 of 5 ways to use it clears the costs.'],
+      lp: ['na', 'No liquidity', 'No Rhea positions to check.'],
+    },
+    recs: [
+      { id: 'repay-small', sev: 'worth', agent: 'Liquidation Guardian', icon: 'USDt',
+        title: 'Repay $49.96 of the loan with your idle USDt',
+        facts: [['Saves', '+$0.51', '/ 30 days'], ['Loan buffer', '30% → 34%', ''], ['Cost', '≈ $0.01', 'gas']],
+        why: 'Small in dollars, but <b>it is the one move here that clears the costs</b>, and it makes the loan safer.',
+        tags: ['Net after costs'], action: 'repay-small' },
+    ],
+    skipped: [
+      ['Provide liquidity on Rhea (pool #4512)', '+$0.79 / 30 d', 'The gain is less than 3× the costs.'],
+      ['Lend idle USDt on Burrow', '+$0.26 / 30 d', 'Below the $0.50 minimum worth a transaction.'],
+      ['Swap idle NEAR to USDC and lend it', '+$0.18 / 30 d', 'Below the $0.50 minimum.'],
+      ['Lend idle NEAR on Burrow', '−$0.07 / 30 d', 'Would lose money after gas.'],
+    ],
+  },
+  calm: {
+    title: 'Всё в порядке (пример)', ctx: 'mine', account: 'example.near', verified: true, example: true,
+    net: 1257.64, assets: 1357.80, debt: 100, monthly: 3.22,
+    monthlyText: 'Deposits earn about $4.35 a month; the loan costs about $1.13.',
+    loan: { buffer: 58, by: 'your collateral', hf: 2.4 },
+    alloc: [['USDC', 44.2], ['NEAR', 37.4], ['stNEAR', 18.4]],
+    groups: [
+      ['Burrow · lending', [
+        { s: 'USDC', n: 'Deposit', a: 600, u: 600, e: ['ok', 'Earning 8.7%'] },
+        { s: 'NEAR', n: 'Collateral', a: 150, u: 500, e: ['plain', 'Collateral'] },
+        { s: 'USDt', n: 'Loan', a: 100, u: -100, e: ['bad', 'Costs 13.6%'] },
+      ]],
+      ['Staking', [{ s: 'stNEAR', n: 'Liquid staking', a: 70, u: 250, e: ['ok', 'Staking'] }]],
+      ['Wallet', [{ s: 'NEAR', n: 'Native token · gas', a: 2.1, u: 7, e: ['plain', 'Kept for fees'] }]],
+    ],
+    small: 0, unverified: 0,
+    checks: {
+      guardian: ['ok', 'Loan: safe', 'Collateral can fall 58% before liquidation.'],
+      intel: ['ok', 'Spread is fine', 'Largest token 44%, under your 60% limit.'],
+      alloc: ['ok', 'Nothing idle', 'Every token except the gas reserve is earning.'],
+      lp: ['na', 'No liquidity', 'No Rhea positions to check.'],
+    },
+    recs: [], skipped: [],
+  },
+};
+SCEN.whaleMine = { ...SCEN.whaleRO, title: 'Тот же $231k как владелец', ctx: 'mine', verified: true };
+const OTHER = [{ chain: 'BASE', addr: '0x9c4e…a341', wallet: 'MetaMask · Base', items: [['USDC', 214.5, 214.5], ['ETH', 0.012, 38.1]] }];
+for (const k of ['risky', 'whaleMine', 'calm']) SCEN[k].other = OTHER;
+const otherTotal = (d) => (d.other || []).reduce((n, o) => n + o.items.reduce((m, i) => m + i[2], 0), 0);
+
+const ACTIONS = {
+  supply: {
+    ctx: 'Capital Allocator · Lend idle USDt', title: 'Lend 383.87 USDt on Burrow',
+    give: ['USDt', '383.87 USDt', '≈ $383'], get: ['USDt', 'Deposit on Burrow', 'earns 8.7% a year'],
+    kv: [['Earns', '≈ $2.78 a month'], ['Withdraw', 'Any time, no lock'], ['Network fee', '≈ 0.015 NEAR (≈ $0.05)']],
+    steps: [['Deposit 383.87 USDt into Burrow', 'usdt.tether-token.near → contract.main.burrow.near']],
+    raw: [['usdt.tether-token.near', 'ft_transfer_call', '1 yocto · 150 Tgas']],
+    checks: ['Signer is you', 'Receiver on the allowlist', 'Method allowed', 'Gas 150 / 300 Tgas'],
+    done: { text: '383.87 USDt now earns 8.7% a year on Burrow.', effect: (s) => { s.monthly = 2.78; moveRow(s, 'usdt-idle', 'Burrow · lending', { n: 'Deposit', e: ['ok', 'Earning 8.7%'] }); s.checks.alloc = ['ok', 'Nothing idle', 'USDt now earns on Burrow.']; } },
+  },
+  rebalance: {
+    ctx: 'Portfolio Intelligence · Reduce NEAR concentration', title: 'Swap 34,543 NEAR to USDC on Rhea',
+    give: ['NEAR', '34,543.06 NEAR', '≈ $115,307'], get: ['USDC', '≥ 101,764.47 USDC', 'expected ≈ 102,276'],
+    impact: { pct: 11.3, usd: 13031 },
+    kv: [['Max slippage', '0.50%'], ['Route', 'Rhea · wNEAR/USDC'], ['Network fee', '≈ 0.019 NEAR (≈ $0.06)']],
+    steps: [['Wrap 34,543.06 NEAR to wNEAR, then swap for at least 101,764.47 USDC', 'One transaction to wrap.near: both actions succeed or neither does']],
+    raw: [['wrap.near', 'near_deposit', '34,543.0628 NEAR · 10 Tgas'], ['wrap.near', 'ft_transfer_call', '0 NEAR · 180 Tgas']],
+    checks: ['Signer is you', 'Receiver on the allowlist', 'Methods allowed', 'Gas 190 / 300 Tgas', 'Minimum received is enforced on-chain'],
+    done: { text: 'NEAR is now about 50% of the portfolio; 101,764+ USDC arrived.', effect: (s) => { s.alloc = [['NEAR', 50.1], ['USDC', 49.7]]; s.net = 218705.35; s.assets = 218705.35; const r = findRow(s, 'near-main'); if (r) { r.a = 34710.75; r.u = 115869; r.flash = true; } s.groups[0][1].splice(1, 0, { s: 'USDC', n: 'Stablecoin', a: 101912, u: 101912, e: ['warn', 'Idle'], flash: true }); s.checks.intel = ['ok', 'NEAR 50%', 'Under your 60% limit now.']; s.checks.alloc = ['warn', '$102k USDC idle', 'Lend it on Burrow? New suggestion below.']; } },
+  },
+  repay: {
+    ctx: 'Liquidation Guardian · Repay with idle USDt', title: 'Repay 599 USDt of your Burrow loan',
+    give: ['USDt', '599 USDt', '≈ $599'], get: ['USDt', 'Loan 2,000 → 1,401 USDt', 'buffer 27% → 35%'],
+    kv: [['Saves', '≈ $6.67 every 30 days'], ['Network fee', '≈ 0.015 NEAR']],
+    steps: [['Repay 599 USDt to Burrow', 'usdt.tether-token.near → contract.main.burrow.near']],
+    raw: [['usdt.tether-token.near', 'ft_transfer_call', '1 yocto · 150 Tgas']],
+    checks: ['Receiver on the allowlist', 'Method allowed', 'Gas 150 / 300 Tgas'],
+  },
+};
+ACTIONS['supply-demo'] = { ...ACTIONS.supply, title: 'Lend 600 USDt on Burrow', give: ['USDt', '600 USDt', '≈ $599'] };
+ACTIONS['repay-small'] = { ...ACTIONS.repay, title: 'Repay 49.96 USDt of your Burrow loan', give: ['USDt', '49.96 USDt', '≈ $50'], get: ['USDt', 'Loan 200 → 150 USDt', 'buffer 30% → 34%'], kv: [['Saves', '≈ $0.51 every 30 days'], ['Network fee', '≈ 0.015 NEAR']] };
+
+const STAGES = [
+  ['Read the wallet on-chain', 'balances, loan, liquidity, staking', '0.8 s'],
+  ['The model chose which agents to ask', 'asked all 4', '1.1 s'],
+  ['Agents answered with numbers', 'each from live on-chain data', '2.3 s'],
+  ['The model ranked the answers', 'by what changes most for you', '1.6 s'],
+  ['Code checked the ranking', 'the model can only propose', '0.6 s'],
+];
+const TRACE = {
+  risky: { secs: 6.4, agents: [
+    ['Liquidation Guardian', 'Loan buffer 13%, below the urgent 23%. No USDt in the wallet to repay.', 'in', '#1 · ranked by AI'],
+    ['Portfolio Intelligence', '63% in USDC: a stablecoin, so not a concentration.', 'out', 'Left out: nothing to fix'],
+    ['Capital Allocator', 'USDT.e $4 idle: under the minimum worth the gas.', 'out', 'Left out: too small'],
+    ['Liquidity Optimizer', 'USDC/wNEAR is in range and earning fees.', 'out', 'Left out: nothing to move']],
+    checks: ['Amounts match on-chain balances', 'The urgent loan card stays first', 'Every action passes the transaction validator'] },
+  whaleMine: { secs: 7.1, agents: [
+    ['Portfolio Intelligence', '99.8% in NEAR against a 60% limit. Swap about half.', 'code', '#1 · moved up by code'],
+    ['Capital Allocator', '$383 USDt idle; Burrow pays 8.7% a year.', 'in', '#2 · ranked by AI'],
+    ['Liquidation Guardian', 'No loan.', 'out', 'Nothing to check'],
+    ['Liquidity Optimizer', 'No liquidity positions.', 'out', 'Nothing to check']],
+    checks: ['Risk before yield: the AI ranked yield first, code moved the concentration up', 'Price impact 11.3% flagged on the swap', 'Every action passes the transaction validator'] },
+  calm: { secs: 5.2, agents: [
+    ['Liquidation Guardian', 'Loan buffer 58%, above the safe 33%.', 'out', 'Nothing to do'],
+    ['Portfolio Intelligence', 'Largest token 44%, under the 60% limit.', 'out', 'Nothing to do'],
+    ['Capital Allocator', 'Every token except the gas reserve is earning.', 'out', 'Nothing to do'],
+    ['Liquidity Optimizer', 'No liquidity positions.', 'out', 'Nothing to check']],
+    checks: ['Amounts match on-chain balances', 'No action was dropped that a rule marks urgent'] },
+};
+
+const ic = (n, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const tok = (s, cls = '') => ICONS[s]
+  ? `<span class="tok ${cls}" aria-hidden="true"><img src="${ICONS[s]}" alt=""></span>`
+  : `<span class="tok ${cls}" aria-hidden="true">${s.replace(/^(w|st)/i, '').slice(0, 2).toUpperCase()}</span>`;
+const LV = { ok: 'safe', warn: 'watch', bad: 'act', plain: '', na: '' };
+const LVI = { ok: 'check', warn: 'alert-circle', bad: 'alert', na: 'minus' };
+const LVC = { ok: 'ok-c', warn: 'watch-c', bad: 'act-c', na: 'na-c' };
+
+const NOTES = {
+  ctx: 'Контекст — первое, что видно: демо, чужой аккаунт или твой кошелёк, словами, а не только цветом. Демо и чужой аккаунт обведены пунктиром: «это не твои деньги».',
+  intro: 'Безопасность на первом экране: три шага за 10 секунд и почему можно доверять. Ссылка ведёт на страницу проверок с демо заблокированной атаки.',
+  summary: 'Сводка лежит прямо на фоне страницы, без панели (как Uniswap/Aave): капитал — главная точка фокуса, 56px, копейки приглушены. Цвет несёт стрелка тренда, а не всё число. У каждого числа метка источника формой: точка = on-chain, пунктир = оценка, штриховка = симуляция. Риск кредита — шкала «насколько может упасть залог» с отметками стратегии.',
+  analysis: 'Глаз сначала цепляется за итог (крупная фраза и цветная плашка: число ходов, «срочно» или «всё ок»), потом за находки агентов: ячейки с риском подкрашены, спокойные — нейтральные. Стратегия — компактный переключатель, его пороги одной строкой. «Как решали» — служебная лента внизу, мельче. Фиолетовый — голос AI: выбор стратегии, шаги решения, метка №1 и кнопка «Подписать» — одна нить. Зелёный/жёлтый/оранжевый появляются только там, где есть риск.',
+  recs: 'Карточки по рангу сверху вниз, объяснение видно всегда. №1 приподнята (светлее фон, настоящая тень) и отмечена тонкой линией: фиолетовой — выбор AI, оранжевой — если срочно. Главная кнопка — только у первой карточки (одна яркая кнопка на экран, как у Aave/Linear).',
+  skipped: 'Проверенное и отклонённое не прячется: цифры и причина. Бывший «лучший» LP-пул здесь, потому что не окупает риск.',
+  hold: 'Строки 56px, все числа моноширинными цифрами и по правому краю. Группы по месту хранения, у каждой строки статус: зарабатывает / простаивает / стоит денег.',
+  wallet: 'Один кошелёк на все сети (HOT Kit). NEAR-аккаунт главный; остальные сети — «для пополнения и вывода», их балансы видны, но не анализируются.',
+  sheet: 'Как Rabby/MetaMask/Phantom: сначала итог — что уходит (−) и что приходит (+), в токенах и долларах. Потом предупреждения по уровням: потеря > 5% требует галочку «понимаю», без неё подпись заблокирована (Uniswap блокирует > 15%). Кнопка «Подписать» — единственная цветная заливка во всём продукте.',
+  impact: 'Находка аудита: на реальном аккаунте near этот обмен теряет ≈ 11% (≈ $13k) на влиянии на цену, а текущий UI этого не показывает. Здесь это главный факт, и подпись заблокирована, пока не поставишь галочку.',
+  deposit: 'Пополнение вокруг подключённого кошелька другой сети (HOT Kit). QR и адрес — запасной путь одной ссылкой.',
+  system: 'v5. Тёмная тема — основная. «Серость» v4 была не в фоне, а в тексте: 76% букв были второстепенными. Теперь значения, суммы и объяснения — основным цветом, второстепенный — только для подписей. Фон почти чёрный, панели только там, где группа; контраст проверен по WCAG и APCA в браузере. Переключи «Тема» — светлая собрана из тех же ролей.',
+};
+const note = (k) => `<div class="note">${NOTES[k]}</div>`;
+
+const state = { scen: 'demo5k', outcome: 'ok', notes: true, strategy: 'balanced', life: {}, sheet: null, pop: null, data: null, running: null, ranAt: null, recheck: false };
+function load() { document.querySelectorAll('[data-count]').forEach((e) => delete e._v); state.data = JSON.parse(JSON.stringify(SCEN[state.scen])); state.life = {}; state.sheet = null; state.pop = null; state.running = null; state.ranAt = null; render(); }
+function findRow(s, id) { for (const [, rows] of s.groups) for (const r of rows) if (r.id === id) return r; return null; }
+function moveRow(s, id, to, patch) {
+  for (const g of s.groups) { const i = g[1].findIndex((r) => r.id === id); if (i >= 0) { const [r] = g[1].splice(i, 1); Object.assign(r, patch, { flash: true }); let dest = s.groups.find((x) => x[0] === to); if (!dest) { dest = [to, []]; s.groups.unshift(dest); } dest[1].push(r); } }
+  s.groups = s.groups.filter((g) => g[1].length);
+}
+
+function riskLevel(buffer) {
+  const st = STRATS[state.strategy];
+  if (buffer <= 0) return ['liq', 'Liquidation', 'alert'];
+  if (buffer < URGENT) return ['act', 'Act now', 'alert'];
+  if (buffer < st.safe) return ['watch', 'Watch', 'alert-circle'];
+  return ['safe', 'Safe', 'check'];
+}
+function gauge(buffer) {
+  const st = STRATS[state.strategy], max = 60, pct = (v) => Math.min(100, (v / max) * 100);
+  return `<div class="gauge" role="img" aria-label="Loan buffer ${buffer}%: urgent below ${URGENT}%, safe from ${st.safe}%">
+    <span class="zone u" style="width:${pct(URGENT)}%"></span><span class="zone w" style="left:${pct(URGENT)}%;width:${pct(st.safe) - pct(URGENT)}%"></span><span class="zone s" style="left:${pct(st.safe)}%"></span>
+    <span class="mk first" style="left:0"><em>liquidation</em></span>
+    <span class="mk up" style="left:${pct(URGENT)}%"><em>urgent ${URGENT}%</em></span>
+    <span class="mk" style="left:${pct(st.safe)}%"><em>safe ${st.safe}%</em></span>
+    <span class="you" style="left:${pct(buffer)}%"></span></div>`;
+}
+
+function topbar(d) {
+  const mine = d.ctx === 'mine';
+  const wallet = mine
+    ? `<button class="wallet" data-act="pop" data-pop="wallet" aria-expanded="${state.pop === 'wallet'}"><span class="stack">${tok('NEAR', 's')}${tok('BASE', 's')}</span><span class="who">${esc(d.account)}</span>${ic('down', 's')}</button>`
+    : `<button class="btn primary" data-act="toast" data-msg="Единый выбор кошелька HOT Kit (NEAR + EVM + Solana).">${ic('wallet')}Connect wallet</button>`;
+  return `<header class="top"><div class="top-in">
+    <div class="logo"><svg viewBox="0 0 22 22" aria-hidden="true"><rect x="1" y="1" width="20" height="20" rx="6" fill="currentColor"/><path d="M6.5 15.5 11 5.5l4.5 10-4.5-2.4z" fill="var(--bg-page)"/></svg>NEAR Autopilot</div>
+    <nav class="nav" aria-label="Main"><a class="on" href="#" aria-current="page">Portfolio</a><a href="#">Opportunities</a><a href="#">Activity</a></nav>
+    <div class="top-right">${wallet}${state.pop === 'wallet' ? walletPop(d) : ''}</div>
+  </div></header>`;
+}
+function walletPop(d) {
+  return `<div class="pop" role="dialog" aria-label="Wallets">
+    <h4>Portfolio account</h4>
+    <div class="row">${tok('NEAR', 'l')}<div><b>${esc(d.account)}</b><small>NEAR · analysed, signs every action</small></div><span class="bal num">${usd(d.net, 0)}<small style="display:block">net worth</small></span></div>
+    <h4>Other chains · for deposits and withdrawals</h4>
+    ${(d.other || []).map((o) => `<div class="row">${tok(o.chain, 'l')}<div><b>${o.addr}</b><small>${o.wallet} · ${o.items.map(([s, a]) => `${fmt(a, a < 1 ? 3 : 2)} ${s}`).join(' · ')}</small></div><span class="bal num">${usd(o.items.reduce((n, i) => n + i[2], 0), 0)}<small style="display:block">not analysed</small></span></div>`).join('')}
+    <button class="row btnrow" data-act="toast" data-msg="HOT Kit: подключение Phantom.">${tok('SOL', 'l')}<div><b>Connect Solana</b><small>Phantom, Solflare…</small></div></button>
+    <div class="sep"></div>
+    <div class="acts"><button class="btn small" data-act="deposit">${ic('in', 's')}Add funds</button><button class="btn small" data-act="withdraw">${ic('out', 's')}Withdraw</button></div>
+    <button class="row btnrow" data-act="toast" data-msg="Отключить все кошельки.">Disconnect</button>
+    ${note('wallet')}
+  </div>`;
+}
+
+function ctxStrip(d) {
+  if (d.ctx === 'demo') return `<div class="ctx demo"><span class="chip demo"><span class="simk"></span>Demo · simulated</span><p>A sample portfolio priced at live market rates. Nothing here is a real account, so nothing can be signed.</p><button class="btn small" data-act="toast" data-msg="Открывает реальный mainnet-кошелёк для просмотра.">See a real wallet</button><button class="btn small primary" data-act="toast" data-msg="HOT Kit picker.">Connect your wallet</button></div>`;
+  if (d.ctx === 'readonly') return `<div class="ctx ro"><span class="chip watch">${ic('eye')}Read-only</span><p><b>${esc(d.account)}</b> is not your wallet. You see the rule-based checks and can preview every transaction. AI analysis and signing are only for its owner.</p><button class="btn small" data-act="toast" data-msg="Поиск аккаунта.">Look up another</button></div>`;
+  return `<div class="ctx"><span class="chip safe">${ic('shield')}Your wallet</span><p><b>${esc(d.account)}</b>${d.verified ? ' · ownership verified, AI analysis on' : ''}${d.example ? ' · <i>пример данных</i>' : ''}</p><button class="btn small ghost" data-act="toast" data-msg="Меню: мой кошелёк / демо $5k / демо $500 / найти аккаунт.">Switch view${ic('down', 's')}</button></div>`;
+}
+
+function intro() {
+  return `<section class="panel intro" aria-labelledby="intro-h">
+    <div><h1 id="intro-h">An analyst for your DeFi portfolio. You keep the keys.</h1>
+      <p class="sub">Reads a real NEAR wallet, ranks what to do with numbers after costs, and builds the exact transaction for you to sign.</p>
+      <ol>
+        <li><b>Reads your wallet</b><span>Balances, loans, liquidity and staking, straight from the chain.</span></li>
+        <li><b>Agents check it</b><span>Loan safety, concentration, idle money, liquidity ranges, with numbers after costs.</span></li>
+        <li><b>You sign in your wallet</b><span>The exact transaction you previewed. Nothing else.</span></li></ol></div>
+    <div class="trust"><h2>${ic('shield', 'l')}Why you can trust it</h2>
+      <ul><li>${ic('lock', 's')}<span><b>No keys on our server.</b> It cannot sign anything.</span></li><li>${ic('shield', 's')}<span><b>Every transaction is checked</b> before your wallet sees it: allowed contracts and methods, gas and amount limits.</span></li><li>${ic('eye', 's')}<span><b>You see every call</b> in full before you sign.</span></li></ul>
+      <button class="link" data-act="toast" data-msg="/policy: правила проверки и демо атаки (подписано 0, отправлено 0).">See the checks, including a blocked attack</button></div>
+  </section>`;
+}
+
+function summary(d) {
+  const mine = d.ctx === 'mine';
+  const TC = { NEAR: '#00e29a', wNEAR: '#00e29a', USDt: '#26a17b', 'USDT.e': '#7fd4b8', USDC: '#2775ca', 'USDC.e': '#7ab0eb', STNEAR: '#a5a8b3', stNEAR: '#a5a8b3', ETH: '#7b8ff0' };
+  const series = (s, i) => TC[s] || ['var(--series-4)', 'var(--series-5)'][i % 2];
+  const src = d.ctx === 'demo' ? '<span class="prov sim">Simulated</span>' : '<span class="prov live">On-chain · 12 s</span>';
+  const loan = d.loan;
+  let loanCell = `<div><span class="lbl">Loan safety</span><span class="kpi">No loan</span><span class="sub">Nothing borrowed, nothing to liquidate.</span></div>`;
+  if (loan) {
+    const [lv, ll, li] = riskLevel(loan.buffer);
+    loanCell = `<div><span class="lbl">Loan safety ${src}</span><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="chip big ${lv}">${ic(li)}${ll}</span>${loan.hf ? `<span class="sub num">Health factor ${loan.hf.toFixed(2)}</span>` : ''}</div>
+      ${gauge(loan.buffer)}<span class="sub">Liquidation if ${loan.by} falls <b class="num" style="color:var(--text-1);font-weight:600">${loan.buffer}%</b>.</span></div>`;
+  }
+  const m = d.monthly;
+  return `<section class="hero" aria-label="Summary">
+    <div><span class="lbl">Net worth ${src}</span><span class="total num" data-count="money" data-v="${d.net}">${money(d.net)}</span>
+      <span class="sub num">${usd(d.assets, 0)} in assets${d.debt ? ` − ${usd(d.debt, 0)} borrowed` : ''}</span>
+      <div class="alloc" aria-hidden="true">${d.alloc.map(([s, p], i) => `<span style="width:${p}%;background:${series(s, i)}"></span>`).join('')}</div>
+      <div class="legend">${d.alloc.map(([s, p], i) => `<span style="--sw:${series(s, i)}">${tok(s, 's')}<b>${s}</b> ${p}%</span>`).join('')}</div>
+      ${d.other ? `<div class="other"><span class="stack">${d.other.map((o) => tok(o.chain, 's')).join('')}</span><span><b class="num">+ ${usd(otherTotal(d), 0)}</b> on other chains · not analysed</span><button class="link" data-act="deposit">Bring to NEAR</button></div>` : ''}
+      ${mine ? `<div class="money-acts"><button class="btn small" data-act="deposit">${ic('in', 's')}Add funds</button><button class="btn small" data-act="withdraw">${ic('out', 's')}Withdraw</button></div>` : ''}</div>
+    <div><span class="lbl">Each month <span class="prov est">Estimate · protocol rates</span></span><span class="kpi num ${m > 0 ? 'up' : m < 0 ? 'down' : ''}">${m ? ic(m > 0 ? 'trend-up' : 'trend-down') : ''}<span data-count="sgn" data-v="${m}">${m === 0 ? '$0.00' : sgn(m)}</span></span><span class="sub">${esc(d.monthlyText)}</span></div>
+    ${loanCell}
+  </section>`;
+}
+
+function verdict(d) {
+  const act = d.recs.filter((r) => r.sev === 'act' && !isDone(r)).length;
+  const worth = d.recs.filter((r) => r.sev === 'worth' && !isDone(r)).length;
+  const skip = d.skipped.length;
+  if (act) return ['act', 'alert', 'Your loan needs attention now.', 'One urgent action, explained below.'];
+  if (worth) return ['', '', `${worth} move${worth > 1 ? 's' : ''} worth doing.`, skip ? `${skip} more checked and skipped: they don’t beat the costs.` : 'Ranked by what they change for you.'];
+  if (d.recs.length) return ['safe', 'check', 'All suggested moves are done.', 'The agents re-checked the portfolio after your transaction.'];
+  return ['safe', 'check', 'Nothing to do right now.', 'Every check passed for your strategy. Doing nothing is the right call; we’ll flag anything that changes.'];
+}
+function isDone(r) { return state.life[r.id]?.stage === 'done'; }
+
+function pipeline(d, ai) {
+  const t = TRACE[state.scen];
+  const live = state.running !== null;
+  const steps = STAGES.map(([title, sub, time], i) => {
+    const locked = !ai && (i === 1 || i === 3);
+    const cls = locked ? 'locked' : live ? (i < state.running ? 'done' : i === state.running ? 'now' : '') : 'done';
+    const label = locked ? (i === 1 ? 'Rules ran all 4 agents' : 'AI ranking') : title;
+    const sub2 = locked ? (i === 1 ? 'no model on this view' : 'owner’s wallet only') : sub;
+    const dot = cls === 'done' ? ic('check') : cls === 'locked' ? ic('lock') : '';
+    return `<li class="pn ${cls}"><span class="dot">${dot}</span><b>${label}</b><small>${sub2}</small>${cls === 'done' && ai ? `<em class="num">${time}</em>` : ''}</li>`;
+  }).join('');
+  const sum = ai && t ? (live ? 'Running…' : `${t.agents.filter((x) => x[2] !== 'out').length} of 4 agents picked · ${t.checks.length} code checks passed · ${t.secs} s`) : 'Rule-based: every agent ran, no AI ranking.';
+  return `<div class="pipe-wrap"><div class="pipe-head"><h3>How this was decided</h3><span class="sub">${sum}</span></div><ol class="pipe" aria-live="polite">${steps}</ol></div>`;
+}
+function pickOf(name) {
+  const t = TRACE[state.scen];
+  if (!t || state.running !== null) return '';
+  const a = t.agents.find((x) => x[0] === name);
+  if (!a) return '';
+  const cls = a[2] === 'in' ? 'ai' : a[2] === 'code' ? 'watch' : '';
+  return `<span class="chip pick ${cls}">${a[2] === 'in' ? ic('cpu') : a[2] === 'code' ? ic('shield') : ''}${a[3]}</span>`;
+}
+
+function analysis(d) {
+  const [vc, vi, v, sub] = verdict(d);
+  const ai = d.ctx === 'mine' && d.verified;
+  const running = state.running !== null;
+  const st = STRATS[state.strategy];
+  const C = [['guardian', 'Liquidation Guardian'], ['intel', 'Portfolio Intelligence'], ['alloc', 'Capital Allocator'], ['lp', 'Liquidity Optimizer']];
+  const runCtl = ai
+    ? `<div class="run"><span class="sub">${running ? 'Analysing…' : `Updated ${state.ranAt || '12 s'} ago`}</span><button class="btn ${running ? 'busy' : ''}" data-act="run" ${running ? 'disabled' : ''}>${running ? '<span class="spin"></span>Analysing' : `${ic('refresh')}Run AI analysis`}</button></div>`
+    : `<div class="run"><span class="sub">${d.ctx === 'demo' ? 'AI analysis runs on your own wallet.' : `AI analysis runs only for the verified owner of ${esc(d.account)}.`}</span><button class="btn" disabled>${ic('lock')}Run AI analysis</button></div>`;
+  const open = d.recs.filter((r) => !isDone(r)).length;
+  const tile = running ? '<span class="vt"><span class="spin"></span></span>' : vc === 'act' ? `<span class="vt act">${ic('alert', 'l')}</span>` : vc === 'safe' ? `<span class="vt safe">${ic('check', 'l')}</span>` : `<span class="vt ai num">${open}</span>`;
+  return `<section class="panel analysis" aria-labelledby="an-h">
+    <div class="an-head"><h2 id="an-h">Analysis</h2>
+      <span class="an-meta"><span class="chip ${ai ? 'ai' : ''}">${ai ? `${ic('cpu')}AI-ranked` : 'Rules only'}</span><span>4 agents</span></span>${runCtl}</div>
+    <div class="verdict" aria-live="polite">${tile}<div><p class="v">${running ? 'Re-checking your portfolio…' : v}</p><p class="sub">${running ? 'Agents are reading the latest on-chain data.' : sub}</p></div></div>
+    <fieldset class="strat"><legend>Risk strategy</legend>
+      <div class="seg">${Object.entries(STRATS).map(([k, x]) => `<label><input type="radio" name="strat" value="${k}" ${state.strategy === k ? 'checked' : ''}>${x.label}</label>`).join('')}</div>
+      <p class="strat-why">Loan counts as safe from a <b>${st.safe}%</b> buffer · at most <b>${st.conc}%</b> in one token. Changes every number below.</p></fieldset>
+    <div class="finds-h">What the agents found</div>
+    <div class="checks">${C.map(([k, who]) => { const [lv, res, p] = d.checks[k]; return `<div class="check lv-${lv} ${state.recheck || running ? 'busy' : ''}"><span class="who">${who}</span><span class="res"><span class="ci">${ic(LVI[lv])}</span>${res}<span class="sr">${{ ok: '(passed)', warn: '(watch)', bad: '(act)', na: '(not applicable)' }[lv]}</span></span><p>${p}</p>${ai ? pickOf(who) : ''}</div>`; }).join('')}</div>
+    ${ai && TRACE[state.scen] && !running ? `<div class="codechecks"><b>${ic('shield', 's')}Code checked the AI</b>${TRACE[state.scen].checks.map((c) => `<span>${ic('check')}${c}</span>`).join('')}</div>` : ''}
+    ${pipeline(d, ai)}
+  </section>`;
+}
+function card(r, d, first) {
+  const top = first && !isDone(r);
+  const life = state.life[r.id] || {};
+  const st = STRATS[state.strategy];
+  const why = r.why.replace('{SAFE}', st.safe).replace('{CONC}', st.conc);
+  const sev = r.sev === 'act' ? `<span class="chip act">${ic('alert')}Act now</span>` : `<span class="chip">Worth doing</span>`;
+  const rank = top ? `<span class="rank">#1${TRACE[state.scen] && d.ctx === 'mine' ? ' · AI pick' : ''}</span>` : '';
+  let lifeChip = '', body = '', foot = '';
+  if (life.stage === 'signing') lifeChip = `<span class="chip ai"><span class="spin" style="width:10px;height:10px"></span>Signing</span>`;
+  if (life.stage === 'done') lifeChip = `<span class="chip safe">${ic('check')}Done</span>`;
+  if (life.stage === 'failed') lifeChip = `<span class="chip liq">${ic('x')}Not done</span>`;
+  if (life.stage === 'done') {
+    body = `<div class="receipt"><span><b>${ic('check')}Done just now.</b> ${esc(life.text)}</span><span class="sub">Confirmed on NEAR · <button class="link" data-act="toast" data-msg="NearBlocks">tx 7QmP…k2Xa ${ic('out', 's')}</button> · ${state.recheck ? 'agents are re-checking…' : 'agents re-checked the portfolio'}</span></div>`;
+  } else {
+    body = `<div class="facts">${r.facts.map(([k, v, s]) => `<div class="fact"><span class="k">${k}</span><span class="v num ${/^\+/.test(v) ? 'good' : ''}">${v} ${s ? `<small>${s}</small>` : ''}</span></div>`).join('')}</div>
+      ${r.gauge ? gauge(d.loan.buffer) : ''}<p class="why">${why}</p>`;
+    if (life.stage === 'signing') foot = `<div class="progress-line"><span class="spin"></span>Waiting for your wallet · step 1 of ${ACTIONS[r.action]?.steps.length || 1}</div>`;
+    else if (life.stage === 'failed') foot = `<div class="card-foot"><span class="sub" style="margin-right:auto">${esc(life.text)}</span><button class="btn" data-act="review" data-id="${r.id}">Review again</button></div>`;
+    else foot = `<div class="card-foot"><div class="tags">${r.tags.map((t) => `<span class="prov ${/AI|Heuristic/.test(t) ? 'est' : 'live'}">${t}</span>`).join('')}</div>
+      ${r.second ? `<button class="btn ghost small" data-act="toast" data-msg="Раскрывает: нужен интент repay_with_collateral, при залоге USDC он требует обмена — и что мы добавим.">${r.second}</button>` : ''}
+      <button class="btn ${first ? 'primary' : ''}" data-act="${r.action.startsWith('deposit') ? 'deposit' : 'review'}" data-id="${r.id}" data-recv="USDt">${r.actionLabel || 'Review'}${ic('arrow', 's')}</button></div>`;
+  }
+  return `<article data-key="${r.id}" style="view-transition-name:c-${r.id}" class="panel card ${top ? 'top' : ''} ${r.sev === 'act' && life.stage !== 'done' ? 'act' : ''} ${life.stage === 'done' ? 'done' : ''} ${life.stage === 'signing' ? 'working' : ''}">
+    <div class="card-top">${rank}${sev}<span class="agent">${r.agent}</span><span class="right">${lifeChip}</span></div>
+    <h3>${r.icon2 ? `<span class="pair">${tok(r.icon, 'l')}${tok(r.icon2, 'l')}</span>` : tok(r.icon, 'l')}${esc(r.title)}</h3>
+    ${body}${foot}
+  </article>`;
+}
+
+function recs(d) {
+  const order = { act: 0, worth: 1 };
+  const list = [...d.recs].sort((a, b) => order[a.sev] - order[b.sev]);
+  const extra = state.life.rebalance?.stage === 'done' ? [{ id: 'supply-usdc', sev: 'worth', agent: 'Capital Allocator · new', icon: 'USDC', title: 'Lend 101,764 USDC on Burrow', facts: [['Earns', '+$737', '/ month'], ['Rate', '8.7%', 'a year'], ['Withdraw', 'Any time', '']], why: 'New after your swap: <b>the USDC you just received earns nothing</b> in the wallet.', tags: ['Protocol rate', 'New'], action: 'supply' }] : [];
+  const all = [...list, ...extra];
+  const skipped = d.skipped.length ? `<details class="panel skipped"><summary>${ic('right')}Checked and skipped <span>· ${d.skipped.length} moves don’t beat the costs</span></summary>
+    ${d.skipped.map(([t, n, p]) => `<div class="sk-row"><span class="t">${esc(t)}</span><span class="n num">${n}</span><p>${esc(p)}</p></div>`).join('')}</details>` : '';
+  const firstOpen = all.findIndex((r) => !isDone(r));
+  if (!all.length) return `<section class="recs" aria-label="Suggestions"><div class="sec-head"><h2>Suggestions</h2><span>none right now</span></div>${skipped}</section>`;
+  return `<section class="recs" aria-label="Suggestions"><div class="sec-head"><h2>Suggestions</h2><span>ranked by impact for you</span></div>
+    ${note('recs')}${all.map((r, i) => card(r, d, i === firstOpen)).join('')}${skipped}${d.skipped.length ? note('skipped') : ''}</section>`;
+}
+
+function holdings(d) {
+  const total = d.groups.reduce((n, g) => n + g[1].length, 0);
+  const row = (r) => `<div class="hrow" data-key="${r.id || r.s + r.n}" ${r.flash ? 'data-flash' : ''}><div class="asset">${r.s2 ? `<span class="pair">${tok(r.s)}${tok(r.s2)}</span>` : tok(r.s)}<div style="min-width:0"><b>${r.s2 ? `${r.s}/${r.s2}` : r.s}</b><small>${esc(r.n)}</small></div></div>
+      <span class="r num c-amt">${r.a === null ? 'LP share' : fmt(r.a, r.a < 1 ? 3 : 2)}</span>
+      <span class="c-earn">${r.e[0] === 'plain' ? `<span class="chip">${r.e[1]}</span>` : r.e[0] === 'ok' ? `<span class="chip">${ic('trend-up', 'good')}${r.e[1]}</span>` : `<span class="chip ${LV[r.e[0]]}">${r.e[0] === 'bad' ? ic('trend-down') : ic('minus')}${r.e[1]}</span>`}</span>
+      <span class="r num c-usd"><b>${usd(r.u, Math.abs(r.u) >= 1000 ? 0 : 2)}</b></span></div>`;
+  return `<section class="panel hold" aria-labelledby="hold-h">
+    <div class="hold-head"><h2 id="hold-h">What you hold</h2><span>${total} positions · ${d.ctx === 'demo' ? 'simulated' : 'read from NEAR mainnet 12 s ago'}</span></div>
+    <div class="hrow th" role="row"><span>Asset</span><span class="r">Amount</span><span>Status</span><span class="r">Value</span></div>
+    ${d.groups.map(([g, rows]) => `<div class="grp-h"><span>${g}</span><span class="num">${usd(rows.reduce((n, r) => n + r.u, 0), 0)}</span></div>${rows.map(row).join('')}`).join('')}
+    ${d.other ? d.other.map((o) => `<div class="grp-h ext"><span>${o.wallet} · ${o.addr} · shown only, not analysed</span><span class="num">${usd(o.items.reduce((n, i) => n + i[2], 0), 0)}</span></div>
+      ${o.items.map(([s, a, u]) => `<div class="hrow"><div class="asset">${tok(s)}<div style="min-width:0"><b>${s}</b><small>on Base</small></div></div><span class="r num c-amt">${fmt(a, a < 1 ? 3 : 2)}</span><span class="c-earn"><button class="btn small" data-act="deposit">${ic('in', 's')}Bring to NEAR</button></span><span class="r num c-usd"><b>${usd(u, 2)}</b></span></div>`).join('')}`).join('') : ''}
+    <div class="hold-foot">${d.unverified ? `<button class="link" data-act="toast" data-msg="Неподтверждённые токены: только показ.">${d.unverified} unverified tokens</button>` : ''}${d.small ? `<button class="link" data-act="toast" data-msg="Балансы < $1.">${d.small} balances under $1</button>` : ''}<span style="margin-left:auto">Non-custodial · balances read directly from the chain</span></div>
+  </section>`;
+}
+
+function render() {
+  const d = state.data;
+  morphInner(document.getElementById('p-scen'), Object.entries(SCEN).map(([k, s]) => `<button data-scen="${k}" aria-pressed="${state.scen === k}">${s.title}</button>`).join(''));
+  morphInner(document.getElementById('p-out'), [['ok', 'успех'], ['reject', 'отказ в кошельке'], ['fail', 'ошибка в сети']].map(([k, t]) => `<button data-out="${k}" aria-pressed="${state.outcome === k}">${t}</button>`).join(''));
+  const app = document.getElementById('app');
+  app.className = state.notes ? 'notes-on' : '';
+  morphInner(app, `${topbar(d)}
+    <main class="page">
+      ${d.ctx === 'mine' ? `<h1 class="sr">Portfolio of ${esc(d.account)}</h1>` : ''}
+      ${ctxStrip(d)}${note('ctx')}
+      ${d.ctx !== 'mine' ? intro() + note('intro') : ''}
+      ${summary(d)}${note('summary')}
+      ${analysis(d)}${note('analysis')}
+      ${recs(d)}
+      ${holdings(d)}${note('hold')}${note('system')}
+      <p class="foot">Not financial advice. Suggestions come from rules and AI and can be wrong. Every transaction is built unsigned and signed by you in your own wallet. DeFi protocols carry smart-contract, oracle and liquidation risk.</p>
+    </main>
+    <nav class="tabs" aria-label="Main"><a class="on" href="#" aria-current="page">${ic('pie', 'l')}Portfolio</a><a href="#">${ic('compass', 'l')}Opportunities</a><a href="#">${ic('list', 'l')}Activity</a></nav>`);
+  countUps();
+  renderSheet();
+}
+
+// ponytail: index-based DOM patch with data-key guards, so nodes persist and CSS transitions play; morphdom if lists get reordered often
+function morphInner(el, html) { const t = document.createElement('template'); t.innerHTML = html; morphKids(el, t.content); }
+function morphKids(from, to) {
+  const a = [...from.childNodes], b = [...to.childNodes];
+  b.forEach((n, i) => {
+    const o = a[i];
+    if (!o) return from.appendChild(n);
+    if (o.nodeType !== n.nodeType || o.nodeName !== n.nodeName || (n.nodeType === 1 && o.dataset.key !== n.dataset.key)) return from.replaceChild(n, o);
+    if (n.nodeType !== 1) { if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue; return; }
+    for (const at of [...o.attributes]) if (!n.hasAttribute(at.name) && !(at.name === 'open' && o.nodeName === 'DETAILS')) o.removeAttribute(at.name);
+    for (const at of n.attributes) if (o.getAttribute(at.name) !== at.value) o.setAttribute(at.name, at.value);
+    if (o.nodeName === 'INPUT') { if (o.type === 'checkbox' || o.type === 'radio') o.checked = n.hasAttribute('checked'); else if (o !== document.activeElement) o.value = n.getAttribute('value') ?? ''; }
+    if (o.dataset.count && o._v !== undefined) return;
+    morphKids(o, n);
+  });
+  for (let i = a.length - 1; i >= b.length; i--) a[i].remove();
+}
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function countUps() {
+  for (const el of document.querySelectorAll('[data-count]')) {
+    const v = +el.dataset.v, from = el._v, f = el.dataset.count === 'money' ? money : (x) => (Math.abs(x) < 0.005 ? '$0.00' : sgn(x));
+    el._v = v;
+    if (from === undefined || from === v || reduced()) { el.innerHTML = f(v); continue; }
+    const t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / 600), e = 1 - Math.pow(1 - k, 3); el.innerHTML = f(from + (v - from) * e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+}
+function flashRows() {
+  for (const el of document.querySelectorAll('[data-flash]')) el.animate([{ background: 'var(--safe-bg)' }, { background: 'transparent' }], { duration: 1600, easing: 'cubic-bezier(.16,1,.3,1)' });
+  for (const [, rows] of state.data.groups) for (const r of rows) delete r.flash;
+}
+
+let lastFocus = null, lastKey = null;
+function renderSheet() {
+  const L = document.getElementById('layer');
+  const s = state.sheet;
+  let scrim = L.querySelector('.scrim:not(.closing)');
+  const blockers = [document.getElementById('app'), document.querySelector('.proto')];
+  if (!s) {
+    if (scrim) { scrim.classList.add('closing'); setTimeout(() => scrim.remove(), reduced() ? 0 : 200); blockers.forEach((b) => (b.inert = false)); const f = lastFocus?.isConnected ? lastFocus : document.querySelector(`[data-key="${lastKey}"] .btn, [data-key="${lastKey}"]`); f?.focus({ preventScroll: true }); lastFocus = null; }
+    return;
+  }
+  const html = s.kind === 'review' ? reviewSheet(s) : s.kind === 'deposit' ? depositSheet(s) : withdrawSheet(s);
+  if (!scrim) {
+    lastFocus = document.activeElement; lastKey = lastFocus?.closest('[data-key]')?.dataset.key;
+    L.insertAdjacentHTML('beforeend', `<div class="scrim" data-act="close-scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title"></div></div>`);
+    scrim = L.querySelector('.scrim:not(.closing)');
+    blockers.forEach((b) => (b.inert = true));
+  }
+  const sheet = scrim.firstElementChild;
+  sheet.className = `sheet ${state.notes ? 'notes-on' : ''}`;
+  const opened = !sheet.childNodes.length, kindKey = s.kind + (s.phase || '');
+  if (sheet.dataset.k && sheet.dataset.k !== kindKey) sheet.scrollTop = 0;
+  sheet.dataset.k = kindKey;
+  morphInner(sheet, `<div class="grab" aria-hidden="true"></div>${html}`);
+  if (opened) document.getElementById('sh-title')?.focus({ preventScroll: true });
+}
+const closeBtn = '<button class="x" data-act="close" aria-label="Close">' + '<svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>';
+
+function reviewSheet(s) {
+  const a = ACTIONS[s.action], d = state.data, canSign = d.ctx === 'mine';
+  const phase = s.phase || 'review';
+  const head = `<div class="sh-head"><span class="ctxl">${esc(a.ctx)}</span><h2 id="sh-title" tabindex="-1">${esc(a.title)}</h2>${phase === 'signing' ? '' : closeBtn}</div>`;
+  if (phase === 'review') {
+    const inKind = s.action.startsWith('repay') ? 'eq' : 'in';
+    const gated = a.impact && !s.ack;
+    return `${head}<div class="sh-body">
+      <div class="changes"><h3><span>Balance changes</span><span class="prov sim">Simulated on current pool state</span></h3>
+        <div class="chg"><span class="sgn out">${ic('minus', 's')}</span><span class="amt num"><span class="sr">You send</span>${tok(a.give[0], 's')}${a.give[1]}</span><span class="usd num">${a.give[2]}</span></div>
+        <div class="chg"><span class="sgn ${inKind}">${ic(inKind === 'in' ? 'plus' : 'arrow', 's')}</span><span class="amt num"><span class="sr">${inKind === 'in' ? 'You receive' : 'Result'}</span>${tok(a.get[0], 's')}${a.get[1]}</span><span class="usd num">${a.get[2]}</span></div></div>
+      ${a.impact ? `<div class="warn act"><span class="wt">${ic('alert')}Price impact ${a.impact.pct}% · about ${usd(a.impact.usd, 0)} lost to the pool</span><p>The pool is too thin for this size. Swap a smaller part, or split it over several days.</p>
+        <label class="ack"><input type="checkbox" data-act="ack" ${s.ack ? 'checked' : ''}><span>I understand I receive about ${usd(a.impact.usd, 0)} less than the market price.</span></label></div>` : ''}
+      <div class="inline-kv">${a.kv.map(([k, v]) => `<span>${k}<b class="num">${v}</b></span>`).join('')}</div>
+      <div class="sign-block"><h3>What you will sign · ${a.steps.length} transaction${a.steps.length > 1 ? 's' : ''}</h3>
+        <div class="steps">${a.steps.map(([t, sub], i) => `<div class="step"><span class="n">${i + 1}</span><div>${esc(t)}<small>${esc(sub)}</small></div></div>`).join('')}</div>
+        <details class="raw"><summary>${ic('right', 's')}Exact calls (${a.raw.length})</summary><table>${a.raw.map(([r, m, g]) => `<tr><td>${r}</td><td>${m}</td><td>${g}</td></tr>`).join('')}</table></details>
+        <div class="safety-line">${a.checks.map((c) => `<span>${ic('check')}${c}</span>`).join('')}<a href="#" data-act="toast" data-msg="/policy">How we check</a></div></div>
+      ${a.impact ? note('impact') : ''}${note('sheet')}
+    </div>
+    <div class="sh-foot">${canSign
+      ? `<button class="btn sign block" data-act="sign" ${gated ? 'disabled' : ''}>${ic(gated ? 'lock' : 'pen')}${gated ? 'Confirm the price impact to sign' : 'Sign in your wallet'}</button><span class="why-off ${gated ? 'gate' : ''}">${gated ? 'Tick “I understand” above to unlock signing.' : `Your wallet will show the same ${a.raw.length} call${a.raw.length > 1 ? 's' : ''}. Nothing is sent until you approve there.`}</span>`
+      : `<button class="btn sign block" disabled>${ic('lock')}Sign in your wallet</button><span class="why-off">${d.ctx === 'demo' ? 'This is a demo portfolio: there is nothing to sign. Connect your wallet to do this on your own account.' : `Only the owner of <b>${esc(d.account)}</b> can sign. This preview is exactly what they would see.`}</span>`}</div>`;
+  }
+  const rows = a.steps.map(([t], i) => {
+    const st = s.steps[i];
+    const n = st === 'ok' ? `<span class="n ok">${ic('check')}</span>` : st === 'bad' ? `<span class="n bad">${ic('x')}</span>` : st === 'run' ? '<span class="n run"><span class="spin" style="width:10px;height:10px"></span></span>' : `<span class="n">${i + 1}</span>`;
+    const sub = { wallet: 'Approve it in your wallet…', chain: 'Executing on NEAR…', ok: 'Confirmed on NEAR · tx 7QmP…k2Xa', bad: s.err, wait: 'Waiting' }[s.sub[i]] || '';
+    return `<div class="step">${n}<div>${esc(t)}<small>${esc(sub)}</small></div></div>`;
+  }).join('');
+  let footer = '';
+  if (phase === 'signing') footer = `<span class="why-off">Keep this window open until every step is confirmed on NEAR.</span>`;
+  if (phase === 'done') footer = `<div class="result ok"><b>Done. Every step is confirmed on NEAR.</b><span>${esc(a.done?.text || 'Your portfolio is updating.')}</span></div><button class="btn primary block" data-act="close">Back to portfolio</button>`;
+  if (phase === 'rejected') footer = `<div class="result warn2"><b>Not signed in your wallet.</b><span>Nothing was sent. You can review it again whenever you want.</span></div><button class="btn block" data-act="close">Close</button>`;
+  if (phase === 'failed') footer = `<div class="result bad"><b>The transaction failed on NEAR.</b><span>${esc(s.err)} Your tokens did not move: a NEAR transaction either fully succeeds or is reverted.</span></div><button class="btn block" data-act="close">Close</button>`;
+  return `${head}<div class="sh-body"><div class="steps">${rows}</div></div><div class="sh-foot">${footer}</div>`;
+}
+
+function depositSheet(s) {
+  const d = state.data;
+  if (s.phase === 'manual') return `<div class="sh-head"><span class="ctxl">Add funds to ${esc(d.account)} · manual transfer</span><h2 id="sh-title" tabindex="-1">Send exactly 10 USDC on Base</h2>${closeBtn}</div>
+    <div class="sh-body">
+      <div class="warn liq"><span class="wt">${ic('alert')}Only USDC on Base</span><p>Any other token, or USDC on another network, can be lost.</p></div>
+      <div class="manual"><div class="qr"><i><span>QR · 10 USDC</span></i></div>
+        <div style="display:grid;gap:12px;min-width:0;width:100%"><div class="field"><label>Deposit address · expires in <b class="num">9:52</b></label><div class="addr">0x7a3B9c41E2d0f5A18C6e94b0D3f27A5c81e6F0d2</div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" data-act="toast" data-msg="Скопировано: адрес">${ic('copy', 's')}Copy address</button><button class="btn small" data-act="toast" data-msg="Скопировано: 10">${ic('copy', 's')}Copy amount</button></div>
+          <dl class="kv"><dt>You receive</dt><dd class="num">≥ 9.95 USDt</dd><dt>Refund if it fails</dt><dd>0x9c4e…a341</dd><dt>Arrives in</dt><dd>about 2 min</dd></dl></div></div>
+    </div>
+    <div class="sh-foot"><button class="btn block" data-act="dep-back">Back to sending with MetaMask</button></div>`;
+  if (s.phase === 'status') return `<div class="sh-head"><span class="ctxl">Add funds to ${esc(d.account)}</span><h2 id="sh-title" tabindex="-1">10 USDC on Base → USDt on NEAR</h2>${closeBtn}</div>
+    <div class="sh-body"><div class="timeline">${['Sent from MetaMask', 'Seen on Base', 'Swapping to USDt', 'Arrived in ' + d.account].map((t, i) => `<div class="tl ${i < s.tl ? 'done' : i === s.tl ? 'now' : ''}"><i></i><span>${t}</span></div>`).join('')}</div>
+      ${s.tl >= 3 ? '<div class="result ok"><b>9.96 USDt arrived.</b><span>Your portfolio updates in a few seconds. The loan card can now offer a one-click repay.</span></div>' : '<span class="sub">You can close this window: we keep tracking and show the result on the portfolio.</span>'}</div>
+    <div class="sh-foot"><button class="btn block ${s.tl >= 3 ? 'primary' : ''}" data-act="close">${s.tl >= 3 ? 'Back to portfolio' : 'Close and keep tracking'}</button></div>`;
+  return `<div class="sh-head"><span class="ctxl">Add funds to ${esc(d.account)} · via 1Click</span><h2 id="sh-title" tabindex="-1">Bring money from another chain</h2>${closeBtn}</div>
+    <div class="sh-body">
+      <div class="field"><label>From</label><div class="src">${tok('BASE')}<div><b>MetaMask · 0x9c4e…a341</b><small class="num">Base · 214.50 USDC available</small></div><button class="btn small" data-act="toast" data-msg="Base, Ethereum, Arbitrum, Solana, Bitcoin (вручную).">Change</button></div></div>
+      <div class="field"><label for="amt">You send</label><div class="inbox"><input id="amt" class="num" value="10" inputmode="decimal"><span class="pick">${tok('USDC', 's')}USDC</span></div></div>
+      <div class="field"><label for="rcv">You receive on NEAR</label><div class="inbox"><input id="rcv" class="num" value="≥ 9.95" readonly><span class="pick">${tok(s.recv || 'USDt', 's')}${s.recv || 'USDt'}</span></div></div>
+      <dl class="kv"><dt>1Click fee</dt><dd>0.05% · included</dd><dt>Arrives in</dt><dd>about 2 min</dd><dt>If it fails</dt><dd>Refunded to 0x9c4e…a341</dd></dl>
+      ${note('deposit')}
+    </div>
+    <div class="sh-foot"><button class="btn sign block" data-act="dep-send">${ic('pen')}Send with MetaMask</button>
+      <button class="btn ghost small" data-act="dep-manual">No wallet on that chain? Send manually (address or QR)</button></div>`;
+}
+function withdrawSheet() {
+  const d = state.data;
+  return `<div class="sh-head"><span class="ctxl">Withdraw from ${esc(d.account)} · via 1Click</span><h2 id="sh-title" tabindex="-1">Send money to another chain</h2>${closeBtn}</div>
+    <div class="sh-body">
+      <div class="field"><label for="wamt">From your NEAR wallet</label><div class="inbox"><input id="wamt" class="num" value="25" inputmode="decimal"><span class="pick">${tok('USDC', 's')}USDC</span></div><span class="sub num">Available: 29.20 USDC (example)</span></div>
+      <div class="field"><label>To</label><div class="src">${tok('BASE')}<div><b>MetaMask · 0x9c4e…a341</b><small>Base · USDC</small></div><button class="btn small" data-act="toast" data-msg="Другой адрес или сеть.">Change</button></div></div>
+      <dl class="kv"><dt>You receive on Base</dt><dd class="num">≥ 24.95 USDC</dd><dt>Arrives in</dt><dd>about 2 min</dd></dl>
+      <span class="sub">Next you review the exact NEAR transaction, same as every other action.</span>
+    </div>
+    <div class="sh-foot"><button class="btn primary block" data-act="toast" data-msg="Дальше — то же окно проверки и подписи.">Review transfer${ic('arrow', 's')}</button></div>`;
+}
+
+function startSign() {
+  const s = state.sheet, a = ACTIONS[s.action], id = s.cardId;
+  s.phase = 'signing'; s.steps = a.steps.map(() => 'idle'); s.sub = a.steps.map(() => 'wait');
+  s.steps[0] = 'run'; s.sub[0] = 'wallet'; state.life[id] = { stage: 'signing' }; render();
+  setTimeout(() => {
+    if (state.outcome === 'reject') { s.phase = 'rejected'; s.steps[0] = 'bad'; s.sub[0] = 'bad'; s.err = 'You declined in the wallet.'; state.life[id] = { stage: 'failed', text: 'You declined in the wallet. Nothing was sent.' }; return render(); }
+    s.sub[0] = 'chain'; render();
+    setTimeout(() => {
+      if (state.outcome === 'fail') { s.phase = 'failed'; s.steps[0] = 'bad'; s.sub[0] = 'bad'; s.err = 'Rhea: the price moved past your minimum (slippage).'; state.life[id] = { stage: 'failed', text: 'Failed on NEAR: the price moved past your minimum. Nothing moved.' }; return render(); }
+      s.steps[0] = 'ok'; s.sub[0] = 'ok'; s.phase = 'done'; s.pending = { id, text: a.done?.text || 'Done.', effect: a.done?.effect };
+      render();
+    }, 1300);
+  }, 1300);
+}
+
+let toastT;
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.append(t); }
+  t.textContent = 'Прототип: ' + msg; requestAnimationFrame(() => t.classList.add('on')); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600);
+}
+
+function closeSheet() {
+  const s = state.sheet;
+  if (!s || s.phase === 'signing') return;
+  state.sheet = null;
+  const p = s.pending;
+  if (!p) return render();
+  renderSheet();
+  setTimeout(() => {
+    const apply = () => { state.life[p.id] = { stage: 'done', text: p.text }; if (p.effect) p.effect(state.data); state.recheck = true; render(); document.querySelector(`[data-key="${p.id}"] button`)?.focus({ preventScroll: true }); };
+    if (document.startViewTransition && !reduced()) document.startViewTransition(apply).finished.then(flashRows); else { apply(); flashRows(); }
+    setTimeout(() => { state.recheck = false; render(); }, 1800);
+  }, 160);
+}
+
+let drag = null;
+document.addEventListener('pointerdown', (e) => { const g = e.target.closest('.grab'); if (!g || state.sheet?.phase === 'signing') return; drag = { y: e.clientY, el: g.parentElement, dy: 0 }; g.setPointerCapture(e.pointerId); drag.el.style.transition = 'none'; });
+document.addEventListener('pointermove', (e) => { if (!drag) return; drag.dy = Math.max(0, e.clientY - drag.y); drag.el.style.transform = `translateY(${drag.dy}px)`; });
+document.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const { el, dy } = drag; drag = null;
+  el.style.transition = 'transform .3s cubic-bezier(.32,.72,0,1)';
+  if (dy > 100) { el.style.transform = 'translateY(100%)'; setTimeout(() => { el.style.cssText = ''; closeSheet(); }, 200); } else { el.style.transform = ''; setTimeout(() => (el.style.cssText = ''), 300); }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.dataset?.act === 'ack' && state.sheet) { state.sheet.ack = e.target.checked; renderSheet(); }
+  if (e.target.name === 'strat') { state.strategy = e.target.value; render(); }
+});
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act],[data-scen],[data-out],#p-notes,#p-theme');
+  if (!el) { if (state.pop && !e.target.closest('.pop')) { state.pop = null; render(); } return; }
+  if (el.dataset.scen) { state.scen = el.dataset.scen; return load(); }
+  if (el.dataset.out) { state.outcome = el.dataset.out; return render(); }
+  if (el.id === 'p-notes') { state.notes = !state.notes; el.setAttribute('aria-pressed', state.notes); el.textContent = state.notes ? 'вкл' : 'выкл'; return render(); }
+  if (el.id === 'p-theme') { const light = document.documentElement.dataset.theme !== 'light'; if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme; el.setAttribute('aria-pressed', light); return; }
+  const act = el.dataset.act;
+  if (act === 'ack') return;
+  if (!['pop', 'deposit', 'withdraw', 'toast'].includes(act)) state.pop = null;
+  if (act === 'close-scrim') { if (e.target === el) closeSheet(); return; }
+  e.preventDefault();
+  switch (act) {
+    case 'pop': state.pop = state.pop === el.dataset.pop ? null : el.dataset.pop; break;
+    case 'toast': return toast(el.dataset.msg);
+    case 'review': { const r = [...state.data.recs, { id: 'supply-usdc', action: 'supply' }].find((x) => x.id === el.dataset.id); state.sheet = { kind: 'review', action: r.action, cardId: r.id }; break; }
+    case 'sign': if (el.disabled) return; return startSign();
+    case 'close': return closeSheet();
+    case 'run': { const T = [600, 850, 1300, 950, 500]; state.running = 0; render(); const tick = () => { state.running++; if (state.running > STAGES.length - 1) { state.running = null; state.ranAt = '1 s'; } render(); if (state.running !== null) setTimeout(tick, T[state.running]); }; setTimeout(tick, T[0]); return; }
+    case 'deposit': if (state.data.ctx !== 'mine') return toast('Пополнение доступно для своего кошелька.'); state.pop = null; state.sheet = { kind: 'deposit', recv: el.dataset.recv || 'USDC' }; break;
+    case 'withdraw': state.pop = null; state.sheet = { kind: 'withdraw' }; break;
+    case 'dep-manual': state.sheet.phase = 'manual'; break;
+    case 'dep-back': state.sheet.phase = null; break;
+    case 'dep-send': { const s = state.sheet; s.phase = 'status'; s.tl = 0; render(); const tick = () => { if (state.sheet !== s || s.tl >= 3) return; s.tl++; render(); setTimeout(tick, 1100); }; setTimeout(tick, 1100); return; }
+  }
+  render();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (state.sheet) return closeSheet();
+  if (state.pop) { state.pop = null; render(); document.querySelector('.wallet')?.focus(); }
+});
+document.addEventListener('click', (e) => { const b = e.target.closest('.btn.sign:disabled'); if (b) { b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); document.querySelector('.ack')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } }, true);
+load();
+</script>
+</body>
+</html>

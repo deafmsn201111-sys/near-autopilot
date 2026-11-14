@@ -1,8 +1,8 @@
 /**
  * Health factor against a uniform fall of every collateral price, one line per demo portfolio. The marked points are
  * exactly the engine's stored stress scenarios (0 % is the current position); nothing between them is computed here,
- * the segments only join them. The risk bands are dashed reference lines in axis ink; series hold categorical slots 1
- * and 2 in a fixed order. Every point has a tooltip, and the same numbers are in the table under the chart.
+ * the segments only join them. The risk bands are dashed reference lines in axis ink; series hold `--series-1`
+ * and `--series-2` in a fixed order. Every point has a tooltip, and the same numbers are in the table under the chart.
  */
 export interface StressSeries {
   readonly name: string;
@@ -37,7 +37,7 @@ export function StressCurve({
       <div className="legend">
         {series.map((s) => (
           <span key={s.name}>
-            <i style={{ background: `var(--c${s.slot})` }} />
+            <i style={{ background: `var(--series-${s.slot})` }} />
             {s.name}
             {s.liquidationAt !== null && (
               <span className="dim">
@@ -87,7 +87,7 @@ export function StressCurve({
           <g key={s.name}>
             <path
               className="series"
-              style={{ stroke: `var(--c${s.slot})` }}
+              style={{ stroke: `var(--series-${s.slot})` }}
               d={s.points
                 .map((p, i) => `${i ? 'L' : 'M'}${x(p.drop).toFixed(1)},${y(p.hf).toFixed(1)}`)
                 .join('')}
@@ -99,7 +99,7 @@ export function StressCurve({
                   cx={x(p.drop)}
                   cy={y(p.hf)}
                   r={4.5}
-                  style={{ fill: `var(--c${s.slot})` }}
+                  style={{ fill: `var(--series-${s.slot})` }}
                 />
                 {/* the hit target is larger than the mark */}
                 <circle cx={x(p.drop)} cy={y(p.hf)} r={12} fill="transparent">
