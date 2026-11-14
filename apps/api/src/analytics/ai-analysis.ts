@@ -127,7 +127,7 @@ const CACHE_TTL_MS = 10 * 60_000;
 const RUN_WINDOW_MS = 10 * 60_000;
 const MAX_RUNS_PER_WINDOW = 60;
 /** Covers a broken stream's JSON retry reaching the API (its wallet read included) to join the run. */
-const LEAVE_GRACE_MS = 5_000;
+const LEAVE_GRACE_MS = 2_000;
 
 type Watch = (signal?: AbortSignal) => void;
 

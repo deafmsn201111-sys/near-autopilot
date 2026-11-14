@@ -203,7 +203,7 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - Fallback codes (`off`, `kill_switch`, `not_owner`, `busy` and `nothing_to_rank` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
   `nothing_to_rank` (the agent tools, run as code first, offered no card), `deadline`, `cancelled` (the visitor
   left; #151), `loop_limit` (too many turns or tool calls). A cancelled run keeps its slot in the global run limit: it
-  already reached the model, and freeing it would let open-and-close bypass the limit. A run stops 5 s after its last caller
+  already reached the model, and freeing it would let open-and-close bypass the limit. A run stops 2 s after its last caller
   left with no one joining, so a broken stream's JSON retry (#150) still joins the same run.
 
 ## D15 — Leaked secrets are rotated, history is not rewritten

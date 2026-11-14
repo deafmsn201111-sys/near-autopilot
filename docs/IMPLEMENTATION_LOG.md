@@ -600,6 +600,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   own controller, so the tool loop stops and the Anthropic call in flight is cancelled. Outcome `cancelled` (new
   fallback code; migration 0024 widens `llm_calls_outcome_check`). The run keeps its global-limit slot.
 - Merged with #150's in-flight join: a shared run counts its callers and stops only when all have left and none
-  joined within `LEAVE_GRACE_MS` (5 s), so a broken stream's JSON retry still gets the same run.
+  joined within `LEAVE_GRACE_MS` (2 s; 5 s let a typical 3–4 s run finish for nobody), so a broken stream's JSON retry still gets the same run.
 - `POST /v1/analytics/account/:id/analysis` aborts on `reply.raw` close before the response finished; the Next proxy
   passes `req.signal` to the upstream fetch (`AbortSignal.any` with the 60 s timeout).

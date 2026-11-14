@@ -29,6 +29,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Wallet-path 24 h range has no outlier filter** (#104 → #159): one bad collector print in a snapshot can widen it past
   15% and raise a `volatility_spike`. Fail-safe (it only defers discretionary trades).
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
+- **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
+  usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.
 
 ## Watch list (external)
 
