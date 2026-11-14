@@ -1041,6 +1041,20 @@ describe('loanHealth', () => {
     expect(at(1.05, 'aggressive')).toBe('At risk');
   });
 
+  it('sends the health factor and the lines its label is judged by, for the gauge', () => {
+    expect(
+      loanHealth(
+        { hasDebt: true, healthFactor: 1.42, collateralDropToLiquidation: 0.3 },
+        STRATEGIES.conservative,
+      ),
+    ).toMatchObject({
+      healthFactor: 1.42,
+      urgentBelow: 1.1,
+      safeFrom: STRATEGIES.conservative.healthyAt,
+      label: 'Needs watching',
+    });
+  });
+
   it('has no loan to judge without debt', () => {
     expect(
       loanHealth(

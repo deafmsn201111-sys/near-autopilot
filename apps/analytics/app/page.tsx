@@ -36,6 +36,7 @@ import {
   money,
   portfolioView,
   savedAnalysis,
+  type Level,
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
@@ -51,6 +52,7 @@ import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
+import { Chip, LoanGauge, ProvenanceMark } from '../components/primitives';
 import {
   savedStrategy,
   STRATEGY_COOKIE,
@@ -59,6 +61,18 @@ import {
 } from '@near-autopilot/core/strategy';
 
 export const dynamic = 'force-dynamic';
+
+const HEALTH_TONE = { low: 'safe', medium: 'watch', high: 'act' } as const;
+
+/** "Unknown" (no health factor, not low) stays neutral; a loan at or below 1 is liquidation red. */
+const healthTone = ({ healthFactor, level }: { healthFactor: number | null; level: Level }) =>
+  healthFactor === null
+    ? level === 'low'
+      ? 'safe'
+      : undefined
+    : healthFactor <= 1
+      ? 'liq'
+      : HEALTH_TONE[level];
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -455,14 +469,31 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             <span className="muted-note">{data.earnings.sentence}</span>
           </div>
           <div className="hero-stat">
-            <span className="eyebrow">Loan safety</span>
+            <span className="eyebrow">
+              Loan safety <ProvenanceMark kind={isAccount ? 'estimate' : 'simulated'} />
+            </span>
             <div className="hero-safe">
-              <span className={`safe-chip health-${data.health.level}`}>
-                <span className="dot" aria-hidden="true" />
+              <Chip tone={healthTone(data.health)} large>
                 {data.health.label}
-              </span>
+              </Chip>
+              {data.health.healthFactor !== null && (
+                <span className="muted-note num">
+                  Health factor {data.health.healthFactor.toFixed(2)}
+                </span>
+              )}
             </div>
-            <span className="muted-note">{data.health.sentence}</span>
+            {data.health.healthFactor !== null &&
+            data.health.urgentBelow !== undefined &&
+            data.health.safeFrom !== undefined ? (
+              <LoanGauge
+                healthFactor={data.health.healthFactor}
+                urgentBelow={data.health.urgentBelow}
+                safeFrom={data.health.safeFrom}
+                by={isAccount ? 'your collateral' : 'NEAR'}
+              />
+            ) : (
+              <span className="muted-note">{data.health.sentence}</span>
+            )}
           </div>
         </div>
       </section>

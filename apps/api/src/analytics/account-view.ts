@@ -1188,13 +1188,16 @@ export function loanHealth(
 ) {
   if (!loan.hasDebt)
     return {
+      healthFactor: null,
       level: 'low',
       label: 'No loan',
       sentence: 'Nothing is borrowed: there is nothing to liquidate.',
     } as const;
   const hf = loan.healthFactor;
+  const lines = { urgentBelow: DANGER_HF, safeFrom: strategy.healthyAt };
   if (hf === null)
     return {
+      healthFactor: null,
       level: 'high',
       label: 'Unknown',
       sentence: 'The loan could not be valued: a price or a risk parameter is missing.',
@@ -1202,6 +1205,8 @@ export function loanHealth(
   const safe = hf >= strategy.healthyAt;
   const watch = hf >= DANGER_HF;
   return {
+    healthFactor: hf,
+    ...lines,
     level: safe ? 'low' : watch ? 'medium' : 'high',
     label: safe ? 'Safe' : watch ? 'Needs watching' : 'At risk',
     sentence:
@@ -1219,7 +1224,11 @@ const span = (pick: (s: Strategy) => number) =>
 
 /** When the preset changes nothing on this account, one sentence on why, so the picker does not look broken. */
 export function strategyNote(ctx: RecommendationContext, loan: LoanForHealth): string | null {
-  const outcome = (s: Strategy) => JSON.stringify([portfolioAdvice(ctx, s), loanHealth(loan, s)]);
+  const verdict = (s: Strategy) => {
+    const { level, label, sentence } = loanHealth(loan, s);
+    return [level, label, sentence];
+  };
+  const outcome = (s: Strategy) => JSON.stringify([portfolioAdvice(ctx, s), verdict(s)]);
   if (new Set(presets.map(outcome)).size > 1) return null;
   const c = ctx.metrics.concentration;
   const hf = loan.healthFactor;
