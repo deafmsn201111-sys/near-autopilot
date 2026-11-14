@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { refreshAccount } from '../app/account-actions';
 import { refreshPortfolio } from '../lib/portfolio-refresh';
 import { beginCascadeSigning } from '../lib/cascade-signing';
@@ -45,6 +45,8 @@ export function PrepareDialog({
   signingEnabled?: boolean;
 }) {
   const router = useRouter();
+  const releaseCascadeRefreshes = useRef<(() => void) | null>(null);
+  const refreshAfterProgressClose = useRef(false);
   const [state, setState] = useState<'idle' | 'loading' | 'signing' | 'updating'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
   const [error, setError] = useState<{ message: string; reasons?: readonly string[] } | null>(null);
@@ -74,6 +76,7 @@ export function PrepareDialog({
     const setStep = (i: number, s: StepState) =>
       setProgress((p) => p && { ...p, steps: p.steps.map((x, j) => (j === i ? s : x)) });
     let at = 0;
+    let sentAnything = false;
     try {
       const r = await signCascade(transactions, request.account, signingEnabled, {
         onSigning: (i) => {
@@ -81,6 +84,8 @@ export function PrepareDialog({
           setStep(i, { kind: 'signing' });
         },
         onSent: async (i, hash) => {
+          sentAnything = true;
+          releaseCascadeRefreshes.current = releaseRefreshes;
           setStep(i, { kind: 'checking', hash });
           const result = cascadeId
             ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
@@ -94,16 +99,14 @@ export function PrepareDialog({
       if (!r.ok && r.hashes.length === at)
         setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
       if (r.hashes.length > 0) {
-        // Never offer the same prepared cascade again after any step was sent. Refresh only after the signing
-        // sequence has ended; the watcher and the 15 s page refresh are held off until this completes.
+        sentAnything = true;
+        // Never offer the same prepared cascade again after any step was sent. Keep background refreshes paused
+        // while the result is visible, then refresh only after the user closes the progress dialog.
         setCascade(null);
-        if (sentStepsConfirmed) {
-          setState('updating');
-          await refreshPortfolio(request.account, refreshAccount, () => router.refresh());
-        }
+        refreshAfterProgressClose.current = sentStepsConfirmed;
       }
     } finally {
-      releaseRefreshes();
+      if (!sentAnything) releaseRefreshes();
       setState('idle');
     }
   }
@@ -265,7 +268,18 @@ export function PrepareDialog({
               ? 'Done. Updating your portfolio…'
               : progressFooter(progress.steps, state === 'signing')
           }
-          onClose={() => setProgress(null)}
+          onClose={() => {
+            setProgress(null);
+            releaseCascadeRefreshes.current?.();
+            releaseCascadeRefreshes.current = null;
+            if (refreshAfterProgressClose.current) {
+              refreshAfterProgressClose.current = false;
+              setState('updating');
+              void refreshPortfolio(request.account, refreshAccount, () =>
+                router.refresh(),
+              ).finally(() => setState('idle'));
+            }
+          }}
         />
       )}
     </div>
