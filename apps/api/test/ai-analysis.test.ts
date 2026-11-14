@@ -666,6 +666,7 @@ describe('analyseAccount', () => {
       ms: expect.any(Number) as number,
       read: { tokens: 2, loan: true },
       checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
+      ranking: null,
     });
     const off = await analyseAccount(null, {
       ...ctx,
@@ -782,6 +783,42 @@ describe('analyseAccount', () => {
     'Repay now: the 1.0 line is liquidation.',
   ])('keeps a why that quotes only its own card and the shared context: %s', async (why) => {
     expect(await whyFor(REPAY, why)).toBe(why);
+  });
+
+  const rankingFor = async (ranking?: unknown) => {
+    const { llm } = fake([
+      () => callAll,
+      () => ({
+        kind: 'final',
+        text: JSON.stringify({ picks: [{ id: REPAY, why: 'Repay first.' }], ranking }),
+      }),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.source).toBe('llm');
+    return out.run?.ranking;
+  };
+
+  it('shows the ranking sentence when its numbers come from the shown cards and the tools', async () => {
+    const ranking =
+      'The loan comes first: at health factor 1.37, repaying 33.125 USDt reaches 1.60.';
+    expect(await rankingFor(ranking)).toBe(ranking);
+  });
+
+  it.each([
+    ['a number no tool returned', 'Repay first: $999,999 is at stake.'],
+    ['a number from a card the user does not see', 'Supplying at 8% can wait.'],
+    ['a sentence over 300 characters', 'The loan comes first. '.repeat(15)],
+    ['an empty sentence', ''],
+  ])('drops the ranking sentence with %s and keeps the cards', async (_, ranking) => {
+    expect(await rankingFor(ranking)).toBeNull();
+  });
+
+  it('works without a ranking sentence', async () => {
+    expect(await rankingFor()).toBeNull();
   });
 
   it('turns the allocator idle-supply proposal into a supply recommendation with an exact amount', async () => {

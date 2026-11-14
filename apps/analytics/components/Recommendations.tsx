@@ -236,7 +236,7 @@ function AiTrace({
   /** Why the model was not asked, built by code from the agents' lines. */
   why?: string | null;
 }) {
-  const { model, read, asked, trace, turns, checks } = pipeline;
+  const { model, read, asked, trace, turns, checks, ranking } = pipeline;
   const live = elapsedMs !== null;
   if (!live && trace.length === 0) {
     if (calledTools.length === 0) return null;
@@ -360,6 +360,7 @@ function AiTrace({
               {plural(turns, 'model turn')}
             </span>
           )}
+          {ranking && <span className="ai-step-note ai-in">Why this order: {ranking}</span>}
         </Stage>
         <Stage
           state={state(3)}

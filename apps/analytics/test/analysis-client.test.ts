@@ -69,6 +69,7 @@ describe('runAnalysis', () => {
       ms: 6200,
       read: { tokens: 7, loan: true },
       checks: { picked: 2, explained: 2, replaced: 0, restored: 1, dropped: 0 },
+      ranking: 'The loan comes first: its health factor is 1.37.',
     };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
     const r = await runAnalysis('alice.near', 'balanced');
@@ -83,6 +84,23 @@ describe('runAnalysis', () => {
         cachedAt: null,
       },
     });
+    expect(r.ok && pipelineOf(r.analysis).ranking).toBe(run.ranking);
+  });
+
+  it('reads a run without a ranking sentence, or with one over 300 characters, as no sentence', async () => {
+    const run = {
+      model: 'claude-haiku-5-5',
+      turns: 2,
+      toolCalls: 5,
+      ms: 6200,
+      read: { tokens: 7, loan: true },
+      checks: { picked: 1, explained: 1, replaced: 0, restored: 0, dropped: 0 },
+    };
+    for (const ranking of [undefined, 'x'.repeat(301)]) {
+      reply({ ...base, run: { ...run, ranking } });
+      const r = await runAnalysis('alice.near', 'balanced');
+      expect(r.ok && r.analysis.run?.ranking).toBeNull();
+    }
   });
 
   it('keeps the fallback code and what was read without a model run', async () => {
@@ -181,11 +199,11 @@ describe('runAnalysis as a stream', () => {
     const read = { model: 'claude-haiku-5-5', read: { tokens: 7, loan: true } };
     const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
-      { ...read, asked: [], trace: [], turns: null, checks: null },
-      { ...read, asked, trace: [], turns: null, checks: null },
-      { ...read, asked, trace: [step], turns: null, checks: null },
-      { ...read, asked, trace: [step], turns: 2, checks: null },
-      { ...read, asked, trace: [step], turns: 2, checks },
+      { ...read, asked: [], trace: [], turns: null, checks: null, ranking: null },
+      { ...read, asked, trace: [], turns: null, checks: null, ranking: null },
+      { ...read, asked, trace: [step], turns: null, checks: null, ranking: null },
+      { ...read, asked, trace: [step], turns: 2, checks: null, ranking: null },
+      { ...read, asked, trace: [step], turns: 2, checks, ranking: null },
     ]);
   });
 

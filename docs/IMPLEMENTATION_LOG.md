@@ -550,3 +550,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   30 min after the deadline (a late deposit can take a confirmation to show up); `INCOMPLETE_DEPOSIT` keeps
   polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
   address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.
+
+## 14 Nov — AI trace: ranking sentence (#110)
+
+- `apps/api`: `picksSchema` takes an optional `ranking` (1–300 chars; an invalid one drops only itself). It reaches
+  `run.ranking` only when every number in it appears in the code-built text of a card the user sees or in the tools'
+  shared context; otherwise null. The prompt asks for it.
+- `apps/analytics`: `run.ranking` zod-checked (≤ 300, null on anything else), carried on `Pipeline`, shown under the
+  "ranked them" step as "Why this order: …" (React text only).

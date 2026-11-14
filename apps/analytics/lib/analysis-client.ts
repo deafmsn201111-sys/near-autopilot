@@ -85,6 +85,7 @@ const runSchema = z.object({
   ms: z.number(),
   read: readSchema,
   checks: checksSchema,
+  ranking: z.string().max(300).nullable().catch(null).default(null),
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;
@@ -137,6 +138,8 @@ export type Pipeline = {
   trace: TraceStep[];
   turns: number | null;
   checks: z.infer<typeof checksSchema> | null;
+  /** The model's sentence on why the cards are in this order, checked by code; only in a finished run. */
+  ranking: string | null;
 };
 
 export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
@@ -146,6 +149,7 @@ export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
   trace,
   turns: run?.turns ?? null,
   checks: run?.checks ?? null,
+  ranking: run?.ranking ?? null,
 });
 
 const askedSchema = z.object({ tool: z.string(), agent: z.string() });
@@ -203,6 +207,7 @@ async function readStream(
     trace: [],
     turns: null,
     checks: null,
+    ranking: null,
   };
   let buffer = '';
   try {
