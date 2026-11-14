@@ -326,30 +326,20 @@ export function OriginWallets({
   );
 }
 
-/**
- * Fund the connected NEAR account from another chain through HOT's bridge popup (D42): one line on HOT's fee first,
- * then the popup with the account locked as the recipient. Nothing is built or signed here.
- */
-export function DepositDialog({ account, label = 'Deposit' }: { account: string; label?: string }) {
-  const ref = useRef<HTMLDialogElement>(null);
+/** Funds the connected NEAR account from another chain in HOT's bridge popup (D42); nothing is built or signed here. */
+export function DepositButton({ account, label = 'Deposit' }: { account: string; label?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function continueInHot() {
-    const dialog = ref.current;
+  async function open() {
     setBusy(true);
     setError(null);
     try {
       if ((await currentAccount().catch(() => null)) !== account)
-        return setError(
-          'Connect your NEAR wallet first: the deposit goes to the connected account.',
-        );
-      // A modal dialog would make HOT's popup inert.
-      dialog?.close();
+        return setError('Connect your NEAR wallet first.');
       await openDepositBridge(account);
     } catch {
-      setError('HOT could not open the deposit. Check your connection and try again.');
-      dialog?.showModal();
+      setError('HOT could not open. Try again.');
     } finally {
       setBusy(false);
     }
@@ -360,36 +350,16 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
       <button
         type="button"
         className="btn primary small"
-        onClick={() => {
-          setError(null);
-          ref.current?.showModal();
-        }}
+        disabled={busy}
+        onClick={() => void open()}
       >
         {label}
       </button>
-      <dialog ref={ref} className="modal deposit">
-        <h3>Deposit from another chain</h3>
-        <p>
-          Through HOT. Swaps between different tokens carry a fee up to 0.4%. It arrives in{' '}
-          <b>{account}</b>; you sign the transfer in your wallet on the other chain.
-        </p>
-        {error && (
-          <p className="deposit-warn" role="alert">
-            {error}
-          </p>
-        )}
-        <form method="dialog" className="modal-actions">
-          <button className="btn secondary">Cancel</button>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={busy}
-            onClick={() => void continueInHot()}
-          >
-            {busy ? 'One moment…' : 'Continue in HOT'}
-          </button>
-        </form>
-      </dialog>
+      {error && (
+        <span className="deposit-warn" role="alert">
+          {error}
+        </span>
+      )}
     </>
   );
 }

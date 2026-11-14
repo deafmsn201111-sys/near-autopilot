@@ -129,14 +129,14 @@ from and withdrawals to another chain (below), in a separate client.
    them in your wallet or cancel.
 
 5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
-   on the portfolio. One line first: it goes through HOT, and a swap between different tokens carries HOT's fee of up
-   to 0.4% (0.01% stable to stable, none for the same token). **Continue in HOT** opens HOT Kit's bridge popup with your
+   on the portfolio: it opens HOT Kit's bridge popup with your
    NEAR account locked as the recipient: you connect the wallet you send from (MetaMask, Phantom, a Tron or Bitcoin
    wallet, or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build), see its
    balance, pick the token and amount (or MAX) and sign the transfer HOT builds in that wallet. Sources are the EVM
    chains 1Click serves, Solana, Tron and Bitcoin; never NEAR or a HOT balance, so no NEAR signature goes around
-   `validateCascade` (D42). The popup shows what arrives; the portfolio picks up the incoming tokens by itself. Without
-   a connected NEAR account the dialog asks you to connect first. A deposit straight from an exchange is not offered.
+   `validateCascade` (D42). A swap between different tokens carries HOT's fee of up to 0.4% (0.01% stable to stable, none for the same
+   token), already taken off the amount the popup shows you receive; the portfolio picks up the incoming tokens by itself. Without
+   a connected NEAR account the button asks you to connect first. A deposit straight from an exchange is not offered.
 6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
    wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or

@@ -803,7 +803,8 @@ for a NEAR signature that goes around `validateCascade`. The kit's own "Deposit 
 bridge's sender picker) ignores that setup, so `loadKit` turns it off on our kit: the sender picker gets
 `depositFlow: false` and `router.openDepositFlow` rejects. HOT builds and re-checks the origin-chain transfer in the
 browser; the user signs it in their own wallet. HOT's app fee (`intents.tg`: 0.4% swaps, 0.01% stable↔stable, 0 for
-the same token) is said in one line before the popup opens; the popup shows the amount received.
+the same token) is taken off the amount the popup shows as received; no screen of ours comes first (the owner cut it
+with the exchange path).
 `GET /v1/deposit/transfer/:id`, its `retry` and the dialog's send are removed. The once-only flag
 (`transfer_issued_at`) stays: withdrawals claim it. No exchange (by-address) path: cut by the owner.
 **Consequences:** no new caps and no server code on the deposit path; our deposit quote endpoints have no UI any more.

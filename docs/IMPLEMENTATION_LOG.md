@@ -834,7 +834,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 ## 2026-11-14 — Deposit through HOT Kit's bridge popup (#260)
 
-- **Deposit** shows one line on HOT's fee, then `openDepositBridge(account)`: `kit.openBridge` with the NEAR account as
+- **Deposit** opens `openDepositBridge(account)` directly: `kit.openBridge` with the NEAR account as
   locked recipient, NEAR-only destination and `isBridgeSource` (1Click EVM chains, Solana, Tron, Bitcoin; never NEAR
   or a HOT balance). Kit gets a Tron connector and a theme read from the page's design tokens (D42).
 - Removed: the deposit form, QR / payment links (`lib/payment-uri.ts`, `qrcode-generator`), the origin-wallet send
