@@ -19,7 +19,7 @@ const PRICES: Record<
   },
   'claude-sonnet-5-5': { base: { input: 2_000_000n, output: 10_000_000n } },
   // NEAR AI Cloud catalog, checked 14 Nov 2026. USD/M tokens converted to micro-USD/M tokens.
-  'deepseek-ai/DeepSeek-V4.1-Flash-1017': {
+  'deepseek/deepseek-v4.1-flash': {
     base: { input: 300_000n, output: 1_200_000n },
   },
   'Qwen/Qwen3.8-27B': { base: { input: 40_000n, output: 1_350_000n } },

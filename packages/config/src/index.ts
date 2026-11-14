@@ -269,7 +269,7 @@ const unsetIfEmpty = (v: unknown) => (v === '' ? undefined : v);
 
 /** The models the server or the legacy comparison utility may call; each has a price in apps/api/src/llm/pricing.ts. */
 export const ANTHROPIC_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
-export const NEAR_AI_MODELS = ['deepseek-ai/DeepSeek-V4.1-Flash-1017', 'Qwen/Qwen3.8-27B'] as const;
+export const NEAR_AI_MODELS = ['deepseek/deepseek-v4.1-flash', 'Qwen/Qwen3.8-27B'] as const;
 export const LLM_MODELS = [...ANTHROPIC_MODELS, ...NEAR_AI_MODELS] as const;
 export type LlmModel = (typeof LLM_MODELS)[number];
 
@@ -280,7 +280,7 @@ export const nearAiEnvSchema = z.object({
     unsetIfEmpty,
     z
       .enum(NEAR_AI_MODELS, { message: `must be one of ${NEAR_AI_MODELS.join(', ')}` })
-      .default('deepseek-ai/DeepSeek-V4.1-Flash-1017'),
+      .default('deepseek/deepseek-v4.1-flash'),
   ),
   NEAR_AI_MAX_TOKENS: z.preprocess(
     unsetIfEmpty,

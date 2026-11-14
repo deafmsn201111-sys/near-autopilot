@@ -9,12 +9,12 @@ Add these settings to the beta server's existing `deploy/beta/.env` (keep the fi
 
 ```dotenv
 NEAR_AI_API_KEY=<key from NEAR AI Cloud>
-NEAR_AI_MODEL=deepseek-ai/DeepSeek-V4.1-Flash-1017
+NEAR_AI_MODEL=deepseek/deepseek-v4.1-flash
 NEAR_AI_MAX_TOKENS=4096
 ```
 
-Do not put the key in Git, a command argument, or the browser. The model above is listed by the current NEAR AI Cloud
-catalog with tool calling enabled. The application returns to its existing rule-based analysis when the key is empty.
+Do not put the key in Git, a command argument, or the browser. The model above was confirmed live against NEAR AI Cloud
+with tool calling enabled. The application returns to its existing rule-based analysis when the key is empty.
 
 ## Start the beta API with NEAR AI
 

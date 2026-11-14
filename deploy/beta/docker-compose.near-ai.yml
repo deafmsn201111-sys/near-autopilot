@@ -3,5 +3,5 @@ services:
   analytics-api:
     environment:
       NEAR_AI_API_KEY: ${NEAR_AI_API_KEY:-}
-      NEAR_AI_MODEL: ${NEAR_AI_MODEL:-deepseek-ai/DeepSeek-V4.1-Flash-1017}
+      NEAR_AI_MODEL: ${NEAR_AI_MODEL:-deepseek/deepseek-v4.1-flash}
       NEAR_AI_MAX_TOKENS: ${NEAR_AI_MAX_TOKENS:-4096}

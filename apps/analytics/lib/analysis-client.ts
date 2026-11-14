@@ -296,7 +296,7 @@ export async function runAnalysis(
 export function modelName(id: string): string {
   const m = /^claude-([a-z]+)-(\d+)-(\d+)$/.exec(id);
   if (m) return `Claude ${m[1]!.charAt(0).toUpperCase()}${m[1]!.slice(1)} ${m[2]}.${m[3]}`;
-  if (id === 'deepseek-ai/DeepSeek-V4.1-Flash-1017') return 'DeepSeek V4.1 Flash';
+  if (id === 'deepseek/deepseek-v4.1-flash') return 'DeepSeek V4.1 Flash';
   if (id === 'Qwen/Qwen3.8-27B') return 'Qwen 3.8 27B';
   return id;
 }
