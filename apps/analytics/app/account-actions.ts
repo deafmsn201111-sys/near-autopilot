@@ -2,8 +2,16 @@
 import { cookies, headers } from 'next/headers';
 import { accountIdSchema } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE, OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
-import { rememberStrategy, STRATEGY_COOKIE, strategySchema } from '@near-autopilot/core/strategy';
-import { refreshAccountRead } from '../lib/product';
+import {
+  rememberStrategy,
+  savedStrategy,
+  STRATEGY_COOKIE,
+  strategySchema,
+} from '@near-autopilot/core/strategy';
+import type { WalletPortfolio } from '../components/WalletButton';
+import { accountView, refreshAccountRead } from '../lib/product';
+import { tokenIcons } from '../lib/tokens';
+import { walletSigningEnabled } from '../lib/wallet-signing';
 
 const accountOf = (account: unknown) =>
   accountIdSchema.safeParse(typeof account === 'string' ? account.trim().toLowerCase() : account);
@@ -11,6 +19,27 @@ const accountOf = (account: unknown) =>
 export async function refreshAccount(account: unknown): Promise<boolean | null> {
   const id = accountOf(account);
   return id.success ? refreshAccountRead(id.data) : null;
+}
+
+// The same per-visitor cached read (and strategy) as the portfolio page, asked only when the wallet menu opens.
+export async function walletSummary(account: unknown): Promise<WalletPortfolio | null> {
+  const id = accountOf(account);
+  if (!id.success) return null;
+  const strategy = savedStrategy((await cookies()).get(STRATEGY_COOKIE)?.value, id.data);
+  const [{ data }, icons] = await Promise.all([
+    accountView(id.data, strategy),
+    tokenIcons(['wrap.near']),
+  ]);
+  if (!data) return null;
+  return {
+    account: id.data,
+    netWorthUsd: data.totals.netWorthUsd,
+    balances: data.holdings.flatMap((h) =>
+      h.where === 'wallet' && h.token ? [{ token: h.token, amount: h.amount }] : [],
+    ),
+    signingEnabled: walletSigningEnabled(),
+    nearIcon: icons['wrap.near'] ?? null,
+  };
 }
 
 const YEAR_S = 365 * 24 * 60 * 60;
