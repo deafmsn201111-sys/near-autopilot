@@ -38,8 +38,9 @@ everywhere in this repository:
 | **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                                   |
 
 The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
-Intents 1Click gives dry quotes for route comparison, and real quotes only for depositing into your account from
-another chain (you send from your own wallet there; the server builds no transaction).
+Intents 1Click gives dry quotes for route comparison, and real quotes only for moving your own money between NEAR and
+another chain: a deposit you send from your own wallet there, or a withdrawal whose NEAR transfer the server builds
+from the stored quote and you sign in your NEAR wallet.
 
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
@@ -99,7 +100,7 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
 route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
-from another chain (below), in a separate client.
+from and withdrawals to another chain (below), in a separate client.
 
 **What works**
 
@@ -155,6 +156,15 @@ from another chain (below), in a separate client.
    (PoA, HOT) or token, or a withdrawal incident on NEAR or the token you receive. The text is SHIELD's own, as
    plain text and capped, or ours when SHIELD gives none. The server asks SHIELD at most once a minute for everyone;
    no key, an error or an odd answer means no warning, never a broken dialog.
+6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
+   wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
+   Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
+   typed; the server checks it is an address of that chain). **Get quote** asks 1Click for a real quote with your NEAR
+   account as the refund address, verifies it and stores it. **Build transaction** then assembles one NEAR transaction
+   on the token contract from that stored quote, never from the browser: `storage_deposit` for the 1Click deposit
+   address (a NEAR implicit account) when it holds no storage, then `ft_transfer` of the quoted amount to it. It passes
+   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D35). You sign it in your NEAR
+   wallet; the dialog follows the withdrawal with the same 1Click status as a deposit.
 
 **Not done**
 
