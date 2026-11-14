@@ -500,7 +500,11 @@ describe('portfolioRecommendations', () => {
 
   it('flags an out-of-range DCL position with a reposition intent', () => {
     const r = portfolioRecommendations(
-      ctx({ dclOutOfRange: [{ lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120 }] }),
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120, estimate: false },
+        ],
+      }),
     );
     const d = r.find((x) => x.kind === 'reposition_dcl_position');
     expect(d?.agent).toBe('Liquidity Optimizer');
@@ -548,12 +552,12 @@ describe('portfolioRecommendations', () => {
       ]);
     });
 
-    it('skips a position in range or with an unpriced token, and puts the largest first', () => {
+    it('skips a position in range or with an unpriced token; a confirmed value outranks a bigger estimate', () => {
       const out = exitableOutOfRange(
         [
           pos({ lptId: 'in', inRange: true }),
           pos({ lptId: 'unpriced', tokenX: 'x.near' }),
-          pos({ lptId: 'small', usd: 5 }),
+          pos({ lptId: 'small', usd: 500 }),
           pos({ lptId: 'big', tokenX: 'wrap.near', usd: 90 }),
         ],
         priced,

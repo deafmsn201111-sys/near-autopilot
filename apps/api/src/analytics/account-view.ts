@@ -103,7 +103,7 @@ import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
-import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
+import { isKnownToken, modelTokenLabel, STABLES, tokenLabel } from '../thesis/labels';
 
 /**
  * YOUR ACCOUNT, read-only: any mainnet account id -> what it holds, how safe its Burrow loan is, and what could be done
@@ -695,7 +695,7 @@ export interface RecommendationContext {
     pair: string;
     usd: number | null;
     /** A token of the pair is priced only by Rhea's indexer. */
-    estimate?: boolean;
+    estimate: boolean;
   }[];
 }
 
@@ -826,7 +826,7 @@ export function portfolioAdvice(
       agent: 'Liquidity Optimizer',
       severity: 'info',
       title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
-      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.${oor.estimate ? ` Its value (≈ ${money2(oor.usd ?? 0)}) is an estimate from Rhea's pool prices.` : ''}`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.${oor.estimate ? ` A token of this pool has no confirmed price: its value here is only an estimate from Rhea's pools.` : ''}`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
@@ -951,7 +951,7 @@ export function exitableOutOfRange(
       usd: d.usd,
       estimate: !confirmed.has(d.tokenX) || !confirmed.has(d.tokenY),
     }))
-    .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+    .sort((a, b) => Number(a.estimate) - Number(b.estimate) || (b.usd ?? 0) - (a.usd ?? 0));
 }
 
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
@@ -1943,7 +1943,11 @@ export function registerAccountView(
       burrowBalances,
       carry,
       swapRepay,
-      dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
+      // An unverified token's ft_metadata symbol could read "USDC": it is named by its contract instead.
+      dclOutOfRange: outOfRange(
+        (d) =>
+          `${verified.has(d.tokenX) ? d.symbolX : tokenLabel(d.tokenX)}/${verified.has(d.tokenY) ? d.symbolY : tokenLabel(d.tokenY)}`,
+      ),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
     const labelled = <T extends { token: string }>(x: T) => ({
@@ -2491,22 +2495,52 @@ export function registerAccountView(
         const minY = (freed.y * keep) / 10_000n;
 
         const meta = await store.tokenMetadata();
-        // A meme token is not in our metadata table: read it on-chain rather than guess 24 decimals (#193).
         const metaOf = async (t: AccountId) =>
           meta.find((x) => x.token === t) ??
           (await tokens.getMetadata(t).then(
-            (m) => ({ symbol: displaySymbol(m.symbol, t), decimals: m.decimals }),
+            (m) => ({ symbol: tokenLabel(t), decimals: m.decimals }),
             () => undefined,
           ));
         const [mX, mY] = await Promise.all([metaOf(tokX), metaOf(tokY)]);
-        const symX = mX?.symbol ?? tokX.slice(0, 10);
-        const symY = mY?.symbol ?? tokY.slice(0, 10);
-        const decX = mX?.decimals ?? 24;
-        const decY = mY?.decimals ?? 24;
+        if (!mX || !mY)
+          return reply
+            .code(502)
+            .send({ error: 'could not read the decimals of a token in this pool; try again' });
+        const { symbol: symX, decimals: decX } = mX;
+        const { symbol: symY, decimals: decY } = mY;
         const hX = (Number(freed.x) / 10 ** decX).toFixed(Math.min(6, decX));
         const hY = (Number(freed.y) / 10 ** decY).toFixed(Math.min(6, decY));
 
+        const register = async (t: AccountId, sym: string): Promise<CascadeStep[]> => {
+          if (await tokens.isStorageRegistered(t, account)) return [];
+          const bounds = (await viewer.view(t, 'storage_balance_bounds', {})) as { min?: string };
+          const minDeposit = BigInt(bounds.min ?? '1250000000000000000000');
+          return [
+            {
+              intentId: `register-${sym}`,
+              tx: {
+                receiverId: t,
+                actions: [
+                  {
+                    type: 'FunctionCall',
+                    methodName: 'storage_deposit',
+                    args: { account_id: account },
+                    gas: 10_000_000_000_000n,
+                    deposit: minDeposit,
+                  },
+                ],
+              },
+              preview: `Register to receive ${sym} — one-time, ${formatNear(minDeposit)} NEAR, refundable.`,
+            },
+          ];
+        };
+        // An unregistered wallet would bounce the withdrawal back into the DCL contract: register first.
+        const registrations = (
+          await Promise.all([register(tokX, symX), register(tokY, symY)])
+        ).flat();
+
         const steps: CascadeStep[] = [
+          ...registrations,
           {
             intentId: 'remove-liquidity',
             tx: buildRemoveLiquidity({
@@ -2533,7 +2567,10 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
-            allowedReceivers: new Set<string>([dclId]),
+            allowedReceivers: new Set<string>([
+              dclId,
+              ...registrations.map((r) => r.tx.receiverId),
+            ]),
           },
           {
             position: { lptId: pos.lpt_id, poolId: pos.pool_id },

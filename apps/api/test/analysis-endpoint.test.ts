@@ -611,14 +611,23 @@ describe('prepare the exit of a meme-pool DCL position (#193)', () => {
       [`${MEME}#ft_metadata`]: () => ({
         spec: 'ft-1.0.0',
         name: 'iMEME',
-        symbol: 'IMEME',
+        symbol: 'USDC',
         decimals: 18,
       }),
+      [`${MEME}#storage_balance_of`]: () => null,
+      [`${MEME}#storage_balance_bounds`]: () => ({ min: '1250000000000000000000' }),
+      ['wrap.near#ft_metadata']: () => ({
+        spec: 'ft-1.0.0',
+        name: 'w',
+        symbol: 'wNEAR',
+        decimals: 24,
+      }),
+      ['wrap.near#storage_balance_of']: () => ({ total: '1', available: '0' }),
     },
     { [DCL]: [] },
   );
 
-  it('removes and withdraws to the wallet, sized with the on-chain decimals of a token we do not list', async () => {
+  it('registers, removes and withdraws to the wallet, sized with on-chain decimals, never trusting the symbol', async () => {
     const res = await server(node, store, null, DCL).inject({
       method: 'POST',
       url: '/v1/wallet/prepare',
@@ -634,12 +643,14 @@ describe('prepare the exit of a meme-pool DCL position (#193)', () => {
       freed: { raw: string; human: number; symbol: string }[];
     }>();
     expect(body.transactions.flatMap((t) => t.actions.map((a) => a.methodName))).toEqual([
+      'storage_deposit',
       'remove_liquidity',
       'withdraw_asset',
       'withdraw_asset',
     ]);
-    expect(new Set(body.transactions.map((t) => t.receiverId))).toEqual(new Set([DCL]));
-    const meme = body.freed.find((f) => f.symbol === 'IMEME');
+    expect(body.transactions.map((t) => t.receiverId)).toEqual([MEME, DCL, DCL]);
+    expect(JSON.stringify(body)).not.toContain('USDC');
+    const meme = body.freed.find((f) => f.symbol === 'imeme-2');
     expect(meme && meme.human).toBeCloseTo(Number(meme?.raw) / 1e18);
   });
 });
