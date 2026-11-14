@@ -65,6 +65,11 @@ const SOL = { type: 1001, address: 'So1anaAddre55' };
 const TON = { type: 1111, address: 'EQton' };
 const BTC = { type: -6, address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' };
 
+const PROXY = {
+  oneClick: { baseUrl: '/api/hex/market/v1/1click' },
+  marketRelay: '/api/hex/market',
+};
+
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 async function fresh() {
@@ -94,7 +99,10 @@ describe('HOT Kit origin wallets', () => {
     await m.connectOriginWallet('evm');
     await flush();
     expect(fake.state.created).toBe(1);
-    expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'tron', 'utxo'] });
+    expect(fake.state.options).toEqual({
+      ...PROXY,
+      connectors: ['near', 'evm', 'solana', 'tron', 'utxo'],
+    });
     stop1();
     stop2();
   });
@@ -193,7 +201,10 @@ describe('WalletConnect project id', () => {
       vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', value);
       const m = await fresh();
       await m.connectOriginWallet('evm');
-      expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'tron', 'utxo'] });
+      expect(fake.state.options).toEqual({
+        ...PROXY,
+        connectors: ['near', 'evm', 'solana', 'tron', 'utxo'],
+      });
     }
     vi.unstubAllEnvs();
   });

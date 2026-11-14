@@ -69,6 +69,9 @@ export function loadKit(): Promise<Loaded> {
       process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     ).data;
     const k = new HotKit({
+      // hex-api answers browsers only from HOT's own origins: its 1Click and market calls go through our server (D42).
+      oneClick: { baseUrl: '/api/hex/market/v1/1click' },
+      marketRelay: '/api/hex/market',
       ...(projectId && {
         walletConnect: {
           projectId,
