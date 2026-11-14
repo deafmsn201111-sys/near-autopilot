@@ -1,5 +1,6 @@
 import type { AccountId, FunctionCallAction } from '@near-autopilot/core';
 import type { CascadeStep } from './cascade';
+import type { CascadeValidationContext } from './validate-cascade';
 import { buildWrapNear } from './wrap';
 
 /**
@@ -38,3 +39,13 @@ export function buildWithdrawTransfer(o: {
   });
   return { intentId: 'withdraw', tx: { receiverId: o.token, actions }, preview: o.preview };
 }
+
+/** The cascade check of a withdrawal: only the token is touched, and `ft_transfer` may go only to the quote's address. */
+export const withdrawValidation = (
+  signerId: string,
+  w: { readonly token: string; readonly receiver: string },
+): CascadeValidationContext => ({
+  signerId,
+  allowedReceivers: new Set([w.token]),
+  transferTo: w.receiver,
+});

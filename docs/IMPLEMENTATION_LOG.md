@@ -872,6 +872,73 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Old layered `.hero*` / `.alloc-*` CSS removed. The gauge's "safe" label now starts at its mark so it no longer
   runs into "liquidation" on the Aggressive strategy.
 
+## 2026-11-14 — Strategy and demo switch on / commit again in production (#263)
+
+- Cause: in a production build, a soft navigation from `/` to `/` with other search params never committed while the
+  page sat directly under `app/loading.tsx`; React stayed suspended on the layout router's lazy fetch even though the
+  RSC payload arrived complete in ~20 ms. Reproduced with plain `Link`s too, so neither the `saveStrategy` server
+  action nor prefetch nor `router.refresh` polling was the cause (each ruled out by a build without it).
+- Fix: `app/page.tsx` renders its body inside a `<Suspense key={search params}>` with the same skeleton, so each URL
+  gets a fresh boundary. Measured on `next start`: skeleton at ~50 ms, the new strategy or demo at ~370 ms (React's
+  300 ms reveal throttle). `test/portfolio-page.test.ts` guards the key; vitest compiles JSX with the automatic runtime.
+
+## 2026-11-14 — App shell: top bar, wallet menu, phone tabs, context strip, intro (#249)
+
+- Top bar (`layout.tsx`, `Nav.tsx`) per DESIGN.md: sticky 60px, three sections plus "For reviewers"; at ≤640px a fixed
+  three-tab bar (`TabBar`, `aria-current`) and "For reviewers" in the footer.
+- `WalletButton`: token stack + account + rotating chevron; its menu separates the portfolio account (NEAR: analysed,
+  signs, net worth) from the other HOT Kit wallets (EVM / Solana / Tron / Bitcoin: deposits and withdrawals, not
+  analysed), with Add funds, Withdraw and a Disconnect that names every wallet. Escape and outside clicks close it,
+  Escape returns focus. The menu stays mounted while closed, so a HOT popup or the Withdraw dialog (now portalled
+  into `body`) keeps its state. Net worth and Withdraw balances come from the `walletSummary` server action when the
+  menu opens (the same cached read and strategy as the page), not on every page render. `ConnectButton` is the shared connect flow.
+- `ContextStrip` replaces the portfolio switch, the compact lookup form and the hero's mode line; `Intro` (three
+  stages + "Why you can trust it") shows on demo and read-only; the owner view gets a visually hidden `h1`.
+- `lib/hot-kit.ts` maps Tron wallets (`WalletType.Tron` = 333). "Deposit" / "Fund from another chain" → "Add funds".
+
+## 2026-11-14 — TEE signature of every AI reply checked and shown (#233)
+
+- `apps/api/src/llm/tee-verifier.ts`: attestation reports with a fresh nonce (cached 1 h), per-reply signature,
+  hash and EIP-191 signer checks (`@noble/curves`). `NearAiToolLlm` hashes the exact request and received bytes and
+  hands them over through the new `onReply` of the `ToolLlm` port.
+- `analyseAccount` checks a successful run before returning it; `run.privacy` and `llm_calls.privacy` (migration 0027).
+- UI: "Private AI · signed in TEE" / "Private AI · signature not verified" in the trace header; a verified mark
+  and each reply id open that reply in NEAR AI's Verification Center (`#receipt=`), plus a copy button; the steps say "The AI"; `modelName()` removed. README Privacy section, D43.
+- Live: one GLM 5.3 Flash reply verified in 735 ms.
+
+## 2026-11-14 — Analysis panel: one focal verdict (#251)
+
+- `components/AnalysisPanel.tsx` replaces the AI trace panel on `/`: header (AI-ranked / Rules only chip, Run AI
+  analysis with fixed width, busy state and "Updated N ago"), a verdict tile + 28px sentence in a live region, the
+  strategy control (moved from above the hero into the panel), four agent finding cards, the "Code checked the AI"
+  strip and the five-step decision pipeline on an inset footer.
+- `lib/analysis-view.ts` (pure, tested): `verdictOf` (urgent → orange ⚠, open moves → violet count, a check that did
+  not finish → amber, else mint ✓) and `findingsOf`. Without an AI run the API has no per-agent line, so a card is
+  derived from the rule cards (warning → act, info → watch, none → passed) plus "no loan" / "no DCL position" for
+  not-applicable; after a run its sentence and pick chip come from the trace. A loan without a health factor is
+  "not valued", never "safe".
+- Run AI analysis is locked with its reason for a visitor who has not proved ownership (the API already refused).
+- Out: the suggestion cards themselves and an "all moves done" verdict belong to #252.
+
+## 2026-11-14 — Deposit quote and incidents API removed (#261)
+
+- After D42 nothing calls `POST /v1/deposit/quote` or `GET /v1/deposit/incidents`; both are gone, with the SHIELD
+  client (`gateway/shield.ts`), `SHIELD_JWT` / `SHIELD_URL`, and `paymentToken` (the deposit QR's payment link). A
+  `SHIELD_JWT` left in a server `.env` is ignored.
+- Withdraw keeps `GET /v1/deposit/assets`, `GET /v1/deposit/status/:id`, `mint` and `deposit_quotes`. The quote
+  tests that guarded `mint` (no fee, refused quote, store failure, 1Click failure, Solana fee tokens) now run
+  against `POST /v1/withdraw/quote`.
+
+## 2026-11-14 — Attack demo covers the wallet path, AI replies and 1Click (#270)
+
+- `apps/api/src/demo/wallet-attacks.ts`: 11 new attacks and 2 controls, each through the production check:
+  `TeeVerifier` (forged signer, swapped answer; fixture secp256k1 keys over a fake NEAR AI fetch), `withdrawLookup`
+  (expiring, foreign, tampered quote), `validateCascade` (redirected withdrawal `ft_transfer`, method, receiver, gas,
+  deposit), and `analyseAccount` with a fake model for a token symbol carrying a prompt injection (the run fails
+  unless the model really got the token, under our label only, and the forged pick is dropped).
+- The deposit-rebuild scenario from the issue was replaced: D42 removed that endpoint (HOT Kit builds deposits).
+- `pnpm demo:attack`: 19/19 attacks stopped, 4 controls allowed, signed 0, broadcast 0; log regenerated.
+
 ## 2026-11-14 — Holdings table (#253)
 
 - `components/Holdings.tsx`: "What you hold" is a real `<table>` grouped by where the money sits (Burrow · lending,

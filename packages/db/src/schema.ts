@@ -655,6 +655,8 @@ export const llmCalls = pgTable(
     input: jsonb('input').$type<unknown>(),
     /** Picks, or the capped raw reply on invalid output (migration 0023). */
     output: jsonb('output').$type<unknown>(),
+    /** The TEE signature check of an answered run (migration 0027); null when not checked. */
+    privacy: jsonb('privacy').$type<unknown>(),
   },
   (t) => [index('llm_calls_at_idx').on(t.at)],
 );

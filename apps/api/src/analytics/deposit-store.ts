@@ -17,7 +17,7 @@ import type { DepositQuoteStore, StoredDepositQuote, UnfinishedQuote } from './d
 const FINAL: SwapStatus[] = ['SUCCESS', 'REFUNDED', 'FAILED'];
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** PostgreSQL store of real 1Click deposit quotes (migration 0020). */
+/** PostgreSQL store of real 1Click quotes (migration 0020). */
 export class DrizzleDepositQuoteStore implements DepositQuoteStore, AdminDepositStore {
   constructor(
     private readonly db: Database,

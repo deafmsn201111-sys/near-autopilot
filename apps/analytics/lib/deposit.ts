@@ -21,7 +21,7 @@ export interface DepositQuote {
   readonly chainName: string;
   /** Where the funds arrive: NEAR for a deposit, the target chain for a withdrawal. */
   readonly to: { readonly chain: string; readonly chainName: string };
-  readonly origin: DepositAsset & { readonly payment: PaymentToken };
+  readonly origin: DepositAsset;
   readonly destination: DepositAsset;
   readonly amountIn: string;
   readonly amountOut: string;
@@ -35,8 +35,6 @@ export interface DepositQuote {
   readonly expiresInSeconds: number;
   readonly timeEstimateSeconds: number;
 }
-/** What a payment link may ask the wallet to send, decided by the API from the quoted asset; null: address only. */
-export type PaymentToken = { readonly native: true } | { readonly contract: string } | null;
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 async function call<T>(url: string, init?: RequestInit): Promise<Result<T>> {

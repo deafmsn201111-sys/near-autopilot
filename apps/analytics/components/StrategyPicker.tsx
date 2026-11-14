@@ -10,10 +10,13 @@ export function StrategyPicker({
   account,
   current,
   note,
+  disabled,
 }: {
   account: string;
   current: StrategyId;
   note?: string | null;
+  /** While an AI run is going: its result belongs to the strategy it started with. */
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -28,21 +31,25 @@ export function StrategyPicker({
     });
 
   return (
-    <div className="strategy-picker" aria-busy={pending}>
-      <span className="eyebrow">Strategy</span>
+    <div className={`an-strat${pending ? ' is-pending' : ''}`} aria-busy={pending}>
+      <span className="an-strat-label" aria-hidden="true">
+        Risk strategy
+      </span>
       <Segmented
-        legend="Strategy"
+        legend="Risk strategy"
         name="strategy"
         value={chosen}
         options={STRATEGY_IDS.map((id) => ({ value: id, label: STRATEGIES[id].label }))}
         onChange={choose}
+        disabled={disabled}
       />
-      <span className="muted-note">
-        Safe loan from health factor <b>{s.healthyAt.toFixed(2)}</b>, one token up to{' '}
-        <b>{s.concentrationInfoPct}%</b>. Repay back to <b>{s.targetHealthFactor.toFixed(2)}</b>;
-        urgent below <b>{s.warningBelow.toFixed(2)}</b> or above <b>{s.concentrationWarningPct}%</b>{' '}
-        in one token. Stablecoins never count as a concentration.
-      </span>
+      <p className="an-strat-why" aria-live="polite">
+        {pending && <span className="an-strat-busy">Re-ranking… </span>}
+        Loan safe from health factor <b>{s.healthyAt.toFixed(2)}</b>, repaid back to{' '}
+        <b>{s.targetHealthFactor.toFixed(2)}</b>, urgent below <b>{s.warningBelow.toFixed(2)}</b> ·
+        one token up to <b>{s.concentrationInfoPct}%</b>, urgent above{' '}
+        <b>{s.concentrationWarningPct}%</b> (stablecoins never count). Changes every number below.
+      </p>
       {note && <p className="strategy-note">{note}</p>}
     </div>
   );

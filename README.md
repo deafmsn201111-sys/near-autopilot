@@ -78,9 +78,19 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 
 **Try it**
 
-1. Run `pnpm demo:attack`. You see 8 attacks stopped and 2 control actions allowed, ending in `signed 0, broadcast 0`.
-   - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
-     approval and a full-access key.
+1. Run `pnpm demo:attack`. You see 19 attacks stopped and 4 control actions allowed, ending in `signed 0, broadcast 0`.
+   Each attack runs through the check that stops it in production.
+   - Agent path (policy engine, output parser, gateway, executor): two prompt injections, a foreign recipient, an
+     extra Withdraw, a stale price, a thin pool, a forged approval and a full-access key.
+   - AI replies (`TeeVerifier`): a reply signed by a key the TEE attestation does not name, and an answer swapped
+     after signing. Both are labelled unverified, never shown as private.
+   - 1Click withdrawals: an `ft_transfer` redirected away from the quote's deposit address (`validateCascade`), and
+     a quote that expires too soon, belongs to another account or has a tampered deposit address (`withdrawLookup`).
+     Deposits from other chains are built and checked by HOT Kit's bridge popup (D42), not by our server.
+   - Signed cascades (`validateCascade`): a method or a receiver outside the allowlist, gas over the cap, a deposit
+     over the cap.
+   - Prompt injection through a token symbol: the full AI analysis with a fake model. The model never sees the
+     symbol, and the card it is told to pick is dropped.
    - The log is in `docs/evidence/demo-attack.log.jsonl`.
 2. Open `:3001/activity?account=autopilot-test.near`. You see the transactions that account signed through the app,
    each confirmed by NEAR RPC, with what really happened ("Repaid 5.01 USDC on Burrow") and an explorer link.
@@ -94,13 +104,14 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 **Not done**
 
 - No server-side signing (by design) and no guard contract.
-- No TEE attestation and no counterparty-reputation service.
+- No counterparty-reputation service. The AI runs in a NEAR AI TEE and every reply's signature is checked against
+  the attested key, but the hardware quote itself is left to the official verifier (see Privacy below).
 
 ### DeFi track: protect the position, refuse value-losing actions
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
-route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
-from and withdrawals to another chain (below), in a separate client.
+route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for withdrawals
+to another chain (below), in a separate client; deposits are quoted by HOT Kit's bridge popup.
 
 **What works**
 
@@ -128,7 +139,7 @@ from and withdrawals to another chain (below), in a separate client.
    holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
    them in your wallet or cancel.
 
-5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Add funds**
+5. **Add funds from another chain.** Connected, press **Add funds** in the wallet menu (your account, top right) or
    on the portfolio: it opens HOT Kit's bridge popup with your
    NEAR account locked as the recipient: you connect the wallet you send from (MetaMask, Phantom, a Tron or Bitcoin
    wallet, or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build), see its
@@ -137,7 +148,7 @@ from and withdrawals to another chain (below), in a separate client.
    `validateCascade` (D42). A swap between different tokens carries HOT's fee of up to 0.4% (0.01% stable to stable, none for the same
    token), already taken off the amount the popup shows you receive; the portfolio picks up the incoming tokens by itself. Without
    a connected NEAR account the button asks you to connect first. A deposit straight from an exchange is not offered.
-6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
+6. **Withdraw to another chain.** On your own portfolio or in the wallet menu, press **Withdraw**. Pick a token your NEAR
    wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
    typed; the server checks it is an address of that chain). **Get quote** asks 1Click for a real quote with your NEAR
@@ -268,10 +279,33 @@ minutes reuses the saved result, also across an API restart, with no model call.
 
 **Private inference.** The model is `z-ai/glm-5.3-flash` on [NEAR AI Cloud](https://cloud.near.ai), served inside a
 TEE (Intel TDX + NVIDIA confidential computing): the prompt with the wallet's positions and strategy is processed in an
-enclave that neither we nor the GPU operator can read, and NEAR AI signs every reply with the enclave key (anyone can
-check one at [cloud.near.ai/verify](https://cloud.near.ai/verify)). Our server does not verify those signatures yet
-(#233). There is no fallback to a model outside a TEE: on any failure the page shows the labelled rule-based list. Why
-this model, with the measurement: [D38](docs/DECISIONS.md).
+enclave that neither we nor the GPU operator can read, and NEAR AI signs every reply with the enclave key. There is no
+fallback to a model outside a TEE: on any failure the page shows the labelled rule-based list. Why this model, with the
+measurement: [D38](docs/DECISIONS.md).
+
+**Privacy: what is checked, and what is not** (#233, [D43](docs/DECISIONS.md)). After every AI analysis, and before
+the page shows it, the API (`apps/api/src/llm/tee-verifier.ts`):
+
+1. fetches the model's attestation reports (`GET /v1/attestation/report?model=…&signing_algo=ecdsa&nonce=<32 random
+bytes>`, `x-no-aliasing: true`), requires every report to echo our fresh nonce and keeps their `signing_address`
+   (instances of a model share one key, so several reports are one key). Cached for an hour, refetched once when a
+   signer does not match;
+2. fetches the signature of every model reply in the run (`GET /v1/signature/<chat_id>?signing_algo=ecdsa`), requires
+   `signature_kind: provider_tee` and the signed text to be exactly `<model>:sha256(our request bytes):sha256(the
+response bytes we received)`;
+3. recovers the EIP-191 signer (secp256k1) and requires it to be an attested key.
+
+Every reply passes → the "How the AI got here" header says **Private AI · signed in TEE**; anything else (no signature
+within ~3 s, wrong hash, unknown signer, a nonce not echoed, the gateway down) → **Private AI · signature not verified** with the reason on hover,
+and the cards are still shown. A verified mark opens the final reply in NEAR AI's
+[Verification Center](https://cloud.near.ai/verify) (`?model=<id>#receipt=<signer, signed text, signature>`), which
+re-checks that signature and the model's hardware evidence on its own; every reply id in the panel is such a link, and
+anyone can also fetch the same signatures (`curl -H "authorization: Bearer $KEY" https://cloud-api.near.ai/v1/signature/<id>?signing_algo=ecdsa`).
+The result is stored with the `llm_calls` row. Users never see the model's name; it stays in the admin spend split and
+in this README. **Not checked in our code:** the Intel TDX quote (DCAP), the RTMR3 event-log replay, MRCONFIGID, and
+the NVIDIA GPU evidence: that is what the official
+[nearai-cloud-verifier](https://github.com/nearai/nearai-cloud-verifier) does. So "signed in TEE" means "signed by
+the key NEAR AI's attestation names for this model", not "we verified the hardware quote ourselves".
 
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
@@ -283,7 +317,7 @@ days are deleted (on start, then hourly). One `events` row per wallet connect (r
 client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
 cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
 written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
-prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
+prepared) and 1Click withdrawal quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
 there is. Fonts are served by the site itself; the only third-party requests are the wallet connector you choose.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
@@ -330,7 +364,8 @@ committed in `thesis/data/raw/`: CSV, SVG charts and the document with every num
 outputs differ from what the raw data gives. `pnpm thesis:fetch` re-reads the raw data (archival RPC, view calls only).
 
 `pnpm demo:attack` runs labelled attack fixtures (prompt injection, foreign recipient, extra Withdraw, stale price,
-thin pool, forged approval, full-access key) through the real defences. Every attack is stopped and the log is
+thin pool, forged approval, full-access key, forged AI replies, redirected or replayed 1Click withdrawals, cascades
+outside the allowlists or caps, an injected token symbol) through the real defences. Every attack is stopped and the log is
 written to `docs/evidence/demo-attack.log.jsonl`. See
 [docs/security.md](docs/security.md).
 

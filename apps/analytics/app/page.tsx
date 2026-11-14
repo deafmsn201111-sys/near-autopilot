@@ -1,10 +1,13 @@
 import { cookies } from 'next/headers';
-import Link from 'next/link';
+import { Suspense } from 'react';
+import Loading from './loading';
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
 
-import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
+import { portfolioOf } from '../components/PortfolioSwitch';
+import { ContextStrip, SwitchView } from '../components/ContextStrip';
+import { Intro } from '../components/Intro';
 import { ErrorState } from '../components/states';
 import {
   accountRecommendations,
@@ -133,6 +136,16 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
+  // A fresh boundary per URL: under app/loading.tsx alone, a production build never commits a soft navigation to this
+  // page with other search params (strategy, demo switch) and keeps the old one on screen (#263).
+  return (
+    <Suspense key={JSON.stringify(sp)} fallback={<Loading />}>
+      <Portfolio sp={sp} />
+    </Suspense>
+  );
+}
+
+async function Portfolio({ sp }: { sp: Search }) {
   const isAccount = sp.p === 'account';
   // The account id can come from the URL (?account=) or, when navigating back to "Mainnet account" without it, from the
   // cookie the wallet set on connect — otherwise the view would read empty until the wallet is reconnected.
@@ -145,12 +158,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       savedStrategy((await cookies()).get(STRATEGY_COOKIE)?.value, accountParam),
   );
   const id = portfolioOf(sp.p);
+  const current = isAccount ? 'account' : id;
   if (isAccount && !accountParam)
     return (
       <>
-        <div className="hero-head">
-          <PortfolioSwitch current="account" path="/" withAccount account={cookieAccount} />
+        <div className="ctx">
+          <SwitchView current="account" connected="" />
         </div>
+        <Intro />
         <AccountForm />
       </>
     );
@@ -160,14 +175,18 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   if (!data)
     return (
       <>
-        <div className="hero-head">
-          <PortfolioSwitch
-            current={isAccount ? 'account' : id}
-            path="/"
-            withAccount
-            account={cookieAccount || accountParam}
-          />
-        </div>
+        <ContextStrip
+          mode={portfolioMode({
+            isAccount,
+            account: accountParam,
+            connected: cookieAccount,
+            verified: null,
+            signingEnabled: isAccount && walletSigningEnabled(),
+          })}
+          account={accountParam}
+          current={current}
+          connected={cookieAccount}
+        />
         {isAccount && <AccountForm value={accountParam} />}
         <ErrorState
           what={isAccount ? `Account ${accountParam}` : 'Your portfolio'}
@@ -243,20 +262,15 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   return (
     <>
       {isAccount && accountParam && <AccountWatcher account={accountParam} />}
-      <div className="hero-head">
-        <PortfolioSwitch
-          current={isAccount ? 'account' : id}
-          path="/"
-          withAccount
-          account={cookieAccount || accountParam}
-        />
-      </div>
-
-      {isAccount && <AccountForm compact />}
-
-      {isAccount && (
-        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
-      )}
+      {mode.kind === 'mine' && <h1 className="sr-only">Portfolio of {accountParam}</h1>}
+      <ContextStrip
+        key={`${current}:${accountParam}`}
+        mode={mode}
+        account={accountParam}
+        current={current}
+        connected={cookieAccount}
+      />
+      {mode.kind !== 'mine' && <Intro />}
 
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>
@@ -265,21 +279,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           page fills in by itself.
         </div>
       )}
-      <div className="hero-mode">
-        <span className={`hero-live ${mode.mine ? 'is-live' : ''}`}>
-          <span className="dot" aria-hidden="true" />
-          {mode.label}
-        </span>
-        <span className="muted-note">{mode.note}</span>
-        {mode.backTo && (
-          <Link
-            className="btn secondary small"
-            href={`/?p=account&account=${encodeURIComponent(mode.backTo)}`}
-          >
-            ← Back to my wallet
-          </Link>
-        )}
-      </div>
       <PortfolioSummary
         key={`summary:${isAccount ? accountParam : id}`}
         netWorthUsd={t.netWorthUsd}
@@ -296,8 +295,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         actions={
           own && (
             <>
-              <DepositButton account={accountParam} label="Add funds" />
+              <DepositButton account={accountParam} />
               <WithdrawDialog
+                label="Withdraw"
                 account={accountParam}
                 balances={data.holdings.flatMap((h) =>
                   h.where === 'wallet' && h.token ? [{ token: h.token, amount: h.amount }] : [],
@@ -318,6 +318,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         />
       )}
 
+      {isAccount && !recs && (
+        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
+      )}
+
       {isAccount && recs && (
         <section className="block">
           <Recommendations
@@ -330,6 +334,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             saved={saved}
             icons={icons}
             signingEnabled={signingEnabled}
+            strategyNote={data.strategyNote}
+            aiAllowed={recs.ownerVerified === true || recs.ownerCheckFailed === true}
+            hasLoan={data.holdings.some((h) => h.where === 'borrowed')}
+            loanValued={data.health.healthFactor !== null}
+            hasLp={(data.positions ?? []).some((p) => p.key.startsWith('dcl-'))}
           />
         </section>
       )}

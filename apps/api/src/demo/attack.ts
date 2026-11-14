@@ -19,6 +19,7 @@ import { DryRunExecutor, TransactionExecutor } from '@near-autopilot/tx-executio
 import { ShadowGateway } from '../gateway/shadow-gateway';
 import type { PolicyVerdictRecord } from '../repository';
 import { verdictRecord } from '../services/verdicts';
+import { runWalletAttacks } from './wallet-attacks';
 
 /**
  * DEMO: ATTACKS ON THE AUTOPILOT, run against the REAL defences (policy engine, agent-output parser, Shadow Gateway,
@@ -186,8 +187,9 @@ export interface AttackLogEntry {
   readonly description: string;
   /** The component that decided. */
   readonly defence: string;
-  /** control: the legitimate action passes. attack: BLOCKED (or REFUSED by the gateway / executor). */
-  readonly outcome: 'ALLOWED' | 'BLOCKED' | 'REFUSED' | 'DISCARDED' | 'NOT_BLOCKED';
+  /** control: the legitimate action passes. attack: BLOCKED, REFUSED, DISCARDED, or UNVERIFIED (an AI reply never
+   *  shown as private). */
+  readonly outcome: 'ALLOWED' | 'BLOCKED' | 'REFUSED' | 'DISCARDED' | 'UNVERIFIED' | 'NOT_BLOCKED';
   readonly verdict: string | null;
   /** Checks or codes that failed, in order. */
   readonly failed: readonly string[];
@@ -462,6 +464,8 @@ export async function runAttacks(policyConfig: PolicyConfig): Promise<AttackRun>
       broadcast,
     });
   }
+
+  for (const e of await runWalletAttacks()) entries.push({ ...base, ...e });
 
   return { entries, verdicts };
 }

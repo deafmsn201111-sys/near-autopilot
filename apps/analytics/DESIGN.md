@@ -336,7 +336,8 @@ A 7px glyph before the source label in Meta type, text-3: filled dot = on-chain 
 
 - **Top bar:** sticky, page at 90% with blur, 60px. Nav links text-2, active = text-1 on `active` fill. Wallet button: token stack + account, chevron rotates when the popover is open.
 - **Wallet popover:** overlay, origin top-right, pop-in 160ms; Escape closes and returns focus.
-- **Phone:** 3-tab bar with `aria-current`; active icon in accent.
+- **Phone:** 3-tab bar with `aria-current`; active icon in accent. "For reviewers" leaves the top bar for a footer link.
+- **Context strip:** first on the portfolio. Demo, read-only and your wallet each have their own chip; every strip has a "Switch view" menu (your wallet, both demos, look up an account). The deposit entry point is "Add funds" everywhere.
 
 ### Loan safety gauge (signature)
 
@@ -350,6 +351,8 @@ Order: header (AI-ranked chip, Run button with fixed width) → **verdict** → 
 - **Strategy:** a segmented control (native radios) followed by one line with the selected thresholds, numbers in bold text-1.
 - **Findings:** four bordered 12px cards. Risk cards are tinted (watch 6%, act 7%) with a matching border and a coloured 26px icon disc; passed cards are neutral with a mint check; not-applicable cards are dashed.
 - **Pipeline** sits last on an inset footer, in 13px: it is supporting evidence, not the headline.
+- **Missing data is never all clear:** an agent that failed, or a loan that could not be valued, turns the tile amber (⚠) with "No move found, but a check is missing." instead of mint ✓.
+- **Rules-only findings:** without an AI run a finding is derived from the rule cards (urgent → act, other card → watch, none → passed; no loan / no concentrated-liquidity position → not applicable). Run AI analysis is locked with its reason unless the visitor proved ownership.
 
 ### Intro (first visit, demo and read-only)
 
