@@ -699,6 +699,89 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - WalletConnect: `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (zod-checked, Docker build arg via compose and
   `build-bundle.sh`) adds WalletConnect to the kit's pickers with the site's metadata.
 
+## 2026-11-14 — Exit card for out-of-range LP on meme pools (#193)
+
+- `exitableOutOfRange()`: an out-of-range DCL position gets the exit card (remove + withdraw to the wallet) when both
+  tokens have any price, the indexer estimate included; its value is then called an estimate. Re-centring (D26)
+  stays on allowlisted pools. The exit cascade and `validateCascade` limits are unchanged.
+- Prepare reads a token missing from our metadata table with `ft_metadata` instead of assuming 24 decimals.
+
+## 2026-11-14 — Deposit sent from a connected EVM / Solana wallet (#126)
+
+- `GET /v1/deposit/transfer/:id` rebuilds the origin-chain transfer from the stored quote (token, `amountIn`, deposit
+  address); refuses near the deadline, once 1Click (asked fresh) sees a deposit, for Bitcoin and unnamed assets (D34).
+- The dialog checks it against the quote on screen; `sendOriginTransfer` (`lib/hot-kit.ts`) calls the kit's
+  `wallet.transfer` (ERC-20 / native on Ethereum, Base, Arbitrum; SPL / SOL). After a send the QR is hidden and the
+  explorer link shown; the status polling follows the deposit. The connected wallet fills the refund address.
+- `signing-lock.test.ts` keeps origin-chain sends to that one call.
+
+## 2026-11-14 — A model that picks nothing keeps the warnings (#202)
+
+- `runModel`: left-out warnings are put back before the empty check, so "picked nothing" with a Guardian warning is
+  an AI result (`restored: 1`), not "Heuristic (AI unavailable)". Only no card at all is the `empty` fallback.
+
+## 2026-11-14 — Idle money after costs (#194)
+
+- The idle card needs a year of Burrow interest, after the one network fee, to clear `hurdle()` (at least $0.50 kept,
+  3× the fee); below it, one honest line in `skipped` ("not worth the network fee") instead of a cents card.
+- With a loan in the same token that costs more than supplying earns, the card repays it instead (`repay` intent,
+  sized to the smaller of the idle balance and the debt), saying both rates.
+
+## 2026-11-14 — All idle money in one cascade (#196)
+
+- New intent `supply_all` (2–5 distinct tokens): Burrow registration once if needed, then one verified
+  `ft_transfer_call` supply per token, each sized from the wallet like `supply`; signed as one cascade. A token with no
+  price or no balance refuses the whole request (409) rather than supplying the rest silently. `validateCascade`
+  receivers: Burrow + the named tokens; limits unchanged.
+- Card `supply-all-idle` when two or more idle tokens clear the fee hurdle (#194), else the single-token card; the AI
+  allocator offers it instead of one supply per token. UI: intent schema, mapping, logos, "Prepare N deposits".
+
+## 2026-11-14 — AI analysis survives a reload (#190)
+
+- Migration 0025 `account_analyses`: last analysis per account + strategy (analysisKey, page signature, JSON), purged
+  after 30 days. `DrizzleAnalysisStore` in `apps/api/src/analytics/analysis-store.ts`.
+- `analyseAccount` reuses a saved result for the same `analysisKey` within 10 min (also after a restart) and saves
+  every AI result and `nothing_to_rank`; a failing store is logged and never fails the run.
+- `GET /v1/analytics/account/:id/analysis?strategy=` serves it to the proven owner only; the page loads it
+  server-side and shows "✓ Up to date" while the portfolio signature matches.
+
+## 2026-11-14 — Ownership check no longer hangs after signing (#210)
+
+- Root cause (measured on a local build): the first `router.refresh()` after `saveOwnershipProof` often never commits
+  in Next 15.5 (the RSC fetch returns in ~20 ms, but no render lands), so the `useTransition` around it kept
+  "Checking your signature…" until a later `AutoRefresh` render happened to commit (12 s to over a minute).
+- `OwnershipCheck` keeps its own `checking` state and re-renders every 2 s (`lib/ownership-refresh.ts`) until the page
+  shows verified or the check failed; after 12 s it says it is not verified yet. Verified showed in ~2 s.
+
+## 2026-11-14 — Open Rhea limit orders in the portfolio (#222)
+
+- `list_active_orders` on the DCL contract (view call): each open order is a holdings row "SELL → BUY", "Rhea limit
+  order · waiting to fill at P BUY per SELL", valued as what is still on the order plus what it bought but has not paid
+  out; counted in net worth. Display only: no card, no analysis, no transaction (cancel stays in the backlog).
+
+## 2026-11-14 — A deposit quote's wallet transfer is handed out once (#214)
+
+- Migration 0026 adds `deposit_quotes.transfer_issued_at`. `GET /v1/deposit/transfer/:id` sets it with
+  `UPDATE … WHERE transfer_issued_at IS NULL RETURNING`, after every other check, so two tabs on one quote cannot both
+  prompt a wallet: the second gets 409. The dialog that saw its wallet reject the send asks again with `retry=1`.
+
+## 2026-11-14 — One wallet connector: HOT Kit for NEAR, EVM and Solana (#189)
+
+- `lib/hot-kit.ts` owns the one kit; its NEAR connector wraps our near-connect 0.12 (CSP nonce, no access key, D35).
+  `lib/wallet.ts` keeps its interface (`currentAccount`, `watchAccount`, `connect`, `connectedWallet`, `disconnect`).
+- "Connect wallet" opens the kit's list of all chains; Disconnect signs out of all of them.
+- The kit loads only on click or with a stored session: first-load JS `/` 170 → 155 kB, `/activity` 158 → 143 kB.
+- Tests: `test/wallet.test.ts` (no load without a session, restore, account change, sign-out of all, cascade unchanged).
+
+## 2026-11-14 — Withdraw from NEAR to EVM / Solana via 1Click (#171)
+
+- `POST /v1/withdraw/quote` (deposit and withdraw share one verify-and-store path in `analytics/deposit.ts`); the
+  answer has the deposit quote's shape plus `to: { chain, chainName }`.
+- Intent `withdraw_1click { quoteId }`: `withdrawLookup` reads the stored quote, `wallet/withdraw.ts` builds
+  `storage_deposit` + `ft_transfer` on the token. `validateCascade`: `ft_transfer` only to `ctx.transferTo` (D36).
+- UI: `WithdrawDialog` (token, 25% / 50% / Max, chain, token, recipient from HOT Kit or typed), status from the
+  deposit `StatusLine`, signing through `PrepareDialog`, which now drops a surrounding modal while the wallet is open.
+
 ## 2026-11-14 — Incoming token transfers refresh the account page (#204)
 
 - `lib/account-signal.ts` `readTokens`: one keyless FastNEAR `/v1/account/{id}/ft` call per watcher tick (zod-checked),

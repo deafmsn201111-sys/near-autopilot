@@ -3,6 +3,7 @@ import { STRATEGIES } from '@near-autopilot/core';
 import { modelTokenLabel } from '../src/thesis/labels';
 import {
   concentratedToken,
+  exitableOutOfRange,
   keepsProfitableLoan,
   loanHealth,
   marketRate,
@@ -396,7 +397,7 @@ describe('portfolioRecommendations', () => {
     const r = portfolioRecommendations(
       ctx({
         idleEarn: [
-          { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 2 },
+          { token: 'usdc', symbol: 'USDC', usd: 6, aprPct: 2 },
           { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 500, aprPct: 8 },
         ],
       }),
@@ -409,7 +410,234 @@ describe('portfolioRecommendations', () => {
     });
     expect(i?.title).toBe('$500 of USDt is sitting idle');
     expect(i?.why).toContain('about $40.00 a year');
-    expect(i?.why).toContain('$600 of USDC would earn about $12.00 a year');
+    expect(i?.why).toContain('$6 of USDC would earn about $0.12 a year');
+  });
+
+  describe('all idle money in one cascade (#196)', () => {
+    it('puts every idle token worth its fee to work with one card and one signature', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [
+            { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 10 },
+            { token: 'usdt', symbol: 'USDt', usd: 500, aprPct: 8 },
+            { token: 'dust', symbol: 'D', usd: 2, aprPct: 5 },
+          ],
+        }),
+      );
+      const idle = r.filter((x) => x.kind === 'put_idle_to_work');
+      expect(idle).toHaveLength(1);
+      expect(idle[0]?.id).toBe('supply-all-idle');
+      expect(idle[0]?.intent).toEqual({
+        action: 'supply_all',
+        tokens: [
+          { token: 'usdc', approxUsd: 600 },
+          { token: 'usdt', approxUsd: 500 },
+        ],
+      });
+      expect(idle[0]?.title).toBe('$1,100 of USDC and USDt is sitting idle');
+      expect(idle[0]?.why).toContain('about $100.00 a year');
+    });
+
+    it('repays a dearer loan with its token and supplies the rest, never supplying the token it repays with', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [
+            { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 10 },
+            { token: 'usdt', symbol: 'USDt', usd: 500, aprPct: 8 },
+            { token: 'near', symbol: 'NEAR', usd: 300, aprPct: 4 },
+          ],
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 2000, debtAdjUsd: 500 },
+          largestDebt: { ...demoDebt, token: 'usdt', symbol: 'USDt', usd: 400, borrowAprPct: 15 },
+        }),
+      );
+      const idle = r.filter((x) => x.kind === 'put_idle_to_work');
+      expect(idle.map((x) => x.id)).toEqual(['repay-with-idle', 'supply-all-idle']);
+      expect(idle[0]?.intent).toMatchObject({ action: 'repay', token: 'usdt' });
+      expect(idle[1]?.intent).toEqual({
+        action: 'supply_all',
+        tokens: [
+          { token: 'usdc', approxUsd: 600 },
+          { token: 'near', approxUsd: 300 },
+        ],
+      });
+    });
+
+    it('names the worthy tokens beyond the five one cascade carries', () => {
+      const advice = portfolioAdvice(
+        ctx({
+          idleEarn: Array.from({ length: 7 }, (_, i) => ({
+            token: `t${i}`,
+            symbol: `T${i}`,
+            usd: 100 - i,
+            aprPct: 10,
+          })),
+        }),
+        STRATEGIES.balanced,
+      );
+      const card = advice.recommendations.find((x) => x.id === 'supply-all-idle');
+      expect(card?.intent?.action === 'supply_all' && card.intent.tokens).toHaveLength(5);
+      expect(advice.skipped.join(' ')).toMatch(/T5, T6 \(\$189\) could also go to Burrow/);
+    });
+
+    it('keeps the single-token card when only one token is worth its fee', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [
+            { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 10 },
+            { token: 'dust', symbol: 'D', usd: 2, aprPct: 5 },
+          ],
+        }),
+      );
+      expect(r.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+    });
+  });
+
+  describe('idle money after costs (#194)', () => {
+    it('says plainly when the yearly interest is not worth the network fee, instead of a cents card', () => {
+      const advice = portfolioAdvice(
+        ctx({ idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 3, aprPct: 10 }] }),
+        STRATEGIES.balanced,
+      );
+      expect(advice.recommendations.some((x) => x.kind === 'put_idle_to_work')).toBe(false);
+      expect(advice.skipped.join(' ')).toMatch(
+        /\$3\.00 of USDC would earn about \$0\.30 a year on Burrow: not worth the network fee/,
+      );
+    });
+
+    it('repays a loan in the same token instead when the loan costs more than supplying earns', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+          largestDebt: { ...demoDebt, usd: 150, amount: 150, borrowAprPct: 13.6 },
+          carry: { borrowAprPct: 30, loanMonthlyUsd: 1.7, depositsMonthlyUsd: 0 },
+        }),
+      );
+      const i = r.find((x) => x.kind === 'put_idle_to_work');
+      expect(i?.id).toBe('repay-with-idle');
+      expect(i?.intent).toEqual({ action: 'repay', token: USDC, approxUsd: 150 });
+      expect(i?.why).toMatch(/13\.6%.*8\.7%/);
+      expect(i?.why).toContain('The other $50 can then go to Burrow');
+    });
+
+    it('never lets a dust loan or a loan card already on the page replace the supply card', () => {
+      const idleEarn = [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }];
+      const dust = portfolioRecommendations(
+        ctx({
+          idleEarn,
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 0.0004 },
+          largestDebt: { ...demoDebt, usd: 0.0004, amount: 0.0004, borrowAprPct: 13.6 },
+        }),
+      );
+      expect(dust.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+      const weak = portfolioRecommendations(
+        ctx({ idleEarn, loan: demoLoan, largestDebt: { ...demoDebt, borrowAprPct: 13.6 } }),
+      );
+      expect(weak.filter((x) => x.kind === 'improve_loan_safety')).toHaveLength(1);
+      expect(weak.find((x) => x.id === 'repay-with-idle')).toBeUndefined();
+    });
+
+    describe('a safe loan in another token, repaid through a swap (#227)', () => {
+      // USDC earns 10.8%, the USDt loan costs 13.5%, Rhea swaps USDC -> USDt.
+      const USDT = 'usdt.tether-token.near';
+      const usdtDebt = (usd: number) => ({
+        ...demoDebt,
+        token: USDT,
+        symbol: 'USDt',
+        usd,
+        amount: usd,
+        collateral: 0,
+        borrowAprPct: 13.5,
+      });
+      const safe = {
+        loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 1200, debtAdjUsd: 400 },
+        largestDebt: usdtDebt(300),
+      };
+      const usdc = {
+        token: USDC,
+        symbol: 'USDC',
+        decimals: 6,
+        usdPerToken: 1,
+        vr: 0.95,
+        deposited: 0,
+        collateral: 500,
+        wallet: 400,
+        aprPct: 10.8,
+        outPerIn: 0.997,
+        slippageBps: 50,
+      };
+      const advice = (over: Partial<RecommendationContext>) =>
+        portfolioAdvice(ctx({ ...safe, idleSwapRepay: usdc, ...over }));
+      const card = (over: Partial<RecommendationContext>) =>
+        advice(over).recommendations.find((x) => x.id === 'repay-with-idle');
+
+      it('swaps idle wallet USDC into USDt and repays, withdrawing nothing', () => {
+        const c = card({ idleEarn: [{ token: USDC, symbol: 'USDC', usd: 400, aprPct: 10.8 }] });
+        const intent = c?.intent;
+        if (intent?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
+        expect(intent.token).toBe(USDT);
+        expect(intent.collateralToken).toBe(USDC);
+        expect(intent.withdraw).toBeUndefined();
+        expect(Number(intent.amount) / 1e6).toBeCloseTo(300 / 0.997, 4);
+        expect(c?.why).toMatch(/13\.5%.*10\.8%/);
+      });
+
+      it('leaves the USDC the swap does not take to the supply card', () => {
+        const recs = advice({
+          idleEarn: [{ token: USDC, symbol: 'USDC', usd: 1000, aprPct: 10.8 }],
+          idleSwapRepay: { ...usdc, wallet: 1000 },
+        }).recommendations;
+        expect(recs.find((x) => x.id === 'repay-with-idle')).toBeDefined();
+        const supply = recs.find((x) => x.intent?.action === 'supply');
+        expect(supply?.intent).toMatchObject({ token: USDC, approxUsd: 699.1 });
+      });
+
+      it('withdraws only the plain USDC deposit, never the collateral', () => {
+        const all = card({ idleSwapRepay: { ...usdc, wallet: 0, deposited: 400 } })?.intent;
+        if (all?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
+        expect(all.withdraw).toBe(all.amount);
+        const part = card({ idleSwapRepay: { ...usdc, wallet: 0, deposited: 100 } })?.intent;
+        if (part?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
+        expect(part.amount).toBe('100000000');
+      });
+
+      it('says a small loan is not worth the fees instead of a cents card', () => {
+        const a = advice({ largestDebt: usdtDebt(9.34) });
+        expect(a.recommendations.find((x) => x.id === 'repay-with-idle')).toBeUndefined();
+        expect(a.skipped.join(' ')).toMatch(/USDt loan with your USDC.*not worth/);
+      });
+
+      it('stays quiet when the swap loss eats the savings, the deposit earns more, or no route exists', () => {
+        expect(card({ idleSwapRepay: { ...usdc, outPerIn: 0.95 } })).toBeUndefined();
+        expect(card({ idleSwapRepay: { ...usdc, aprPct: 14 } })).toBeUndefined();
+        expect(card({ idleSwapRepay: null })).toBeUndefined();
+      });
+
+      it('leaves an unsafe loan to the Liquidation Guardian card', () => {
+        expect(card({ loan: demoLoan })).toBeUndefined();
+      });
+    });
+
+    it('keeps supplying when the loan is in another token or costs less', () => {
+      const base = {
+        idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+        loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+      };
+      const other = portfolioRecommendations(
+        ctx({
+          ...base,
+          largestDebt: { ...demoDebt, token: 'usdt', symbol: 'USDt', borrowAprPct: 13.6 },
+        }),
+      );
+      const cheap = portfolioRecommendations(
+        ctx({
+          ...base,
+          largestDebt: { ...demoDebt, borrowAprPct: 5 },
+        }),
+      );
+      for (const r of [other, cheap])
+        expect(r.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+    });
   });
 
   describe('the strategy decides where idle money goes (#132)', () => {
@@ -470,8 +698,9 @@ describe('portfolioRecommendations', () => {
     });
 
     it('Aggressive does not promise a loop the fees eat on a small amount', () => {
-      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 5), 'aggressive');
-      expect(c?.carry?.text).toMatch(/would earn -539\.6% a year after fees .*so this supplies\.$/);
+      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 8), 'aggressive');
+      // $8: 30 days of 3.0168 x 10% - 2.0168 x 5% = $0.132, minus $2.30 of gas, annualised on $8 = -329.7%.
+      expect(c?.carry?.text).toMatch(/would earn -329\.7% a year after fees .*so this supplies\.$/);
     });
 
     it('Aggressive does not promise a loop Burrow has too little to lend for', () => {
@@ -499,11 +728,101 @@ describe('portfolioRecommendations', () => {
 
   it('flags an out-of-range DCL position with a reposition intent', () => {
     const r = portfolioRecommendations(
-      ctx({ dclOutOfRange: [{ lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120 }] }),
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120, estimate: false },
+        ],
+      }),
     );
     const d = r.find((x) => x.kind === 'reposition_dcl_position');
     expect(d?.agent).toBe('Liquidity Optimizer');
     expect(d?.intent).toEqual({ action: 'reposition_dcl', lptId: 'lpt#1', poolId: 'p|q|60' });
+  });
+
+  it('offers the exit for a $0.99 position: it costs only gas and earns nothing out of range (#226)', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#3', poolId: 'u|w|100', pair: 'USDC/wNEAR', usd: 0.99, estimate: false },
+        ],
+      }),
+    );
+    expect(r.find((x) => x.kind === 'reposition_dcl_position')?.intent).toEqual({
+      action: 'reposition_dcl',
+      lptId: 'lpt#3',
+      poolId: 'u|w|100',
+    });
+  });
+
+  it('says why a dust out-of-range position gets no card (#226)', () => {
+    const advice = portfolioAdvice(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#4', poolId: 'u|w|100', pair: 'USDC/wNEAR', usd: 0.05, estimate: false },
+        ],
+      }),
+    );
+    expect(advice.recommendations.some((x) => x.kind === 'reposition_dcl_position')).toBe(false);
+    expect(advice.skipped.join(' ')).toMatch(/USDC\/wNEAR.*out of range/);
+  });
+
+  it('says the value of a meme-pool position is an estimate (#193)', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#2', poolId: 'm|w|10000', pair: 'IMEME/wNEAR', usd: 40, estimate: true },
+        ],
+      }),
+    );
+    const d = r.find((x) => x.kind === 'reposition_dcl_position');
+    expect(d?.intent).toEqual({ action: 'reposition_dcl', lptId: 'lpt#2', poolId: 'm|w|10000' });
+    expect(d?.why).toMatch(/estimate/i);
+  });
+
+  describe('exitableOutOfRange (#193)', () => {
+    const MEME = 'imeme-2.v2-launchpad.justhoot.near';
+    const pos = (over: Partial<Parameters<typeof exitableOutOfRange>[0][number]>) => ({
+      lptId: 'lpt#1',
+      poolId: `${MEME}|wrap.near|10000`,
+      tokenX: MEME,
+      tokenY: 'wrap.near',
+      symbolX: 'IMEME',
+      symbolY: 'wNEAR',
+      inRange: false,
+      usd: 40,
+      ...over,
+    });
+    const confirmed = new Set(['wrap.near']);
+    const priced = new Set(['wrap.near', MEME]);
+
+    it('offers the exit for an out-of-range position whose tokens have any price, flagged as an estimate', () => {
+      expect(exitableOutOfRange([pos({})], priced, confirmed)).toEqual([
+        {
+          lptId: 'lpt#1',
+          poolId: `${MEME}|wrap.near|10000`,
+          pair: 'IMEME/wNEAR',
+          usd: 40,
+          estimate: true,
+        },
+      ]);
+    });
+
+    it('skips a position in range or with an unpriced token; a confirmed value outranks a bigger estimate', () => {
+      const out = exitableOutOfRange(
+        [
+          pos({ lptId: 'in', inRange: true }),
+          pos({ lptId: 'unpriced', tokenX: 'x.near' }),
+          pos({ lptId: 'small', usd: 500 }),
+          pos({ lptId: 'big', tokenX: 'wrap.near', usd: 90 }),
+        ],
+        priced,
+        confirmed,
+      );
+      expect(out.map((d) => [d.lptId, d.estimate])).toEqual([
+        ['big', false],
+        ['small', true],
+      ]);
+    });
   });
 
   it('says nothing for a healthy, diversified, fully-deployed portfolio', () => {

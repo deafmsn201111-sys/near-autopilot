@@ -1,4 +1,16 @@
 /** Formatting of decimal strings from the API. Display only: nothing here feeds a decision. */
+export const ago = (iso: string | null | undefined, nowIso?: string): string => {
+  if (!iso) return '—';
+  const s = Math.max(
+    0,
+    Math.round(((nowIso ? Date.parse(nowIso) : Date.now()) - Date.parse(iso)) / 1000),
+  );
+  if (s < 90) return `${s} s ago`;
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  if (s < 172_800) return `${(s / 3600).toFixed(1)} h ago`;
+  return `${Math.round(s / 86_400)} days ago`;
+};
+
 export function pct(fraction: string | number | null | undefined, digits = 2): string {
   if (fraction === null || fraction === undefined || fraction === '') return '—';
   const n = typeof fraction === 'number' ? fraction : Number(fraction);

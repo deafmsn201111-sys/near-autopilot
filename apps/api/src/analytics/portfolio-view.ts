@@ -127,6 +127,10 @@ export function hurdle(
   };
 }
 
+/** A standing move (a deposit, a repayment) is worth one network fee when a year of its benefit clears the hurdle. */
+export const yearWorthTheFee = (yearlyUsd: number): boolean =>
+  hurdle(yearlyUsd - GAS, yearlyUsd, GAS).verdict === 'worth_it';
+
 export function buildPortfolioView(i: {
   id: DemoPortfolioId;
   analysis: { createdAt: Date; result: unknown } | null;

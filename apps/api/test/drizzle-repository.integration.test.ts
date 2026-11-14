@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  accountAnalyses,
   auditCheckpoints,
   auditEvents,
   demoLedger,
@@ -78,7 +79,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
     const applied = await handle.db.execute<{ n: number }>(
       sql`select count(*)::int as n from drizzle.__drizzle_migrations`,
     );
-    expect(applied.rows[0]?.n).toBe(25);
+    expect(applied.rows[0]?.n).toBe(27);
   });
 
   it('the migrated tables have exactly the columns the Drizzle schema declares', async () => {
@@ -110,6 +111,7 @@ describe.skipIf(!adminUrl)('DrizzleRepository on PostgreSQL', () => {
       llmCalls,
       llmSettings,
       depositQuotes,
+      accountAnalyses,
     ];
     for (const table of tables) {
       const declared = Object.values(getTableColumns(table))

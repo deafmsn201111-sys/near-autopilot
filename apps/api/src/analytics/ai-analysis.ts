@@ -37,6 +37,7 @@ import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
+import { yearWorthTheFee } from './portfolio-view';
 import { analysisKey } from './analysis-key';
 import type { WalletObservation } from './lp-recentre';
 
@@ -120,6 +121,22 @@ export interface ToolLlmDeps {
   readonly maxTokens: number;
   readonly ledger: LlmLedger;
   readonly memo: AnalysisMemo;
+  /** The last result per account and strategy, kept across restarts (#190). */
+  readonly store?: AnalysisStore;
+}
+
+export interface SavedAnalysis {
+  /** The wallet state it was computed for (`analysisKey`). */
+  readonly key: string;
+  /** The page's portfolio signature at the time: tells the page whether the portfolio changed since. */
+  readonly signature: string | null;
+  readonly at: Date;
+  readonly analysis: Analysis;
+}
+
+export interface AnalysisStore {
+  latest(accountId: AccountId, strategy: StrategyId): Promise<SavedAnalysis | null>;
+  save(accountId: AccountId, strategy: StrategyId, saved: SavedAnalysis): Promise<void>;
 }
 
 const CACHE_MAX = 200;
@@ -228,6 +245,8 @@ export interface AnalysisContext {
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
   /** The loan's cost against the deposits' earnings, for every loan card the guardian returns. */
   readonly loanCarry?: PortfolioRecommendation['carry'];
+  /** The page's portfolio signature, saved with the result; never read by the server. */
+  readonly signature?: string;
 }
 
 export interface Analysis {
@@ -557,8 +576,18 @@ function allocatorTool(
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
       let lowRate: StepLine | null = null;
+      // The rule list's own idle cards come first: repaying a dearer loan (#194), or every idle token at once (#196).
+      const covered = new Set<string>();
+      for (const c of checks) {
+        if (c.id !== 'repay-with-idle' && c.id !== 'supply-all-idle') continue;
+        candidates.push(c);
+        byCandidate.set(c.id, { text: c.title, provenance: 'calculated_estimate' });
+        if (c.intent?.action === 'repay') covered.add(c.intent.token);
+        if (c.intent?.action === 'repay_with_collateral') covered.add(c.intent.collateralToken);
+        if (c.intent?.action === 'supply_all') c.intent.tokens.forEach((t) => covered.add(t.token));
+      }
       for (const p of proposals) {
-        if (p.kind !== 'lending.supply') continue;
+        if (p.kind !== 'lending.supply' || covered.has(p.token)) continue;
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
@@ -572,7 +601,15 @@ function allocatorTool(
         }
         const aprPct = apr.toFixed(1);
         const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
-        const yearly = money((value * Number(yieldWad)) / 1e18);
+        const yearlyUsd = (value * Number(yieldWad)) / 1e18;
+        if (!yearWorthTheFee(yearlyUsd)) {
+          lowRate ??= {
+            text: `${view.symbol} would earn about ${money(yearlyUsd)} a year on Burrow: not worth the network fee`,
+            provenance: 'calculated_estimate',
+          };
+          continue;
+        }
+        const yearly = money(yearlyUsd);
         const id = `capital-allocator:supply:${p.token}`;
         byCandidate.set(id, {
           text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
@@ -985,9 +1022,31 @@ async function runModel(
     ),
   ];
   const key = analysisKey(obs, ctx.heuristics, strategy);
-  const hit = ai.memo.results.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS)
+  // Not awaited: a slow database never holds the answer back; the row is written well before a reload reads it.
+  const save = (analysis: Analysis, at: number) =>
+    void ai.store
+      ?.save(ctx.accountId, strategy, {
+        key,
+        signature: ctx.signature ?? null,
+        at: new Date(at),
+        analysis,
+      })
+      .catch(onError);
+  const hit = await Promise.race([
+    reusable(ai, ctx.accountId, strategy, key, onError),
+    deadline,
+  ]).catch(() => null);
+  if (hit) {
+    // The page's signature may be newer than the saved one: a reload must not report a change that did not happen.
+    if (ctx.signature !== undefined) save(hit.analysis, hit.at);
     return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  }
+  const keep = (analysis: Analysis) => {
+    const at = Date.now();
+    ai.memo.results.set(key, { at, analysis });
+    save(analysis, at);
+    return analysis;
+  };
   const read = {
     tokens: heldTokens(obs).size,
     loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
@@ -1001,7 +1060,8 @@ async function runModel(
     if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
       const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
       const trace = traceSteps(ran, checked, [], new Set());
-      return early({
+      settle();
+      return keep({
         ...fallback('nothing_to_rank'),
         note: trace
           .filter((t) => t.tool !== 'market_intelligence')
@@ -1185,13 +1245,14 @@ async function runModel(
       why: p.why,
     })),
   };
-  if (recommendations.length === 0) return failed('empty', answered);
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>
       !recommendations.some((r) => r.kind === w.kind) &&
       warnings.findIndex((o) => o.kind === w.kind) === i,
   );
+  // A model that picked nothing still ran: a warning it left out is put back, and only no card at all is a fallback.
+  if (recommendations.length + missing.length === 0) return failed('empty', answered);
   recommendations.unshift(...missing);
   const kept = new Set(missing.map((m) => m.id));
   checks.restored = missing.length;
@@ -1223,8 +1284,25 @@ async function runModel(
     read,
     cachedAt: null,
   };
-  ai.memo.results.set(key, { at: Date.now(), analysis });
-  return analysis;
+  return keep(analysis);
+}
+
+/** This wallet state's result from the last 10 minutes: from this process, or saved before a restart. */
+async function reusable(
+  ai: ToolLlmDeps,
+  accountId: AccountId,
+  strategy: StrategyId,
+  key: string,
+  onError: (e: unknown) => void,
+): Promise<{ at: number; analysis: Analysis } | null> {
+  const fresh = (at: number) => Date.now() - at < CACHE_TTL_MS;
+  const hit = ai.memo.results.get(key);
+  if (hit && fresh(hit.at)) return hit;
+  const saved = await ai.store
+    ?.latest(accountId, strategy)
+    .catch((e: unknown) => (onError(e), null));
+  if (!saved || saved.key !== key || !fresh(saved.at.getTime())) return null;
+  return { at: saved.at.getTime(), analysis: saved.analysis };
 }
 
 /** Code reordered the list by putting a skipped warning first, or there is no order to explain: the sentence would not match. */

@@ -1,5 +1,5 @@
 import { KeyPairEd25519 } from '@near-js/crypto';
-import { analysisMemo } from '../src/analytics/ai-analysis';
+import { analysisMemo, type AnalysisStore, type SavedAnalysis } from '../src/analytics/ai-analysis';
 import { describe, expect, it } from 'vitest';
 import { RpcError } from '@near-autopilot/core';
 import {
@@ -129,12 +129,16 @@ const store = {
   markets: async () => [],
 } as unknown as CollectorStore;
 
+/** The admin kill switch the test servers' ledger reports. */
+let aiOn = true;
+
 function server(
   node: NearRpcClient,
   collector: CollectorStore,
   llm: ToolLlm | null = null,
   dclId?: string,
   events?: MemoryEventStore,
+  saved?: AnalysisStore,
 ) {
   return buildAnalyticsServer({
     apiToken: TOKEN,
@@ -152,11 +156,12 @@ function server(
         model: 'claude-haiku-5-5',
         maxTokens: 4096,
         ledger: {
-          enabled: async () => true,
+          enabled: async () => aiOn,
           remainingTodayMicro: async () => 10n ** 9n,
           record: async () => {},
         },
         memo: analysisMemo(undefined, 0),
+        ...(saved && { store: saved }),
       },
     } as never,
   });
@@ -293,6 +298,72 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
       await proofHeader('alice.near', stranger),
     );
     expect(llm.opened).toBe(0);
+  });
+});
+
+describe('the saved analysis (#190)', () => {
+  const memoryStore = () => {
+    const rows = new Map<string, SavedAnalysis>();
+    const saved: AnalysisStore = {
+      latest: async (account, strategy) => rows.get(`${account}|${strategy}`) ?? null,
+      save: async (account, strategy, s) => void rows.set(`${account}|${strategy}`, s),
+    };
+    return { rows, saved };
+  };
+  const analyse = (app: ReturnType<typeof server>, payload: object, proof?: string) =>
+    app.inject({
+      method: 'POST',
+      url: '/v1/analytics/account/alice.near/analysis',
+      headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
+      payload,
+    });
+  const latest = (app: ReturnType<typeof server>, proof?: string, strategy = 'balanced') =>
+    app.inject({
+      method: 'GET',
+      url: `/v1/analytics/account/alice.near/analysis?strategy=${strategy}`,
+      headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
+    });
+
+  it("saves the owner's run with the page's portfolio signature and serves it back to the owner only", async () => {
+    const { rows, saved } = memoryStore();
+    const app = server(chain, store, countingLlm(), undefined, undefined, saved);
+    const proof = await proofHeader('alice.near');
+    const run = await analyse(app, { strategy: 'balanced', signature: 'sig-1' }, proof);
+    expect(run.json()).toMatchObject({ fallback: 'nothing_to_rank' });
+    expect(rows.get('alice.near|balanced')?.signature).toBe('sig-1');
+
+    const mine = await latest(app, proof);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json()).toMatchObject({
+      signature: 'sig-1',
+      analysis: { fallback: 'nothing_to_rank', cachedAt: expect.any(String) as unknown },
+    });
+    expect((await latest(app)).json()).toEqual({ analysis: null, signature: null });
+    expect((await latest(app, proof, 'aggressive')).json()).toEqual({
+      analysis: null,
+      signature: null,
+    });
+  });
+
+  it('serves no saved AI result while the kill switch is off', async () => {
+    const { saved } = memoryStore();
+    const app = server(chain, store, countingLlm(), undefined, undefined, saved);
+    const proof = await proofHeader('alice.near');
+    await analyse(app, { strategy: 'balanced', signature: 'sig-1' }, proof);
+    aiOn = false;
+    try {
+      expect((await latest(app, proof)).json()).toEqual({ analysis: null, signature: null });
+    } finally {
+      aiOn = true;
+    }
+  });
+
+  it('rejects an oversized signature and an unknown strategy', async () => {
+    const app = server(chain, store, countingLlm(), undefined, undefined, memoryStore().saved);
+    const proof = await proofHeader('alice.near');
+    const big = await analyse(app, { strategy: 'balanced', signature: 'x'.repeat(20_001) }, proof);
+    expect(big.statusCode).toBe(400);
+    expect((await latest(app, proof, 'yolo')).statusCode).toBe(400);
   });
 });
 
@@ -586,6 +657,196 @@ describe('GET /v1/analytics/account/:id ownership', () => {
 
   it('the owner is verified', async () => {
     expect((await read(chain, await proofHeader('alice.near'))).ownerVerified).toBe(true);
+  });
+});
+
+describe('prepare the exit of a meme-pool DCL position (#193)', () => {
+  const DCL = 'dclv2.ref-labs.near';
+  const MEME = 'imeme-2.v2-launchpad.justhoot.near';
+  const POOL = `wrap.near|${MEME}|10000`;
+  const LPT = `${POOL}#9`;
+  const node = rpc(
+    {
+      [`${DCL}#list_liquidities`]: () => [
+        { lpt_id: LPT, pool_id: POOL, left_point: -800, right_point: -400, amount: '1000000000' },
+      ],
+      [`${DCL}#get_pool`]: () => ({
+        pool_id: POOL,
+        token_x: 'wrap.near',
+        token_y: MEME,
+        fee: 10000,
+        point_delta: 200,
+        current_point: 48311,
+        state: 'Running',
+      }),
+      [`${MEME}#ft_metadata`]: () => ({
+        spec: 'ft-1.0.0',
+        name: 'iMEME',
+        symbol: 'USDC',
+        decimals: 18,
+      }),
+      [`${MEME}#storage_balance_of`]: () => null,
+      [`${MEME}#storage_balance_bounds`]: () => ({ min: '1250000000000000000000' }),
+      ['wrap.near#ft_metadata']: () => ({
+        spec: 'ft-1.0.0',
+        name: 'w',
+        symbol: 'wNEAR',
+        decimals: 24,
+      }),
+      ['wrap.near#storage_balance_of']: () => ({ total: '1', available: '0' }),
+    },
+    { [DCL]: [] },
+  );
+
+  it('registers, removes and withdraws to the wallet, sized with on-chain decimals, never trusting the symbol', async () => {
+    const res = await server(node, store, null, DCL).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: {
+        account: 'alice.near',
+        intent: { action: 'reposition_dcl', lptId: LPT, poolId: POOL },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      transactions: { receiverId: string; actions: { methodName: string }[] }[];
+      freed: { raw: string; human: number; symbol: string }[];
+    }>();
+    expect(body.transactions.flatMap((t) => t.actions.map((a) => a.methodName))).toEqual([
+      'storage_deposit',
+      'remove_liquidity',
+      'withdraw_asset',
+      'withdraw_asset',
+    ]);
+    expect(body.transactions.map((t) => t.receiverId)).toEqual([MEME, DCL, DCL]);
+    expect(JSON.stringify(body)).not.toContain('USDC');
+    const meme = body.freed.find((f) => f.symbol === MEME);
+    expect(meme && meme.human).toBeCloseTo(Number(meme?.raw) / 1e18);
+  });
+
+  it("refuses when the token's own storage price is unusual, instead of paying it", async () => {
+    const pricey = rpc(
+      {
+        [`${DCL}#list_liquidities`]: () => [
+          { lpt_id: LPT, pool_id: POOL, left_point: -800, right_point: -400, amount: '1000000000' },
+        ],
+        [`${DCL}#get_pool`]: () => ({
+          pool_id: POOL,
+          token_x: 'wrap.near',
+          token_y: MEME,
+          fee: 10000,
+          point_delta: 200,
+          current_point: 48311,
+          state: 'Running',
+        }),
+        [`${MEME}#ft_metadata`]: () => ({ spec: 'ft-1.0.0', name: 'm', symbol: 'M', decimals: 18 }),
+        [`${MEME}#storage_balance_of`]: () => null,
+        [`${MEME}#storage_balance_bounds`]: () => ({ min: (10n ** 24n).toString() }),
+        ['wrap.near#ft_metadata']: () => ({
+          spec: 'ft-1.0.0',
+          name: 'w',
+          symbol: 'w',
+          decimals: 24,
+        }),
+        ['wrap.near#storage_balance_of']: () => ({ total: '1', available: '0' }),
+      },
+      { [DCL]: [] },
+    );
+    const res = await server(pricey, store, null, DCL).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: {
+        account: 'alice.near',
+        intent: { action: 'reposition_dcl', lptId: LPT, poolId: POOL },
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ error: string }>().error).toMatch(/storage deposit/);
+  });
+});
+
+describe('prepare supply_all: every idle token in one cascade (#196)', () => {
+  const WNEAR = 'wrap.near';
+  const node = rpc(
+    {
+      [`${BURROW}#get_asset`]: (args) =>
+        args['token_id'] === USDT || args['token_id'] === WNEAR
+          ? { ...usdtAsset, token_id: args['token_id'] }
+          : null,
+      [`${WNEAR}#ft_balance_of`]: () => (5n * 10n ** 24n).toString(),
+    },
+    { [WNEAR]: TOKEN_REQUIRED_EXPORTS },
+  );
+  const twoPrices = {
+    ...store,
+    latestSnapshot: async () => ({
+      id: 'snap-1',
+      takenAt: new Date(),
+      summary: {
+        prices: [
+          { token: USDT, usd: '1', quality: 'OK' },
+          { token: WNEAR, usd: '3', quality: 'OK' },
+        ],
+      },
+    }),
+    tokenMetadata: async () => [
+      { token: USDT, symbol: 'USDt', decimals: 6 },
+      { token: WNEAR, symbol: 'wNEAR', decimals: 24 },
+    ],
+  } as unknown as CollectorStore;
+  const prepare = (tokens: unknown) =>
+    server(node, twoPrices).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: { account: 'alice.near', intent: { action: 'supply_all', tokens } },
+    });
+
+  it('supplies each token from the wallet, one ft_transfer_call per token, Burrow and the tokens only', async () => {
+    const res = await prepare([
+      { token: USDT, approxUsd: 50 },
+      { token: WNEAR, approxUsd: 9 },
+    ]);
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      transactions: {
+        receiverId: string;
+        actions: { methodName: string; args: { receiver_id?: string; amount?: string } }[];
+      }[];
+      preview: string[];
+    }>();
+    expect(body.transactions.map((t) => t.receiverId)).toEqual([USDT, WNEAR]);
+    expect(body.transactions.flatMap((t) => t.actions.map((a) => a.methodName))).toEqual([
+      'ft_transfer_call',
+      'ft_transfer_call',
+    ]);
+    expect(body.transactions.every((t) => t.actions[0]?.args.receiver_id === BURROW)).toBe(true);
+    expect(body.transactions[0]?.actions[0]?.args.amount).toBe('50000000');
+    expect(body.transactions[1]?.actions[0]?.args.amount).toBe((3n * 10n ** 24n).toString());
+  });
+
+  it.each([
+    [[]],
+    [[{ token: USDT, approxUsd: 5 }]],
+    [
+      [
+        { token: USDT, approxUsd: 5 },
+        { token: USDT, approxUsd: 6 },
+      ],
+    ],
+    [Array.from({ length: 6 }, (_, i) => ({ token: `t${i}.near`, approxUsd: 5 }))],
+  ])('rejects %j: two to five distinct tokens', async (tokens) => {
+    expect((await prepare(tokens)).statusCode).toBe(400);
+  });
+
+  it('refuses a token the wallet does not hold rather than supplying the rest silently', async () => {
+    const res = await prepare([
+      { token: USDT, approxUsd: 5 },
+      { token: 'nothing.near', approxUsd: 5 },
+    ]);
+    expect(res.statusCode).toBe(409);
   });
 });
 

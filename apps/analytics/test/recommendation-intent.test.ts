@@ -10,6 +10,22 @@ import {
 
 const ACC = 'alice.near';
 
+describe('supply_all (#196)', () => {
+  const intent: RecommendationIntent = {
+    action: 'supply_all',
+    tokens: [
+      { token: 'usdc', approxUsd: 600 },
+      { token: 'usdt', approxUsd: 500 },
+    ],
+  };
+
+  it('prepares every token in one request, shows each logo and says how many deposits', () => {
+    expect(recommendationToPrepare(intent, ACC)).toEqual({ account: ACC, intent });
+    expect(intentTokens(intent)).toEqual(['usdc', 'usdt']);
+    expect(actionLabel(intent)).toBe('Prepare 2 deposits');
+  });
+});
+
 describe('recommendationToPrepare', () => {
   it('maps repay / supply straight through', () => {
     const repay: RecommendationIntent = { action: 'repay', token: 'wrap.near', approxUsd: 50 };

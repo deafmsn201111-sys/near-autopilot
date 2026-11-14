@@ -135,3 +135,44 @@ describe('GET /api/deposit/status/:id', () => {
     expect((await POST(request('application/json'))).status).toBe(200);
   });
 });
+
+describe('GET /api/deposit/transfer/:id', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    tryApi.mockClear();
+  });
+  const get = async (id: string, query = '') => {
+    const { GET } = await import('../app/api/deposit/transfer/[id]/route');
+    return GET(new Request(`http://localhost/api/deposit/transfer/${id}${query}`), {
+      params: Promise.resolve({ id }),
+    });
+  };
+
+  it('forwards only our quote id to the API', async () => {
+    expect((await get('dq_1')).status).toBe(200);
+    expect(tryApi).toHaveBeenCalledWith('/v1/deposit/transfer/dq_1');
+  });
+
+  it('forwards a retry after a wallet rejection, and nothing else from the query', async () => {
+    await get('dq_1', '?retry=1&x=y');
+    await get('dq_1', '?retry=yes');
+    expect(tryApi).toHaveBeenNthCalledWith(1, '/v1/deposit/transfer/dq_1?retry=1');
+    expect(tryApi).toHaveBeenNthCalledWith(2, '/v1/deposit/transfer/dq_1');
+  });
+
+  it('answers 400 to an id that is not ours without calling the API', async () => {
+    expect((await get('../admin')).status).toBe(400);
+    expect(tryApi).not.toHaveBeenCalled();
+  });
+
+  it('passes the API refusal and its status through', async () => {
+    tryApi.mockResolvedValueOnce({
+      data: null,
+      error: 'This quote has expired.',
+      status: 409,
+    } as never);
+    const res = await get('dq_1');
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'This quote has expired.' });
+  });
+});

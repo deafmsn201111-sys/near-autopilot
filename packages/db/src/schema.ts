@@ -698,6 +698,8 @@ export const depositQuotes = pgTable(
     /** The latest 1Click `/v0/status` we saw (#29) and when; null until first checked. */
     status: text('status'),
     statusAt: ts('status_at'),
+    /** When `GET /v1/deposit/transfer/:id` last handed the transfer to a wallet (#214); null: never. */
+    transferIssuedAt: ts('transfer_issued_at'),
   },
   (t) => [
     index('deposit_quotes_created_at_idx').on(t.createdAt),
@@ -738,5 +740,22 @@ export const events = pgTable(
     index('events_at_idx').on(t.at),
     index('events_cascade_idx').on(t.cascadeId),
     uniqueIndex('events_tx_hash_idx').on(t.txHash),
+  ],
+);
+
+/** The last AI analysis per account and strategy (migration 0025, #190): shown again after a reload; kept 30 days. */
+export const accountAnalyses = pgTable(
+  'account_analyses',
+  {
+    accountId: text('account_id').notNull(),
+    strategy: text('strategy').notNull(),
+    analysisKey: text('analysis_key').notNull(),
+    signature: text('signature'),
+    at: ts('at').notNull(),
+    analysis: jsonb('analysis').$type<unknown>().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.strategy] }),
+    index('account_analyses_at_idx').on(t.at),
   ],
 );

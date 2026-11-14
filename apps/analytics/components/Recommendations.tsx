@@ -3,12 +3,14 @@ import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   modelName,
+  parseSaved,
   pipelineOf,
   runAnalysis,
   type Analysis,
   type Pipeline,
   type TraceStep,
 } from '../lib/analysis-client';
+import { ago } from '../lib/format';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
@@ -17,6 +19,9 @@ import { label } from '../lib/token-label';
 import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
+
+/** A saved analysis this old still ranks the right cards, but its prices and rates may have moved. */
+const FRESH_MS = 60 * 60_000;
 
 /**
  * The agents' recommendations for the connected wallet, each a card: what (title), why (plain language), which agent,
@@ -29,6 +34,7 @@ export function Recommendations({
   recommendations: initial,
   skipped,
   holdings,
+  saved = null,
   icons = {},
   signingEnabled,
 }: {
@@ -37,11 +43,18 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
+  /** The owner's last saved analysis for this strategy, as the API sent it (#190). */
+  saved?: unknown;
   icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(null);
+  const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(
+    () => {
+      const restored = parseSaved(saved);
+      return restored && { ...restored, run: 0 };
+    },
+  );
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<Pipeline | null>(null);
   const running = startedAt !== null;
@@ -54,7 +67,7 @@ export function Recommendations({
     setStartedAt(Date.now());
     setError(null);
     setLive(null);
-    const r = await runAnalysis(account, strategy, setLive);
+    const r = await runAnalysis(account, strategy, setLive, signature);
     if (r.ok) setAi({ analysis: r.analysis, signature, run: Date.now() });
     else setError(r.error);
     setLive(null);
@@ -105,6 +118,7 @@ export function Recommendations({
           {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
+      {analysis?.cachedAt && !running && <SavedAge cachedAt={analysis.cachedAt} />}
       {live ? (
         <AiTrace pipeline={live} startedAt={startedAt} />
       ) : (
@@ -207,6 +221,38 @@ export function Recommendations({
 }
 
 /** Ticks on its own so the list around it does not re-render ten times a second. */
+const AGE_TICK_MS = 30_000;
+
+/** The current time, re-read every 30 s, so an age on screen keeps counting without a reload. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+function Ago({ iso }: { iso: string }) {
+  const now = useNow();
+  return <span suppressHydrationWarning>{ago(iso, new Date(now).toISOString())}</span>;
+}
+
+function SavedAge({ cachedAt }: { cachedAt: string }) {
+  const fresh = useNow() - Date.parse(cachedAt) < FRESH_MS;
+  return fresh ? (
+    <p className="callout good" role="status">
+      ✓ Up to date — your portfolio hasn&apos;t changed since this analysis (<Ago iso={cachedAt} />
+      ).
+    </p>
+  ) : (
+    <p className="callout" role="status">
+      Your portfolio hasn&apos;t changed since this analysis (<Ago iso={cachedAt} />
+      ), but prices and rates may have. Run the AI analysis again for fresh numbers.
+    </p>
+  );
+}
+
 function Elapsed({ since }: { since: number }) {
   const [now, setNow] = useState(since);
   useEffect(() => {
@@ -314,12 +360,14 @@ function AiTrace({
     <section className="ai-trace" aria-label="How the AI got here" aria-busy={live}>
       <header>
         <h3>How the AI got here</h3>
-        <span className="muted-note ai-clock">
+        <span className="muted-note ai-clock" suppressHydrationWarning>
           {model && `${modelName(model)} · `}
           {live ? (
             <Elapsed since={startedAt} />
           ) : cachedAt ? (
-            `from a run ${ago(cachedAt)}`
+            <>
+              from a run <Ago iso={cachedAt} />
+            </>
           ) : (
             ms !== null && seconds(ms)
           )}
@@ -459,11 +507,6 @@ function AgentRow({
 const order = (i: number) => ({ '--i': i }) as CSSProperties;
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-
-function ago(iso: string): string {
-  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  return min < 1 ? 'just now' : `${min} min ago`;
-}
 
 const explained = (ok: number, all: number) =>
   `${ok} of ${all} AI ${all === 1 ? 'explanation uses' : 'explanations use'} only numbers the agents returned`;

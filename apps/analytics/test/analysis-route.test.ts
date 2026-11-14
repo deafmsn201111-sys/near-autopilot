@@ -102,11 +102,25 @@ describe('POST /api/analysis', () => {
     );
   });
 
+  it("forwards the page's portfolio signature with the run", async () => {
+    const { POST } = await import('../app/api/analysis/route');
+    await POST(request({ account: 'alice.near', strategy: 'balanced', signature: 'sig-1' }));
+    expect(apiPost).toHaveBeenCalledWith(
+      '/v1/analytics/account/alice.near/analysis',
+      { strategy: 'balanced', signature: 'sig-1' },
+      60_000,
+      {},
+      expect.any(AbortSignal),
+    );
+  });
+
   it.each([
     {},
     { account: 'not a/near id' },
     { account: 42 },
     { account: 'alice.near', strategy: 'yolo' },
+    { account: 'alice.near', strategy: 'balanced', signature: 42 },
+    { account: 'alice.near', strategy: 'balanced', signature: 'x'.repeat(20_001) },
   ])('answers 400 to %j without calling the API', async (body) => {
     const { POST } = await import('../app/api/analysis/route');
     expect((await POST(request(body))).status).toBe(400);

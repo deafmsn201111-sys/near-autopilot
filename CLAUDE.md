@@ -11,7 +11,8 @@ describe the older autopilot/testnet design — trust the code and `REWORK_PLAN.
 ## Non-negotiable safety rules
 
 - **No autonomy.** The server never holds a key and never signs; there is no signer in the code (D8). Signing happens
-  only in the user's wallet, gated by `MAINNET_WALLET_SIGNING`.
+  only in the user's wallet, gated by `MAINNET_WALLET_SIGNING`. On other chains the user's EVM / Solana wallet may be
+  asked for one thing only: the transfer of a stored 1Click deposit quote, rebuilt by the API (D34, `lib/hot-kit.ts`).
 - Every cascade built for signing must pass `apps/api/src/wallet/validate-cascade.ts` (signer, receiver + method
   allowlists, gas and deposit caps). Never loosen these limits without an explicit decision in `docs/DECISIONS.md`.
 - Mainnet only. No testnet code paths.
@@ -40,8 +41,8 @@ Live-network tests (`*.live.test.ts`) are skipped unless their env keys are set.
 - `apps/api` — collector (`src/collector`, market allowlists in `config/market.json`), analytics API, wallet portfolio,
   recommendations, tx engine
   (`src/wallet/*`, `POST /v1/wallet/prepare` in `src/analytics/account-view.ts`). Wiring: `src/wiring.ts`.
-- `apps/analytics` — Next.js 15 App Router UI (the product UI, port 3001). Wallet: `lib/wallet.ts` (HOT Connector
-  `@hot-labs/near-connect`). Speaks HTTP to the API only.
+- `apps/analytics` — Next.js 15 App Router UI (the product UI, port 3001). Wallet: `lib/wallet.ts` (NEAR) over one HOT Kit
+  in `lib/hot-kit.ts` (its NEAR connector runs on our `@hot-labs/near-connect` 0.12, D35). Speaks HTTP to the API only.
 - `packages/core` — domain types, ports, provenance. `config` — zod env schema. `db` — Drizzle schema + migrations.
 - `packages/*-adapter` — NEAR RPC, Burrow, Rhea v1, Rhea DCL: readers + transaction builders.
 - `packages/financial-engine` — valuation, lending/health factor, swap, IL/yield math.

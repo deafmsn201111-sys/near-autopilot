@@ -21,7 +21,9 @@ import {
   analysisMemo,
   walletAgentConfig,
   type AnalysisEvent,
+  type AnalysisStore,
   type LlmCallRecord,
+  type SavedAnalysis,
   type ToolLlmDeps,
 } from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
@@ -88,6 +90,13 @@ function observation(strategy: StrategyId = 'balanced'): AgentObservation {
     config,
   };
 }
+
+/** The same wallet with its loan repaid: no agent raises a warning, so a model that picks nothing has nothing kept. */
+const noLoan = async (): Promise<AgentObservation> => {
+  const o = observation();
+  const snapshot = { ...o.snapshot, lending: { ...o.snapshot.lending!, borrowed: [] } };
+  return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+};
 
 const heuristic: PortfolioRecommendation = {
   id: 'reduce-concentration',
@@ -557,6 +566,7 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
+      observe: noLoan,
       heuristics: [heuristic],
       checks: [heuristic],
     });
@@ -565,11 +575,34 @@ describe('analyseAccount', () => {
     expect(out.recommendations).toEqual([heuristic]);
   });
 
+  it('keeps a warning the model left out as an AI result even when it picked nothing (#202)', async () => {
+    const warning: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.15",
+      why: 'Repay part of the loan.',
+      intent: null,
+    };
+    const { llm } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [warning, heuristic],
+      checks: [warning, heuristic],
+    });
+    expect(out.source).toBe('llm');
+    expect(out.fallback).toBeNull();
+    expect(out.recommendations.map((r) => r.kind)).toEqual(['improve_loan_safety']);
+    expect(out.run?.checks).toMatchObject({ picked: 0, restored: 1 });
+  });
+
   it('records what the model picked when every pick is an id no tool returned', async () => {
     const l = ledger();
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'Trust me.' }])]);
     const out = await analyseAccount(ai(llm, l), {
       ...ctx,
+      observe: noLoan,
       heuristics: [heuristic],
       checks: [heuristic],
     });
@@ -865,6 +898,88 @@ describe('analyseAccount', () => {
       agent: 'Capital Allocator',
       intent: { action: 'supply', token: USDT },
     });
+  });
+
+  it('offers no supply the network fee would eat, and says so (#194)', async () => {
+    let seen = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => ((seen = JSON.stringify(results)), final([{ id: heuristic.id, why: 'Look.' }])),
+    ]);
+    const tiny = async () => {
+      const o = observation();
+      const snapshot = {
+        ...o.snapshot,
+        walletBalances: [{ token: USDT, raw: usdt(3) }],
+        lending: { ...o.snapshot.lending!, borrowed: [] },
+      };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: tiny,
+      heuristics: [heuristic],
+      checks: [heuristic],
+      ownerVerified: true,
+    });
+    expect(seen).not.toContain('capital-allocator:supply');
+    expect(out.trace.find((t) => t.tool === 'capital_allocator')?.text).toMatch(
+      /not worth the network fee/,
+    );
+  });
+
+  it("offers the rule card's repay-with-idle instead of supplying the same token (#194)", async () => {
+    const repayIdle: PortfolioRecommendation = {
+      id: 'repay-with-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: 'Use your idle USDt to repay your USDt loan',
+      why: 'The loan costs more than supplying earns.',
+      intent: { action: 'repay', token: USDT, approxUsd: 100 },
+    };
+    let seen = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => (
+        (seen = JSON.stringify(results)),
+        final([{ id: 'repay-with-idle', why: 'Cheaper.' }])
+      ),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [repayIdle],
+      checks: [repayIdle],
+    });
+    expect(seen).not.toContain('capital-allocator:supply:usdt');
+    expect(seen).toContain('repay-with-idle');
+    expect(out.recommendations.some((r) => r.id === 'repay-with-idle')).toBe(true);
+  });
+
+  it("offers the rule card's supply-all-idle instead of one supply per token (#196)", async () => {
+    const all: PortfolioRecommendation = {
+      id: 'supply-all-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: '$130 of USDt and wNEAR is sitting idle',
+      why: 'Both earn nothing in the wallet.',
+      intent: {
+        action: 'supply_all',
+        tokens: [
+          { token: USDT, approxUsd: 100 },
+          { token: WNEAR, approxUsd: 30 },
+        ],
+      },
+    };
+    let seen = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => ((seen = JSON.stringify(results)), final([{ id: all.id, why: 'One go.' }])),
+    ]);
+    const out = await analyseAccount(ai(llm), { ...ctx, heuristics: [all], checks: [all] });
+    expect(seen).not.toContain('capital-allocator:supply:');
+    expect(out.recommendations.some((r) => r.id === 'supply-all-idle')).toBe(true);
   });
 
   it("carries the rule card's line on what the strategy weighed onto the AI supply card (#132)", async () => {
@@ -1206,9 +1321,9 @@ describe('analyseAccount', () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
     const out = await analyseAccount(ai(llm), {
       accountId: ALICE,
-      observe: async () => observation(),
-      heuristics: [],
-      checks: [],
+      observe: noLoan,
+      heuristics: [heuristic],
+      checks: [heuristic],
       ownerVerified: true,
     });
     expect(out.source).toBe('heuristic');
@@ -1375,6 +1490,75 @@ describe('analyseAccount', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    describe('saved analysis (#190)', () => {
+      const memoryStore = () => {
+        const rows = new Map<string, SavedAnalysis>();
+        const store: AnalysisStore = {
+          latest: async (account, strategy) => rows.get(`${account}|${strategy}`) ?? null,
+          save: async (account, strategy, saved) => void rows.set(`${account}|${strategy}`, saved),
+        };
+        return { rows, store };
+      };
+      const input = { ...ctx, heuristics: [heuristic], checks: [heuristic] };
+
+      it('saves an AI result with the portfolio signature the page sent', async () => {
+        const { rows, store } = memoryStore();
+        const out = await analyseAccount(
+          { ...ai(ranked().llm), store },
+          { ...input, signature: 'sig-1' },
+        );
+        const saved = rows.get(`${ALICE}|balanced`);
+        expect(saved).toMatchObject({ signature: 'sig-1', analysis: out });
+        expect(saved?.at).toBeInstanceOf(Date);
+      });
+
+      it('reuses a saved result after a restart: no model call, marked as cached', async () => {
+        const { store } = memoryStore();
+        const l = ledger();
+        const first = await analyseAccount({ ...ai(ranked().llm, l), store }, input);
+        const again = fake([() => callAll]);
+        const second = await analyseAccount({ ...ai(again.llm, l), store }, input);
+        expect(second).toEqual({ ...first, cachedAt: expect.any(String) as unknown });
+        expect(again.tools).toEqual([]);
+        expect(l.rows).toHaveLength(1);
+      });
+
+      it('a reused result takes the newer page signature and keeps its time', async () => {
+        const { rows, store } = memoryStore();
+        const deps = { ...ai(ranked().llm), store };
+        await analyseAccount(deps, { ...input, signature: 'old' });
+        const at = rows.get(`${ALICE}|balanced`)!.at;
+        await analyseAccount(
+          { ...deps, llm: fake([() => callAll]).llm },
+          { ...input, signature: 'new' },
+        );
+        expect(rows.get(`${ALICE}|balanced`)).toMatchObject({ signature: 'new', at });
+      });
+
+      it('runs the model when the saved result is for other wallet data', async () => {
+        const { rows, store } = memoryStore();
+        await analyseAccount({ ...ai(ranked().llm), store }, input);
+        rows.set(`${ALICE}|balanced`, { ...rows.get(`${ALICE}|balanced`)!, key: 'other' });
+        const again = ranked();
+        await analyseAccount({ ...ai(again.llm), store }, input);
+        expect(again.tools).toHaveLength(1);
+      });
+
+      it('does not save a fallback, and a failing store never fails the analysis', async () => {
+        const { rows, store } = memoryStore();
+        await analyseAccount({ ...ai(fake([() => final([])]).llm), store }, input);
+        expect(rows.size).toBe(0);
+        const fail = async (): Promise<never> => {
+          throw new Error('db down');
+        };
+        const out = await analyseAccount(
+          { ...ai(ranked().llm), store: { latest: fail, save: fail } },
+          input,
+        );
+        expect(out.source).toBe('llm');
+      });
     });
 
     it('does not cache a fallback', async () => {
@@ -2177,7 +2361,7 @@ describe('progress events', () => {
 
   it('ends without checks when the run falls back', async () => {
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'x' }])]);
-    const { out, events } = await live(llm);
+    const { out, events } = await live(llm, ai(llm), { observe: noLoan });
     expect(out.fallback).toBe('empty');
     expect(events.at(-1)).toEqual({ type: 'ranked', turns: 2 });
   });

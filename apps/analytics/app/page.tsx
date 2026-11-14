@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
@@ -36,6 +37,7 @@ import {
   ago,
   money,
   portfolioView,
+  savedAnalysis,
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
@@ -46,6 +48,7 @@ import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositDialog } from '../components/DepositDialog';
+import { WithdrawDialog } from '../components/WithdrawDialog';
 import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
@@ -267,7 +270,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     return (
       <>
         <div className="hero-head">
-          <PortfolioSwitch current="account" path="/" withAccount />
+          <PortfolioSwitch current="account" path="/" withAccount account={cookieAccount} />
         </div>
         <AccountForm />
       </>
@@ -283,7 +286,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             current={isAccount ? 'account' : id}
             path="/"
             withAccount
-            account={accountParam}
+            account={cookieAccount || accountParam}
           />
         </div>
         {isAccount && <AccountForm value={accountParam} />}
@@ -305,7 +308,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
-  const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
+  // The API serves a saved analysis to the proven owner only, so it is asked in parallel and checked on its side.
+  const [recsRead, saved] = isAccount
+    ? await Promise.all([
+        accountRecommendations(accountParam, strategy),
+        savedAnalysis(accountParam, strategy),
+      ])
+    : [null, null];
+  const recs = recsRead?.data ?? null;
   const tokenOf = (h: { token?: string; symbol: string }) => h.token ?? curatedId(h.symbol);
   const icons = await tokenIcons([
     ...data.holdings.flatMap((h) => tokenOf(h) ?? []),
@@ -367,7 +377,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           current={isAccount ? 'account' : id}
           path="/"
           withAccount
-          account={accountParam}
+          account={cookieAccount || accountParam}
         />
         <span className="sync-note">
           <span className="dot" aria-hidden="true" />
@@ -397,6 +407,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               {mode.label}
             </span>
             <span className="muted-note">{mode.note}</span>
+            {mode.backTo && (
+              <Link
+                className="btn secondary small"
+                href={`/?p=account&account=${encodeURIComponent(mode.backTo)}`}
+              >
+                ← Back to my wallet
+              </Link>
+            )}
           </div>
           <div className="hero-top">
             <div className="hero-value num">{money(t.netWorthUsd, false)}</div>
@@ -406,7 +424,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </span>
           {isAccount && accountParam && accountParam === cookieAccount && (
             <div>
-              <DepositDialog account={accountParam} label="Fund from another chain" />
+              <DepositDialog account={accountParam} label="Fund from another chain" />{' '}
+              <WithdrawDialog
+                account={accountParam}
+                balances={data.holdings.flatMap((h) =>
+                  h.where === 'wallet' && h.token ? [{ token: h.token, amount: h.amount }] : [],
+                )}
+                signingEnabled={signingEnabled}
+              />
             </div>
           )}
           {allocSegs.length > 0 && (
@@ -448,6 +473,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
 
       {isAccount && recs && (
         <OwnershipCheck
+          key={accountParam}
           account={accountParam}
           verified={recs.ownerVerified === true}
           checkFailed={recs.ownerCheckFailed === true}
@@ -463,6 +489,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             recommendations={recs.recommendations}
             skipped={recs.skipped ?? []}
             holdings={data.holdings}
+            saved={saved}
             icons={icons}
             signingEnabled={signingEnabled}
           />

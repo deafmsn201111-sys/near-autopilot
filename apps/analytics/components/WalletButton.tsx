@@ -18,7 +18,7 @@ function rememberAccount(id: string | null): boolean {
 }
 
 /**
- * Connect a NEAR wallet through HOT Connector to see your own portfolio. Sign-in only: no access key, no signature
+ * Connect a NEAR wallet through HOT Kit to see your own portfolio (the same list adds EVM / Solana wallets). Sign-in only: no access key, no signature
  * (proving ownership for AI analysis is a separate, optional step: components/OwnershipCheck.tsx).
  * Right after a successful sign-in the page opens that account with a full page load, the same way on the first and
  * on every later connection; an already connected wallet never redirects by itself. Disconnecting returns the page
@@ -26,7 +26,7 @@ function rememberAccount(id: string | null): boolean {
  */
 export function WalletButton() {
   const [account, setAccount] = useState<string | null>(null);
-  const [state, setState] = useState<'idle' | 'connecting' | 'opening'>('idle');
+  const [state, setState] = useState<'idle' | 'opening'>('idle');
   const router = useRouter();
 
   // Remember the connected account in a cookie so server pages (and the "Mainnet account" tab) can find it without the
@@ -74,22 +74,20 @@ export function WalletButton() {
     <button
       type="button"
       className="btn primary small"
-      disabled={state === 'connecting'}
       onClick={() => {
-        setState('connecting');
         connect()
           .then((id) => {
-            if (!id) return setState('idle');
+            if (!id) return;
             reportConnect(id);
             setAccount(id);
             rememberAccount(id);
             setState('opening');
             window.location.assign(portfolioUrl(id));
           })
-          .catch(() => setState('idle')); // the list was closed or the wallet refused: stay here
+          .catch(() => undefined); // the kit failed to load: stay here
       }}
     >
-      {state === 'connecting' ? 'Connecting…' : 'Connect wallet'}
+      Connect wallet
     </button>
   );
 }

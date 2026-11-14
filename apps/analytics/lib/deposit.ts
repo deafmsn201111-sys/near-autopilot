@@ -19,6 +19,8 @@ export interface DepositQuote {
   readonly id: string;
   readonly chain: string;
   readonly chainName: string;
+  /** Where the funds arrive: NEAR for a deposit, the target chain for a withdrawal. */
+  readonly to: { readonly chain: string; readonly chainName: string };
   readonly origin: DepositAsset & { readonly payment: PaymentToken };
   readonly destination: DepositAsset;
   readonly amountIn: string;
@@ -74,12 +76,15 @@ export async function loadDepositIncidents(origin: string, destination: string):
 
 export const loadDepositAssets = () => call<DepositAssets>('/api/deposit/assets');
 
-export const requestDepositQuote = (form: DepositForm) =>
-  call<DepositQuote>('/api/deposit/quote', {
+export const requestQuote = <T>(url: string, form: object) =>
+  call<T>(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(form),
   });
+
+export const requestDepositQuote = (form: DepositForm) =>
+  requestQuote<DepositQuote>('/api/deposit/quote', form);
 
 /** 1500000 with 6 decimals -> "1.5". Exact: integer string in, decimal string out. */
 export function formatUnits(units: string, decimals: number): string {
@@ -166,6 +171,97 @@ export async function loadDepositStatus(id: string): Promise<Result<DepositStatu
   return parsed.success
     ? { ok: true, data: parsed.data }
     : { ok: false, error: 'The deposit status could not be read. It is checked again shortly.' };
+}
+
+const depositTransfer = z.object({
+  quoteId: z.string(),
+  chain: z.string(),
+  receiver: z.string().min(1).max(100),
+  amount: z.string().regex(/^[1-9]\d{0,39}$/),
+  token: z.object({
+    assetId: z.string(),
+    blockchain: z.string(),
+    symbol: z.string().max(40),
+    decimals: z.number().int().min(0).max(36),
+    contractAddress: z.string().min(1).max(100).nullable(),
+  }),
+});
+/** `GET /api/deposit/transfer/:id`: what the origin wallet is asked to send, rebuilt by the API from the stored quote. */
+export type DepositTransfer = z.infer<typeof depositTransfer>;
+
+/**
+ * The transfer the API built for this quote, refused unless it is exactly the quote on screen: chain, asset, decimals,
+ * amount and deposit address. Only then may the user's origin wallet be asked to send it. The API hands a quote's
+ * transfer out once; `retry` asks again after the wallet rejected the send.
+ */
+export async function loadDepositTransfer(
+  q: DepositQuote,
+  retry = false,
+): Promise<Result<DepositTransfer>> {
+  const r = await call<unknown>(
+    `/api/deposit/transfer/${encodeURIComponent(q.id)}${retry ? '?retry=1' : ''}`,
+  );
+  if (!r.ok) return r;
+  const parsed = depositTransfer.safeParse(r.data);
+  const t = parsed.success ? parsed.data : null;
+  const same =
+    t?.quoteId === q.id &&
+    t.chain === q.chain &&
+    t.token.blockchain === q.chain &&
+    t.receiver === q.depositAddress &&
+    t.amount === q.amountIn &&
+    t.token.assetId === q.origin.assetId &&
+    t.token.decimals === q.origin.decimals;
+  return t && same
+    ? { ok: true, data: t }
+    : {
+        ok: false,
+        error: 'The transfer does not match this quote, so it was not sent. Send it manually.',
+      };
+}
+
+const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {
+  eth: 'evm',
+  base: 'evm',
+  arb: 'evm',
+  sol: 'solana',
+};
+/** Which connected wallet sends on a deposit chain; null: none (Bitcoin is sent manually). */
+export const walletChainOf = (chain: string): 'evm' | 'solana' | null =>
+  WALLET_CHAIN[chain] ?? null;
+
+/** Why an origin-wallet send threw, as `sendFailure` (lib/hot-kit.ts) reads the wallet's error. */
+export type SendFailure = 'declined' | 'no-gas' | 'no-token' | 'not-sent' | 'unknown';
+
+/** What the user is told for a send that did not go out; `why` is the wallet's own text. */
+export function walletSendError(
+  kind: Exclude<SendFailure, 'unknown'>,
+  q: DepositQuote,
+  why: string,
+): string {
+  const again = 'Top it up and press the button again.';
+  const fee = DEPOSIT_CHAINS.find((c) => c.id === q.chain)?.native ?? 'native coin';
+  const amount = `${formatUnits(q.amountIn, q.origin.decimals)} ${q.origin.symbol}`;
+  const native = q.origin.payment !== null && 'native' in q.origin.payment;
+  if (kind === 'declined') return 'You declined in your wallet. Nothing was sent.';
+  if (kind === 'not-sent') return `Nothing was sent: the network refused the transfer (${why}).`;
+  if (native)
+    return `Nothing was sent: your wallet needs ${amount} on ${q.chainName} plus a little more for the network fee. ${again}`;
+  return kind === 'no-gas'
+    ? `Nothing was sent: your wallet does not have enough ${fee} on ${q.chainName} to pay the network fee. Add a little ${fee} on ${q.chainName} (cents are enough) and press the button again.`
+    : `Nothing was sent: your wallet on ${q.chainName} has less than ${amount}. ${again}`;
+}
+
+const EXPLORERS: Record<string, { url: string; hash: RegExp }> = {
+  eth: { url: 'https://etherscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
+  base: { url: 'https://basescan.org/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
+  arb: { url: 'https://arbiscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
+  sol: { url: 'https://solscan.io/tx/', hash: /^[1-9A-HJ-NP-Za-km-z]{64,90}$/ },
+};
+/** The origin chain explorer page of a transaction the wallet returned; null for anything not shaped like its hash. */
+export function explorerTxUrl(chain: string, hash: string): string | null {
+  const e = EXPLORERS[chain];
+  return e && e.hash.test(hash) ? `${e.url}${hash}` : null;
 }
 
 export const STATUS_MAX_CHECKS = 120;

@@ -35,6 +35,13 @@ const intentSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('swap'), fromToken: z.string(), approxUsd: z.number() }),
   z.object({ action: z.literal('reposition_dcl'), lptId: z.string(), poolId: z.string() }),
   z.object({
+    action: z.literal('supply_all'),
+    tokens: z
+      .array(z.object({ token: z.string(), approxUsd: z.number() }))
+      .min(2)
+      .max(5),
+  }),
+  z.object({
     action: z.literal('repay_with_collateral'),
     token: z.string(),
     collateralToken: z.string(),
@@ -130,6 +137,12 @@ export type Analysis = {
   /** What the agents read, also when no model ran. */
   read: z.infer<typeof readSchema> | null;
   cachedAt: string | null;
+};
+
+/** The owner's last analysis as the API saved it (#190), with the portfolio signature it was run for. */
+export const parseSaved = (raw: unknown): { analysis: Analysis; signature: string } | null => {
+  const saved = z.object({ analysis: analysisSchema, signature: z.string() }).safeParse(raw);
+  return saved.success ? saved.data : null;
 };
 
 /** The run so far, as the "How the AI got here" pipeline shows it; a part is null until its event arrives. */
@@ -262,12 +275,13 @@ export async function runAnalysis(
   account: string,
   strategy: StrategyId,
   onProgress: (p: Pipeline | null) => void = () => {},
+  signature?: string,
 ): Promise<{ ok: true; analysis: Analysis } | { ok: false; error: string }> {
   const post = (accept: string) =>
     fetch('/api/analysis', {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept },
-      body: JSON.stringify({ account, strategy }),
+      body: JSON.stringify({ account, strategy, signature }),
     });
   let res: Response;
   try {

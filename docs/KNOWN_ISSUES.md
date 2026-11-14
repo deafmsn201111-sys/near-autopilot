@@ -10,6 +10,11 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Owner-signs path is branch-only.** `feat/mainnet-wallet-confirm` is local, never pushed/merged.
 - **Single-operator model.** No per-user accounts/policies/sessions yet.
 - **Demo portfolios are simulated** (balances), valued at live prices; labelled as such.
+- **Rhea limit orders are shown, not managed.** Open DCL limit orders are portfolio rows with their price; there is no
+  advice and no cancel button (it would add `cancel_order` to the cascade allowlist). → #223.
+- **A multi-step cascade is one wallet prompt per step.** Each step is confirmed on NEAR before the next is offered,
+  so a failed step stops the rest. One approval for the whole cascade (`signAndSendTransactions`) is after the
+  hackathon. An all-or-nothing cascade across contracts is not possible on NEAR. → #230.
 
 ## Defects / tech debt to address
 
@@ -33,6 +38,9 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
 - **UX flows** flagged by owner as "not usable" (beyond theme). → `T4.1`.
 - **Guard/contract absent** → autonomy hard-blocked. → `T5.1`.
+- **Wallet button after a cancelled sign-in.** A cancelled NEAR sign-in leaves near-connect's `selected-wallet`, so
+  the kit loads on every later page; a sign-in finished after the kit's list was closed shows the account but does not
+  open the portfolio. → #236.
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
 - **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
   usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.

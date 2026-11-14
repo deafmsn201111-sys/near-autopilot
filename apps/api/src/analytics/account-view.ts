@@ -17,6 +17,7 @@ import {
   STRATEGY_IDS,
   strategySchema,
   UnsupportedIntentError,
+  accountId,
   type AccountId,
   type FunctionCallAction,
   type Strategy,
@@ -45,6 +46,7 @@ import {
 } from '../wallet/cascade';
 import type { CascadeValidationContext } from '../wallet/validate-cascade';
 import { sealCascade } from '../wallet/seal';
+import { buildWithdrawTransfer } from '../wallet/withdraw';
 import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
 import { prepareSwapRepay } from '../wallet/swap-repay';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
@@ -86,7 +88,9 @@ import {
   buildRemoveLiquidity,
   buildWithdrawAssets,
   parsePoolId,
+  pointToDecimalPrice,
   type DclMarketDepth,
+  type DclOrder,
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
@@ -97,11 +101,13 @@ import {
   type WalletObservation,
 } from './lp-recentre';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { formatUnits } from '@near-autopilot/financial-engine';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
-import { hurdle, money, type PortfolioAction } from './portfolio-view';
+import { hurdle, money, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
+import type { WithdrawLookup } from './deposit';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
@@ -125,6 +131,8 @@ export interface MainnetReadDeps {
   readonly discovery?: AccountDiscovery | null;
   /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
   readonly ai?: ToolLlmDeps | null;
+  /** Stored 1Click withdrawal quotes (#171). Absent: `withdraw_1click` is refused. */
+  readonly withdraw?: WithdrawLookup;
 }
 
 interface DclPositionView {
@@ -343,6 +351,76 @@ async function readDclPositions(
   return out;
 }
 
+/** An open Rhea DCL limit order: tokens frozen until the price reaches `price` (buy token per sell token). */
+export interface LimitOrderView {
+  readonly orderId: string;
+  readonly sellToken: string;
+  readonly buyToken: string;
+  readonly sellSymbol: string;
+  readonly buySymbol: string;
+  /** Sell token still on the order. */
+  readonly remaining: number;
+  /** Buy token the order already got but has not paid out. */
+  readonly unclaimed: number;
+  readonly price: number;
+  readonly usdSell: number | null;
+  readonly usdBuy: number | null;
+}
+
+export function limitOrderView(
+  o: DclOrder,
+  metaOf: (token: string) => { symbol: string; decimals: number } | undefined,
+  prices: ReadonlyMap<string, number>,
+): LimitOrderView | null {
+  const { tokenX, tokenY } = parsePoolId(o.pool_id);
+  const [mX, mY, mSell, mBuy] = [tokenX, tokenY, o.sell_token, o.buy_token].map(metaOf);
+  if (!mX || !mY || !mSell || !mBuy) return null;
+  const yPerX = pointToDecimalPrice(o.point, mX.decimals, mY.decimals);
+  const remaining = Number(o.remain_amount) / 10 ** mSell.decimals;
+  const unclaimed = Number(o.unclaimed_amount ?? 0n) / 10 ** mBuy.decimals;
+  const pSell = prices.get(o.sell_token);
+  const pBuy = prices.get(o.buy_token);
+  return {
+    orderId: o.order_id,
+    sellToken: o.sell_token,
+    buyToken: o.buy_token,
+    sellSymbol: mSell.symbol,
+    buySymbol: mBuy.symbol,
+    remaining,
+    unclaimed,
+    price: o.sell_token === tokenX ? yPerX : 1 / yPerX,
+    usdSell: pSell === undefined ? null : remaining * pSell,
+    usdBuy: pBuy === undefined ? null : unclaimed * pBuy,
+  };
+}
+
+export async function readLimitOrders(
+  dcl: RheaDclClient,
+  accountId: AccountId,
+  metaOf: (token: string) => Promise<{ symbol: string; decimals: number } | undefined>,
+  prices: ReadonlyMap<string, number>,
+): Promise<LimitOrderView[]> {
+  const listed = await dcl.listActiveOrders(accountId).catch(() => []);
+  const parses = (o: DclOrder) => {
+    try {
+      return parsePoolId(o.pool_id) && true;
+    } catch {
+      return false;
+    }
+  };
+  const orders = listed.filter(parses);
+  const tokens = [
+    ...new Set(
+      orders.flatMap((o) => {
+        const { tokenX, tokenY } = parsePoolId(o.pool_id);
+        return [tokenX, tokenY];
+      }),
+    ),
+  ];
+  const metas = new Map(await Promise.all(tokens.map(async (t) => [t, await metaOf(t)] as const)));
+  return orders.flatMap((o) => limitOrderView(o, (t) => metas.get(t), prices) ?? []);
+}
+
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
@@ -359,13 +437,18 @@ const WNEAR = 'wrap.near' as TokenId;
 const MAX_UNLISTED_TOKENS = 30;
 /** Native NEAR left untouched for gas and storage when proposing to use the rest. */
 const NEAR_RESERVE = 1;
+/** The most tokens one supply_all cascade carries (the prepare schema's limit). */
+const MAX_SUPPLY_ALL = 5;
+/** 0.0125 NEAR: ten times a standard NEP-145 registration; an unknown token asking more is not registered by us. */
+const MAX_REGISTRATION_YOCTO = 12_500_000_000_000_000_000_000n;
 
 interface PortfolioLeg {
   readonly token: string;
   readonly symbol: string;
   readonly protocol: string;
   readonly usd: number;
-  readonly kind: 'asset' | 'debt';
+  /** `locked`: counted in the totals, but not a token the user can move today (a limit order), so not a concentration. */
+  readonly kind: 'asset' | 'locked' | 'debt';
 }
 
 export interface PortfolioMetrics {
@@ -383,13 +466,13 @@ export interface PortfolioMetrics {
  * and never dilutes asset concentration.
  */
 export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetrics {
-  const assets = legs.filter((l) => l.kind === 'asset' && l.usd > 0);
+  const assets = legs.filter((l) => l.kind !== 'debt' && l.usd > 0);
   const totalAssetsUsd = assets.reduce((s, l) => s + l.usd, 0);
   const totalDebtUsd = legs.filter((l) => l.kind === 'debt').reduce((s, l) => s + l.usd, 0);
   const pct = (usd: number) => (totalAssetsUsd > 0 ? (usd / totalAssetsUsd) * 100 : 0);
 
   const byTokenMap = new Map<string, { token: string; symbol: string; usd: number }>();
-  for (const l of assets) {
+  for (const l of assets.filter((x) => x.kind === 'asset')) {
     // Native NEAR and wNEAR are one price exposure; grouped under wrap.near, the token a swap intent can sell.
     const isNear = l.token === NATIVE_HOLDING || l.token === WNEAR;
     const token = isNear ? WNEAR : l.token;
@@ -430,6 +513,7 @@ export interface AccountPositions {
     'poolId' | 'tokens' | 'symbols' | 'usdPerToken'
   >[];
   readonly nativeStaking?: readonly NativeStakeView[];
+  readonly limitOrders?: readonly LimitOrderView[];
   /** Whether a token is on our list and whether its price is an estimate. Absent: every token is listed and confirmed. */
   readonly trust?: (token: string) => { verified: boolean; estimate: boolean };
 }
@@ -464,12 +548,13 @@ export function accountPortfolio(p: AccountPositions) {
     row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
     protocol: string,
+    kind: 'asset' | 'locked' = 'asset',
   ) => {
     let usd: number | null = null;
     let estimate = false;
     for (const x of parts)
       if (x.usd !== null && x.usd !== undefined && x.usd > 0) {
-        legs.push({ token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind: 'asset' });
+        legs.push({ token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind });
         usd = (usd ?? 0) + x.usd;
         estimate ||= trust(x.token).estimate;
       }
@@ -531,6 +616,24 @@ export function accountPortfolio(p: AccountPositions) {
       [{ token: NATIVE_HOLDING, symbol: 'NEAR', usd: s.usd }],
       'Staking',
     );
+  for (const o of p.limitOrders ?? [])
+    position(
+      {
+        key: `order-${o.orderId}`,
+        label: `${o.sellSymbol} → ${o.buySymbol}`,
+        sub:
+          o.remaining > 0
+            ? `Rhea limit order · ${sig(o.remaining)} ${o.sellSymbol} waiting to fill at ${sig(o.price)} ${o.buySymbol} each`
+            : `Rhea limit order · filled: ${sig(o.unclaimed)} ${o.buySymbol} to claim in Rhea`,
+        amount: null,
+      },
+      [
+        { token: o.sellToken, symbol: o.sellSymbol, usd: o.usdSell },
+        { token: o.buyToken, symbol: o.buySymbol, usd: o.usdBuy },
+      ],
+      'Rhea limit orders',
+      'locked',
+    );
   const metrics = portfolioMetrics(legs);
   const idleUsd = p.holdings
     .filter((h) => h.where === 'wallet')
@@ -559,6 +662,10 @@ export type RecommendationIntent =
       readonly sizing?: RepaySizing;
     }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
+  | {
+      readonly action: 'supply_all';
+      readonly tokens: readonly { readonly token: string; readonly approxUsd: number }[];
+    }
   | SwapRepayIntent
   | {
       readonly action: 'recentre_dcl';
@@ -665,6 +772,8 @@ export interface RecommendationContext {
         readonly amount: number;
         readonly wallet: number;
         readonly collateral: number;
+        /** This debt token's own Burrow borrow rate, a percentage; null when unknown. */
+        readonly borrowAprPct?: number | null;
       })
     | null;
   /** Priced Burrow supply per token (whole tokens): plain deposit and collateral. aprPct is null with no rate. */
@@ -684,16 +793,22 @@ export interface RecommendationContext {
         readonly deposited: number;
         readonly collateral: number;
         readonly wallet: number;
+        /** Its Burrow supply rate, a percentage; null when unknown. */
+        readonly aprPct?: number | null;
         readonly outPerIn: number;
         readonly slippageBps: number;
       })
     | null;
+  /** The same for a safe loan: idle money (wallet, plain deposit) earning less than the loan costs (#227). */
+  readonly idleSwapRepay?: RecommendationContext['swapRepay'];
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
     lptId: string;
     poolId: string;
     pair: string;
     usd: number | null;
+    /** A token of the pair is priced only by Rhea's indexer. */
+    estimate: boolean;
   }[];
 }
 
@@ -716,10 +831,12 @@ export function earningsSentence(
 }
 
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
+const sig = (n: number) => n.toLocaleString('en-US', { maximumSignificantDigits: 4 });
 const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
+const MIN_DCL_EXIT_USD = 0.1;
 
 export interface PortfolioAdvice {
   readonly recommendations: PortfolioRecommendation[];
@@ -788,13 +905,94 @@ export function portfolioAdvice(
     }
   }
 
-  // 3. Put idle cash to work: the wallet asset that earns the most dollars a year at its supply rate.
+  // 3. Put idle cash to work: repay a dearer loan in the same token first, then supply what is worth its fee.
   const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
   const yearly = (a: (typeof earning)[number]) => (a.usd * a.aprPct) / 100;
-  const [idle, runnerUp] = earning
+  const ranked = earning
     .filter((a) => a.usd >= MIN_ACTION_USD)
     .sort((a, b) => yearly(b) - yearly(a));
-  if (idle) {
+  const debt = ctx.largestDebt;
+  const borrowPct = debt?.borrowAprPct ?? null;
+  const source = ranked.find(
+    (a) => debt?.token === a.token && borrowPct !== null && borrowPct > a.aprPct,
+  );
+  const repayUsd = source && debt ? Math.min(source.usd, debt.usd) : 0;
+  const saves = borrowPct === null ? 0 : (repayUsd * borrowPct) / 100;
+  const repays =
+    source &&
+    debt &&
+    borrowPct !== null &&
+    repayUsd >= MIN_ACTION_USD &&
+    !recs.some((r) => r.kind === 'improve_loan_safety') &&
+    yearWorthTheFee(saves)
+      ? source
+      : null;
+  if (repays && debt && borrowPct !== null) {
+    const rest = repays.usd - repayUsd;
+    const then =
+      rest >= MIN_ACTION_USD
+        ? ` The other ${money0(rest)} can then go to Burrow at ${repays.aprPct.toFixed(1)}%.`
+        : '';
+    recs.push({
+      id: 'repay-with-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: `Use your idle ${repays.symbol} to repay your ${debt.symbol} loan`,
+      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${repays.symbol} on Burrow earns about ${repays.aprPct.toFixed(1)}%. Repaying ${money0(repayUsd)} saves about ${money2(saves)} a year, more than the ${money2((repayUsd * repays.aprPct) / 100)} supplying it would earn.${then}`,
+      intent: {
+        action: 'repay',
+        token: repays.token,
+        approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
+      },
+    });
+  }
+  const idle = ctx.idleSwapRepay;
+  const swapped =
+    !repays &&
+    ctx.loan &&
+    debt &&
+    borrowPct !== null &&
+    idle &&
+    hf !== null &&
+    hf >= strategy.healthyAt
+      ? idleSwapRepay(ctx.loan, debt, borrowPct, idle)
+      : null;
+  if (swapped && 'skip' in swapped) skipped.push(swapped.skip);
+  else if (swapped) recs.push(swapped.card);
+  // What the swap takes from the wallet is no longer idle; the rest of that token can still be supplied.
+  const spentUsd = swapped && 'card' in swapped ? swapped.fromWalletUsd : 0;
+  const supplyable = ranked
+    .filter((a) => a !== repays)
+    .map((a) => (spentUsd > 0 && a.token === idle?.token ? { ...a, usd: a.usd - spentUsd } : a))
+    .filter((a) => a.usd >= MIN_ACTION_USD);
+  const worthy = supplyable.filter((a) => yearWorthTheFee(yearly(a)));
+  const batch = worthy.slice(0, MAX_SUPPLY_ALL);
+  if (batch.length >= 2) {
+    const total = batch.reduce((s, a) => s + a.usd, 0);
+    const names = batch.map((a) => a.symbol);
+    const list = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    recs.push({
+      id: 'supply-all-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: `${money0(total)} of ${list} is sitting idle`,
+      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(batch.reduce((s, a) => s + yearly(a), 0))} a year (${batch.map((a) => `${a.symbol} ${a.aprPct.toFixed(1)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
+      intent: {
+        action: 'supply_all',
+        tokens: batch.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
+      },
+      carry: idleRule(batch[0]!, strategy),
+    });
+    const left = worthy.slice(MAX_SUPPLY_ALL);
+    if (left.length > 0)
+      skipped.push(
+        `${left.map((a) => a.symbol).join(', ')} (${money0(left.reduce((s, a) => s + a.usd, 0))}) could also go to Burrow: supply them after this deposit.`,
+      );
+  } else if (batch.length === 1) {
+    const idle = batch[0]!;
+    const runnerUp = supplyable.find((a) => a !== idle);
     const other = runnerUp
       ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
       : '';
@@ -808,7 +1006,12 @@ export function portfolioAdvice(
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
       carry: idleRule(idle, strategy),
     });
-  } else if (earning[0] && earning[0].usd >= 0.1) {
+  } else if (supplyable[0]) {
+    const idle = supplyable[0];
+    skipped.push(
+      `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
+    );
+  } else if (!repays && earning[0] && earning[0].usd >= 0.1) {
     const small = earning[0];
     skipped.push(
       `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
@@ -816,7 +1019,13 @@ export function portfolioAdvice(
   }
 
   // 4. DCL positions that have drifted out of range earn no fees until repositioned.
-  const oor = ctx.dclOutOfRange.filter((d) => (d.usd ?? 0) > 1)[0];
+  // The exit costs only gas (~$0.03) and the position earns nothing meanwhile, so only dust is skipped (#226).
+  const oor = ctx.dclOutOfRange.find((d) => (d.usd ?? 0) >= MIN_DCL_EXIT_USD);
+  const dust = ctx.dclOutOfRange.find((d) => (d.usd ?? 0) < MIN_DCL_EXIT_USD);
+  if (!oor && dust)
+    skipped.push(
+      `Your ${dust.pair} liquidity (${money2(dust.usd ?? 0)}) is out of range and earns no fees, but it is under the ${money2(MIN_DCL_EXIT_USD)} worth the network fee to exit.`,
+    );
   if (oor) {
     recs.push({
       id: `reposition-dcl-${oor.lptId}`,
@@ -824,7 +1033,7 @@ export function portfolioAdvice(
       agent: 'Liquidity Optimizer',
       severity: 'info',
       title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
-      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.${oor.estimate ? ` A token of this pool has no confirmed price: its value here is only an estimate from Rhea's pools.` : ''}`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
@@ -924,6 +1133,32 @@ export function unlistedByValue<T extends { readonly token: string; readonly raw
     .map((t) => ({ t, v: value(t) }))
     .sort((x, y) => y.v - x.v)
     .map(({ t }) => t);
+}
+
+/**
+ * Out-of-range DCL positions an exit card may name: both tokens priced, an indexer estimate included. The exit only
+ * returns the user's own tokens to their wallet, so an unverified token is fine; re-centring stays allowlisted (D26).
+ */
+export function exitableOutOfRange(
+  positions: readonly Pick<
+    DclPositionView,
+    'lptId' | 'poolId' | 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY' | 'inRange' | 'usd'
+  >[],
+  priced: { has(token: string): boolean },
+  confirmed: { has(token: string): boolean },
+  pair: (d: Pick<DclPositionView, 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY'>) => string = (d) =>
+    `${d.symbolX}/${d.symbolY}`,
+): RecommendationContext['dclOutOfRange'] {
+  return positions
+    .filter((d) => !d.inRange && priced.has(d.tokenX) && priced.has(d.tokenY))
+    .map((d) => ({
+      lptId: d.lptId,
+      poolId: d.poolId,
+      pair: pair(d),
+      usd: d.usd,
+      estimate: !confirmed.has(d.tokenX) || !confirmed.has(d.tokenY),
+    }))
+    .sort((a, b) => Number(a.estimate) - Number(b.estimate) || (b.usd ?? 0) - (a.usd ?? 0));
 }
 
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
@@ -1096,6 +1331,68 @@ function loanSafety(
       },
     },
   };
+}
+
+/**
+ * A safe loan that costs more than idle money in another token earns: swap that money (wallet first, then its plain
+ * Burrow deposit, never collateral) into the debt token and repay (#227). Savings count after the swap loss.
+ */
+function idleSwapRepay(
+  loan: NonNullable<RecommendationContext['loan']>,
+  debt: NonNullable<RecommendationContext['largestDebt']>,
+  borrowPct: number,
+  swap: NonNullable<RecommendationContext['swapRepay']>,
+): { card: PortfolioRecommendation; fromWalletUsd: number } | { skip: string } | null {
+  const supplyPct = swap.aprPct ?? null;
+  if (supplyPct === null || supplyPct >= borrowPct) return null;
+  const plan = swapRepayPlan({
+    model: { collateralAdjUsd: loan.collateralAdjUsd, debtAdjUsd: loan.debtAdjUsd },
+    collateral: { ...swap, collateral: 0 },
+    debt: { usdPerToken: debt.usdPerToken, vr: debt.vr, amount: debt.amount, wallet: 0 },
+    outPerIn: swap.outPerIn,
+    target: Infinity,
+    floor: SWAP_REPAY_FLOOR_HF,
+  });
+  if (!plan.ok) return null;
+  const repayUsd = plan.repay * debt.usdPerToken;
+  const swapUsd = plan.swapIn * swap.usdPerToken;
+  const lossUsd = Math.max(0, swapUsd - repayUsd);
+  // A year of interest no longer paid, less what the swapped money would earn supplied, less the one-off swap loss.
+  const saves = (repayUsd * borrowPct - swapUsd * supplyPct) / 100 - lossUsd;
+  const swapRaw = rawOf(plan.swapIn, swap.decimals, false);
+  if (!swapRaw || repayUsd < MIN_ACTION_USD || saves <= 0) return null;
+  const rates = `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${swap.symbol} on Burrow earns about ${supplyPct.toFixed(1)}%`;
+  if (!yearWorthTheFee(saves))
+    return {
+      skip: `${rates}. Repaying the ${debt.symbol} loan with your ${swap.symbol} would save about ${money2(saves)} a year after the swap: not worth the network fees.`,
+    };
+  const withdrawRaw = plan.withdraw > 0 ? rawOf(plan.withdraw, swap.decimals, false) : null;
+  const hfAfter = plan.hfAfterRepay;
+  const card: PortfolioRecommendation = {
+    id: 'repay-with-idle',
+    kind: 'put_idle_to_work',
+    agent: 'Capital Allocator',
+    severity: 'info',
+    title: `Use your ${swap.symbol} to repay your ${debt.symbol} loan`,
+    why: `${rates}. ${withdrawRaw ? `Withdrawing ${tokenText(plan.withdraw)} ${swap.symbol} of your Burrow deposit (not collateral), swapping` : 'Swapping'} ${tokenText(plan.swapIn)} ${swap.symbol} for at least ${tokenText(plan.minOut)} ${debt.symbol} on Rhea and repaying it saves about ${money2(saves)} a year after the swap loss of ${money2(lossUsd)}.`,
+    intent: {
+      action: 'repay_with_collateral',
+      token: debt.token,
+      collateralToken: swap.token,
+      approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
+      amount: swapRaw.toString(),
+      ...(withdrawRaw && { withdraw: withdrawRaw.toString() }),
+      maxSlippageBps: swap.slippageBps,
+      plan: {
+        hfNow: loan.healthFactor ?? 0,
+        hfAfterWithdraw: plan.hfAfterWithdraw ?? loan.healthFactor ?? 0,
+        hfAfterRepay: hfAfter,
+        floorHf: SWAP_REPAY_FLOOR_HF,
+        transactions: withdrawRaw ? 3 : 2,
+      },
+    },
+  };
+  return { card, fromWalletUsd: plan.fromWallet * swap.usdPerToken };
 }
 
 const ORDINAL = ['', 'one', 'two', 'three'] as const;
@@ -1413,43 +1710,53 @@ export function registerAccountView(
     tokens: readonly (BurrowTokenFacts & {
       readonly deposited: number;
       readonly collateral: number;
+      readonly aprPct: number | null;
     })[],
     walletOf: (token: string) => number,
+    idle: boolean,
   ): Promise<RecommendationContext['swapRepay']> => {
     const strictest = STRATEGY_IDS.map((id) => STRATEGIES[id]);
     const safeAt = Math.max(...strictest.map((st) => st.healthyAt));
+    const loosest = Math.min(...strictest.map((st) => st.healthyAt));
     const target = Math.max(...strictest.map((st) => st.targetHealthFactor));
-    if (
-      !debt ||
-      debt.token === WNEAR ||
-      loan.healthFactor === null ||
-      loan.healthFactor >= safeAt ||
-      debt.collateral > 0
-    )
+    if (!debt || debt.token === WNEAR || loan.healthFactor === null || debt.collateral > 0)
       return null;
-    const walletNeed = repayToReach(
-      { ...loan, vr: debt.vr, usdPerToken: debt.usdPerToken },
-      target,
-      'wallet',
-    );
-    if (debt.wallet >= walletNeed) return null;
+    // idle: a loan safe under some strategy, repaid only from idle money that earns less than it costs (#227).
+    const borrowPct = debt.borrowAprPct ?? null;
+    if (idle) {
+      if (loan.healthFactor < loosest || borrowPct === null) return null;
+    } else {
+      if (loan.healthFactor >= safeAt) return null;
+      const walletNeed = repayToReach(
+        { ...loan, vr: debt.vr, usdPerToken: debt.usdPerToken },
+        target,
+        'wallet',
+      );
+      if (debt.wallet >= walletNeed) return null;
+    }
     const routed = (t: string) =>
       deps.pools.some(
         (p) =>
           (p.tokenA === t && p.tokenB === debt.token) ||
           (p.tokenB === t && p.tokenA === debt.token),
       );
+    const gapPct = (b: { aprPct: number | null }) =>
+      borrowPct === null || b.aprPct === null ? 0 : borrowPct - b.aprPct;
+    const usable = (b: { collateral: number; deposited: number; wallet: number }) =>
+      (idle ? 0 : b.collateral) + b.deposited + b.wallet;
+    // An idle repay ranks by the yearly saving; a safety repay by the money it can reach.
+    const worth = (
+      b: Parameters<typeof usable>[0] & BurrowTokenFacts & { aprPct: number | null },
+    ) =>
+      idle ? Math.min(usable(b) * b.usdPerToken, debt.usd) * gapPct(b) : usable(b) * b.usdPerToken;
     const best = tokens
       .filter((b) => b.token !== debt.token && routed(b.token) && b.usdPerToken > 0)
+      .filter((b) => !idle || gapPct(b) > 0)
       .map((b) => ({ ...b, wallet: walletOf(b.token) }))
-      .map((b) => ({ b, usd: (b.collateral + b.deposited + b.wallet) * b.usdPerToken }))
-      .filter((x) => x.usd >= MIN_ACTION_USD)
-      .sort((x, y) => y.usd - x.usd)[0]?.b;
+      .filter((b) => usable(b) * b.usdPerToken >= MIN_ACTION_USD)
+      .sort((x, y) => worth(y) - worth(x))[0];
     if (!best) return null;
-    const tokensIn = Math.min(
-      best.collateral + best.deposited + best.wallet,
-      debt.usd / best.usdPerToken,
-    );
+    const tokensIn = Math.min(usable(best), debt.usd / best.usdPerToken);
     const amountIn = rawOf(tokensIn, best.decimals, false);
     const tokenIn = accountIdSchema.safeParse(best.token);
     const tokenOut = accountIdSchema.safeParse(debt.token);
@@ -1791,11 +2098,12 @@ export function registerAccountView(
     const monthly = depositsMonthly - loanMonthly;
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
     const v1PoolIds = [...new Set([...deps.pools.map((p) => p.poolId), ...(foundPools ?? [])])];
-    const [dclPositions, v1Positions, staking, nativeStaking] = await Promise.all([
+    const [dclPositions, v1Positions, staking, nativeStaking, limitOrders] = await Promise.all([
       dcl ? readDclPositions(dcl, id, metaOf, shown) : Promise.resolve([]),
       readV1Positions(poolReader, v1PoolIds, id, metaOf, shown),
       readStaking(tokens, id, symbol, prices),
       readNativeStaking(viewer, found?.stakingPools ?? [], id, prices.get(WNEAR) ?? null),
+      dcl ? readLimitOrders(dcl, id, metaOf, shown) : Promise.resolve([]),
     ]);
 
     const { metrics, totals, positions } = accountPortfolio({
@@ -1804,6 +2112,7 @@ export function registerAccountView(
       dclPositions,
       v1Positions,
       nativeStaking,
+      limitOrders,
       trust,
     });
     // Recommendations only ever name a confirmed-price token on our list (#19); swapping an unlisted token is #90.
@@ -1845,6 +2154,7 @@ export function registerAccountView(
             amount: debts[0].amount,
             wallet: held('wallet', debts[0].token),
             collateral: held('collateral', debts[0].token),
+            borrowAprPct: ((r) => (r === null ? null : r * 100))(rate(debts[0].token, 'borrowApr')),
           }
         : null;
     const burrowBalances = [
@@ -1867,14 +2177,10 @@ export function registerAccountView(
           ]
         : [];
     });
-    const outOfRange = (pair: (d: DclPositionView) => string) =>
-      dclPositions
-        .filter(
-          (d) =>
-            !d.inRange && [d.tokenX, d.tokenY].every((t) => verified.has(t) && !trust(t).estimate),
-        )
-        .map((d) => ({ lptId: d.lptId, poolId: d.poolId, pair: pair(d), usd: d.usd }))
-        .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+    const confirmed = { has: (t: string) => verified.has(t) && !trust(t).estimate };
+    const outOfRange = (
+      pair: (d: Pick<DclPositionView, 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY'>) => string,
+    ) => exitableOutOfRange(dclPositions, shown, confirmed, pair);
     const loanKnown = !unknownOn.has('borrowed') && loanUsd > 0;
     const carry: LoanCarry = {
       borrowAprPct: loanKnown ? (loanMonthly / H / loanUsd) * 100 : null,
@@ -1895,14 +2201,20 @@ export function registerAccountView(
       .filter((t) => !burrowBalances.some((b) => b.token === t))
       .flatMap((t) => {
         const f = burrowFacts(t);
-        return f ? [{ ...f, deposited: 0, collateral: 0 }] : [];
+        const apr = rate(t, 'netSupplyApr');
+        return f
+          ? [{ ...f, deposited: 0, collateral: 0, aprPct: apr === null ? null : apr * 100 }]
+          : [];
       });
-    const swapRepay = await swapRepayCandidate(
-      loan,
-      largestDebt,
-      [...burrowBalances, ...walletOnly],
-      (t) => held('wallet', t),
-    );
+    const candidate = (idle: boolean) =>
+      swapRepayCandidate(
+        loan,
+        largestDebt,
+        [...burrowBalances, ...walletOnly],
+        (t) => held('wallet', t),
+        idle,
+      );
+    const [swapRepay, idleSwapRepay] = await Promise.all([candidate(false), candidate(true)]);
     // A NEAR swap wraps native NEAR first, so NEAR and wNEAR in the wallet are one liquid amount.
     const nearLike = new Set<string>([NATIVE_HOLDING, WNEAR]);
     const sameAsset = (t: string) =>
@@ -1919,7 +2231,12 @@ export function registerAccountView(
       burrowBalances,
       carry,
       swapRepay,
-      dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
+      idleSwapRepay,
+      // An unverified token's ft_metadata symbol could read "USDC": it is named by its contract instead.
+      dclOutOfRange: outOfRange(
+        (d) =>
+          `${verified.has(d.tokenX) ? d.symbolX : d.tokenX}/${verified.has(d.tokenY) ? d.symbolY : d.tokenY}`,
+      ),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
     const labelled = <T extends { token: string }>(x: T) => ({
@@ -1942,6 +2259,7 @@ export function registerAccountView(
       burrowBalances: burrowBalances.map(labelled),
       carry,
       swapRepay: swapRepay && labelled(swapRepay),
+      idleSwapRepay: idleSwapRepay && labelled(idleSwapRepay),
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     };
 
@@ -2177,14 +2495,43 @@ export function registerAccountView(
     return { owner, items: activityTimeline(rows, { owner }) };
   });
 
+  /** The owner's last saved analysis for a strategy (#190); everyone else gets none. */
+  app.get('/v1/analytics/account/:id/analysis', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    const strategy = strategySchema.safeParse((req.query as { strategy?: unknown }).strategy);
+    if (!strategy.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
+    const none = { analysis: null, signature: null };
+    const ai = deps.ai;
+    if (!ai?.store) return none;
+    if ((await isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log)) !== true) return none;
+    // As for a run: with the kill switch off (or unreadable) no AI result is shown, saved or not.
+    if (!(await ai.ledger.enabled().catch(() => false))) return none;
+    const saved = ai.store;
+    const last = await saved.latest(parsed.data, strategy.data).catch((err: unknown) => {
+      req.log.warn({ err, account: parsed.data }, 'saved analysis not read');
+      return null;
+    });
+    if (!last) return none;
+    return {
+      analysis: { ...last.analysis, cachedAt: last.at.toISOString() },
+      signature: last.signature,
+    };
+  });
+
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const visitorLeft = new AbortController();
     reply.raw.on('close', () => reply.raw.writableFinished || visitorLeft.abort());
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
-    const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
-    if (!body.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
+    const body = z
+      .object({ strategy: strategySchema, signature: z.string().max(20_000).optional() })
+      .safeParse(req.body ?? {});
+    if (!body.success)
+      return reply
+        .code(400)
+        .send({ error: `${UNKNOWN_STRATEGY}; signature at most 20000 characters` });
     const owner = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log);
     const inputs = await analysisInputs(parsed.data, req.log, body.data.strategy);
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
@@ -2193,7 +2540,11 @@ export function registerAccountView(
     const run = async (onEvent?: (e: AnalysisEvent) => void) => {
       const analysis = await analyseAccount(
         deps.ai ?? null,
-        { ...inputs, ownerVerified },
+        {
+          ...inputs,
+          ownerVerified,
+          ...(body.data.signature !== undefined && { signature: body.data.signature }),
+        },
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
@@ -2249,6 +2600,14 @@ export function registerAccountView(
         account: accountIdSchema,
         intent: z.discriminatedUnion('action', [
           z.object({ action: z.literal('supply'), token: accountIdSchema, approxUsd: usd, amount }),
+          z.object({
+            action: z.literal('supply_all'),
+            tokens: z
+              .array(z.object({ token: accountIdSchema, approxUsd: usd }))
+              .min(2)
+              .max(MAX_SUPPLY_ALL)
+              .refine((ts) => new Set(ts.map((t) => t.token)).size === ts.length),
+          }),
           z.object({ action: z.literal('repay'), token: accountIdSchema, approxUsd: usd, amount }),
           z.object({
             action: z.literal('swap'),
@@ -2304,11 +2663,72 @@ export function registerAccountView(
             withdraw: amount,
             maxSlippageBps: slip,
           }),
+          // Send a stored 1Click withdrawal quote from NEAR (#171): token, receiver and amount come from the quote.
+          z.object({
+            action: z.literal('withdraw_1click'),
+            quoteId: z.string().regex(/^[\w-]{1,64}$/),
+          }),
         ]),
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
     const { account, intent } = parsed.data;
+
+    if (intent.action === 'withdraw_1click') {
+      if (!deps.withdraw) return reply.code(404).send({ error: 'withdrawals are unavailable' });
+      try {
+        const w = await deps.withdraw(intent.quoteId, account);
+        if ('error' in w) return reply.code(w.status).send({ error: w.error });
+        const token = accountId(w.token);
+        const [balance, registered] = await Promise.all([
+          tokens.getBalance(token, account),
+          tokens.isStorageRegistered(token, accountId(w.receiver)),
+        ]);
+        const human = Number(w.amount) / 10 ** w.decimals;
+        if (balance < w.amount)
+          return reply
+            .code(409)
+            .send({ error: `your wallet holds less ${w.symbol} than this quote sends` });
+        let storageDeposit = 0n;
+        if (!registered) {
+          const bounds = z
+            .object({ min: z.string().regex(/^\d{1,30}$/) })
+            .safeParse(await viewer.view(token, 'storage_balance_bounds', {}));
+          storageDeposit = bounds.success ? BigInt(bounds.data.min) : MAX_REGISTRATION_YOCTO + 1n;
+          if (storageDeposit > MAX_REGISTRATION_YOCTO)
+            return reply
+              .code(409)
+              .send({ error: `${w.symbol} asks an unusual storage price; not registered by us` });
+        }
+        const register =
+          storageDeposit > 0n
+            ? `register the 1Click deposit address (${formatNear(storageDeposit)} NEAR, one-time) and `
+            : '';
+        if (!(await w.claim()))
+          return reply
+            .code(409)
+            .send({ error: 'This quote was already built once. Get a new quote.' });
+        const cascade = assembleCascade(account, [
+          buildWithdrawTransfer({
+            token,
+            receiver: w.receiver,
+            amount: w.amount,
+            storageDeposit,
+            preview: `In one transaction: ${register}send ${formatUnits(w.amount, w.decimals)} ${w.symbol} to the 1Click deposit address of your quote.`,
+          }),
+        ]);
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          { signerId: account, allowedReceivers: new Set([token]), transferTo: w.receiver },
+          { amount: { raw: w.amount.toString(), human, symbol: w.symbol } },
+        );
+      } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
 
     // add_liquidity — balanced ("50/50") deposit into a Rhea v1 SIMPLE_POOL. Handled on its own: it sizes two
     // tokens at the pool's reserve ratio, so nothing is stranded, and assembles register? -> deposit x2 -> add.
@@ -2467,15 +2887,59 @@ export function registerAccountView(
         const minY = (freed.y * keep) / 10_000n;
 
         const meta = await store.tokenMetadata();
-        const metaOf = (t: string) => meta.find((x) => x.token === t);
-        const symX = metaOf(tokX)?.symbol ?? tokX.slice(0, 10);
-        const symY = metaOf(tokY)?.symbol ?? tokY.slice(0, 10);
-        const decX = metaOf(tokX)?.decimals ?? 24;
-        const decY = metaOf(tokY)?.decimals ?? 24;
+        const metaOf = async (t: AccountId) =>
+          meta.find((x) => x.token === t) ??
+          (await tokens.getMetadata(t).then(
+            (m) => ({ symbol: t, decimals: m.decimals }),
+            () => undefined,
+          ));
+        const [mX, mY] = await Promise.all([metaOf(tokX), metaOf(tokY)]);
+        if (!mX || !mY)
+          return reply
+            .code(502)
+            .send({ error: 'could not read the decimals of a token in this pool; try again' });
+        const { symbol: symX, decimals: decX } = mX;
+        const { symbol: symY, decimals: decY } = mY;
         const hX = (Number(freed.x) / 10 ** decX).toFixed(Math.min(6, decX));
         const hY = (Number(freed.y) / 10 ** decY).toFixed(Math.min(6, decY));
 
+        // The pool's token is any contract: it names its own storage price, so a price above a normal NEP-145 one is refused.
+        const register = async (t: AccountId, sym: string): Promise<CascadeStep[] | null> => {
+          if (await tokens.isStorageRegistered(t, account)) return [];
+          const bounds = z
+            .object({ min: z.string().regex(/^\d{1,30}$/) })
+            .safeParse(await viewer.view(t, 'storage_balance_bounds', {}));
+          const minDeposit = bounds.success ? BigInt(bounds.data.min) : MAX_REGISTRATION_YOCTO + 1n;
+          if (minDeposit > MAX_REGISTRATION_YOCTO) return null;
+          return [
+            {
+              intentId: `register-${t}`,
+              tx: {
+                receiverId: t,
+                actions: [
+                  {
+                    type: 'FunctionCall',
+                    methodName: 'storage_deposit',
+                    args: { account_id: account },
+                    gas: 10_000_000_000_000n,
+                    deposit: minDeposit,
+                  },
+                ],
+              },
+              preview: `Register to receive ${sym} — one-time storage deposit of ${formatNear(minDeposit)} NEAR on that token's contract.`,
+            },
+          ];
+        };
+        // An unregistered wallet would bounce the withdrawal back into the DCL contract: register first.
+        const registering = await Promise.all([register(tokX, symX), register(tokY, symY)]);
+        if (registering.some((r) => r === null))
+          return reply.code(409).send({
+            error: `a token in this pool asks an unusual storage deposit; register on it yourself, then try again`,
+          });
+        const registrations = registering.flatMap((r) => r ?? []);
+
         const steps: CascadeStep[] = [
+          ...registrations,
           {
             intentId: 'remove-liquidity',
             tx: buildRemoveLiquidity({
@@ -2502,7 +2966,10 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
-            allowedReceivers: new Set<string>([dclId]),
+            allowedReceivers: new Set<string>([
+              dclId,
+              ...registrations.map((r) => r.tx.receiverId),
+            ]),
           },
           {
             position: { lptId: pos.lpt_id, poolId: pos.pool_id },
@@ -2916,6 +3383,88 @@ export function registerAccountView(
           },
           {
             amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+          },
+        );
+      } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
+
+    if (intent.action === 'supply_all') {
+      try {
+        const [prices, meta, deployment, storage] = await Promise.all([
+          latestPrices(),
+          store.tokenMetadata(),
+          burrowVerifier.verifyDeployment(),
+          burrow.getStorageBalance(account),
+        ]);
+        const steps: CascadeStep[] = [];
+        if (storage === null) {
+          const b = await burrow.getStorageBalanceBounds();
+          steps.push({
+            intentId: 'register',
+            tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: b.min }),
+            preview: `Register your account on Burrow — one-time, ${formatNear(b.min)} NEAR, refundable.`,
+          });
+        }
+        const amounts: { raw: string; human: number; symbol: string }[] = [];
+        const unpriced = intent.tokens.find((t) => {
+          const price = prices.get(t.token);
+          return !meta.some((x) => x.token === t.token) || price === undefined || !(price > 0);
+        });
+        if (unpriced)
+          return reply.code(409).send({ error: `no confirmed price for ${unpriced.token}` });
+        const [balances, verified] = await Promise.all([
+          Promise.all(intent.tokens.map((t) => tokens.getBalance(t.token, account))),
+          Promise.all(
+            intent.tokens.map((t) => burrowVerifier.verifyToken(deployment, t.token, 'supply')),
+          ),
+        ]);
+        for (const [i, t] of intent.tokens.entries()) {
+          const m = meta.find((x) => x.token === t.token)!;
+          const price = prices.get(t.token)!;
+          const walletHuman = Number(balances[i]!) / 10 ** m.decimals;
+          if (walletHuman <= 0)
+            return reply.code(409).send({ error: `your wallet holds no ${m.symbol}` });
+          const { rawAmount, humanAmount } = resolveIntentAmount(
+            t.approxUsd,
+            price,
+            m.decimals,
+            walletHuman,
+          );
+          if (rawAmount <= 0n)
+            return reply.code(409).send({ error: `the resolved ${m.symbol} amount is zero` });
+          steps.push({
+            intentId: `supply-${t.token}`,
+            tx: buildSupply({ deployment, token: verified[i]!, now: clock.now(), rawAmount }),
+            preview: `Supply ${humanAmount.toFixed(Math.min(6, m.decimals))} ${m.symbol} to Burrow (earns the current supply rate).`,
+          });
+          amounts.push({ raw: rawAmount.toString(), human: humanAmount, symbol: m.symbol });
+        }
+        const cascade = assembleCascade(account, steps);
+        const totalGas = cascade.transactions.reduce(
+          (s, tx) => s + tx.actions.reduce((g, a) => g + a.gas, 0n),
+          0n,
+        );
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([
+              deps.burrowId,
+              ...intent.tokens.map((t) => t.token),
+            ]),
+          },
+          {
+            amounts,
+            cost: {
+              networkFeeMaxNear:
+                Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6,
+              swap: null,
+            },
           },
         );
       } catch (e) {

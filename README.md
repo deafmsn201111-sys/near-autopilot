@@ -38,8 +38,9 @@ everywhere in this repository:
 | **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                                   |
 
 The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
-Intents 1Click gives dry quotes for route comparison, and real quotes only for depositing into your account from
-another chain (you send from your own wallet there; the server builds no transaction).
+Intents 1Click gives dry quotes for route comparison, and real quotes only for moving your own money between NEAR and
+another chain: a deposit you send from your own wallet there, or a withdrawal whose NEAR transfer the server builds
+from the stored quote and you sign in your NEAR wallet.
 
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
@@ -99,7 +100,7 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
 route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
-from another chain (below), in a separate client.
+from and withdrawals to another chain (below), in a separate client.
 
 **What works**
 
@@ -127,7 +128,7 @@ from another chain (below), in a separate client.
 
 5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
    on the portfolio. **Connect EVM wallet** / **Connect Solana wallet** links MetaMask, Phantom or another browser
-   wallet (or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build) through HOT Kit and shows its address (it signs nothing yet). Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
+   wallet (or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build) through HOT Kit and shows its address, which then fills the refund address for that chain. Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
    (search by symbol, popular ones first, every token with its logo; a Solana token whose mint, read from the chain, takes a fee on
    every transfer or can block one, is not offered, since it would arrive short and be refunded), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
@@ -137,7 +138,11 @@ from another chain (below), in a separate client.
    Ethereum, Base and Arbitrum, Solana Pay for SOL and SPL tokens. The API names the token from the quoted 1Click asset
    (native coin by its exact asset id; on EVM the contract the asset id names; on Solana the mint 1Click lists); when it cannot be, or the wallet does not read payment links, the QR holds the
    address only (also an **Address only** switch). **Open in wallet** opens the same link; the address and the amount
-   each have a copy button. Send exactly that amount from your wallet on that chain;
+   each have a copy button. On Ethereum, Base, Arbitrum and Solana, **Send … with your wallet** (or **Connect … wallet
+   and send**) does it in one click: the server rebuilds the transfer from the stored quote (token, exact amount,
+   deposit address; refused once the deadline passed or a deposit was seen), the browser checks it matches the quote
+   on screen, and your MetaMask / Phantom shows that transfer for you to sign; then the dialog links the transaction
+   (D34). Otherwise send exactly that amount from your wallet on that chain;
    1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
    deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
    transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;
@@ -151,6 +156,15 @@ from another chain (below), in a separate client.
    (PoA, HOT) or token, or a withdrawal incident on NEAR or the token you receive. The text is SHIELD's own, as
    plain text and capped, or ours when SHIELD gives none. The server asks SHIELD at most once a minute for everyone;
    no key, an error or an odd answer means no warning, never a broken dialog.
+6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
+   wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
+   Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
+   typed; the server checks it is an address of that chain). **Get quote** asks 1Click for a real quote with your NEAR
+   account as the refund address, verifies it and stores it. **Build transaction** then assembles one NEAR transaction
+   on the token contract from that stored quote, never from the browser: `storage_deposit` for the 1Click deposit
+   address (a NEAR implicit account) when it holds no storage, then `ft_transfer` of the quoted amount to it. It passes
+   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D36). You sign it in your NEAR
+   wallet; the dialog follows the withdrawal with the same 1Click status as a deposit.
 
 **Not done**
 
@@ -213,10 +227,10 @@ gives the central LLM six tools:
 | Tool                      | What runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6, from the wallet, or from the collateral of the same token when the wallet holds too little, or by swapping another token (from the wallet first, then withdrawn collateral) and repaying; the three stablecoins route through Rhea pool 4179 (HF never under 1.15 after any step); the card shows the loan rate and what the Burrow deposits earn per month, and a safe loan that earns more than it costs gets no repay offer |
-| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate, all of them in one signed cascade when two or more are worth their network fee; repay a dearer loan in the same token instead                                                                                                                                                                                                                                                                                    |
 | `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices, and the 24 h price range                                                                                                                                                                                                                                                                                                                                                                                              |
 | `portfolio_concentration` | Wallet check: share of the portfolio in one token; the swap uses only what the wallet holds                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `lp_optimizer`            | The orchestrator's `LpOptimizerAgent`: an out-of-range Rhea DCL position moves to a new range around the price (remove → swap → add) when the extra fees, from the pool's 24 h volume, repay the move within 14 days; else the exit to the wallet                                                                                                                                                                                                                                                                      |
+| `lp_optimizer`            | The orchestrator's `LpOptimizerAgent`: an out-of-range Rhea DCL position moves to a new range around the price (remove → swap → add) when the extra fees, from the pool's 24 h volume, repay the move within 14 days; else the exit to the wallet (also for a meme-token pool priced only by Rhea's indexer, its value marked as an estimate; re-centring stays on allowlisted pools)                                                                                                                                  |
 | `burrow_withdrawals`      | Wallet check: Burrow supply that can move to the wallet (all of it with no loan, else what keeps HF 1.6)                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 **Loans.** A loan below HF 1.5 gets a card that repays down to HF 1.6, not the whole debt (a loop that earns more than
@@ -264,6 +278,13 @@ placeholder until its result arrives, and a clock runs until the end. The events
 "from a run N min ago"); a stream that breaks falls back
 to the plain JSON request.
 
+**The last analysis survives a reload.** The API saves the last AI analysis per account and strategy in Postgres
+(`account_analyses`, kept 30 days) with the page's portfolio signature, and serves it back only to the proven owner
+(`GET /v1/analytics/account/:id/analysis`). The page shows it on open: "✓ Up to date" while the portfolio is unchanged and the
+run is under an hour old, a note that prices and rates may have moved once it is older, and "Your portfolio changed —
+run the AI analysis again" once the portfolio itself changed. A repeat run on the same wallet state within 10
+minutes reuses the saved result, also across an API restart, with no model call.
+
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
@@ -275,7 +296,8 @@ days are deleted (on start, then hourly). One `events` row per wallet connect (r
 client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
 cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
 written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
-prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted.
+prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
+there is. The only third-party requests are Google Fonts and the wallet connector you choose.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
 answers 404) shows AI spend against the cap and has a kill switch and the cap field
@@ -372,7 +394,8 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
   NEAR RPC for its final status. A failed step names the contract, its error and what happened to your funds (refund
   confirmed, or nothing left your wallet); the next step is not offered.
 
-- **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
+- **Connect wallet** (HOT Kit): one list for your NEAR wallet and, in the same list, an EVM or Solana wallet for
+  deposits; no access key added. Disconnect signs out of all of them. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
 - **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from
@@ -440,7 +463,7 @@ costs), or why the autopilot would not do it.
 | Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)                                                                        |
 | Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                                                                                         |
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
-| Wallet connection and signing                                                       | HOT Connector; unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)                          |
+| Wallet connection and signing                                                       | HOT Kit (NEAR, EVM, Solana); unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)            |
 | Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
 | AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and three wallet checks as tools (architecture C above); rule-based fallback, labelled  |
 

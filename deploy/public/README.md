@@ -100,13 +100,14 @@ HTTP 429 under load.
 
 ## 3. Check it
 
-| Check            | Command or page                                                                  | Expected                                 |
-| ---------------- | -------------------------------------------------------------------------------- | ---------------------------------------- |
-| Containers       | `docker compose ps`                                                              | all `healthy`                            |
-| Site             | the Caddy or Funnel address                                                      | the site                                 |
-| Collector cycles | `docker compose logs -f shadow-collector`                                        | a cycle every 15 minutes                 |
-| Audit trail      | `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify` | chains and checkpoints `ok`              |
-| Nothing exposed  | `ss -tlnH` on the server                                                         | public: only SSH (and 80/443 with Caddy) |
+| Check                | Command or page                                                                  | Expected                                 |
+| -------------------- | -------------------------------------------------------------------------------- | ---------------------------------------- |
+| Containers           | `docker compose ps`                                                              | all `healthy`                            |
+| Site                 | the Caddy or Funnel address                                                      | the site                                 |
+| Collector cycles     | `docker compose logs -f shadow-collector`                                        | a cycle every 15 minutes                 |
+| Logs before a deploy | `journalctl -t near-autopilot-public-analytics-api-1 --since "2 hours ago"`      | the lines, across deploys                |
+| Audit trail          | `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify` | chains and checkpoints `ok`              |
+| Nothing exposed      | `ss -tlnH` on the server                                                         | public: only SSH (and 80/443 with Caddy) |
 
 Market history starts empty on a new server. Pages that need several days of observations, such as the DCL range
 backtest, show "not enough history yet" until they have them.
