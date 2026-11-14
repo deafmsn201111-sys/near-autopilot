@@ -65,7 +65,7 @@ export interface DepositDeps {
   readonly destinationTokens: readonly string[];
   readonly newId?: () => string;
   readonly icon?: (token: string) => Promise<string | null>;
-  /** Re-check unfinished quotes in the background this often, so a closed deposit screen does not freeze a status. */
+  /** Re-check unfinished quotes in the background this often, so a closed withdraw dialog does not freeze a status. */
   readonly refreshEveryMs?: number;
   /** Solana mints with a transfer fee arrive short of the quote and are refunded, so they are never offered. */
   readonly solanaFees?: Pick<SolanaTransferFees, 'unsafe'>;
@@ -80,8 +80,7 @@ const CHAIN_NAMES: Record<DepositChain, string> = {
 };
 const POPULAR = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
 const SLIPPAGE_BPS = 100;
-const NOT_VERIFIED =
-  'The 1Click quote could not be verified, so no deposit address is shown. Try again.';
+const NOT_VERIFIED = 'The 1Click quote could not be verified. Try again.';
 const NO_QUOTE =
   '1Click has no quote for this amount right now. Try a larger amount or another token.';
 const STATUS_UNAVAILABLE =
@@ -97,7 +96,7 @@ const MAX_RECHECK_MS = 10 * 60_000;
 // A wallet prompt can stay open a while: a transfer must land well before 1Click's deadline.
 export const SEND_MARGIN_MS = 2 * 60_000;
 const ALREADY_SEEN = 'A deposit to this address was already seen. Do not send again.';
-const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
+const UNAVAILABLE = 'Transfers to other chains are unavailable right now. Try again later.';
 
 /** "1.5" with 6 decimals -> 1500000n. Null unless a positive plain decimal with at most `decimals` places. */
 export function toBaseUnits(amount: string, decimals: number): bigint | null {

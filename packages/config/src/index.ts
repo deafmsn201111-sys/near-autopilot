@@ -306,7 +306,7 @@ export const llmEnvSchema = z.object({
 export type LlmEnv = z.output<typeof llmEnvSchema>;
 
 /**
- * 1Click partner JWT for real deposit quotes (D19). Unset = 1Click's keyless fee schedule. Read from the local .env only,
+ * 1Click partner JWT for real withdrawal quotes (D19, D42). Unset = 1Click's keyless fee schedule. Read from the local .env only,
  * sent only to 1Click as a bearer header; never logged, never in a response.
  */
 export const oneClickEnvSchema = z.object({
@@ -319,7 +319,7 @@ export const oneClickEnvSchema = z.object({
       .max(4096)
       .optional(),
   ),
-  /** Read-only Solana RPC: deposit origins whose mint takes a transfer fee are not offered (#185). */
+  /** Read-only Solana RPC: tokens whose mint takes a transfer fee are not offered (#185). */
   SOLANA_RPC_URL: z.preprocess(
     unsetIfEmpty,
     z.string().url().startsWith('https://').default('https://api.mainnet-beta.solana.com'),

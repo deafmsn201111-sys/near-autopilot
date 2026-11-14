@@ -232,6 +232,19 @@ describe('GET /v1/deposit/assets', () => {
 });
 
 describe('POST /v1/withdraw/quote: the 1Click answer', () => {
+  it.each([
+    ['a zero amount', { amount: '0' }],
+    ['too many decimals', { amount: '1.0000001' }],
+    ['an invalid account', { account: 'Not An Account' }],
+    ['an extra field', { refundTo: 'mallory.near' }],
+  ])('refuses %s with 400 and never calls 1Click', async (_, over) => {
+    const { post, asked, saved } = setup();
+    const res = await post({ ...body, ...over });
+    expect(res.statusCode).toBe(400);
+    expect(asked).toHaveLength(0);
+    expect(saved).toHaveLength(0);
+  });
+
   it('stores and returns no fee when 1Click echoes none', async () => {
     const { post, saved } = setup({ quote: async () => quoted({ appFeeBps: null }) });
     const res = await post(body);
@@ -246,8 +259,9 @@ describe('POST /v1/withdraw/quote: the 1Click answer', () => {
     const res = await post(body);
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({
-      error: 'The 1Click quote could not be verified, so no deposit address is shown. Try again.',
+      error: 'The 1Click quote could not be verified. Try again.',
     });
+    expect(res.body).not.toContain('recipient');
     expect(saved).toHaveLength(0);
   });
 
