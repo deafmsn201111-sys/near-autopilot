@@ -3,6 +3,7 @@ import {
   utcMidnight,
   type AdminStore,
   type LlmSettings,
+  type QualityRow,
   type SettingsPatch,
   type SpendRow,
 } from './admin';
@@ -44,6 +45,22 @@ export class DrizzleLlmLedger implements LlmLedger, AdminStore {
   async recentCalls(since: Date): Promise<SpendRow[]> {
     return this.db
       .select({ at: llmCalls.at, model: llmCalls.model, costMicroUsd: llmCalls.costMicroUsd })
+      .from(llmCalls)
+      .where(gte(llmCalls.at, since));
+  }
+
+  async calls(since: Date): Promise<QualityRow[]> {
+    return this.db
+      .select({
+        at: llmCalls.at,
+        accountId: llmCalls.accountId,
+        model: llmCalls.model,
+        latencyMs: llmCalls.latencyMs,
+        tools: llmCalls.tools,
+        outcome: llmCalls.outcome,
+        input: llmCalls.input,
+        output: llmCalls.output,
+      })
       .from(llmCalls)
       .where(gte(llmCalls.at, since));
   }
