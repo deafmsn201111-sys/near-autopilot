@@ -97,6 +97,21 @@ describe.skipIf(!adminUrl)('DrizzleEventStore (PostgreSQL)', () => {
     ]);
   });
 
+  it('lists the funnel steps since a time, without the other kinds', async () => {
+    await store.add({ at: NOW, kind: 'connect', accountId: 'a.near', source: 'client' });
+    await store.add({ at: NOW, kind: 'verified', accountId: 'a.near', source: 'server' });
+    await store.add({ at: NOW, kind: 'prepare_blocked', accountId: 'a.near', source: 'server' });
+    await store.add({
+      at: new Date(NOW.getTime() - DAY),
+      kind: 'analyse',
+      accountId: 'a.near',
+      source: 'server',
+    });
+    expect(await store.since(new Date(NOW.getTime() - 1))).toEqual([
+      { at: NOW, kind: 'connect', accountId: 'a.near' },
+    ]);
+  });
+
   it('purges rows older than 30 days only', async () => {
     for (const [id, at] of [
       ['old', NOW.getTime() - 30 * DAY - 1],

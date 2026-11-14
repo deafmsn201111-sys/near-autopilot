@@ -48,3 +48,36 @@ export async function adminApi<T>(path: string, body?: unknown): Promise<T> {
     throw new Error(typeof json.error === 'string' ? json.error : `admin API HTTP ${res.status}`);
   return json as T;
 }
+
+interface FunnelCounts {
+  connect: number;
+  analyse: number;
+  prepare: number;
+  signed: number;
+  accounts: number;
+}
+
+export interface Funnel {
+  days: (FunnelCounts & { day: string })[];
+  total: FunnelCounts;
+}
+
+export interface LlmQuality {
+  calls: number;
+  fallbackRate: number | null;
+  validationErrorRate: number | null;
+  fallbacks: { code: string; count: number; rate: number }[];
+  p50Ms: number | null;
+  p95Ms: number | null;
+  topKinds: { kind: string; count: number }[];
+  last: {
+    at: string;
+    accountId: string;
+    model: string;
+    latencyMs: number;
+    outcome: string;
+    tools: string[];
+    input: unknown;
+    output: unknown;
+  }[];
+}
