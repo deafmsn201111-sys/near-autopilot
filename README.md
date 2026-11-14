@@ -371,7 +371,8 @@ $5,000) are simulated and labelled as such.
   nothing is sent and no gas is paid. The server rebuilds the exact text, checks the signature, checks that the
   signing key is a full-access key of that account on mainnet (a key only the owner holds, not a key a dApp was
   given), and accepts the proof for 24 hours. Anyone else, or a visitor who declines to sign, gets the heuristic
-  analysis.
+  analysis. If the key can't be read from the network at that moment, the page says so and checks again by itself
+  (no new signature); it never shows such a failure as "not the owner".
 
 **Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 

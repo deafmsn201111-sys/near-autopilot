@@ -1,6 +1,7 @@
 import { KeyPairEd25519 } from '@near-js/crypto';
 import { baseEncode } from '@near-js/utils';
 import { describe, expect, it } from 'vitest';
+import { RpcError } from '@near-autopilot/core';
 import { OWNERSHIP_TTL_MS } from '@near-autopilot/core/ownership';
 import { verifyOwnership } from '../src/wallet/ownership';
 import { signOwnership } from './support/nep413';
@@ -68,7 +69,7 @@ describe('NEP-413 ownership proof', () => {
     expect(await verifyOwnership(future, owner, deps)).toBe(false);
   });
 
-  it('rejects malformed input and an access-key read that fails', async () => {
+  it('rejects malformed input and an access-key read that fails for good', async () => {
     expect(await verifyOwnership(null, owner, deps)).toBe(false);
     expect(await verifyOwnership({ ...(await sign()), nonce: 'AAAA' }, owner, deps)).toBe(false);
     const failing = {
@@ -76,5 +77,13 @@ describe('NEP-413 ownership proof', () => {
       isFullAccessKey: () => Promise.reject(new Error('rpc down')),
     };
     expect(await verifyOwnership(await sign(), owner, failing)).toBe(false);
+  });
+
+  it('a key read that could not run is not an answer: it throws instead of saying "not the owner"', async () => {
+    const flaky = {
+      ...deps,
+      isFullAccessKey: () => Promise.reject(new RpcError('RPC query timed out', true)),
+    };
+    await expect(verifyOwnership(await sign(), owner, flaky)).rejects.toThrow('timed out');
   });
 });

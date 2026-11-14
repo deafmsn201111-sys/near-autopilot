@@ -501,3 +501,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   says a pick that skips the top earner explains why in its "why".
 - `apps/api/src/analytics/account-view.ts`: the rule-based idle card offers the top earner in dollars a year (not the
   largest balance) and names the runner-up's yearly earnings.
+
+## 2026-11-14 — Ownership: a key read that could not run is not "not the owner" (#144)
+
+- `apps/api/src/wallet/ownership.ts`: `verifyOwnership` rethrows a retryable `RpcError` from the access-key read
+  (timeout, rate limit, node down after the client's retries); a missing or function-call key is still `false`.
+- `apps/api/src/analytics/account-view.ts`: such a failure is logged (`ownership key read failed`, account and error
+  text, never the proof) and answered as `ownerVerified: false, ownerCheckFailed: true`.
+- `apps/analytics`: a read with `ownerCheckFailed` is not cached (it used to hold "not verified" for 60 s under the
+  new proof's key); `OwnershipCheck` says the check could not run, refreshes once after 2 s and offers "Check again".

@@ -195,6 +195,8 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecis
   skipped?: string[];
   /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
   ownerVerified: boolean;
+  /** The API could not read the signing key just now: ownership is unknown, not denied. */
+  ownerCheckFailed?: boolean;
 };
 
 type AccountResult = { data: AccountRead | null; error: string | null };
@@ -258,7 +260,7 @@ const readAccount = async (
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
-  if (r.error) accountReads.delete(key);
+  if (r.error || r.data?.ownerCheckFailed) accountReads.delete(key);
   else entry.at = Date.now();
   const holdings = holdingsOf(r);
   if (holdings) lastHoldings.set(await holdingsKey(id, proof), holdings);

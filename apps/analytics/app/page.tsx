@@ -448,7 +448,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </section>
 
       {isAccount && recs && (
-        <OwnershipCheck account={accountParam} verified={recs.ownerVerified === true} />
+        <OwnershipCheck
+          account={accountParam}
+          verified={recs.ownerVerified === true}
+          checkFailed={recs.ownerCheckFailed === true}
+        />
       )}
 
       {isAccount && recs && (
