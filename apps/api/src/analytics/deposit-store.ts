@@ -40,6 +40,19 @@ export class DrizzleDepositQuoteStore implements DepositQuoteStore, AdminDeposit
       .where(eq(depositQuotes.id, id));
   }
 
+  async issueTransfer(id: string, at: Date, retry: boolean): Promise<boolean> {
+    const issued = await this.db
+      .update(depositQuotes)
+      .set({ transferIssuedAt: at })
+      .where(
+        retry
+          ? eq(depositQuotes.id, id)
+          : and(eq(depositQuotes.id, id), isNull(depositQuotes.transferIssuedAt)),
+      )
+      .returning({ id: depositQuotes.id });
+    return issued.length > 0;
+  }
+
   async unfinished(since: Date): Promise<UnfinishedQuote[]> {
     return this.db
       .select({

@@ -328,6 +328,17 @@ describe('loadDepositTransfer', () => {
     }
   });
 
+  it('asks for a retry only when told to', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return new Response(JSON.stringify(transfer));
+    });
+    await loadDepositTransfer(quote);
+    await loadDepositTransfer(quote, true);
+    expect(urls).toEqual(['/api/deposit/transfer/dq_1', '/api/deposit/transfer/dq_1?retry=1']);
+  });
+
   it('passes the server refusal through', async () => {
     serve({ error: 'This quote has expired. Get a new one.' }, 409);
     expect(await loadDepositTransfer(quote)).toEqual({

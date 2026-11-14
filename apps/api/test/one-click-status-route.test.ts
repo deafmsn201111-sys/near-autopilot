@@ -67,6 +67,7 @@ function setup(
           ? { ...stored(id), status: statuses.findLast((x) => x.id === id)?.status ?? null }
           : null,
       unfinished: async () => [],
+      issueTransfer: async () => true,
       saveStatus: async (id, status, at) => {
         if (o.failSave) throw new Error('db down');
         statuses.push({ id, status, at });
