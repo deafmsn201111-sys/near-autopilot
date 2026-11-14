@@ -36,6 +36,11 @@ function get(): NearConnector {
   return connector;
 }
 
+/** Shares the app's nonce-protected NEAR connector with HOT Kit, so both flows use the same wallet session. */
+export function nearConnectorForKit(): NearConnector {
+  return get();
+}
+
 /** The account of the connected wallet, read from the wallet itself; null when none is connected. */
 export async function currentAccount(): Promise<string | null> {
   try {

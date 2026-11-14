@@ -1,5 +1,8 @@
 # Overlay for the existing isolated beta compose stack. Do not apply to near-autopilot-public.
 services:
+  analytics-beta:
+    environment:
+      WALLETCONNECT_PROJECT_ID: ${WALLETCONNECT_PROJECT_ID:-}
   analytics-api:
     environment:
       NEAR_AI_API_KEY: ${NEAR_AI_API_KEY:-}

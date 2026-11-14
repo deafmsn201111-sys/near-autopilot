@@ -910,6 +910,44 @@ tr.detail details[open] {
   max-height: calc(100vh - 32px);
   overflow-y: auto;
 }
+.deposit-kit-tools {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  margin: 16px 0 20px;
+  border: 1px solid var(--axis);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.deposit-kit-copy {
+  display: grid;
+  gap: 3px;
+}
+.deposit-kit-recipient {
+  color: var(--ink-2);
+  font: 12px var(--font);
+  overflow-wrap: anywhere;
+}
+.deposit-kit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.deposit-kit-wallets {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-2);
+  font: 12px var(--font);
+  overflow-wrap: anywhere;
+}
+.deposit-manual-title {
+  margin: 18px 0 10px;
+}
+.deposit-manual-toggle {
+  margin-top: 4px;
+}
 .deposit-warn {
   color: var(--critical) !important;
 }

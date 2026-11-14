@@ -22,6 +22,7 @@ import {
 import { paymentUri } from '../lib/payment-uri';
 import { poll, tabHidden } from '../lib/polling';
 import { TokenIcon } from './TokenIcon';
+import { getHotKit, openNearAutopilotBridge } from '../lib/hot-kit';
 
 const REFUND_HINT: Record<string, string> = {
   eth: '0x…',
@@ -459,6 +460,10 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<DepositQuote | null>(null);
   const [picking, setPicking] = useState<'send' | 'receive' | null>(null);
+  const [kitBusy, setKitBusy] = useState(false);
+  const [kitError, setKitError] = useState<string | null>(null);
+  const [kitWallets, setKitWallets] = useState<readonly string[]>([]);
+  const [manualMode, setManualMode] = useState(false);
 
   const chosen = assets?.origins.find((o) => o.assetId === origin);
   const receive = assets?.destinations.find((d) => d.assetId === destination);
@@ -501,6 +506,58 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
     setBusy(false);
     if (r.ok) setQuote(r.data);
     else setError(r.error);
+  }
+
+  function updateKitWallets() {
+    void getHotKit().then((kit) => {
+      const names: Record<number, string> = {
+        1: 'EVM',
+        1010: 'NEAR',
+        1001: 'Solana',
+        333: 'TRON',
+        [-6]: 'Bitcoin',
+      };
+      setKitWallets(
+        kit.wallets.map((wallet) => `${names[wallet.type] ?? 'Wallet'} · ${wallet.address}`),
+      );
+    });
+  }
+
+  async function connectSourceWallet() {
+    setKitBusy(true);
+    setKitError(null);
+    ref.current?.close();
+    try {
+      const kit = await getHotKit();
+      await kit.connect();
+      updateKitWallets();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not connect that wallet. Try again.';
+      setKitError(/user rejected|closed/i.test(message) ? null : message);
+    } finally {
+      setKitBusy(false);
+      ref.current?.showModal();
+    }
+  }
+
+  async function bridgeFromWallet() {
+    setKitBusy(true);
+    setKitError(null);
+    ref.current?.close();
+    let showError = false;
+    try {
+      await openNearAutopilotBridge(account);
+      updateKitWallets();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'The bridge could not be opened.';
+      if (!/user rejected|closed/i.test(message)) {
+        setKitError(message);
+        showError = true;
+      }
+    } finally {
+      setKitBusy(false);
+      if (showError) ref.current?.showModal();
+    }
   }
 
   return (
@@ -552,89 +609,152 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
           <form onSubmit={(e) => void submit(e)}>
             <h3>Deposit from another chain</h3>
             <p>
-              Through NEAR Intents 1Click. You get a one-time address on the chain you pick and send
-              to it from your own wallet there; it arrives in <b>{account}</b>.
+              Move assets from another network into <b>{account}</b>. Connect a source wallet for a
+              guided bridge, or create a one-time deposit address below.
             </p>
-            <div className="chain-chips" role="radiogroup" aria-label="Network">
-              {chains.map((c) => (
+            <section className="deposit-kit-tools" aria-label="Connected wallet bridge">
+              <div className="deposit-kit-copy">
+                <b>Use a connected wallet</b>
+                <span className="muted-note">EVM · Solana · TRON · Bitcoin · NEAR</span>
+                <span className="deposit-kit-recipient">NEAR destination · {account}</span>
+              </div>
+              <div className="deposit-kit-actions">
                 <button
                   type="button"
-                  key={c.id}
-                  role="radio"
-                  aria-checked={c.id === chain}
-                  className={`chain-chip${c.id === chain ? ' is-on' : ''}`}
-                  onClick={() => pickChain(c.id)}
+                  className="btn secondary small"
+                  disabled={kitBusy}
+                  onClick={() => void connectSourceWallet()}
                 >
-                  <img src={`/chains/${c.id}.svg`} alt="" width={20} height={20} />
-                  {c.name}
+                  {kitBusy
+                    ? 'Opening wallet…'
+                    : kitWallets.length
+                      ? 'Connect another wallet'
+                      : 'Connect wallet'}
                 </button>
-              ))}
-            </div>
-            <div className="asset-box">
-              <span className="asset-box-label">You send</span>
-              <div className="asset-box-row">
-                <TokenButton
-                  label="Token to send"
-                  token={chosen}
-                  where={chosen ? `on ${chosen.chainName}` : ''}
-                  disabled={!assets}
-                  onClick={() => setPicking('send')}
-                />
-                <input
-                  className="asset-amount num"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="0"
-                  aria-label={`Amount${chosen ? ` of ${chosen.symbol}` : ''}`}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                />
+                <button
+                  type="button"
+                  className="btn primary small"
+                  disabled={kitBusy}
+                  onClick={() => void bridgeFromWallet()}
+                >
+                  {kitBusy ? 'Opening bridge…' : 'Bridge to NEAR'}
+                </button>
               </div>
-            </div>
-            <div className="asset-box">
-              <span className="asset-box-label">You receive on NEAR</span>
-              <div className="asset-box-row">
-                <TokenButton
-                  label="Token to receive"
-                  token={receive}
-                  where="on NEAR"
-                  disabled={!assets}
-                  onClick={() => setPicking('receive')}
-                />
-              </div>
-            </div>
-            <label className="field">
-              Your refund address{chosen ? ` on ${chosen.chainName}` : ''}
-              <input
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={REFUND_HINT[chosen?.chain ?? ''] ?? ''}
-                value={refundTo}
-                onChange={(e) => setRefundTo(e.target.value)}
-                required
-              />
-              <span className="muted-note">
-                If the swap fails, 1Click sends your deposit back here. It must be your own address.
-              </span>
-            </label>
-            {error && (
-              <p className="deposit-warn" role="alert">
-                {error}
+              {kitWallets.length > 0 && (
+                <ul className="deposit-kit-wallets" aria-label="Connected source wallets">
+                  {kitWallets.map((wallet) => (
+                    <li key={wallet}>{wallet}</li>
+                  ))}
+                </ul>
+              )}
+              {kitError && (
+                <p className="deposit-warn" role="alert">
+                  {kitError}
+                </p>
+              )}
+              <p className="muted-note">
+                Your connected NEAR account stays fixed as the recipient. Review and sign each
+                source transfer in its wallet.
               </p>
+            </section>
+            <button
+              type="button"
+              className="btn secondary small deposit-manual-toggle"
+              aria-expanded={manualMode}
+              onClick={() => setManualMode((shown) => !shown)}
+            >
+              {manualMode ? 'Hide deposit address form' : 'Use a one-time deposit address instead'}
+            </button>
+            {manualMode && (
+              <>
+                <h4 className="deposit-manual-title">Create a one-time deposit address</h4>
+                <div className="chain-chips" role="radiogroup" aria-label="Network">
+                  {chains.map((c) => (
+                    <button
+                      type="button"
+                      key={c.id}
+                      role="radio"
+                      aria-checked={c.id === chain}
+                      className={`chain-chip${c.id === chain ? ' is-on' : ''}`}
+                      onClick={() => pickChain(c.id)}
+                    >
+                      <img src={`/chains/${c.id}.svg`} alt="" width={20} height={20} />
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="asset-box">
+                  <span className="asset-box-label">You send</span>
+                  <div className="asset-box-row">
+                    <TokenButton
+                      label="Token to send"
+                      token={chosen}
+                      where={chosen ? `on ${chosen.chainName}` : ''}
+                      disabled={!assets}
+                      onClick={() => setPicking('send')}
+                    />
+                    <input
+                      className="asset-amount num"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0"
+                      aria-label={`Amount${chosen ? ` of ${chosen.symbol}` : ''}`}
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="asset-box">
+                  <span className="asset-box-label">You receive on NEAR</span>
+                  <div className="asset-box-row">
+                    <TokenButton
+                      label="Token to receive"
+                      token={receive}
+                      where="on NEAR"
+                      disabled={!assets}
+                      onClick={() => setPicking('receive')}
+                    />
+                  </div>
+                </div>
+                <label className="field">
+                  Your refund address{chosen ? ` on ${chosen.chainName}` : ''}
+                  <input
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={REFUND_HINT[chosen?.chain ?? ''] ?? ''}
+                    value={refundTo}
+                    onChange={(e) => setRefundTo(e.target.value)}
+                    required
+                  />
+                  <span className="muted-note">
+                    If the swap fails, 1Click sends your deposit back here. It must be your own
+                    address.
+                  </span>
+                </label>
+                {error && (
+                  <p className="deposit-warn" role="alert">
+                    {error}
+                  </p>
+                )}
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() => ref.current?.close()}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn primary"
+                    disabled={!assets || busy || !origin || !destination}
+                  >
+                    {busy ? 'Getting a quote…' : 'Get deposit address'}
+                  </button>
+                </div>
+              </>
             )}
-            <div className="modal-actions">
-              <button type="button" className="btn secondary" onClick={() => ref.current?.close()}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={!assets || busy || !origin || !destination}
-              >
-                {busy ? 'Getting a quote…' : 'Get deposit address'}
-              </button>
-            </div>
           </form>
         )}
       </dialog>

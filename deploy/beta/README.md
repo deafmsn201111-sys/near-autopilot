@@ -16,6 +16,13 @@ NEAR_AI_MAX_TOKENS=4096
 Do not put the key in Git, a command argument, or the browser. The model above was confirmed live against NEAR AI Cloud
 with tool calling enabled. The application returns to its existing rule-based analysis when the key is empty.
 
+## Enable mobile WalletConnect
+
+HOT Kit does not need an API key. To show WalletConnect for mobile EVM/TRON wallets, set `WALLETCONNECT_PROJECT_ID`
+from the Reown dashboard in the beta server's `deploy/beta/.env`. This project id is public; the beta API exposes only
+this id through `/api/public-config`. Without it, browser extension wallets and the other supported connectors remain
+available, while WalletConnect choices stay hidden.
+
 ## Start the beta API with NEAR AI
 
 Copy `docker-compose.near-ai.yml` to the beta deployment folder, then run from that folder:
