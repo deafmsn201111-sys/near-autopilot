@@ -1923,6 +1923,11 @@ main.page {
     transform: translateY(4px);
   }
 }
+@keyframes ai-fade {
+  from {
+    opacity: 0;
+  }
+}
 @keyframes ai-breathe {
   50% {
     opacity: 0.45;
@@ -1938,7 +1943,9 @@ main.page {
 }
 @media (prefers-reduced-motion: reduce) {
   .ai-in,
-  .rec-in,
+  .rec-in {
+    animation-name: ai-fade;
+  }
   .ai-thinking,
   .ai-wait,
   .ai-agents li.waiting .ai-agent::before,
@@ -3386,7 +3393,7 @@ main.page {
   display: inline-grid;
   place-items: center;
   font-weight: 600;
-  color: var(--bg-page);
+  color: var(--text-2);
   background: var(--bg-overlay);
 }
 .token-icons {
@@ -3489,10 +3496,7 @@ main.page {
 }
 .action.best {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
-  box-shadow:
-    var(--elev-1),
-    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-    0 0 44px -18px var(--accent);
+  box-shadow: var(--elev-1);
 }
 .action.best .tag {
   color: var(--accent);
