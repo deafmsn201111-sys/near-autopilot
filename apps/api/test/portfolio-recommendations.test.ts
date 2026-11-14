@@ -438,6 +438,47 @@ describe('portfolioRecommendations', () => {
       expect(idle[0]?.why).toContain('about $100.00 a year');
     });
 
+    it('repays a dearer loan with its token and supplies the rest, never supplying the token it repays with', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [
+            { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 10 },
+            { token: 'usdt', symbol: 'USDt', usd: 500, aprPct: 8 },
+            { token: 'near', symbol: 'NEAR', usd: 300, aprPct: 4 },
+          ],
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 2000, debtAdjUsd: 500 },
+          largestDebt: { ...demoDebt, token: 'usdt', symbol: 'USDt', usd: 400, borrowAprPct: 15 },
+        }),
+      );
+      const idle = r.filter((x) => x.kind === 'put_idle_to_work');
+      expect(idle.map((x) => x.id)).toEqual(['repay-with-idle', 'supply-all-idle']);
+      expect(idle[0]?.intent).toMatchObject({ action: 'repay', token: 'usdt' });
+      expect(idle[1]?.intent).toEqual({
+        action: 'supply_all',
+        tokens: [
+          { token: 'usdc', approxUsd: 600 },
+          { token: 'near', approxUsd: 300 },
+        ],
+      });
+    });
+
+    it('names the worthy tokens beyond the five one cascade carries', () => {
+      const advice = portfolioAdvice(
+        ctx({
+          idleEarn: Array.from({ length: 7 }, (_, i) => ({
+            token: `t${i}`,
+            symbol: `T${i}`,
+            usd: 100 - i,
+            aprPct: 10,
+          })),
+        }),
+        STRATEGIES.balanced,
+      );
+      const card = advice.recommendations.find((x) => x.id === 'supply-all-idle');
+      expect(card?.intent?.action === 'supply_all' && card.intent.tokens).toHaveLength(5);
+      expect(advice.skipped.join(' ')).toMatch(/T5, T6 \(\$189\) could also go to Burrow/);
+    });
+
     it('keeps the single-token card when only one token is worth its fee', () => {
       const r = portfolioRecommendations(
         ctx({

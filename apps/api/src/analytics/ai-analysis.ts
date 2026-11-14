@@ -558,7 +558,6 @@ function allocatorTool(
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
       let lowRate: StepLine | null = null;
-      // The rule list already found the same token borrowed at a higher rate: repaying it beats supplying it (#194).
       // The rule list's own idle cards come first: repaying a dearer loan (#194), or every idle token at once (#196).
       const covered = new Set<string>();
       for (const c of checks) {

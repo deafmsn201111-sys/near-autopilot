@@ -359,6 +359,8 @@ const WNEAR = 'wrap.near' as TokenId;
 const MAX_UNLISTED_TOKENS = 30;
 /** Native NEAR left untouched for gas and storage when proposing to use the rest. */
 const NEAR_RESERVE = 1;
+/** The most tokens one supply_all cascade carries (the prepare schema's limit). */
+const MAX_SUPPLY_ALL = 5;
 /** 0.0125 NEAR: ten times a standard NEP-145 registration; an unknown token asking more is not registered by us. */
 const MAX_REGISTRATION_YOCTO = 12_500_000_000_000_000_000_000n;
 
@@ -798,59 +800,54 @@ export function portfolioAdvice(
     }
   }
 
-  // 3. Put idle cash to work: the wallet asset that earns the most dollars a year at its supply rate.
+  // 3. Put idle cash to work: repay a dearer loan in the same token first, then supply what is worth its fee.
   const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
   const yearly = (a: (typeof earning)[number]) => (a.usd * a.aprPct) / 100;
-  const [idle, runnerUp] = earning
+  const ranked = earning
     .filter((a) => a.usd >= MIN_ACTION_USD)
     .sort((a, b) => yearly(b) - yearly(a));
-  // A deposit stays for months: its year of interest, after the one network fee, must clear the usual hurdle.
-  const worthIt = idle && yearWorthTheFee(yearly(idle));
-  // ponytail: at most 5 tokens in one cascade (the prepare limit); a wallet with more supplies its five best.
-  const worthy = earning
-    .filter((a) => a.usd >= MIN_ACTION_USD && yearWorthTheFee(yearly(a)))
-    .sort((a, b) => yearly(b) - yearly(a))
-    .slice(0, 5);
-  // The same token borrowed at a higher rate: repaying beats supplying, unless the loan card above already repays it.
   const debt = ctx.largestDebt;
   const borrowPct = debt?.borrowAprPct ?? null;
-  const repayUsd = idle && debt ? Math.min(idle.usd, debt.usd) : 0;
+  const source = ranked.find(
+    (a) => debt?.token === a.token && borrowPct !== null && borrowPct > a.aprPct,
+  );
+  const repayUsd = source && debt ? Math.min(source.usd, debt.usd) : 0;
   const saves = borrowPct === null ? 0 : (repayUsd * borrowPct) / 100;
-  const repayInstead =
-    idle &&
+  const repays =
+    source &&
     debt &&
-    debt.token === idle.token &&
     borrowPct !== null &&
-    borrowPct > idle.aprPct &&
     repayUsd >= MIN_ACTION_USD &&
     !recs.some((r) => r.kind === 'improve_loan_safety') &&
-    yearWorthTheFee(saves);
-  if (idle && repayInstead) {
-    const rest = idle.usd - repayUsd;
+    yearWorthTheFee(saves)
+      ? source
+      : null;
+  if (repays && debt && borrowPct !== null) {
+    const rest = repays.usd - repayUsd;
     const then =
       rest >= MIN_ACTION_USD
-        ? ` The other ${money0(rest)} can then go to Burrow at ${idle.aprPct.toFixed(1)}%.`
+        ? ` The other ${money0(rest)} can then go to Burrow at ${repays.aprPct.toFixed(1)}%.`
         : '';
     recs.push({
       id: 'repay-with-idle',
       kind: 'put_idle_to_work',
       agent: 'Capital Allocator',
       severity: 'info',
-      title: `Use your idle ${idle.symbol} to repay your ${debt.symbol} loan`,
-      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${idle.symbol} on Burrow earns about ${idle.aprPct.toFixed(1)}%. Repaying ${money0(repayUsd)} saves about ${money2(saves)} a year, more than the ${money2((repayUsd * idle.aprPct) / 100)} supplying it would earn.${then}`,
+      title: `Use your idle ${repays.symbol} to repay your ${debt.symbol} loan`,
+      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${repays.symbol} on Burrow earns about ${repays.aprPct.toFixed(1)}%. Repaying ${money0(repayUsd)} saves about ${money2(saves)} a year, more than the ${money2((repayUsd * repays.aprPct) / 100)} supplying it would earn.${then}`,
       intent: {
         action: 'repay',
-        token: idle.token,
+        token: repays.token,
         approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
       },
     });
-  } else if (idle && !worthIt) {
-    skipped.push(
-      `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
-    );
-  } else if (worthy.length >= 2) {
-    const total = worthy.reduce((s, a) => s + a.usd, 0);
-    const names = worthy.map((a) => a.symbol);
+  }
+  const supplyable = ranked.filter((a) => a !== repays);
+  const worthy = supplyable.filter((a) => yearWorthTheFee(yearly(a)));
+  const batch = worthy.slice(0, MAX_SUPPLY_ALL);
+  if (batch.length >= 2) {
+    const total = batch.reduce((s, a) => s + a.usd, 0);
+    const names = batch.map((a) => a.symbol);
     const list = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
     recs.push({
       id: 'supply-all-idle',
@@ -858,14 +855,21 @@ export function portfolioAdvice(
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(total)} of ${list} is sitting idle`,
-      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(worthy.reduce((s, a) => s + yearly(a), 0))} a year (${worthy.map((a) => `${a.symbol} ${a.aprPct.toFixed(1)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
+      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(batch.reduce((s, a) => s + yearly(a), 0))} a year (${batch.map((a) => `${a.symbol} ${a.aprPct.toFixed(1)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
       intent: {
         action: 'supply_all',
-        tokens: worthy.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
+        tokens: batch.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
       },
-      carry: idleRule(worthy[0]!, strategy),
+      carry: idleRule(batch[0]!, strategy),
     });
-  } else if (idle) {
+    const left = worthy.slice(MAX_SUPPLY_ALL);
+    if (left.length > 0)
+      skipped.push(
+        `${left.map((a) => a.symbol).join(', ')} (${money0(left.reduce((s, a) => s + a.usd, 0))}) could also go to Burrow: supply them after this deposit.`,
+      );
+  } else if (batch.length === 1) {
+    const idle = batch[0]!;
+    const runnerUp = supplyable.find((a) => a !== idle);
     const other = runnerUp
       ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
       : '';
@@ -879,7 +883,12 @@ export function portfolioAdvice(
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
       carry: idleRule(idle, strategy),
     });
-  } else if (earning[0] && earning[0].usd >= 0.1) {
+  } else if (supplyable[0]) {
+    const idle = supplyable[0];
+    skipped.push(
+      `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
+    );
+  } else if (!repays && earning[0] && earning[0].usd >= 0.1) {
     const small = earning[0];
     skipped.push(
       `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
@@ -2352,7 +2361,7 @@ export function registerAccountView(
             tokens: z
               .array(z.object({ token: accountIdSchema, approxUsd: usd }))
               .min(2)
-              .max(5)
+              .max(MAX_SUPPLY_ALL)
               .refine((ts) => new Set(ts.map((t) => t.token)).size === ts.length),
           }),
           z.object({ action: z.literal('repay'), token: accountIdSchema, approxUsd: usd, amount }),
@@ -3076,7 +3085,6 @@ export function registerAccountView(
       }
     }
 
-    // supply_all — every idle token the card names, one Burrow supply each, signed as one cascade (#196).
     if (intent.action === 'supply_all') {
       try {
         const [prices, meta, deployment, storage] = await Promise.all([
@@ -3095,13 +3103,22 @@ export function registerAccountView(
           });
         }
         const amounts: { raw: string; human: number; symbol: string }[] = [];
-        for (const t of intent.tokens) {
-          const m = meta.find((x) => x.token === t.token);
+        const unpriced = intent.tokens.find((t) => {
           const price = prices.get(t.token);
-          if (!m || price === undefined || !(price > 0))
-            return reply.code(409).send({ error: `no confirmed price for ${t.token}` });
-          const walletRaw = await tokens.getBalance(t.token, account).catch(() => 0n);
-          const walletHuman = Number(walletRaw) / 10 ** m.decimals;
+          return !meta.some((x) => x.token === t.token) || price === undefined || !(price > 0);
+        });
+        if (unpriced)
+          return reply.code(409).send({ error: `no confirmed price for ${unpriced.token}` });
+        const [balances, verified] = await Promise.all([
+          Promise.all(intent.tokens.map((t) => tokens.getBalance(t.token, account))),
+          Promise.all(
+            intent.tokens.map((t) => burrowVerifier.verifyToken(deployment, t.token, 'supply')),
+          ),
+        ]);
+        for (const [i, t] of intent.tokens.entries()) {
+          const m = meta.find((x) => x.token === t.token)!;
+          const price = prices.get(t.token)!;
+          const walletHuman = Number(balances[i]!) / 10 ** m.decimals;
           if (walletHuman <= 0)
             return reply.code(409).send({ error: `your wallet holds no ${m.symbol}` });
           const { rawAmount, humanAmount } = resolveIntentAmount(
@@ -3112,10 +3129,9 @@ export function registerAccountView(
           );
           if (rawAmount <= 0n)
             return reply.code(409).send({ error: `the resolved ${m.symbol} amount is zero` });
-          const verifiedToken = await burrowVerifier.verifyToken(deployment, t.token, 'supply');
           steps.push({
             intentId: `supply-${t.token}`,
-            tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+            tx: buildSupply({ deployment, token: verified[i]!, now: clock.now(), rawAmount }),
             preview: `Supply ${humanAmount.toFixed(Math.min(6, m.decimals))} ${m.symbol} to Burrow (earns the current supply rate).`,
           });
           amounts.push({ raw: rawAmount.toString(), human: humanAmount, symbol: m.symbol });
