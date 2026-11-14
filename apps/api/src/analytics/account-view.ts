@@ -101,6 +101,7 @@ import {
   type WalletObservation,
 } from './lp-recentre';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { formatUnits } from '@near-autopilot/financial-engine';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
@@ -2600,7 +2601,7 @@ export function registerAccountView(
             receiver: w.receiver,
             amount: w.amount,
             storageDeposit,
-            preview: `In one transaction: ${register}send ${human} ${w.symbol} to the 1Click deposit address of your quote.`,
+            preview: `In one transaction: ${register}send ${formatUnits(w.amount, w.decimals)} ${w.symbol} to the 1Click deposit address of your quote.`,
           }),
         ]);
         return seal(

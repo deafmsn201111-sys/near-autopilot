@@ -288,6 +288,12 @@ describe('withdrawLookup', () => {
     });
   });
 
+  it('builds one quote once, so it cannot be paid twice before 1Click sees the first send', async () => {
+    const once = lookup();
+    expect(await once('wq_1', ALICE)).toMatchObject({ amount: 1_000_000n });
+    expect(await once('wq_1', ALICE)).toMatchObject({ status: 409, error: /already built/ });
+  });
+
   it('refuses a quote of another account, an unknown one and a deposit quote', async () => {
     expect(await lookup()('wq_1', 'bob.near')).toMatchObject({ status: 404 });
     expect(await lookup({ row: null })('wq_1', ALICE)).toMatchObject({ status: 404 });

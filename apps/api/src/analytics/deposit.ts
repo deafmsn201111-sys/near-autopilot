@@ -218,6 +218,32 @@ export interface DepositStatusView {
 
 const quoteId = z.string().regex(/^[\w-]{1,64}$/);
 
+const seenBy1Click = (s: string | null) => s !== null && s !== 'PENDING_DEPOSIT';
+
+/**
+ * Why a stored quote may not be sent now, or null: within SEND_MARGIN_MS of its deadline, or a deposit 1Click has
+ * seen, by the stored status and a fresh one (never cached), so a retry right after a send is refused once 1Click
+ * sees it.
+ */
+async function sendRefusal(
+  deps: Pick<DepositDeps, 'oneClick' | 'store'>,
+  q: StoredDepositQuote & { readonly status: string | null },
+  at: Date,
+  log: (err: unknown) => void,
+): Promise<{ readonly status: 409 | 502; readonly error: string } | null> {
+  if (at.getTime() >= q.deadline.getTime() - SEND_MARGIN_MS)
+    return { status: 409, error: 'This quote expires too soon to send. Get a new one.' };
+  if (seenBy1Click(q.status)) return { status: 409, error: ALREADY_SEEN };
+  try {
+    const fresh = await deps.oneClick.status(q.depositAddress);
+    await deps.store.saveStatus(q.id, fresh.status, at).catch(log);
+    return seenBy1Click(fresh.status) ? { status: 409, error: ALREADY_SEEN } : null;
+  } catch (err) {
+    log(err);
+    return { status: 502, error: STATUS_UNAVAILABLE };
+  }
+}
+
 export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: () => Date) {
   const newId = deps.newId ?? randomUUID;
   const record = eventRecorder(deps.events, app.log);
@@ -398,18 +424,10 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       return reply.code(502).send({ error: UNAVAILABLE });
     }
     if (!q) return reply.code(404).send({ error: 'Unknown deposit.' });
-    if (at.getTime() >= q.deadline.getTime() - SEND_MARGIN_MS)
-      return reply.code(409).send({ error: 'This quote expires too soon to send. Get a new one.' });
-    const seen = (s: string | null) => s !== null && s !== 'PENDING_DEPOSIT';
-    if (seen(q.status)) return reply.code(409).send({ error: ALREADY_SEEN });
-    // Never the cached status: a retry right after a send must see the deposit 1Click already knows of.
-    try {
-      if (seen((await fetchStatus(q.id, at)).status))
-        return reply.code(409).send({ error: ALREADY_SEEN });
-    } catch (err) {
-      req.log.warn({ err }, '1Click status failed before a wallet transfer');
-      return reply.code(502).send({ error: STATUS_UNAVAILABLE });
-    }
+    const refused = await sendRefusal(deps, q, at, (err) =>
+      req.log.warn({ err }, '1Click status failed before a wallet transfer'),
+    );
+    if (refused) return reply.code(refused.status).send({ error: refused.error });
     const origin = origins.find((t) => t.assetId === q.originAsset);
     const chain = origin?.blockchain ?? '';
     const payment =
@@ -459,7 +477,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       if (!r.depositAddressOk(q.depositAddress))
         throw new DepositQuoteRefused('1Click deposit address is not of the origin chain');
     } catch (err) {
-      app.log.warn({ err }, '1Click quote refused');
+      reply.log.warn({ err }, '1Click quote refused');
       return reply
         .code(502)
         .send({ error: err instanceof DepositQuoteRefused ? NOT_VERIFIED : NO_QUOTE });
@@ -486,7 +504,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       });
     } catch (err) {
       // Not shown unless stored; the correlation id lets 1Click find the quote that was minted.
-      app.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
+      reply.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
       return reply.code(500).send({ error: 'internal error' });
     }
     await record({
@@ -629,10 +647,11 @@ export type WithdrawLookup = (
 
 /**
  * The withdrawal a NEAR transfer may be built for: a stored quote of this account, from one of our tokens to a NEAR
- * implicit deposit address, not close to its deadline and not yet seen by 1Click (asked fresh), so a second build after
- * a send is refused once 1Click sees it.
+ * implicit deposit address, sendable now (`sendRefusal`) and never built before.
  */
 export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLookup {
+  // One build per quote: a second cascade for one EXACT_INPUT quote could pay it twice before 1Click sees the first.
+  const built = new BoundedMap<string, true>(STATUS_CACHE_SIZE);
   return async (quoteId, account) => {
     const at = now();
     let q;
@@ -651,17 +670,12 @@ export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLook
       !isNearImplicitAccount(q.depositAddress)
     )
       return { status: 409, error: 'This quote is not a withdrawal from NEAR.' };
-    if (at.getTime() >= q.deadline.getTime() - SEND_MARGIN_MS)
-      return { status: 409, error: 'This quote expires too soon to send. Get a new one.' };
-    const seen = (s: string | null) => s !== null && s !== 'PENDING_DEPOSIT';
-    if (seen(q.status)) return { status: 409, error: ALREADY_SEEN };
-    try {
-      const fresh = await deps.oneClick.status(q.depositAddress);
-      await deps.store.saveStatus(q.id, fresh.status, at).catch(() => undefined);
-      if (seen(fresh.status)) return { status: 409, error: ALREADY_SEEN };
-    } catch {
-      return { status: 502, error: STATUS_UNAVAILABLE };
-    }
+    const refused = await sendRefusal(deps, q, at, () => undefined);
+    if (refused) return refused;
+    // ponytail: in memory, so a restart forgets; 1Click's own status check above still refuses once it sees the send.
+    if (built.has(q.id))
+      return { status: 409, error: 'This quote was already built once. Get a new quote.' };
+    built.set(q.id, true);
     return {
       quoteId: q.id,
       token,

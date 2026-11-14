@@ -44,13 +44,13 @@ export function PrepareDialog({
   request: PrepareRequest;
   label: string;
   signingEnabled?: boolean;
-  /** One payment (a 1Click withdrawal): once a step is sent, it is never offered to build again. */
+  /** One payment (a 1Click withdrawal): after one signing attempt it is never offered to sign or build again. */
   once?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<'idle' | 'loading' | 'signing' | 'updating'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
-  const [spent, setSpent] = useState(false);
+  const [spent, setSpent] = useState<'sent' | 'tried' | null>(null);
   const [error, setError] = useState<{ message: string; reasons?: readonly string[] } | null>(null);
   const [progress, setProgress] = useState<{
     preview: readonly string[];
@@ -95,7 +95,11 @@ export function PrepareDialog({
     );
     if (!r.ok && r.hashes.length === at)
       setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
-    if (once && r.hashes.length > 0) setSpent(true);
+    // A wallet may broadcast and still fail or return no hash: any attempt spends a one-payment cascade.
+    if (once) {
+      setSpent(r.hashes.length > 0 ? 'sent' : 'tried');
+      setCascade(null);
+    }
     if (r.ok) {
       // The transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
       // show the new state (the card updates or disappears).
@@ -109,7 +113,11 @@ export function PrepareDialog({
   return (
     <div className="prepare">
       {spent ? (
-        <p className="muted-note">Sent from your wallet. Do not send it again.</p>
+        <p className="muted-note">
+          {spent === 'sent'
+            ? 'Sent from your wallet. Do not send it again; the status above follows it.'
+            : 'Not sent, as far as the wallet reported. Check your wallet activity; to try again, get a new quote.'}
+        </p>
       ) : (
         <button
           type="button"

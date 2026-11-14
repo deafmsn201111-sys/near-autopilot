@@ -665,7 +665,9 @@ belong to the signer, be a NEAR-origin quote of a listed token, be more than 2 m
 `storage_deposit { account_id: <deposit address>, registration_only: true }` (bounds.min, capped at 0.0125 NEAR like
 other registrations; skipped when registered) and `ft_transfer` of the quoted amount, 1 yocto. `validateCascade` allows
 `ft_transfer` only when the context names `transferTo`, and only to it, with exactly 1 yocto and a positive amount;
-every other cascade has no `transferTo`, so `ft_transfer` stays refused there. No cap changes.
+every other cascade has no `transferTo`, so `ft_transfer` stays refused there. No cap changes. A quote is built at most once (kept in memory;
+after a restart the fresh 1Click status check remains), and the dialog offers one signing attempt per quote, so one
+EXACT_INPUT quote cannot be paid twice before 1Click sees the first transfer; after a decline the user gets a new quote.
 **Consequences:** A withdrawal is signed in the NEAR wallet like any cascade and confirmed step by step. Its status is
 the deposit status path (#29); the recipient address is kept in the `oneclick_quote` event, not in `deposit_quotes`.
 Native NEAR (needs a wrap first), Bitcoin and other chains are not offered yet.

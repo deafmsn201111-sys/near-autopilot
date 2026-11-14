@@ -30,6 +30,8 @@ export interface WalletBalance {
 }
 
 const SHARES = [25, 50, 100] as const;
+// As the API's margin: the transfer must land well before 1Click's deadline.
+const SEND_MARGIN_S = 120;
 const CHAINS = DEPOSIT_CHAINS.filter((c) => (WITHDRAW_CHAINS as readonly string[]).includes(c.id));
 
 function WithdrawQuote({
@@ -54,6 +56,10 @@ function WithdrawQuote({
       </h3>
       {left === 0 ? (
         <p className="deposit-warn">This quote has expired. Do not send to it; get a new one.</p>
+      ) : left <= SEND_MARGIN_S ? (
+        <p className="deposit-warn">
+          Too close to the deadline to send safely. Get a new quote, unless you already signed.
+        </p>
       ) : (
         <p>
           Sign one NEAR transaction within <b className="num">{remaining(left)}</b>: it sends {send}{' '}
@@ -291,7 +297,8 @@ export function WithdrawDialog({
               {chosen && balance > 0 && (
                 <div className="chain-chips" aria-label="Share of your balance">
                   <span className="muted-note">
-                    Balance {balance} {chosen.symbol}
+                    Balance {balance} {chosen.symbol} (
+                    {describeProvenance('on_chain_verified').label})
                   </span>
                   {SHARES.map((p) => (
                     <button
