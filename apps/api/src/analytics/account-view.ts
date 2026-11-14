@@ -2994,7 +2994,7 @@ export function registerAccountView(
             amounts,
             minAmounts: lpMinAmounts(amounts),
           }),
-          preview: `Add ${h0} ${sym0} + ${h1} ${sym1} to pool #${intent.poolId} (balanced; any dust stays in your exchange balance, withdrawable).`,
+          preview: `Add ${h0} ${sym0} + ${h1} ${sym1} to pool #${intent.poolId} (balanced; any dust stays in your exchange balance, withdrawable). If the pool moves over 0.5% before you sign, the add is refused and both amounts stay in your exchange balance.`,
         });
 
         const cascade = assembleCascade(account, steps);
@@ -3223,7 +3223,7 @@ export function registerAccountView(
 
     // unwrap — wNEAR back to native NEAR (a utility, e.g. after a swap left wNEAR in the wallet).
     if (intent.action === 'unwrap') {
-      const WRAP = accountIdSchema.parse('wrap.near');
+      const WRAP = WRAP_NEAR_ID;
       try {
         const [prices, walletRaw] = await Promise.all([
           latestPrices(),

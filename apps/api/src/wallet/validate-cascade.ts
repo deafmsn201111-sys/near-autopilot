@@ -50,7 +50,6 @@ export const METHODS_BY_ROLE: Readonly<Record<ReceiverRole, ReadonlySet<string>>
   ]),
 };
 
-/** Roles that may receive tokens through `ft_transfer_call`: protocols, never a token id. */
 const TRANSFER_CALL_TARGETS: ReadonlySet<ReceiverRole> = new Set(['burrow', 'rhea', 'dcl']);
 
 export interface CascadeValidationContext {
@@ -164,7 +163,7 @@ function checkAction(
   if (a.methodName === 'add_liquidity') {
     const pool = a.args['pool_id'];
     const allowed =
-      role === 'dcl' && receiverId === ctx.dcl?.contract
+      receiverId === ctx.dcl?.contract
         ? typeof pool === 'string' && ctx.dcl.pools.has(pool)
         : typeof pool === 'number' && ctx.allowedPools?.has(pool) === true;
     if (!allowed) fail('arguments', `${where}: pool ${String(pool)} is not allowlisted`);

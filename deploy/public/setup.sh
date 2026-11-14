@@ -54,7 +54,7 @@ if ! grep -q '^ADMIN_API_TOKEN=.' .env; then
 fi
 mkdir -p checkpoints
 # the containers run as the unprivileged `node` user (uid 1000)
-if ! chown 1000:1000 checkpoints; then
+if [[ "$(stat -c %u checkpoints)" != 1000 ]] && ! chown 1000:1000 checkpoints; then
   echo "✗ could not give checkpoints/ to uid 1000; run ./setup.sh as root (sudo)." >&2
   exit 1
 fi

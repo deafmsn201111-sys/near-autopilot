@@ -73,7 +73,8 @@ export function lpMinAmounts(amounts: readonly [bigint, bigint]): [bigint, bigin
  * CURRENT reserve ratio, so the contract consumes both fully and nothing is stranded — this is what "equal
  * halves" means for a balanced pool, where each side is ~half the value. The total value targets `budgetUsd`,
  * then each side is capped at the wallet holding; if a cap binds, BOTH sides scale down together so the ratio
- * (and thus "no leftover") is preserved. Amounts are floored, never rounded up.
+ * (and thus "no leftover") is preserved. Amounts are floored, never rounded up, and each is clamped to its raw
+ * balance in bigint, which can move the ratio by a rounding unit.
  *
  * `reserve*` are the pool reserves in whole tokens, `price*` USD per whole token, `wallet*Raw` the signer's
  * holdings in raw units.
