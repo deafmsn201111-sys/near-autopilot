@@ -81,11 +81,12 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
    - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
      approval and a full-access key.
    - The log is in `docs/evidence/demo-attack.log.jsonl`.
-2. Open `:3001/activity`. You see what the agents proposed for a demo portfolio each cycle, the policy's answer, and
-   that nothing was signed or sent.
+2. Open `:3001/activity?account=autopilot-test.near`. You see the transactions that account signed through the app,
+   each confirmed by NEAR RPC, with what really happened ("Repaid 5.01 USDC on Burrow") and an explorer link.
 3. Run `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify`. You see every audit chain
    `ok` and `"checkpoints":"ok"`. `:3001/audit` shows the same.
-4. Open `:3001/policy`. You see stored verdicts, each check with its inputs.
+4. Open `:3001/policy`. You see the safety verdict of every cascade built for a real account (ALLOW or BLOCK, each
+   check), and the attack demo labelled as fixtures.
 5. Run `pnpm --filter @near-autopilot/analytics test`. You see `signing-lock.test.ts` pass. It fails if any site
    source other than `lib/wallet-sign.ts` calls a wallet's signing method.
 
@@ -125,15 +126,24 @@ from another chain (below), in a separate client.
    them in your wallet or cancel.
 
 5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
-   on the portfolio. Pick the token and chain you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), the
-   amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
+   on the portfolio. Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
+   (search by symbol, popular ones first, every token with its logo), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
    a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
-   partner key, `ONE_CLICK_JWT`, gives the partner schedule). Send exactly that amount from your wallet on that chain;
-   1Click delivers to your NEAR account, or refunds to your address if the swap fails. Tracking the deposit's status
-   is not on the page yet. What we keep: one `deposit_quotes` row per address shown (your NEAR account, the tokens
-   and amounts, your refund address on the other chain, the deposit address, deadline, fee and 1Click's id and
-   signature), deleted after 30 days; no IP address.
+   partner key, `ONE_CLICK_JWT`, gives the partner schedule). The QR is a payment link that fills in the address,
+   exact amount, token and network: BIP21 for Bitcoin, EIP-681 with the chain id for ETH and ERC-20 tokens on
+   Ethereum, Base and Arbitrum, Solana Pay for SOL and SPL tokens. The API names the token from the quoted 1Click asset
+   (native coin by its exact asset id; on EVM the contract the asset id names; on Solana the mint 1Click lists); when it cannot be, or the wallet does not read payment links, the QR holds the
+   address only (also an **Address only** switch). **Open in wallet** opens the same link; the address and the amount
+   each have a copy button. Send exactly that amount from your wallet on that chain;
+   1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
+   deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
+   transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;
+   it stops at a final status, or 30 min after the deadline if nothing arrived ("expired"), and keeps the last status with a
+   **Check again** button. The browser sends only our quote id; the server looks up the address, asks 1Click
+   (cached 5 s per quote, rate-limited per visitor). What we keep: one `deposit_quotes` row per address shown (your
+   NEAR account, the tokens and amounts, your refund address on the other chain, the deposit address, deadline, fee,
+   1Click's id and signature, and the latest status with its time), deleted after 30 days; no IP address.
 
 **Not done**
 
@@ -193,22 +203,25 @@ in Postgres and visible on the site.
 Burrow snapshot of that wallet (balances and loan, priced with the same confirmed prices as the portfolio table) and
 gives the central LLM six tools:
 
-| Tool                      | What runs                                                                                                                                                                                                                                                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6, from the wallet, or from the collateral of the same token when the wallet holds too little; the card shows the loan rate and what the Burrow deposits earn per month, and a safe loan that earns more than it costs gets no repay offer |
-| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate                                                                                                                                                                                                                            |
-| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices                                                                                                                                                                                                                                 |
-| `portfolio_concentration` | Wallet check: share of the portfolio in one token; the swap uses only what the wallet holds                                                                                                                                                                                                                                     |
-| `liquidity_positions`     | Wallet check: Rhea DCL positions out of range                                                                                                                                                                                                                                                                                   |
-| `burrow_withdrawals`      | Wallet check: Burrow supply that can move to the wallet (all of it with no loan, else what keeps HF 1.6)                                                                                                                                                                                                                        |
+| Tool                      | What runs                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `liquidation_guardian`    | The orchestrator's `LiquidationGuardianAgent`: smallest repayment that restores HF 1.6, from the wallet, or from the collateral of the same token when the wallet holds too little, or by withdrawing another collateral token, swapping it and repaying (HF never under 1.15 after any step); the card shows the loan rate and what the Burrow deposits earn per month, and a safe loan that earns more than it costs gets no repay offer |
+| `capital_allocator`       | The orchestrator's `CapitalAllocatorAgent` (idle supply): deposit idle tokens at today's Burrow rate                                                                                                                                                                                                                                                                                                                                       |
+| `market_intelligence`     | The orchestrator's `MarketIntelligenceAgent`: Burrow oracle vs the collector's confirmed prices, and the 24 h price range                                                                                                                                                                                                                                                                                                                  |
+| `portfolio_concentration` | Wallet check: share of the portfolio in one token; the swap uses only what the wallet holds                                                                                                                                                                                                                                                                                                                                                |
+| `lp_optimizer`            | The orchestrator's `LpOptimizerAgent`: an out-of-range Rhea DCL position moves to a new range around the price (remove → swap → add) when the extra fees, from the pool's 24 h volume, repay the move within 14 days; else the exit to the wallet                                                                                                                                                                                          |
+| `burrow_withdrawals`      | Wallet check: Burrow supply that can move to the wallet (all of it with no loan, else what keeps HF 1.6)                                                                                                                                                                                                                                                                                                                                   |
 
 **Loans.** A loan below HF 1.5 gets a card that repays down to HF 1.6, not the whole debt (a loop that earns more than
 it costs is the user's call to close). When the wallet lacks the debt token, it repays from the collateral of the same
 token in one priced Burrow call (`DecreaseCollateral` + `Repay`), so nothing has to be in the wallet. The card has an
 amount field, a slider and "To safe (1.6)" / "Whole debt" buttons; the health factor after the chosen amount updates
-live in the loan-safety colours, and the button prepares exactly that amount. A card with no action that can be built
-(the debt token is neither in the wallet nor the collateral, or the concentrated token is not in the wallet) is advice
-without a button.
+live in the loan-safety colours, and the button prepares exactly that amount. When the debt token is neither in the
+wallet nor the collateral, the card repays with another collateral token in separate transactions signed in order:
+withdraw it from Burrow (only what the wallet lacks), swap it on Rhea, repay with the swap's minimum output. The card
+and the preview show the health factor after each step; it never drops under 1.15, even if you stop after the first
+one, or the card has no button and says why (D25). A card with no action that can be built (no route for the swap,
+or the concentrated token is not in the wallet) is advice without a button.
 
 The model sees only numbers and token names from our own list: a token's own `ft_metadata` symbol never reaches it (an
 unknown token appears as its shortened contract id, on the AI-ranked cards too), and the prompt does not carry the
@@ -216,7 +229,10 @@ account id. The model only orders the candidates the tools returned and writes a
 transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
 by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
 turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
-**AI-ranked**. A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
+**AI-ranked**. When neither the rules nor the agents find an action worth $1 or more, no model is called: the page says
+**Nothing for the AI to rank** and keeps the same "How the AI got here" timeline: the wallet read, each agent's line,
+and a neutral "AI not asked" step with a reason built by code from those lines (e.g. "Why: Health factor 1.29; safe
+from 1.25 on Aggressive · Nothing idle to put to work · …"). A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
 amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
 needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
 
@@ -226,18 +242,33 @@ concentration share, positions out of range) and that number's provenance label,
 (its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
 pipeline of the run: what was read on-chain, what each agent returned, what the model ranked, and what code checked
 before showing it (explanations whose numbers all came from the agents, explanations replaced, warnings put back,
-made-up actions dropped). The line is built on the server
+made-up actions dropped). The model may add one sentence (at most 300 characters) on why the cards are in this
+order; it is shown under the ranking step as "Why this order: …" only when every number in it appears on a card the
+user sees or in the tools' shared context, there are at least two cards, and code did not put back a warning the
+model left out (that changes the order); otherwise it is dropped. The line is built on the server
 from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
 it says so; it never reports "healthy" without a comparison.
+
+The pipeline fills in live while the analysis runs: the browser asks for `text/event-stream` and the API sends one
+event per real step (`read`, `asked` when the model picks the agents to call, an `agent` event as each tool result
+comes back, `ranked`, `checked`), then `done` with the same analysis the JSON reply carries. All four stages show
+from the first event: the current one pulses, later ones are dimmed, each agent the model asked for waits on a
+placeholder until its result arrives, and a clock runs until the end. The events are the same server-built lines, never raw tool output. A cached result or a rule-based list arrives as a single `done`, so it appears at once (a cached one is labelled
+"from a run N min ago"); a stream that breaks falls back
+to the plain JSON request.
 
 **Spend cap and what we log.** The model is `claude-haiku-5-5` or `claude-sonnet-5-5` (anything else stops the API at
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
 page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
-`cap`, `model_error`, `invalid_output`, `empty`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
+`cap`, `model_error`, `invalid_output`, `empty`, `nothing_to_rank`, `deadline`, `cancelled`, `loop_limit`). **What we log:** one `llm_calls` row per
 analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
 called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
-days are deleted (on start, then hourly).
+days are deleted (on start, then hourly). One `events` row per wallet connect (reported by the browser, marked
+client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
+cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
+written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
+prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
 answers 404) shows AI spend against the cap and has a kill switch and the cap field
@@ -319,16 +350,20 @@ healthy containers, with no manual edits, and `pnpm verify` passed (measured bef
 
 Four pages for a person, and one area for reviewers.
 
-| Page              | What you see and do                                                                                                                                                                                                                        |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision |
-| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                       |
-| **Activity**      | Every decision of the autopilot for the portfolio, in plain words: what each agent saw, what was proposed, what the safety policy said and why. Identical checks in a row are grouped                                                      |
-| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                    |
-| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                        |
+| Page              | What you see and do                                                                                                                                                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision                             |
+| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                   |
+| **Activity**      | What you did through the app for your account, newest first: each prepared cascade with what NEAR says really happened for every signed step, confirmed by RPC. Anyone sees the confirmed transactions; analyses and unsigned cascades only after you verify ownership |
+| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                                |
+| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                                                    |
 
-**Shadow mode.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two portfolios ($500 and
-$5,000) are simulated and labelled as such.
+**Live data, simulated demo.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two demo
+portfolios ($500 and $5,000) on Home are simulated and labelled as such.
+
+- **Signing progress.** After you sign, each step shows ⏳ while it executes and ✓ or ✗ when the server has asked
+  NEAR RPC for its final status. A failed step names the contract, its error and what happened to your funds (refund
+  confirmed, or nothing left your wallet); the next step is not offered.
 
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
@@ -353,13 +388,26 @@ $5,000) are simulated and labelled as such.
   | Balanced     | 1.50              | 1.60             | 1.30            | 60% / 85% / 50%                         |
   | Aggressive   | 1.25              | 1.35             | 1.15            | 75% / 95% / 65%                         |
 
+  A strategy is the set of risks it accepts, not a forecast; within that set the code picks the highest yield it can
+  compute. The idle-money card names what its strategy weighed, as a "calculated estimate" line under the reason:
+
+  | Strategy     | Idle money may go to                                        | Today                                                         |
+  | ------------ | ----------------------------------------------------------- | ------------------------------------------------------------- |
+  | Conservative | Burrow lending only                                         | supply                                                        |
+  | Balanced     | Burrow lending, or a stablecoin pool that pays clearly more | supply (no stablecoin pool is tracked yet)                    |
+  | Aggressive   | the highest yield, leverage included                        | supply, or a same-asset loop at HF 1.35 shown as numbers only |
+
+  The app never borrows, so a loop has no button: when it pays more, the supply card keeps its button (the loop's
+  first step) and says what the loop would earn, at which borrow rate it stops paying, and that it can be liquidated.
+
 - **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
   site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs
   money per run) is only for a visitor who signs a short NEP-413 message in the wallet. It is not a transaction:
   nothing is sent and no gas is paid. The server rebuilds the exact text, checks the signature, checks that the
   signing key is a full-access key of that account on mainnet (a key only the owner holds, not a key a dApp was
   given), and accepts the proof for 24 hours. Anyone else, or a visitor who declines to sign, gets the heuristic
-  analysis.
+  analysis. If the key can't be read from the network at that moment, the page says so and checks again once by itself
+  (no new signature; "Check again" after that); it never shows such a failure as "not the owner".
 
 **Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 
@@ -522,7 +570,7 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
 - **Simulation is not on-chain.** `DATA_SOURCE=simulation` uses synthetic balances and fixed demo prices served by
   an in-process mock RPC; nothing it shows was read from NEAR, and nothing is ever sent.
 - **`dry-run` sends nothing.** A `dry_run` proposal is a plan that passed policy, not a transaction; it has no tx hash.
-- **No transaction has ever been submitted from this repository**, on any network. Transaction payloads (Rhea v1
+- **Transactions are signed and sent only by the user's wallet**, never by the server. Transaction payloads (Rhea v1
   `ft_transfer_call` swap message, Burrow repay/collateral messages) follow the contracts' source and are gated at
   runtime by on-chain verification (chain id, deployed-code exports, oracle identity, token listing), but their
   on-chain _effect_ is unverified. Responses are strictly Zod-validated so a mismatch fails closed. Evidence and gaps:
@@ -545,3 +593,14 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
   approval UI yet.
 - `requires_approval` and `approved` rows are never auto-resumed. An `approved` row that never resolves
   (crash mid-send) must be reconciled by hand using its transaction hash/plan hash.
+
+## Disclaimer
+
+- **Not financial advice.** Recommendations are generated by heuristics and an LLM and can be wrong. They show the
+  numbers behind every suggestion; deciding what to do is yours.
+- **Nothing runs on its own**, despite the name. NEAR Autopilot never holds your keys: every transaction is built
+  unsigned, shown action by action, and signed by you in your own wallet, at your own risk. Review every action in
+  your wallet before you approve it.
+- **DeFi is risky.** Burrow, Rhea and liquid-staking contracts carry smart-contract, oracle, liquidation,
+  impermanent-loss and slippage risk. Displayed APRs are variable, not guaranteed returns.
+- **Unaudited hackathon software**, provided as is, without warranty of any kind ([MIT](LICENSE)).

@@ -11,12 +11,22 @@ const apiPost = vi.fn(async () => ({
   status: 200,
   body: { source: 'llm', note: null, recommendations: [], calledTools: [] },
 }));
-vi.mock('../lib/api', () => ({ apiPost }));
+const apiPostStream = vi.fn(
+  async (): Promise<Response | null> =>
+    new Response('event: done\ndata: {}\n\n', {
+      headers: { 'content-type': 'text/event-stream' },
+    }),
+);
+vi.mock('../lib/api', () => ({ apiPost, apiPostStream }));
 
-function request(body: unknown, contentType = 'application/json'): Request {
+function request(
+  body: unknown,
+  contentType = 'application/json',
+  accept = 'application/json',
+): Request {
   return new Request('http://localhost/api/analysis', {
     method: 'POST',
-    headers: { 'content-type': contentType },
+    headers: { 'content-type': contentType, accept },
     body: JSON.stringify(body),
   });
 }
@@ -25,20 +35,59 @@ describe('POST /api/analysis', () => {
   beforeEach(() => {
     vi.resetModules();
     apiPost.mockClear();
+    apiPostStream.mockClear();
     proof = undefined;
     ip = '203.0.113.1';
   });
 
   it('forwards a valid account to the analysis endpoint', async () => {
     const { POST } = await import('../app/api/analysis/route');
-    const res = await POST(request({ account: 'Alice.near ' }));
+    const req = request({ account: 'Alice.near ' });
+    const res = await POST(req);
     expect(res.status).toBe(200);
     expect(apiPost).toHaveBeenCalledWith(
       '/v1/analytics/account/alice.near/analysis',
       { strategy: 'balanced' },
       60_000,
       {},
+      req.signal,
     );
+  });
+
+  it('passes an event stream through unbuffered when the browser asks for one', async () => {
+    proof = 'signed-proof';
+    const { POST } = await import('../app/api/analysis/route');
+    const req = request({ account: 'alice.near' }, undefined, 'text/event-stream');
+    const res = await POST(req);
+    expect(apiPostStream).toHaveBeenCalledWith(
+      '/v1/analytics/account/alice.near/analysis',
+      { strategy: 'balanced' },
+      60_000,
+      { 'x-ownership-proof': 'signed-proof' },
+      req.signal,
+    );
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    expect(res.headers.get('cache-control')).toBe('no-cache, no-transform');
+    expect(res.headers.get('x-accel-buffering')).toBe('no');
+    expect(await res.text()).toBe('event: done\ndata: {}\n\n');
+  });
+
+  it('answers a stream request with the API error as JSON when the API sends no stream', async () => {
+    apiPostStream.mockResolvedValueOnce(
+      Response.json({ error: 'the chain read failed' }, { status: 502 }),
+    );
+    const { POST } = await import('../app/api/analysis/route');
+    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: 'the chain read failed' });
+  });
+
+  it('answers 502 when the API is unreachable for a stream', async () => {
+    apiPostStream.mockResolvedValueOnce(null);
+    const { POST } = await import('../app/api/analysis/route');
+    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    expect(res.status).toBe(502);
   });
 
   it('forwards the chosen strategy', async () => {
@@ -49,6 +98,7 @@ describe('POST /api/analysis', () => {
       { strategy: 'aggressive' },
       60_000,
       {},
+      expect.any(AbortSignal),
     );
   });
 
@@ -74,6 +124,7 @@ describe('POST /api/analysis', () => {
       {
         'x-ownership-proof': 'signed-proof',
       },
+      expect.any(AbortSignal),
     );
   });
 
@@ -85,6 +136,42 @@ describe('POST /api/analysis', () => {
     expect(limited.status).toBe(429);
     expect(limited.headers.get('retry-after')).toBeTruthy();
     expect(apiPost).toHaveBeenCalledTimes(5);
+  });
+
+  it('charges one token for a stream and its JSON retry, and only one retry per stream', async () => {
+    ip = '192.0.2.10';
+    const { POST } = await import('../app/api/analysis/route');
+    const click = { account: 'a.near' };
+    for (let i = 0; i < 5; i++) {
+      expect((await POST(request(click, undefined, 'text/event-stream'))).status).toBe(200);
+      expect((await POST(request(click))).status).toBe(200);
+    }
+    expect((await POST(request(click))).status).toBe(429);
+    expect(apiPost).toHaveBeenCalledTimes(5);
+  });
+
+  it('charges a JSON retry that comes after the stream could still be running', async () => {
+    ip = '192.0.2.12';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { POST } = await import('../app/api/analysis/route');
+      const click = { account: 'a.near' };
+      await POST(request(click, undefined, 'text/event-stream'));
+      vi.setSystemTime(Date.now() + 120_000);
+      for (let i = 0; i < 4; i++) expect((await POST(request(click))).status).toBe(200);
+      expect((await POST(request(click))).status).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives no free retry for another account or strategy', async () => {
+    ip = '192.0.2.11';
+    const { POST } = await import('../app/api/analysis/route');
+    await POST(request({ account: 'a.near' }, undefined, 'text/event-stream'));
+    for (let i = 0; i < 4; i++)
+      expect((await POST(request({ account: 'b.near', strategy: 'aggressive' }))).status).toBe(200);
+    expect((await POST(request({ account: 'a.near', strategy: 'aggressive' }))).status).toBe(429);
   });
 
   it('leaves the global AI limit to the API: many visitors are never limited here', async () => {

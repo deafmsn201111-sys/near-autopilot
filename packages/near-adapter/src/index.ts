@@ -4,3 +4,4 @@ export * from './account-reader';
 export * from './token-reader';
 export * from './chain-context';
 export * from './broadcaster';
+export * from './tx-status';

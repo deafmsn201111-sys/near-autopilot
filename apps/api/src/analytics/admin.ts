@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { AdminDepositDeps } from './admin-deposits';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_DAYS = 7;
@@ -21,10 +22,48 @@ export type SettingsPatch = Partial<Omit<LlmSettings, 'depositSetAt'>> & {
   readonly depositSetAt?: Date;
 };
 
+/** One llm_calls row as the LLM quality screen reads it; input and output are stored JSON, shape unchecked. */
+export interface QualityRow {
+  readonly at: Date;
+  readonly accountId: string;
+  readonly model: string;
+  readonly latencyMs: number;
+  readonly tools: readonly string[];
+  readonly outcome: string;
+  readonly input: unknown;
+  readonly output: unknown;
+}
+
+export const FUNNEL_STEPS = ['connect', 'analyse', 'prepare', 'signed'] as const;
+
+/**
+ * One row of the funnel GROUPING SETS: `day` null = the 7-day total, `kind` null = unique accounts over all steps.
+ * `day` is a UTC date, YYYY-MM-DD.
+ */
+export interface FunnelCount {
+  readonly day: string | null;
+  readonly kind: (typeof FUNNEL_STEPS)[number] | null;
+  readonly events: number;
+  readonly accounts: number;
+}
+
+/** LLM quality aggregates over a window, counted in SQL; `last` = the newest runs. */
+export interface QualityStats {
+  readonly outcomes: readonly { readonly outcome: string; readonly count: number }[];
+  readonly p50Ms: number | null;
+  readonly p95Ms: number | null;
+  readonly kinds: readonly { readonly kind: string; readonly count: number }[];
+  readonly last: readonly QualityRow[];
+}
+
+export const LAST_RUNS = 20;
+
 export interface AdminStore {
   settings(): Promise<LlmSettings>;
   /** Calls at or after `since` (llm_calls keeps 7 days). */
   recentCalls(since: Date): Promise<SpendRow[]>;
+  /** LLM quality over calls in [from, to]. */
+  quality(from: Date, to: Date): Promise<QualityStats>;
   saveSettings(patch: SettingsPatch): Promise<void>;
 }
 
@@ -34,6 +73,10 @@ export interface AdminDeps {
   readonly store: AdminStore;
   /** LLM_DAILY_CAP_USD in micro-USD, the cap while the settings row sets none. */
   readonly defaultCapMicro: bigint;
+  /** Funnel steps from the events table; absent = the funnel is empty. */
+  readonly events?: { funnel(from: Date, to: Date): Promise<FunnelCount[]> };
+  /** The 1Click screen; absent = no /v1/admin/deposits. */
+  readonly deposits?: AdminDepositDeps;
 }
 
 const usd = (micro: bigint) => Number(micro) / 1e6;
@@ -108,6 +151,50 @@ export function spendSummary(
   };
 }
 
+const noSteps = () => ({ connect: 0, analyse: 0, prepare: 0, signed: 0, accounts: 0 });
+
+/** The Funnel screen: each step per UTC day for 7 days, and unique accounts per day and over the 7 days. */
+export function funnelSummary(counts: readonly FunnelCount[], now: Date) {
+  const start = windowStart(now);
+  const days = Array.from({ length: WINDOW_DAYS }, (_, i) => ({
+    day: dayOf(new Date(start.getTime() + i * DAY_MS)),
+    ...noSteps(),
+  }));
+  const total = noSteps();
+  for (const c of counts) {
+    const target = c.day === null ? total : days.find((d) => d.day === c.day);
+    if (!target) continue;
+    if (c.kind === null) target.accounts = c.accounts;
+    else target[c.kind] = c.events;
+  }
+  return { days, total };
+}
+
+const byCount =
+  <T extends { count: number }>(key: (t: T) => string) =>
+  (a: T, b: T) =>
+    b.count - a.count || key(a).localeCompare(key(b));
+
+/** The LLM quality screen, over runs that reached the model in the last 7 UTC days. */
+export function llmQuality(stats: QualityStats) {
+  const countOf = (rows: readonly { count: number }[]) => rows.reduce((t, o) => t + o.count, 0);
+  const calls = countOf(stats.outcomes);
+  const rate = (n: number) => (calls ? n / calls : null);
+  const failed = stats.outcomes.filter((o) => o.outcome !== 'ok');
+  return {
+    calls,
+    fallbackRate: rate(countOf(failed)),
+    validationErrorRate: rate(countOf(failed.filter((o) => o.outcome === 'invalid_output'))),
+    fallbacks: [...failed]
+      .sort(byCount((o) => o.outcome))
+      .map(({ outcome, count }) => ({ code: outcome, count, rate: count / calls })),
+    p50Ms: stats.p50Ms,
+    p95Ms: stats.p95Ms,
+    topKinds: [...stats.kinds].sort(byCount((k) => k.kind)),
+    last: stats.last.map((r) => ({ ...r, at: r.at.toISOString() })),
+  };
+}
+
 const settingsBody = z
   .object({
     llmEnabled: z.boolean().optional(),
@@ -131,6 +218,16 @@ export function registerAdmin(app: FastifyInstance, deps: AdminDeps, now: () => 
   };
 
   app.get('/v1/admin/spend', summary);
+
+  app.get('/v1/admin/funnel', async () => {
+    const at = now();
+    return funnelSummary((await deps.events?.funnel(windowStart(at), at)) ?? [], at);
+  });
+
+  app.get('/v1/admin/llm', async () => {
+    const at = now();
+    return llmQuality(await deps.store.quality(windowStart(at), at));
+  });
 
   app.post('/v1/admin/settings', async (req) => {
     const body = settingsBody.parse(req.body);

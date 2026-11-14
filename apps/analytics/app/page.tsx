@@ -16,18 +16,6 @@ const amountText = (n: number) =>
     ? n.toLocaleString('en-US', { maximumSignificantDigits: 2 })
     : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
-/** Token coin chip: a deterministic gradient + readable foreground per known symbol, neutral otherwise. */
-const TOKEN_COLORS: Record<string, readonly [string, string]> = {
-  NEAR: ['linear-gradient(135deg,#00ec97,#00935f)', '#03140c'],
-  WNEAR: ['linear-gradient(135deg,#00b876,#064e3b)', '#eafff6'],
-  STNEAR: ['linear-gradient(135deg,#2bffb0,#00b57a)', '#03140c'],
-  USDC: ['linear-gradient(135deg,#3b82f6,#1d5fd1)', '#ffffff'],
-  'USDC.E': ['linear-gradient(135deg,#5b7fb8,#2d4a73)', '#ffffff'],
-  USDT: ['linear-gradient(135deg,#26a17b,#13795b)', '#ffffff'],
-} as const;
-const tokenVisual = (s: string): readonly [string, string] =>
-  TOKEN_COLORS[s.toUpperCase()] ?? ['linear-gradient(135deg,#6f857b,#334039)', '#ffffff'];
-
 /** A short "what kind of token" subtitle for the holdings table. */
 const TOKEN_KIND: Record<string, string> = {
   NEAR: 'Native token',
@@ -40,8 +28,6 @@ const TOKEN_KIND: Record<string, string> = {
 
 /** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
 const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
-import Link from 'next/link';
-import Image from 'next/image';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {
@@ -53,11 +39,15 @@ import {
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
+import { intentTokens } from '../lib/recommendation-intent';
+import { signedMoney } from '../lib/format';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositDialog } from '../components/DepositDialog';
+import { TokenIcons } from '../components/TokenIcon';
+import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
 import { tokenIcon } from '../lib/token-icons';
@@ -82,9 +72,8 @@ const WHERE = {
 interface Row {
   key: string;
   where: keyof typeof WHERE | 'position';
-  token?: string;
-  tokens?: readonly string[];
   symbol: string;
+  logos: readonly { icon: string | null; symbol: string }[];
   sub: string | null;
   amount: number | null;
   usd: number | null;
@@ -94,11 +83,6 @@ interface Row {
 }
 
 function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
-  const [bg, fg] = tokenVisual(r.symbol);
-  const logoTokens = r.tokens?.length ? r.tokens.slice(0, 2) : r.token ? [r.token] : [];
-  const logos = logoTokens.map((token) => tokenIcon(token, token === 'near' ? 'NEAR' : ''));
-  const allLogosFound = logos.length > 0 && logos.every((logo): logo is string => logo !== null);
-  const icon = allLogosFound ? (logos[0] ?? null) : tokenIcon(r.token, r.symbol);
   const isDebt = r.where === 'borrowed';
   const kind =
     r.sub ??
@@ -109,29 +93,7 @@ function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
   return (
     <div className="ht-row">
       <div className="ht-asset">
-        {allLogosFound && logos.length > 1 ? (
-          <span className="coin has-logo coin-pair" aria-hidden="true">
-            {logos.map((src, index) => (
-              <Image
-                key={`${logoTokens[index]}-${src}`}
-                src={src}
-                alt=""
-                aria-hidden="true"
-                width={26}
-                height={26}
-                unoptimized
-              />
-            ))}
-          </span>
-        ) : (
-          <span className={`coin${icon ? ' has-logo' : ''}`} style={{ background: bg, color: fg }}>
-            {icon ? (
-              <Image src={icon} alt="" aria-hidden="true" width={38} height={38} unoptimized />
-            ) : (
-              r.symbol.slice(0, 1)
-            )}
-          </span>
-        )}
+        <TokenIcons tokens={r.logos} size={38} />
         <div>
           <div className="nm">
             {r.symbol}
@@ -221,7 +183,7 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
     <article className={`action${best ? ' best' : ''}`}>
       <div className="action-main">
         <div>
-          {best && <span className="tag">Best result after costs</span>}
+          {best && <span className="tag">Highest net after costs</span>}
           <h3>{a.title}</h3>
           <p>{a.summary}</p>
         </div>
@@ -338,16 +300,42 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </>
     );
   const t = data.totals;
+  const monthly = signedMoney(data.earnings.monthlyNetUsd);
   const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
 
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
+  // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
+  const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
+  const tokenOf = (h: { token?: string; symbol: string }) => h.token ?? curatedId(h.symbol);
+  const iconIds = [
+    ...data.holdings.flatMap((h) => tokenOf(h) ?? []),
+    ...(data.positions ?? []).flatMap((r) => (r.tokens ?? []).map((t) => t.token)),
+    ...(recs?.recommendations ?? []).flatMap((r) => intentTokens(r.intent)),
+  ];
+  const icons = await tokenIcons(iconIds);
+  // HOT wallet accounts include tokens outside the API allowlist. Use checked-in Ref logos if their metadata read is
+  // missing or unavailable; lookup stays tied to the exact contract id and never trusts a copied symbol.
+  for (const token of iconIds) icons[token] ??= tokenIcon(token, '');
+  // An unverified token may copy a real logo, so it keeps the letter placeholder.
+  const logo = (token: string | undefined, symbol: string, verified = true) => ({
+    icon: token && verified ? (icons[token] ?? tokenIcon(token, symbol)) : null,
+    symbol,
+  });
   const allRows: Row[] = [
-    ...data.holdings.map((h) => ({ ...h, key: `${h.where}-${h.token ?? h.symbol}`, sub: null })),
+    ...data.holdings.map((h) => ({
+      ...h,
+      key: `${h.where}-${h.token ?? h.symbol}`,
+      sub: null,
+      logos: [logo(tokenOf(h), h.symbol, h.verified !== false)],
+    })),
     ...(data.positions ?? []).map((r) => ({
       ...r,
       where: 'position' as const,
       symbol: r.label,
+      logos: r.tokens?.length
+        ? r.tokens.map((t) => logo(t.token, t.symbol, r.verified !== false))
+        : [logo(undefined, r.label)],
     })),
   ].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
   const rows = allRows.filter((h) => !isSmall(h) && h.verified !== false);
@@ -368,14 +356,12 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       ? [{ label: 'Other', pct: allocOther, color: ALLOC_COLORS[4] as string }]
       : []),
   ];
-  // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
-  const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
   const mode = portfolioMode({
     isAccount,
     account: accountParam,
     connected: cookieAccount,
-    verified: recs ? recs.ownerVerified === true : null,
+    verified: recs && !recs.ownerCheckFailed ? recs.ownerVerified === true : null,
     signingEnabled,
   });
   return (
@@ -449,13 +435,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <div className="hero-side">
           <div className="hero-stat">
             <span className="eyebrow">Monthly result now</span>
-            <div
-              className={`hero-num num ${(data.earnings.monthlyNetUsd ?? 0) < 0 ? 'neg' : 'pos'}`}
-            >
-              {data.earnings.monthlyNetUsd === null
-                ? '—'
-                : `${data.earnings.monthlyNetUsd >= 0 ? '+' : ''}${money(data.earnings.monthlyNetUsd, true)}`}
-            </div>
+            <div className={`hero-num num ${monthly.tone}`}>{monthly.text}</div>
             <span className="muted-note">{data.earnings.sentence}</span>
           </div>
           <div className="hero-stat">
@@ -472,7 +452,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       </section>
 
       {isAccount && recs && (
-        <OwnershipCheck account={accountParam} verified={recs.ownerVerified === true} />
+        <OwnershipCheck
+          account={accountParam}
+          verified={recs.ownerVerified === true}
+          checkFailed={recs.ownerCheckFailed === true}
+        />
       )}
 
       {isAccount && recs && (
@@ -484,6 +468,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             recommendations={recs.recommendations}
             skipped={recs.skipped ?? []}
             holdings={data.holdings}
+            icons={icons}
             signingEnabled={signingEnabled}
           />
         </section>
@@ -552,26 +537,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               ))}
             </div>
           )}
-        </section>
-      )}
-
-      {!isAccount && data.lastDecision && (
-        <section className="block">
-          <div className="block-head">
-            <h2>What the autopilot decided</h2>
-            <Link href={`/activity?p=${id}`} className="link">
-              Every decision and why →
-            </Link>
-          </div>
-          <div className="decision">
-            <b>{data.lastDecision.headline}</b>
-            <span className="muted-note"> · {ago(data.asOf)}</span>
-            <ul>
-              {data.lastDecision.notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          </div>
         </section>
       )}
     </>

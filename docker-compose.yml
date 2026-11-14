@@ -1,7 +1,8 @@
 # Local stack: Postgres + mainnet collector (view calls only) + read-only analytics API + the site (127.0.0.1:3001).
 #   ./scripts/quickstart.sh       (or: cp .env.example .env, fill the secrets, docker compose up -d --build)
 # Host ports are bound to 127.0.0.1 only; override with POSTGRES_HOST_PORT / ANALYTICS_API_HOST_PORT /
-# ANALYTICS_DASHBOARD_PORT if taken. The server never holds a key: a transaction is only ever signed in the user's wallet.
+# ANALYTICS_DASHBOARD_PORT if taken. Image tag: IMAGE_TAG (quickstart.sh sets the checkout folder name, default
+# `local`), so stacks in parallel worktrees never run each other's images. The server never holds a key: a transaction is only ever signed in the user's wallet.
 x-collector-env: &collector-env
   NODE_ENV: production
   LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -53,7 +54,7 @@ services:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    image: near-autopilot-api:local
+    image: near-autopilot-api:${IMAGE_TAG:-local}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -87,7 +88,7 @@ services:
 
   # Reads mainnet on a schedule (view calls only), stores it and analyses the demo portfolios. No LLM, no signer.
   collector:
-    image: near-autopilot-api:local
+    image: near-autopilot-api:${IMAGE_TAG:-local}
     pull_policy: never
     restart: unless-stopped
     depends_on:
@@ -116,7 +117,7 @@ services:
     build:
       context: .
       dockerfile: docker/analytics.Dockerfile
-    image: near-autopilot-analytics:local
+    image: near-autopilot-analytics:${IMAGE_TAG:-local}
     restart: unless-stopped
     depends_on:
       analytics-api:
@@ -125,13 +126,14 @@ services:
       API_BASE_URL: http://analytics-api:4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       # 1 = the site may hand a validated, unsigned cascade to the connected wallet for the user to sign.
-      MAINNET_WALLET_SIGNING: ${MAINNET_WALLET_SIGNING:-}
+      # On when .env does not set it; an empty value in .env keeps it off.
+      MAINNET_WALLET_SIGNING: ${MAINNET_WALLET_SIGNING-1}
     ports:
       - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
 
   # The admin (/admin: AI spend, kill switch, cap): the same image with ADMIN_UI=1, on 127.0.0.1:3002 only.
   analytics-admin:
-    image: near-autopilot-analytics:local
+    image: near-autopilot-analytics:${IMAGE_TAG:-local}
     pull_policy: never
     restart: unless-stopped
     depends_on:

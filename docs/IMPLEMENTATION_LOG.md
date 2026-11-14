@@ -384,6 +384,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   account read cache key and in `POST /api/analysis`.
 - `strategyNote`: when the presets agree on an account, a sentence under the picker says why.
 
+## 2026-11-13 — Incoming NEAR transfers refresh "Your account" (#117)
+
+- `apps/analytics/lib/account-signal.ts`: the watcher reads `view_account` (balance + block height) instead of the
+  access-key nonces; `watchStep` drops stale blocks, compares at 4 significant digits and stays quiet while a refresh
+  runs or for 10 s after (`recentlyRefreshed` in `portfolio-refresh.ts`). A received NEAR transfer now shows the
+  "Transaction seen" note and the new balance within one tick (D20 amendment).
+
 ## 2026-11-13 — Loan cards show the carry; a safe profitable loan is left alone (#86)
 
 - `apps/api/src/analytics/account-view.ts`: the account read splits the monthly Burrow figure into what the loan costs
@@ -394,3 +401,259 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/api/src/analytics/ai-analysis.ts`: the guardian's wallet repay card carries the same line; the system prompt
   says the reason to repay is the health factor, never the loan itself.
 - `apps/analytics`: the line under the card's why, tagged with its provenance.
+
+## 2026-11-13 — AI "nothing to act on" is an AI result; $0.00 monthly is neutral (#130)
+
+- `analyseAccount`: an empty answer is an AI result (`source: 'llm'`) only when every proposing tool ran without error
+  and neither they nor the rule-based list produced a candidate. A model that drops a real candidate, or skips or
+  fails a check, still falls back with `empty`.
+- UI badge: "AI-checked · nothing to act on" for that case.
+- "Monthly result now" that rounds to $0.00 shows `$0.00` with no sign or colour (`signedMoney`), and the sentence
+  says the position roughly breaks even (`earningsSentence`) instead of "costs about $0.00".
+
+## 2026-11-13 — Idle supply sized the same on the AI path (#131)
+
+- `CapitalAllocatorAgent.proposeSupply` deposits the whole idle balance; the decision engine no longer applies
+  `maxSwapUsd` to `lending.supply` (D23). The AI card now says "Put $507.42 of your idle USDt to work", as the
+  rule-based card does.
+
+## 2026-11-13 — Live AI pipeline over SSE (#113)
+
+- `packages/orchestrator/src/tool-loop.ts`: `onResult` reports each tool result as it comes back.
+- `apps/api/src/analytics/ai-analysis.ts`: `analyseAccount(..., onEvent)` emits `read`, `agent`, `ranked`, `checked`
+  from the same server-built lines as the trace; the JSON reply is unchanged.
+- `apps/api/src/analytics/account-view.ts`: the analysis endpoint streams when asked for `text/event-stream` (D24).
+- `apps/analytics`: the `/api/analysis` proxy passes the stream through unbuffered; `runAnalysis` parses the events
+  (zod, unknown ones ignored), falls back to JSON; "How the AI got here" fills in as events arrive.
+- `deploy/public/Caddyfile`: `flush_interval -1` on the reverse proxy.
+- UI design pass: all four stages from the first event (current one pulses, later ones dimmed, the rail fills as
+  they complete), placeholders for the agents the model asked for (`asked` event, `onCalls` in the tool loop), a
+  running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
+  `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.
+
+## 2026-11-13 — Repay a loan with another collateral token (#69)
+
+- `packages/core/src/loan-math.ts`: `swapRepayPlan` sizes withdraw → swap → repay (wallet tokens first, then plain
+  Burrow supply, then collateral) to the preset's target HF without the HF after the withdraw going under
+  `SWAP_REPAY_FLOOR_HF` (1.15); reasons `floor`, `no_gain`, `nothing` when it cannot.
+- `apps/api/src/analytics/account-view.ts`: the account read picks the largest collateral token with an allowlisted
+  pool to the largest debt and quotes it once (only for a loan under the strictest safe line with no same-token
+  collateral); the loan card becomes `repay_with_collateral` with the HF after each step in its text and `plan`.
+- `apps/api/src/wallet/swap-repay.ts` + `POST /v1/wallet/prepare`: re-reads, re-quotes, refuses a withdrawal under the
+  floor, builds register? → withdraw → register? → swap → repay, "Transaction k of n" previews with the HF after each
+  step; `validateCascade` with the oracle, Burrow, Rhea and the two tokens.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns that card on the AI path, with the HF steps in
+  the trace. `apps/analytics`: the new intent in the zod schema, the prepare mapping and the button label.
+- `packages/rhea-adapter/src/planner.ts`: `buildRheaSwap`, the one instant-swap builder the planner, the prepare swap
+  and the swap-repay cascade share.
+- D25 in `docs/DECISIONS.md`.
+
+## 2026-11-14 — Local runs can sign (#30)
+
+- `.env.example` sets `MAINNET_WALLET_SIGNING=1`; `docker-compose.yml` defaults to `${MAINNET_WALLET_SIGNING-1}`, so a
+  fresh quick start shows "Sign", while an existing `.env` with an empty value stays off (D9, caps unchanged).
+- README: the "no transaction has ever been submitted" bullet now says the user's wallet signs and sends; the
+  nearblocks link to the first live tx follows the owner's run.
+
+## #119 — No model call when there is nothing to rank
+
+- `analyseAccount` runs the agent tools as plain code before the model; with no card offered it returns fallback
+  `nothing_to_rank` (no model call, no `llm_calls` row) and the UI badge says "Nothing for the AI to rank" instead of
+  "AI unavailable". It still lists each agent's line under "What the agents checked". This replaces #130's model call
+  for the same case (owner's choice, 14 Nov): a supply under 1% a year is no longer offered to the model either.
+
+## 2026-11-14 — LP Optimizer on the wallet path: DCL re-centre (#63)
+
+- `packages/rhea-dcl-adapter/src/recentre.ts`: `alignRange` (agent ticks → DCL points) and `recentreSwap` (surplus to
+  swap for a range's ratio), on the contract's own deposit math.
+- `apps/api/src/analytics/lp-recentre.ts`: `lpObservation` builds an `LpPositionView` per wallet DCL position
+  (liquidity converted to CLMM units, market depth as segments, 24 h volume and gas in token Y); `recentreSteps`
+  builds the cascade.
+- `apps/api/src/analytics/discovery.ts`: `dclVolumes24hUsd` from Rhea's indexer.
+- `ai-analysis.ts`: `lp_optimizer` tool replaces `liquidity_positions`; `account-view.ts`: `observe()` fills
+  `market.lpPositions`, prepare intent `recentre_dcl`; `validate-cascade.ts`: DCL `add_liquidity` allowlist (D26).
+- `apps/analytics`: "Prepare new range" button for `recentre_dcl`; the exit card reads as an exit.
+
+## 2026-11-14 — Market Intelligence: 24 h volatility on the wallet path (#104)
+
+- `apps/api/src/analytics/series.ts`: `range24hBps` — high-low range (bps) of an asset's per-snapshot consensus
+  price; null under 12 snapshots.
+- `apps/api/src/analytics/account-view.ts`: the wallet observation fills `volatility24hBps` for each priced held
+  token from the collector's last 24 h of `price_observations`; a failed read leaves the token without a range.
+- A range above 15% is a `volatility_spike` and the Market Intelligence trace line names it (D13 updated).
+
+## #124 — Token logos and a deposit picker
+
+- `packages/core/src/token-icon.ts`: `safeTokenIcon` (image data URIs only, 32 KB cap) (D27).
+- `apps/api/src/analytics/token-icons.ts`: `TokenIcons` (ft_metadata.icon, bounded cache, NEAR logo for
+  `near`/`wrap.near`) and `GET /v1/tokens/icons?ids=`; `/v1/deposit/assets` gives each token its `icon`; LP rows carry
+  their `tokens`.
+- `apps/analytics`: `TokenIcon` (img or letter placeholder, falls back on a load error) on holdings rows (two
+  overlapping on LP rows), recommendation cards (the intent's tokens) and the deposit quote. The deposit form is now
+  network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
+  Enter, Esc back).
+
+## 2026-11-14 — Both paths rank idle tokens by dollars a year (#139)
+
+- `packages/orchestrator/src/agents/capital-allocator.ts`: `proposeSupplies` proposes a supply for every idle
+  allocation asset, the most dollars a year (value × Burrow rate) first; the decision engine still ranks by net benefit.
+- `apps/api/src/analytics/ai-analysis.ts`: one supply candidate per idle token with its yearly earnings; the prompt
+  says a pick that skips the top earner explains why in its "why".
+- `apps/api/src/analytics/account-view.ts`: the rule-based idle card offers the top earner in dollars a year (not the
+  largest balance) and names the runner-up's yearly earnings.
+
+## 2026-11-14 — Ownership: a key read that could not run is not "not the owner" (#144)
+
+- `apps/api/src/wallet/ownership.ts`: `verifyOwnership` rethrows an `RpcError` from the access-key read that is not
+  the node's own answer (timeout, rate limit, HTTP error, node down); a missing or function-call key is still `false`.
+- `apps/api/src/analytics/account-view.ts`: such a failure is logged (`ownership key read failed`, account and error
+  text, never the proof); GET account answers `ownerVerified: false, ownerCheckFailed: true`, POST analysis 503.
+- `apps/analytics`: a read with `ownerCheckFailed` is cached 1 s, not 60 s (it used to hold "not verified" under the
+  new proof's key); `OwnershipCheck` says the check could not run, refreshes once after 2 s and offers "Check again".
+
+## 2026-11-14 — Real activity on an events table (#32)
+
+- `packages/db`: migration 0021 `events` (unique tx hash, 30-day purge in `analytics/main.ts`).
+- `packages/near-adapter/src/tx-status.ts`: final transaction status by hash + signer (zod), tested on recorded
+  mainnet answers (`test/fixtures/tx-*.json`: Burrow repay/supply, Rhea swaps, a failed oracle call, unknown hash).
+- `apps/api/src/wallet/validate-cascade.ts`: per-rule checks and a summary; `wallet/seal.ts` stores every prepare's
+  verdict; `wallet/outcome.ts` turns receipts' logs into "Repaid 5.01 USDC on Burrow" and, on failure, the contract,
+  its error and the funds' fate; `wallet/confirm.ts` is `POST /v1/wallet/confirm` (D28).
+- `apps/api/src/analytics/events.ts`: `POST /v1/events` (connect), `GET /v1/analytics/account/:id/events`, `GET
+/v1/analytics/policy/cascades`; analyse, verified and 1Click quote writers. `/v1/analytics/agent-activity` removed.
+- `apps/analytics`: `/api/events` and `/api/confirm` (JSON only, rate-limited); the sign dialog shows each step ⏳ → ✓/✗
+  and stops after a failed one; Activity and /policy rebuilt on events; shadow-mode text removed from Home and
+  Opportunities.
+- Found on the way: Burrow's `oracle_call` failed with "Price oracle disabled" on mainnet on 13 Nov (autopilot-test.near).
+
+## 2026-11-14 — "Nothing for the AI to rank" says why (#143)
+
+- On top of #119 (no model call when nothing to rank): `nothing_to_rank` carries `note` = the proposing agents' own
+  lines joined in order (no model text); the guardian's safe-loan line names the strategy ("Health factor 1.29; safe
+  from 1.25 on Aggressive").
+- `Recommendations.tsx`: the nothing-to-rank case keeps the "How the AI got here" timeline: wallet read (new
+  `read` on the analysis, set without a model run), the agents, and a neutral "AI not asked" step carrying the "Why: …"
+  line with a provenance tag; the generic "Nothing to improve right now" is gone for that case.
+- #143's original goal (a `source: 'llm'` result) is superseded by #119's decision not to call the model at all.
+
+## 2026-11-14 — 1Click deposit status polling with limits (#29)
+
+- `OneClickDepositClient.status`: `GET /v0/status?depositAddress=…` (JWT if set), zod per field; an unknown status
+  is `UNKNOWN`, a malformed amount, reason or tx hash is dropped; only a base58 NEAR tx hash is kept, 1Click's
+  `explorerUrl` is never used (the UI links nearblocks.io itself).
+- `GET /v1/deposit/status/:id`: our quote id → stored deposit address → 1Click; answers cached 5 s per quote in a
+  `BoundedMap` (1000 quotes), concurrent callers share one call; `deadlinePassed` from the server clock. The latest
+  status and its time go to `deposit_quotes.status` / `status_at` (migration 0022) when it changes.
+- `apps/analytics`: `/api/deposit/status/[id]` proxy with its own `consume('deposit-status')` limit (60 per visitor,
+  10 000 overall per 10 min); `poll()` takes a schedule (`everyMs` as a function of ticks done); the deposit dialog
+  polls 5 s → ×1.5 → 30 s, at most 120 checks, stops at `SUCCESS`/`REFUNDED`/`FAILED` or, while `PENDING_DEPOSIT`,
+  30 min after the deadline (a late deposit can take a confirmation to show up); `INCOMPLETE_DEPOSIT` keeps
+  polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
+  address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.
+
+## 2026-11-14 — Swap output shows without a reload (#160)
+
+- `refreshPortfolio` no longer stops at the first changed read: a Rhea swap's debit lands first and its credit a few
+  blocks later. It keeps reading every 5 s until a read after a change shows nothing new, at most 6 reads (~25 s).
+
+## 2026-11-14 — Admin screens 2 Funnel and 3 LLM quality (#33)
+
+- `llm_calls` gets `input` (strategy + candidate cards offered: id, kind) and `output` (the model's own picks: id,
+  kind or null for an id no tool returned, why; the raw reply capped at 2000 chars on `invalid_output`), migration
+  0023, kept 7 days with the row.
+- `GET /v1/admin/funnel`: connect / analyse / prepare / signed and unique wallets per UTC day for 7 days, from
+  `events`. `GET /v1/admin/llm`: fallback rate by code, validation-error rate (`invalid_output`), p50/p95 latency
+  (percentile_cont, in TS), top recommendation kinds the model picked, last 20 runs. Both behind `ADMIN_API_TOKEN`.
+- `/admin/funnel` and `/admin/llm` in the loopback admin container, with an admin nav; "no data yet" when empty.
+
+## 2026-11-14 — A broken AI stream no longer starts a second run or spends a second token (#150)
+
+- `analyseAccount`: runs still going live in `AnalysisMemo.running` by account + strategy, checked before the wallet
+  read; a request for the same pair waits for that run and gets its result (also a fallback) instead of starting a
+  model run of its own. The model part moved into `runModel` unchanged.
+- `/api/analysis`: a paid stream request leaves one free JSON retry for the same visitor + account + strategy
+  (within 2 min of the stream, `BoundedMap` of 10 000; the pass is dropped only when used), so the client's fallback after a broken stream costs no second visitor token.
+- `runAnalysis`: an `error` frame returns its error (zod, ≤ 200 chars) instead of re-POSTing as JSON; only a stream
+  that ends without a valid `done` falls back.
+
+## 2026-11-14 — Admin screen 4: 1Click (#34)
+
+- `GET /v1/admin/deposits` (admin token only, same `onRequest` check as Spend): `deposit_quotes` of the last 7 UTC
+  days, newest first, at most 100 listed; counts by state — waiting, processing, success, refunded, failed, expired.
+  Expired = never checked or `PENDING_DEPOSIT` 30 min past the deadline (the deposit screen's rule).
+- Chain, symbol and decimals come from 1Click's cached token list; when it is down the row shows the raw asset id and
+  base units. Deposit and refund addresses leave the API shortened (`0x1111…2222`).
+- `/admin/1click` page and an admin nav (Spend · 1Click). Statuses are what the user's deposit screen last saw;
+  server-side refresh is a separate issue.
+
+## 2026-11-14 — AI trace: ranking sentence (#110)
+
+- `apps/api`: `picksSchema` takes an optional `ranking` (1–300 chars; an invalid one drops only itself). It reaches
+  `run.ranking` only when every number in it appears in the code-built text of a card the user sees or in the tools'
+  shared context, there are ≥ 2 cards and no warning was put back; otherwise null. The prompt asks for it.
+- `apps/analytics`: `run.ranking` zod-checked (≤ 300, null on anything else), carried on `Pipeline`, shown under the
+  "ranked them" step as "Why this order: …" (React text only).
+
+## 2026-11-14 — Priced Burrow actions via `execute_with_pyth` (#166)
+
+- `packages/burrow-adapter/src/builders.ts`: borrow, withdraw and repay from collateral build `execute_with_pyth`
+  on Burrow (300 Tgas, 1 yocto) instead of `oracle_call` on `priceoracle.near`, which Burrow disabled; `assetIds`
+  dropped. `BURROW_REQUIRED_EXPORTS` checks `execute_with_pyth`.
+- `apps/api/src/wallet/validate-cascade.ts`: allowlist `execute_with_pyth`, drop `oracle_call` (D29);
+  `account-view.ts` prepare intents allow Burrow as the receiver instead of the oracle.
+
+## #159 — 24 h range: outlier filter and one slim query
+
+- `range24hBps` takes the high-low range over a rolling median of five snapshots: one or two bad prints in a row no
+  longer raise a `volatility_spike`; a move that holds three snapshots (45 min) still does.
+- `snapshotPrices` groups price rows into per-snapshot consensus prices per asset; used by `range24hBps`,
+  `latestPrices` and `GET /v1/analytics/series/prices`.
+- The wallet observation reads the held tokens' history with one `priceSeries(since, assets)` query (slim columns,
+  asset filter) instead of one wide `priceHistory` query per token.
+
+## 2026-11-14 — Admin Funnel and LLM quality aggregate in SQL (#177)
+
+- `DrizzleEventStore.funnel(from, to)`: one `GROUPING SETS ((day, kind), (day), (kind), ())` query with `count(*)`
+  and `count(distinct account_id)`; the API only pads the 7 UTC days.
+- `DrizzleLlmLedger.quality(from, to)`: counts by outcome, `percentile_cont(0.5 / 0.95)` latency, pick kinds via
+  `jsonb_array_elements(output->'picks')` (string kinds only), and the 20 newest rows with input/output
+  (`ORDER BY at DESC, id DESC LIMIT 20`), in one read-only repeatable-read transaction. Responses unchanged, except a
+  partly malformed `picks` array now counts its valid string kinds (before: the whole output was skipped). The
+  fixed-row tests moved to the Postgres integration tests.
+
+## 2026-11-14 — Strategy decides where idle money goes (#132)
+
+- `Strategy.idle` (core): the rule line and whether the preset weighs a loop. The idle-supply card carries it as a
+  `calculated_estimate` line; Aggressive computes the same-asset loop at HF 1.35 from the token's Burrow market and
+  says whether it beats plain supply. The supply intent is unchanged; no new builder, no limit changed (D30).
+- The AI Capital Allocator card copies the rule card's line for the same token; the strategy prompt names the idle rule.
+
+## 2026-11-14 — 1Click deposit statuses refreshed by the server (#167)
+
+- `registerDeposit` runs a background refresh every minute (`refreshEveryMs`, set in `analytics/main.ts`): quotes
+  without `SUCCESS`/`REFUNDED`/`FAILED` are re-checked every fifth of their age, between 1 and 10 minutes, longest
+  unchecked first, at most 20 1Click calls per run (`dueQuotes`). Unpaid ones (no status or `PENDING_DEPOSIT`) stop
+  at deadline + 30 min grace; a deposit already in flight is followed until it is final or purged.
+- The refresh and `GET /v1/deposit/status/:id` share one status cache. A 1Click error skips that quote only and
+  backs it off like a check; an overlapping run is skipped, and shutdown waits for the running one.
+- `status_at` is now the time of the last check, written on every check (Admin → 1Click "Checked").
+- `DepositQuoteStore.unfinished(since)`; `@near-autopilot/db` re-exports `notInArray`.
+
+## 2026-11-14 — AI analysis stops when the visitor leaves (#151)
+
+- `analyseAccount` takes an optional outer `AbortSignal`; aborting it rejects the deadline race and aborts the run's
+  own controller, so the tool loop stops and the Anthropic call in flight is cancelled. Outcome `cancelled` (new
+  fallback code; migration 0024 widens `llm_calls_outcome_check`). The run keeps its global-limit slot.
+- Merged with #150's in-flight join: a shared run counts its callers and stops only when all have left and none
+  joined within `LEAVE_GRACE_MS` (2 s; 5 s let a typical 3–4 s run finish for nobody), so a broken stream's JSON retry still gets the same run.
+- `POST /v1/analytics/account/:id/analysis` aborts on `reply.raw` close before the response finished; the Next proxy
+  passes `req.signal` to the upstream fetch (`AbortSignal.any` with the 60 s timeout).
+
+## 2026-11-14 — Deposit QR with amount, token and network (#128)
+
+- `apps/analytics/lib/payment-uri.ts`: BIP21 / EIP-681 (always `@chainId`, wei and base units as plain integers) /
+  Solana Pay links from the quote; null for a chain with no standard or a token that is not named exactly.
+- `apps/api/src/analytics/deposit.ts`: the quote's `origin.payment` — native only by the exact 1Click asset id; a
+  contract only when it is a valid address of the chain (checksum, no burn) and, on EVM, the quoted assetId names it.
+- Deposit dialog: QR and **Open in wallet** use the link, **Address only** switch, copy amount. Quotes stay
+  `EXACT_INPUT`.

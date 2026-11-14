@@ -1,11 +1,20 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
-import { useState } from 'react';
-import { modelName, runAnalysis, type Analysis, type TraceStep } from '../lib/analysis-client';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  modelName,
+  pipelineOf,
+  runAnalysis,
+  type Analysis,
+  type Pipeline,
+  type TraceStep,
+} from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
-import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
+import { actionLabel, intentTokens, recommendationToPrepare } from '../lib/recommendation-intent';
+import { label } from '../lib/token-label';
+import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
 
@@ -20,6 +29,7 @@ export function Recommendations({
   recommendations: initial,
   skipped,
   holdings,
+  icons = {},
   signingEnabled,
 }: {
   account: string;
@@ -27,24 +37,31 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
+  icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {
-  const [running, setRunning] = useState(false);
-  const [ai, setAi] = useState<{ analysis: Analysis; signature: string } | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState<Pipeline | null>(null);
+  const running = startedAt !== null;
   const signature = portfolioSignature(initial, holdings);
   const analysis = ai?.signature === signature ? ai.analysis : null;
   const portfolioChanged = ai !== null && analysis === null;
   const recommendations = analysis?.recommendations ?? initial;
 
   async function analyse() {
-    setRunning(true);
+    setStartedAt(Date.now());
     setError(null);
-    const r = await runAnalysis(account, strategy);
-    if (r.ok) setAi({ analysis: r.analysis, signature });
+    setLive(null);
+    const r = await runAnalysis(account, strategy, setLive);
+    if (r.ok) setAi({ analysis: r.analysis, signature, run: Date.now() });
     else setError(r.error);
-    setRunning(false);
+    setLive(null);
+    setStartedAt(null);
   }
+
+  const nothingToDo = analysis?.fallback === 'nothing_to_rank' && analysis.note;
 
   return (
     <>
@@ -60,19 +77,47 @@ export function Recommendations({
           onClick={() => void analyse()}
           disabled={running}
         >
-          {running ? 'Analysing…' : 'Run AI analysis'}
+          {running ? (
+            <>
+              Analysing… <Elapsed since={startedAt} />
+            </>
+          ) : (
+            'Run AI analysis'
+          )}
         </button>
       </div>
-      {analysis && (
+      {analysis && !running && (
         <p className="muted-note">
           <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
-            <i aria-hidden="true">{analysis.source === 'llm' ? '✓' : '!'}</i>
-            {analysis.source === 'llm' ? 'AI-ranked' : 'Heuristic (AI unavailable)'}
+            <i aria-hidden="true">
+              {analysis.source === 'llm'
+                ? '✓'
+                : analysis.fallback === 'nothing_to_rank'
+                  ? 'i'
+                  : '!'}
+            </i>
+            {analysis.source === 'llm'
+              ? 'AI-ranked'
+              : analysis.fallback === 'nothing_to_rank'
+                ? 'Nothing for the AI to rank'
+                : 'Heuristic (AI unavailable)'}
           </span>
-          {analysis.note && <small> {analysis.note}</small>}
+          {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
-      {analysis && <AiTrace analysis={analysis} />}
+      {live ? (
+        <AiTrace pipeline={live} startedAt={startedAt} />
+      ) : (
+        analysis && (
+          <AiTrace
+            pipeline={pipelineOf(analysis)}
+            ms={analysis.run?.ms ?? null}
+            cachedAt={analysis.cachedAt}
+            calledTools={analysis.calledTools}
+            why={nothingToDo ? analysis.note : null}
+          />
+        )
+      )}
       {portfolioChanged && (
         <p className="muted-note">Your portfolio changed — run the AI analysis again.</p>
       )}
@@ -81,7 +126,7 @@ export function Recommendations({
           AI analysis failed: {error}
         </div>
       )}
-      {recommendations.length === 0 && skipped.length === 0 && (
+      {!nothingToDo && recommendations.length === 0 && skipped.length === 0 && (
         <p className="muted-note">
           Nothing to improve right now — the portfolio looks balanced at current prices.
         </p>
@@ -94,16 +139,29 @@ export function Recommendations({
         </ul>
       )}
       {recommendations.length > 0 && (
-        <div className="recs">
-          {recommendations.map((r) => {
+        <div
+          className={`recs${running ? ' is-stale' : ''}`}
+          key={analysis ? ai?.run : 'rules'}
+          aria-busy={running}
+        >
+          {recommendations.map((r, i) => {
             const request = recommendationToPrepare(r.intent, account);
+            const logos = intentTokens(r.intent).map((t) => ({
+              icon: icons[t] ?? null,
+              symbol: holdings.find((h) => h.token === t)?.symbol ?? label(t, new Map()).symbol,
+            }));
             return (
-              <article className={`rec sev-${r.severity}`} key={r.id}>
+              <article
+                className={`rec sev-${r.severity}${analysis ? ' rec-in' : ''}`}
+                key={r.id}
+                style={order(i)}
+              >
                 <span className="rec-agent">
                   <span className="rec-agent-dot" aria-hidden="true" />
                   {r.agent}
                 </span>
                 <div className="rec-head">
+                  {logos.length > 0 && <TokenIcons tokens={logos} size={28} />}
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>
@@ -148,94 +206,263 @@ export function Recommendations({
   );
 }
 
+/** Ticks on its own so the list around it does not re-render ten times a second. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(since);
+  useEffect(() => {
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [since]);
+  return <>{seconds(Math.max(0, now - since))}</>;
+}
+
+type StageState = 'done' | 'active' | 'pending';
+
 /**
  * The run as a pipeline: what was read, what each agent returned (key number, its provenance, what became of its
- * card), what the model did, and what code checked before the user saw it.
+ * card), what the model did, and what code checked before the user saw it. Live (`startedAt` set), every stage is
+ * shown from the first event: the one the server is on now pulses, the ones still ahead are dimmed, and each agent
+ * the model asked for waits on a placeholder until its own result arrives.
  */
-function AiTrace({ analysis }: { analysis: Analysis }) {
-  const { trace, run } = analysis;
-  if (trace.length === 0) {
-    if (analysis.calledTools.length === 0) return null;
-    return <p className="muted-note">Agents called: {analysis.calledTools.join(', ')}</p>;
+function AiTrace({
+  pipeline,
+  startedAt = null,
+  ms = null,
+  cachedAt = null,
+  calledTools = [],
+  why = null,
+}: {
+  pipeline: Pipeline;
+  startedAt?: number | null;
+  ms?: number | null;
+  cachedAt?: string | null;
+  calledTools?: readonly string[];
+  /** Why the model was not asked, built by code from the agents' lines. */
+  why?: string | null;
+}) {
+  const { model, read, asked, trace, turns, checks, stage, ranking } = pipeline;
+  const live = startedAt !== null;
+  if (!live && trace.length === 0) {
+    if (calledTools.length === 0) return null;
+    return <p className="muted-note">Agents called: {calledTools.join(', ')}</p>;
   }
+  if (!live && !model)
+    return (
+      <section className="ai-trace" aria-label="How the AI got here">
+        <header>
+          <h3>How the AI got here</h3>
+        </header>
+        <ol className="ai-steps">
+          {read && (
+            <Stage state="done" title="Read the wallet on-chain">
+              <span className="ai-step-note">{readLine(read)}</span>
+            </Stage>
+          )}
+          <Stage state="done" title={`${plural(trace.length, 'agent')} ran`}>
+            <ul className="ai-agents">
+              {trace.map((step, i) => (
+                <AgentRow key={step.tool} agent={step.agent} step={step} index={i} />
+              ))}
+            </ul>
+          </Stage>
+          <Stage state="skipped" title="AI not asked: nothing worth ranking">
+            <span className="ai-step-note">
+              No paid model call.
+              {why && (
+                <>
+                  {' '}
+                  Why: {why}{' '}
+                  <span
+                    className="ai-tag"
+                    title={PROVENANCE_TIER_INFO.calculated_estimate.describe}
+                  >
+                    {PROVENANCE_TIER_INFO.calculated_estimate.label}
+                  </span>
+                </>
+              )}
+            </span>
+          </Stage>
+        </ol>
+      </section>
+    );
+  const who = model ? modelName(model) : 'The AI';
+  const current = stage;
+  const state = (i: number): StageState =>
+    i < current ? 'done' : i === current ? 'active' : 'pending';
+  const rows = [...asked, ...trace.filter((t) => !asked.some((a) => a.tool === t.tool))].map(
+    ({ tool, agent }) => ({ tool, agent, step: trace.find((t) => t.tool === tool) }),
+  );
+  const answered = rows.filter((r) => r.step).length;
+  const agentsTitle =
+    state(1) === 'done'
+      ? answered < rows.length
+        ? `${answered} of ${plural(rows.length, 'agent')} answered`
+        : `${plural(trace.length, 'agent')} ran`
+      : asked.length > 0
+        ? `Asking ${plural(asked.length, 'agent')}`
+        : `${who} picks the agents to ask`;
+  const status = [
+    'Reading the wallet on-chain',
+    asked.length > 0 ? agentsTitle : `${who} is choosing which agents to ask`,
+    `${who} is ranking the answers`,
+    'Code is checking the answer',
+    'Done',
+  ][current];
+
   return (
-    <section className="ai-trace" aria-label="How the AI got here">
+    <section className="ai-trace" aria-label="How the AI got here" aria-busy={live}>
       <header>
         <h3>How the AI got here</h3>
-        {run && (
-          <span className="muted-note">
-            {modelName(run.model)} · {(run.ms / 1000).toFixed(1)} s
-          </span>
-        )}
+        <span className="muted-note ai-clock">
+          {model && `${modelName(model)} · `}
+          {live ? (
+            <Elapsed since={startedAt} />
+          ) : cachedAt ? (
+            `from a run ${ago(cachedAt)}`
+          ) : (
+            ms !== null && seconds(ms)
+          )}
+        </span>
       </header>
+      {live && (
+        <p className="sr-only" aria-live="polite">
+          {status}
+        </p>
+      )}
       <ol className="ai-steps">
-        {run && (
-          <li>
-            <strong>Read the wallet on-chain</strong>
-            <span className="ai-step-note">
-              {plural(run.read.tokens, 'token')} held in the wallet or on Burrow
-              {run.read.loan ? ', and a Burrow loan' : ', no loan'}
+        <Stage state={state(0)} title="Read the wallet on-chain">
+          {read && <span className="ai-step-note ai-in">{readLine(read)}</span>}
+        </Stage>
+        <Stage state={state(1)} title={agentsTitle}>
+          {state(1) === 'active' && asked.length === 0 && (
+            <span className="ai-step-note ai-thinking">Deciding which agents to ask…</span>
+          )}
+          {rows.length > 0 && (
+            <ul className="ai-agents">
+              {rows.map(({ tool, agent, step }, i) => (
+                <AgentRow key={tool} agent={agent} step={step} index={i} />
+              ))}
+            </ul>
+          )}
+        </Stage>
+        <Stage
+          state={state(2)}
+          title={state(2) === 'done' ? `${who} ranked them` : `${who} ranks them`}
+        >
+          {state(2) === 'active' && (
+            <span className="ai-step-note ai-thinking">Ordering the answers and writing why…</span>
+          )}
+          {turns !== null && (
+            <span className="ai-step-note ai-in">
+              {checks && `${plural(checks.picked, 'card')} picked and explained in `}
+              {plural(turns, 'model turn')}
             </span>
-          </li>
-        )}
-        <li>
-          <strong>{plural(trace.length, 'agent')} ran</strong>
-          <ul className="ai-agents">
-            {trace.map((step) => {
-              const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
-              return (
-                <li key={step.tool} className={step.ok ? `pick-${step.pick ?? 'none'}` : 'failed'}>
-                  <span className="ai-agent">{step.agent}</span>
-                  <span className="ai-number">{step.text}</span>
-                  <span className="ai-tags">
-                    {info && (
-                      <span className="ai-tag" title={info.describe}>
-                        {info.label}
-                      </span>
-                    )}
-                    {step.pick && (
-                      <span className={`ai-tag pick ${step.pick}`}>{pickLabel(step)}</span>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </li>
-        {run && (
-          <li>
-            <strong>{modelName(run.model)} ranked them</strong>
-            <span className="ai-step-note">
-              {plural(run.checks.picked, 'card')} picked and explained in{' '}
-              {plural(run.turns, 'model turn')}
+          )}
+          {ranking && (
+            <span className="ai-step-note ai-in">
+              Why this order: {ranking}{' '}
+              <span className="ai-tag" title={PROVENANCE_TIER_INFO.calculated_estimate.describe}>
+                {PROVENANCE_TIER_INFO.calculated_estimate.label}
+              </span>
             </span>
-          </li>
-        )}
-        {run && (
-          <li>
-            <strong>Code checked the answer</strong>
+          )}
+        </Stage>
+        <Stage
+          state={state(3)}
+          title={state(3) === 'done' ? 'Code checked the answer' : 'Code checks the answer'}
+        >
+          {state(3) === 'active' && (
+            <span className="ai-step-note ai-thinking">Matching every number to the agents…</span>
+          )}
+          {checks && (
             <ul className="ai-checks">
-              <li className={run.checks.replaced ? 'warn' : undefined}>
-                {explained(run.checks.explained, run.checks.explained + run.checks.replaced)}
-                {run.checks.replaced > 0 &&
-                  `; ${run.checks.replaced} replaced by the agent's own text`}
+              <li className={`ai-in${checks.replaced ? ' warn' : ''}`} style={order(0)}>
+                {explained(checks.explained, checks.explained + checks.replaced)}
+                {checks.replaced > 0 && `; ${checks.replaced} replaced by the agent's own text`}
               </li>
-              <li>
-                {run.checks.restored > 0
-                  ? `${plural(run.checks.restored, 'warning')} the AI left out put back first`
+              <li className="ai-in" style={order(1)}>
+                {checks.restored > 0
+                  ? `${plural(checks.restored, 'warning')} the AI left out put back first`
                   : 'No warning was left out'}
               </li>
-              <li>
-                {run.checks.dropped > 0
-                  ? `${plural(run.checks.dropped, 'made-up or repeated action')} dropped`
+              <li className="ai-in" style={order(2)}>
+                {checks.dropped > 0
+                  ? `${plural(checks.dropped, 'made-up or repeated action')} dropped`
                   : 'No made-up actions'}
               </li>
             </ul>
-          </li>
-        )}
+          )}
+        </Stage>
       </ol>
     </section>
   );
+}
+
+const readLine = (read: NonNullable<Pipeline['read']>) =>
+  `${plural(read.tokens, 'token')} held in the wallet or on Burrow${read.loan ? ', and a Burrow loan' : ', no loan'}`;
+
+function Stage({
+  state,
+  title,
+  children,
+}: {
+  state: StageState | 'skipped';
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <li className={`is-${state}`} aria-current={state === 'active' ? 'step' : undefined}>
+      <strong>{title}</strong>
+      {state !== 'pending' && children}
+    </li>
+  );
+}
+
+function AgentRow({
+  agent,
+  step,
+  index,
+}: {
+  agent: string;
+  step: TraceStep | undefined;
+  index: number;
+}) {
+  if (!step)
+    return (
+      <li className="waiting">
+        <span className="ai-agent">{agent}</span>
+        <span className="ai-wait" aria-label="waiting for its answer" />
+        <span />
+      </li>
+    );
+  const info = step.provenance ? PROVENANCE_TIER_INFO[step.provenance] : null;
+  return (
+    <li className={step.ok ? `pick-${step.pick ?? 'none'}` : 'failed'}>
+      <span className="ai-agent">{agent}</span>
+      <span className="ai-number ai-in" style={order(index)}>
+        {step.text}
+      </span>
+      <span className="ai-tags">
+        {info && (
+          <span className="ai-tag ai-in" title={info.describe} style={order(index)}>
+            {info.label}
+          </span>
+        )}
+        {step.pick && <span className={`ai-tag pick ${step.pick} ai-in`}>{pickLabel(step)}</span>}
+      </span>
+    </li>
+  );
+}
+
+/** Items that arrive together come in one after another: presentation only, the data is already here. */
+const order = (i: number) => ({ '--i': i }) as CSSProperties;
+
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+function ago(iso: string): string {
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  return min < 1 ? 'just now' : `${min} min ago`;
 }
 
 const explained = (ok: number, all: number) =>

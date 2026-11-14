@@ -12,7 +12,10 @@ import {
   yoctoToNear,
 } from '../lib/prepare-format';
 import type { PrepareRequest, PreparedCascade } from '../lib/prepare-types';
-import { signCascade, type SignResult } from '../lib/wallet-sign';
+import { confirmStep } from '../lib/events-client';
+import { mayContinue, progressFooter, stepAfterCheck, type StepState } from '../lib/sign-progress';
+import { signCascade } from '../lib/wallet-sign';
+import { SignProgress } from './SignProgress';
 
 /** The sized amounts a cascade reports, for the compact "After this move" panel. Display only — the real
  *  per-action deposits and gas stay in the "Exactly what you would sign" table; nothing here is fabricated. */
@@ -44,13 +47,16 @@ export function PrepareDialog({
   const [state, setState] = useState<'idle' | 'loading' | 'signing' | 'updating'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
   const [error, setError] = useState<{ message: string; reasons?: readonly string[] } | null>(null);
-  const [signed, setSigned] = useState<SignResult | null>(null);
+  const [progress, setProgress] = useState<{
+    preview: readonly string[];
+    steps: StepState[];
+  } | null>(null);
 
   async function run() {
     setState('loading');
     setError(null);
     setCascade(null);
-    setSigned(null);
+    setProgress(null);
     const r = await prepareIntent(request);
     if (r.ok) setCascade(r.cascade);
     else setError({ message: r.error, ...(r.reasons ? { reasons: r.reasons } : {}) });
@@ -59,20 +65,37 @@ export function PrepareDialog({
 
   async function sign() {
     if (!cascade) return;
+    const { cascadeId, transactions, preview } = cascade;
     setState('signing');
-    setSigned(null);
-    const r = await signCascade(cascade.transactions, request.account, signingEnabled);
-    setSigned(r);
+    setProgress({ preview, steps: transactions.map(() => ({ kind: 'waiting' })) });
+    const setStep = (i: number, s: StepState) =>
+      setProgress((p) => p && { ...p, steps: p.steps.map((x, j) => (j === i ? s : x)) });
+    let at = 0;
+    const r = await signCascade(transactions, request.account, signingEnabled, {
+      onSigning: (i) => {
+        at = i;
+        setStep(i, { kind: 'signing' });
+      },
+      onSent: async (i, hash) => {
+        setStep(i, { kind: 'checking', hash });
+        const result = cascadeId
+          ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
+          : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
+        const next = stepAfterCheck(hash, result);
+        setStep(i, next);
+        return mayContinue(next);
+      },
+    });
+    if (!r.ok && r.hashes.length === at)
+      setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
     if (r.ok) {
       // The transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
       // show the new state (the card updates or disappears).
       setState('updating');
       setCascade(null); // collapse the (now spent) preview; the user can prepare a fresh one if still suggested
       await refreshPortfolio(request.account, refreshAccount, () => router.refresh());
-      setState('idle');
-    } else {
-      setState('idle');
     }
+    setState('idle');
   }
 
   return (
@@ -201,7 +224,8 @@ export function PrepareDialog({
                 <span className="muted-note">
                   {cascade.transactions.length}{' '}
                   {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
-                  you. Autopilot never holds your keys or moves funds on its own.
+                  you. Autopilot never holds your keys or moves funds on its own. Review every
+                  action in your wallet: you are responsible for what you sign.
                 </span>
               </>
             ) : (
@@ -212,7 +236,8 @@ export function PrepareDialog({
                 <span className="muted-note">
                   {cascade.transactions.length}{' '}
                   {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
-                  you. Autopilot never holds your keys or moves funds on its own.
+                  you. Autopilot never holds your keys or moves funds on its own. Review every
+                  action in your wallet: you are responsible for what you sign.
                 </span>
               </>
             )}
@@ -220,31 +245,18 @@ export function PrepareDialog({
         </div>
       )}
 
-      {signed && (
-        <div
-          className={`callout${signed.ok ? '' : ' warn'}`}
-          role="status"
-          style={{ marginTop: 10 }}
-        >
-          {signed.ok ? (
-            <b>{state === 'updating' ? 'Signed. Updating portfolio…' : 'Signed and sent.'}</b>
-          ) : (
-            <>
-              <b>Stopped:</b> {signed.reason}
-            </>
-          )}
-          {signed.hashes.length > 0 && (
-            <ul className="muted-note" style={{ margin: '6px 0 0' }}>
-              {signed.hashes.map((h) => (
-                <li key={h}>
-                  <a href={`https://nearblocks.io/txns/${h}`} target="_blank" rel="noreferrer">
-                    {h.slice(0, 10)}… — verify on NearBlocks
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {progress && (
+        <SignProgress
+          preview={progress.preview}
+          steps={progress.steps}
+          busy={state === 'signing'}
+          footer={
+            state === 'updating'
+              ? 'Done. Updating your portfolio…'
+              : progressFooter(progress.steps, state === 'signing')
+          }
+          onClose={() => setProgress(null)}
+        />
       )}
     </div>
   );

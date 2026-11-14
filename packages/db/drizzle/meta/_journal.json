@@ -148,6 +148,34 @@
       "when": 1794050000000,
       "tag": "0020_deposit_quotes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794060000000,
+      "tag": "0021_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794070000000,
+      "tag": "0022_deposit_quote_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794080000000,
+      "tag": "0023_llm_call_io",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794090000000,
+      "tag": "0024_llm_calls_cancelled",
+      "breakpoints": true
     }
   ]
 }

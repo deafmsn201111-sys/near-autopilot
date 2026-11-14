@@ -16,15 +16,25 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **A demo portfolio's read-only mode has no switch back** (#13 removed `/v1/control/mode`). The orchestrator tightens
   a demo scope to `read_only` on its own (an in-doubt execution after a crash, 3 rejected dry runs in a row, an audit
   write failure) and the mode survives restarts. Rare; undo by hand:
-  `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope shown on `/activity`).
+  `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope = `demo-500` or `demo-5000`).
 - **The strategy preset is remembered per browser only** (one cookie for the last 20 accounts, #25). Another device or a cleared
   browser falls back to Balanced. → #100 (server-side per-account settings, written by the proven owner).
+- **Deposit payment links are not device-tested yet** (#128): wallet support for EIP-681 and Solana Pay is weakly
+  documented (Rabby does not parse EIP-681; MetaMask Mobile, Phantom and Solflare should). A wallet that ignores the
+  amount leaves it to the user; the dialog shows it with a copy button and an **Address only** switch.
+- **Fee-on-transfer origin tokens are still offered** (Solana NEARKAT, Token-2022 with a 3% transfer fee): the
+  deposit address gets less than the quote, so it is refunded. → #185.
+- **Deposit quotes are `EXACT_INPUT`** (#128): less than the quoted amount is refunded after the deadline, not
+  credited in part. `FLEX_INPUT` would accept any amount in a band but loosens the quote echo check; after the
+  hackathon.
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence. → `T2.1`.
 - **No uniform provenance tagging** across all financial values. → `T1.1/T1.2`.
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
 - **UX flows** flagged by owner as "not usable" (beyond theme). → `T4.1`.
 - **Guard/contract absent** → autonomy hard-blocked. → `T5.1`.
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
+- **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
+  usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.
 
 ## Watch list (external)
 

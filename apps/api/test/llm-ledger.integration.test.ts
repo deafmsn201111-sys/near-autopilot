@@ -10,6 +10,7 @@ import {
 } from '@near-autopilot/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { LlmCallRecord } from '../src/analytics/ai-analysis';
+import { llmQuality, windowStart } from '../src/analytics/admin';
 import { DrizzleLlmLedger } from '../src/analytics/llm-ledger';
 
 /** The LLM spend ledger on a real PostgreSQL (skipped unless DATABASE_TEST_URL is set; CI sets it). */
@@ -26,6 +27,8 @@ const call = (over: Partial<LlmCallRecord> = {}): LlmCallRecord => ({
   latencyMs: 1500,
   tools: ['liquidation_guardian'],
   outcome: 'ok',
+  input: { strategy: 'balanced', candidates: [{ id: 'a', kind: 'improve_loan_safety' }] },
+  output: { picks: [{ id: 'a', kind: 'improve_loan_safety', why: 'Repay.' }] },
   ...over,
 });
 
@@ -136,12 +139,97 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     ]);
   });
 
+  const quality = async () => llmQuality(await ledger().quality(windowStart(NOW), NOW));
+
+  it('gives fallback and validation-error rates, p50/p95 latency and top recommendation kinds', async () => {
+    const rows: Partial<LlmCallRecord>[] = [
+      { latencyMs: 1000 },
+      {
+        latencyMs: 2000,
+        output: {
+          picks: [
+            { id: 'a', kind: 'improve_loan_safety', why: 'a' },
+            { id: 'b', kind: 'put_idle_to_work', why: 'b' },
+          ],
+        },
+      },
+      { latencyMs: 3000, outcome: 'invalid_output', output: { reply: 'nope' } },
+      { latencyMs: 4000, outcome: 'deadline', output: null },
+      { latencyMs: 5000, outcome: 'invalid_output', output: null },
+      { at: new Date('2026-11-05T23:59:59Z'), outcome: 'deadline' },
+      { at: new Date('2026-11-12T10:00:01Z'), outcome: 'deadline' },
+    ];
+    for (const over of rows) await ledger().record(call(over));
+    const q = await quality();
+    expect(q.calls).toBe(5);
+    expect(q.fallbackRate).toBe(0.6);
+    expect(q.validationErrorRate).toBe(0.4);
+    expect(q.fallbacks).toEqual([
+      { code: 'invalid_output', count: 2, rate: 0.4 },
+      { code: 'deadline', count: 1, rate: 0.2 },
+    ]);
+    expect(q.p50Ms).toBe(3000);
+    expect(q.p95Ms).toBe(4800);
+    expect(q.topKinds).toEqual([
+      { kind: 'improve_loan_safety', count: 2 },
+      { kind: 'put_idle_to_work', count: 1 },
+    ]);
+  });
+
+  it('lists the 20 newest runs, newest first, with input, output and agents called', async () => {
+    for (let i = 0; i < 25; i++)
+      await ledger().record(call({ at: new Date(Date.UTC(2026, 10, 12, 0, i)), latencyMs: i }));
+    const q = await quality();
+    expect(q.last).toHaveLength(20);
+    expect(q.last[0]).toEqual({
+      at: '2026-11-12T00:24:00.000Z',
+      accountId: 'alice.near',
+      model: 'claude-haiku-5-5',
+      latencyMs: 24,
+      outcome: 'ok',
+      tools: ['liquidation_guardian'],
+      input: call().input,
+      output: call().output,
+    });
+    expect(q.last[19]?.latencyMs).toBe(5);
+  });
+
+  it('has no rates or percentiles without runs in the 7 days', async () => {
+    await ledger().record(call({ at: new Date('2026-11-05T23:59:59Z') }));
+    expect(await quality()).toEqual({
+      calls: 0,
+      fallbackRate: null,
+      validationErrorRate: null,
+      p50Ms: null,
+      p95Ms: null,
+      fallbacks: [],
+      topKinds: [],
+      last: [],
+    });
+  });
+
+  it('ignores an output that is not the picks shape', async () => {
+    for (const output of [
+      { picks: 'all' },
+      7,
+      'text',
+      { picks: [{ id: 'x', kind: null, why: 'w' }, 'pick', { kind: 3 }] },
+    ])
+      await ledger().record(call({ output: output as unknown as LlmCallRecord['output'] }));
+    expect((await quality()).topKinds).toEqual([]);
+  });
+
   it('deletes calls older than 7 days', async () => {
     await ledger().record(call({ at: new Date('2026-11-05T09:59:59Z') }));
     await ledger().record(call({ at: new Date('2026-11-05T10:00:01Z') }));
     await ledger().purge();
     const rows = await handle.db.select({ at: llmCalls.at }).from(llmCalls);
     expect(rows.map((r) => r.at.toISOString())).toEqual(['2026-11-05T10:00:01.000Z']);
+  });
+
+  it('stores a run the visitor cancelled', async () => {
+    await ledger().record(call({ outcome: 'cancelled' }));
+    expect(await handle.db.select().from(llmCalls)).toMatchObject([{ outcome: 'cancelled' }]);
   });
 
   it('rejects an outcome outside the enum', async () => {

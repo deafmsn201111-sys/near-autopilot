@@ -1,35 +1,46 @@
 export interface PollOptions {
-  everyMs: number;
+  /** A fixed gap, or one that depends on how many ticks ran so far (a backoff). */
+  everyMs: number | ((ticks: number) => number);
   forMs: number;
   hidden: () => boolean;
 }
 
 /**
- * Calls `tick` every `everyMs` while visible and stops after `forMs`, so an unattended tab goes quiet.
- * When the tab becomes visible or gets focus, the `forMs` window starts over (with an immediate tick if it had
- * stopped). Returns a stop function.
+ * Calls `tick` after each gap while visible and stops after `forMs`, so an unattended tab goes quiet. A hidden turn is
+ * skipped and does not count as a tick. When the tab becomes visible or gets focus, the `forMs` window starts over
+ * (with an immediate tick if it had stopped). Returns a stop function.
  */
 export function poll(tick: () => void, { everyMs, forMs, hidden }: PollOptions): () => void {
-  let interval: ReturnType<typeof setInterval> | undefined;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const gap = typeof everyMs === 'number' ? () => everyMs : everyMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopAt = 0;
+  let ticks = 0;
 
   const halt = () => {
-    clearInterval(interval);
-    clearTimeout(deadline);
-    interval = undefined;
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  const run = () => {
+    tick();
+    ticks++;
+  };
+  const schedule = () => {
+    timer = setTimeout(() => {
+      if (Date.now() > stopAt) return halt();
+      if (!hidden()) run();
+      schedule();
+    }, gap(ticks));
   };
   const start = () => {
-    interval ??= setInterval(() => {
-      if (!hidden()) tick();
-    }, everyMs);
-    clearTimeout(deadline);
-    deadline = setTimeout(halt, forMs);
+    stopAt = Date.now() + forMs;
+    if (timer === undefined) schedule();
   };
   const onPresence = () => {
     if (hidden()) return;
-    const wasHalted = interval === undefined;
+    const wasHalted = timer === undefined || Date.now() > stopAt;
+    if (wasHalted) halt();
     start();
-    if (wasHalted) tick();
+    if (wasHalted) run();
   };
 
   start();

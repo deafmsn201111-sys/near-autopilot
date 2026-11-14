@@ -9,6 +9,7 @@ import { ScriptedContractViewer } from '@near-autopilot/core/testing';
 import {
   buildExchangeDeposit,
   buildExchangeStorageDeposit,
+  buildRheaSwap,
   buildV1AddLiquidity,
   RHEA_V1_LP_STORAGE_DEPOSIT,
   RheaPlanner,
@@ -119,6 +120,46 @@ describe('RheaPlanner', () => {
 
 describe('v1 liquidity builders', () => {
   const EXCHANGE = accountId('v2.ref-finance.near');
+
+  it('buildRheaSwap: one pool, the min-out in the message, 1 yocto, refuses a zero amount', () => {
+    const tx = buildRheaSwap({
+      contractId: EXCHANGE,
+      poolId: 4512,
+      tokenIn: WNEAR,
+      tokenOut: USDT,
+      amountIn: 5_000n,
+      minAmountOut: 4_900n,
+    });
+    expect(tx.receiverId).toBe(WNEAR);
+    expect(tx.actions[0]).toMatchObject({
+      methodName: 'ft_transfer_call',
+      deposit: 1n,
+      gas: 180_000_000_000_000n,
+      args: { receiver_id: EXCHANGE, amount: '5000' },
+    });
+    expect(JSON.parse(String(tx.actions[0].args['msg']))).toEqual({
+      force: 0,
+      actions: [
+        {
+          pool_id: 4512,
+          token_in: WNEAR,
+          token_out: USDT,
+          amount_in: '5000',
+          min_amount_out: '4900',
+        },
+      ],
+    });
+    expect(() =>
+      buildRheaSwap({
+        contractId: EXCHANGE,
+        poolId: 1,
+        tokenIn: WNEAR,
+        tokenOut: USDT,
+        amountIn: 0n,
+        minAmountOut: 0n,
+      }),
+    ).toThrow(RangeError);
+  });
 
   it('buildExchangeStorageDeposit registers the signer with the exact on-chain min', () => {
     const step = buildExchangeStorageDeposit({

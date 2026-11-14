@@ -15,7 +15,31 @@ export type RecommendationIntent =
       readonly sizing?: RepaySizing;
     }
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
-  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
+  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
+  | {
+      /** Withdraw another collateral token, swap it into the debt token, repay: separate transactions in order. */
+      readonly action: 'repay_with_collateral';
+      readonly token: string;
+      readonly collateralToken: string;
+      readonly approxUsd: number;
+      readonly amount: string;
+      readonly withdraw?: string;
+      readonly maxSlippageBps: number;
+      readonly plan: {
+        readonly hfNow: number;
+        readonly hfAfterWithdraw: number;
+        readonly hfAfterRepay: number | null;
+        readonly floorHf: number;
+        readonly transactions: number;
+      };
+    }
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly poolId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
+    };
 
 export interface Recommendation {
   readonly id: string;
@@ -40,6 +64,24 @@ function normalizeFrom(token: string): string {
 /** The other side of the allowlisted wNEAR<->USDC pool, given the (normalised) source token. */
 function swapTargetFor(from: string): string {
   return from === SWAP_STABLE ? WRAP_NEAR : SWAP_STABLE;
+}
+
+/** The tokens a card acts on, for its logos: the token, or both sides of a swap; none for advice or an LP move. */
+export function intentTokens(intent: RecommendationIntent | null): string[] {
+  if (!intent) return [];
+  switch (intent.action) {
+    case 'reposition_dcl':
+    case 'recentre_dcl':
+      return [];
+    case 'swap': {
+      const from = normalizeFrom(intent.fromToken);
+      return [from, swapTargetFor(from)];
+    }
+    case 'repay_with_collateral':
+      return [intent.collateralToken, intent.token];
+    default:
+      return [intent.token];
+  }
 }
 
 /**
@@ -82,6 +124,25 @@ export function recommendationToPrepare(
     case 'reposition_dcl':
       mapped = { action: 'reposition_dcl', lptId: intent.lptId };
       break;
+    case 'repay_with_collateral':
+      mapped = {
+        action: 'repay_with_collateral',
+        token: intent.token,
+        collateralToken: intent.collateralToken,
+        approxUsd: intent.approxUsd,
+        amount: intent.amount,
+        ...(intent.withdraw ? { withdraw: intent.withdraw } : {}),
+        maxSlippageBps: intent.maxSlippageBps,
+      };
+      break;
+    case 'recentre_dcl':
+      mapped = {
+        action: 'recentre_dcl',
+        lptId: intent.lptId,
+        leftPoint: intent.leftPoint,
+        rightPoint: intent.rightPoint,
+      };
+      break;
   }
   return { account, intent: mapped };
 }
@@ -100,6 +161,10 @@ export function actionLabel(intent: RecommendationIntent): string {
     case 'swap':
       return 'Prepare rebalance';
     case 'reposition_dcl':
-      return 'Prepare reposition';
+      return 'Prepare exit to wallet';
+    case 'repay_with_collateral':
+      return `Prepare ${intent.plan.transactions} transactions to repay`;
+    case 'recentre_dcl':
+      return 'Prepare new range';
   }
 }

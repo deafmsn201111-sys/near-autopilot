@@ -3,6 +3,7 @@ import {
   SWAP_STABLE,
   WRAP_NEAR,
   actionLabel,
+  intentTokens,
   recommendationToPrepare,
   type RecommendationIntent,
 } from '../lib/recommendation-intent';
@@ -73,6 +74,20 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('maps recentre_dcl to the lpt id and the new range, never the pool', () => {
+    const r: RecommendationIntent = {
+      action: 'recentre_dcl',
+      lptId: 'a|b|100#1',
+      poolId: 'a|b|100',
+      leftPoint: -640,
+      rightPoint: 600,
+    };
+    expect(recommendationToPrepare(r, ACC)).toEqual({
+      account: ACC,
+      intent: { action: 'recentre_dcl', lptId: 'a|b|100#1', leftPoint: -640, rightPoint: 600 },
+    });
+  });
+
   it('maps repay from collateral and withdraw with their exact amount, never the sizing', () => {
     const sizing = {
       collateralAdjUsd: 51,
@@ -126,6 +141,38 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('maps a repay with another collateral to its prepare request, without the card-only plan', () => {
+    const intent: RecommendationIntent = {
+      action: 'repay_with_collateral',
+      token: 'usdc',
+      collateralToken: 'wrap.near',
+      approxUsd: 56,
+      amount: '19000000000000000000000000',
+      withdraw: '15000000000000000000000000',
+      maxSlippageBps: 50,
+      plan: {
+        hfNow: 1.37,
+        hfAfterWithdraw: 1.24,
+        hfAfterRepay: 1.6,
+        floorHf: 1.15,
+        transactions: 3,
+      },
+    };
+    expect(recommendationToPrepare(intent, ACC)).toEqual({
+      account: ACC,
+      intent: {
+        action: 'repay_with_collateral',
+        token: 'usdc',
+        collateralToken: 'wrap.near',
+        approxUsd: 56,
+        amount: '19000000000000000000000000',
+        withdraw: '15000000000000000000000000',
+        maxSlippageBps: 50,
+      },
+    });
+    expect(actionLabel(intent)).toBe('Prepare 3 transactions to repay');
+  });
+
   it('has no request for advice-only cards', () => {
     expect(recommendationToPrepare(null, ACC)).toBeNull();
   });
@@ -136,8 +183,49 @@ describe('recommendationToPrepare', () => {
       /collateral/i,
     );
     expect(actionLabel({ action: 'withdraw', token: 'x', approxUsd: 1 })).toMatch(/withdraw/i);
-    expect(actionLabel({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toMatch(
-      /reposition/i,
-    );
+    expect(actionLabel({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toMatch(/exit/i);
+    expect(
+      actionLabel({ action: 'recentre_dcl', lptId: 'x', poolId: 'y', leftPoint: 0, rightPoint: 1 }),
+    ).toMatch(/new range/i);
+  });
+});
+
+describe('intentTokens', () => {
+  it('names the token a card acts on, both sides for a swap, none for advice', () => {
+    expect(intentTokens({ action: 'supply', token: SWAP_STABLE, approxUsd: 5 })).toEqual([
+      SWAP_STABLE,
+    ]);
+    expect(intentTokens({ action: 'swap', fromToken: 'near', approxUsd: 5 })).toEqual([
+      WRAP_NEAR,
+      SWAP_STABLE,
+    ]);
+    expect(intentTokens({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toEqual([]);
+    expect(
+      intentTokens({
+        action: 'recentre_dcl',
+        lptId: 'x',
+        poolId: 'y',
+        leftPoint: 0,
+        rightPoint: 1,
+      }),
+    ).toEqual([]);
+    expect(
+      intentTokens({
+        action: 'repay_with_collateral',
+        token: SWAP_STABLE,
+        collateralToken: WRAP_NEAR,
+        approxUsd: 5,
+        amount: '1',
+        maxSlippageBps: 50,
+        plan: {
+          hfNow: 1.1,
+          hfAfterWithdraw: 1.05,
+          hfAfterRepay: 1.6,
+          floorHf: 1.05,
+          transactions: 3,
+        },
+      }),
+    ).toEqual([WRAP_NEAR, SWAP_STABLE]);
+    expect(intentTokens(null)).toEqual([]);
   });
 });

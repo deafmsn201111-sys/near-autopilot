@@ -59,7 +59,18 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
   it('stores a quote as given', async () => {
     const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
     await store.save(quote('dq_1', NOW));
-    expect(await handle.db.select().from(depositQuotes)).toEqual([quote('dq_1', NOW)]);
+    expect(await handle.db.select().from(depositQuotes)).toEqual([
+      { ...quote('dq_1', NOW), status: null, statusAt: null },
+    ]);
+  });
+
+  it('finds a quote by id and saves its latest status with the time', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    await store.save(quote('dq_1', NOW));
+    expect(await store.find('dq_1')).toMatchObject(quote('dq_1', NOW));
+    expect(await store.find('dq_2')).toBeNull();
+    await store.saveStatus('dq_1', 'PROCESSING', NOW);
+    expect(await store.find('dq_1')).toMatchObject({ status: 'PROCESSING', statusAt: NOW });
   });
 
   it('stores a quote without a fee', async () => {
@@ -73,6 +84,55 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
     await store.save(quote('dq_1', NOW));
     await expect(store.save(quote('dq_1', NOW))).rejects.toThrow();
     await expect(store.save({ ...quote('dq_2', NOW), amountIn: '1.5' })).rejects.toThrow();
+  });
+
+  it('reads quotes since a time, newest first, with the latest status', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    await store.save(quote('before', new Date(NOW.getTime() - 7 * DAY)));
+    await store.save(quote('older', new Date(NOW.getTime() - DAY)));
+    await store.save(quote('newer', NOW));
+    await store.saveStatus('newer', 'SUCCESS', NOW);
+    const rows = await store.recent(new Date(NOW.getTime() - 2 * DAY));
+    expect(rows.map((r) => r.id)).toEqual(['newer', 'older']);
+    expect(rows[0]).toMatchObject({
+      status: 'SUCCESS',
+      statusAt: NOW,
+      refundTo: quote('x', NOW).refundTo,
+    });
+  });
+
+  it('lists unfinished quotes whose deadline is not before the cutoff', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    const MIN = 60_000;
+    await store.save(quote('never-checked', NOW));
+    await store.save(quote('pending', NOW));
+    await store.saveStatus('pending', 'PENDING_DEPOSIT', NOW);
+    await store.save(quote('processing', NOW));
+    await store.saveStatus('processing', 'PROCESSING', NOW);
+    for (const s of ['SUCCESS', 'REFUNDED', 'FAILED'] as const) {
+      await store.save(quote(s, NOW));
+      await store.saveStatus(s, s, NOW);
+    }
+    const old = new Date(NOW.getTime() - 10 * MIN - 1);
+    await store.save(quote('expired', old));
+    await store.save(quote('expired-pending', old));
+    await store.saveStatus('expired-pending', 'PENDING_DEPOSIT', NOW);
+    await store.save(quote('late-processing', old));
+    await store.saveStatus('late-processing', 'PROCESSING', NOW);
+    await store.save(quote('edge', new Date(NOW.getTime() - 10 * MIN)));
+    const rows = await store.unfinished(NOW);
+    expect(rows.map((r) => r.id).sort()).toEqual([
+      'edge',
+      'late-processing',
+      'never-checked',
+      'pending',
+      'processing',
+    ]);
+    expect(rows.find((r) => r.id === 'pending')).toEqual({
+      id: 'pending',
+      createdAt: NOW,
+      statusAt: NOW,
+    });
   });
 
   it('purges quotes older than 30 days only', async () => {

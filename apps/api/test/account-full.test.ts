@@ -72,6 +72,7 @@ const discovery: AccountDiscovery = {
       [NPRO, NPRO_USD],
       [WNEAR, 99],
     ]),
+  dclVolumes24hUsd: async () => null,
 };
 
 const store = {
@@ -170,6 +171,7 @@ describe('GET /v1/analytics/account/:id reads the whole account', () => {
       account: async () => null,
       v1PoolIds: async () => null,
       prices: async () => null,
+      dclVolumes24hUsd: async () => null,
     };
     const { body } = await read('6253046288164419544382378', down);
     expect(body.discovery).toEqual({ complete: false });

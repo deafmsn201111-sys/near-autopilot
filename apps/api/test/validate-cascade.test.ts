@@ -77,7 +77,7 @@ function patchAction(
 
 describe('validateCascade', () => {
   it('accepts a well-formed cascade', () => {
-    expect(validateCascade(goodCascade(), ctx)).toEqual({ ok: true });
+    expect(validateCascade(goodCascade(), ctx)).toMatchObject({ ok: true, reasons: [] });
   });
 
   it('rejects add_liquidity into a pool that is not allowlisted', () => {
@@ -121,6 +121,47 @@ describe('validateCascade', () => {
     const r = validateCascade(c, ctx);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reasons.join()).toMatch(/method is not allowlisted/);
+  });
+
+  describe('priced Burrow execute_with_pyth', () => {
+    const BURROW = accountId('contract.main.burrow.near');
+    const priced = (patch: Partial<PlannedTransaction['actions'][number]> = {}) => [
+      {
+        intentId: 'withdraw',
+        signerId: ALICE,
+        receiverId: BURROW,
+        actions: [
+          {
+            type: 'FunctionCall' as const,
+            methodName: 'execute_with_pyth',
+            args: { actions: [{ Withdraw: { token_id: USDT, max_amount: '1' } }] },
+            gas: MAX_ACTION_GAS,
+            deposit: 1n,
+            ...patch,
+          },
+        ],
+      },
+    ];
+    const burrowCtx = { signerId: ALICE, allowedReceivers: new Set<string>([BURROW]) };
+
+    it('accepts one yocto and an actions list at the gas ceiling', () => {
+      expect(validateCascade(priced(), burrowCtx)).toMatchObject({ ok: true, reasons: [] });
+    });
+
+    it('rejects any deposit other than one yocto', () => {
+      const r = validateCascade(priced({ deposit: 2n }), burrowCtx);
+      expect(r.reasons.join()).toMatch(/execute_with_pyth must attach exactly 1 yoctoNEAR/);
+    });
+
+    it('rejects args without an actions list', () => {
+      const r = validateCascade(priced({ args: { actions: 'Withdraw' } }), burrowCtx);
+      expect(r.reasons.join()).toMatch(/actions must be a non-empty list/);
+    });
+
+    it('no longer allows the disabled oracle_call', () => {
+      const r = validateCascade(priced({ methodName: 'oracle_call' }), burrowCtx);
+      expect(r.reasons.join()).toMatch(/method is not allowlisted/);
+    });
   });
 
   it('rejects ft_transfer_call to an unexpected receiver', () => {
@@ -224,7 +265,57 @@ describe('validateCascade — DCL reposition (exit) cascade', () => {
         ],
       },
     ];
-    expect(validateCascade(cascade, dclCtx)).toEqual({ ok: true });
+    expect(validateCascade(cascade, dclCtx)).toMatchObject({ ok: true, reasons: [] });
+  });
+});
+
+describe('validateCascade — DCL add_liquidity (re-centre)', () => {
+  const DCL = accountId('dclv2.ref-labs.near');
+  const POOL = 'usdc.near|wrap.near|100';
+  const addAt = (poolId: unknown, receiverId: string = DCL): PlannedTransaction[] => [
+    {
+      intentId: 'add-liquidity',
+      signerId: ALICE,
+      receiverId: accountId(receiverId),
+      actions: [
+        {
+          type: 'FunctionCall',
+          methodName: 'add_liquidity',
+          args: { pool_id: poolId, left_point: -640, right_point: 600 },
+          gas: 150_000_000_000_000n,
+          deposit: 0n,
+        },
+      ],
+    },
+  ];
+  const dclCtx = {
+    signerId: ALICE,
+    allowedReceivers: new Set<string>([DCL, EX]),
+    allowedPools: new Set([3879]),
+    dcl: { contract: DCL, pools: new Set([POOL]) },
+  };
+
+  it('accepts an allowlisted DCL pool on the DCL contract', () => {
+    expect(validateCascade(addAt(POOL), dclCtx)).toMatchObject({ ok: true, reasons: [] });
+  });
+
+  it('rejects a DCL pool that is not allowlisted', () => {
+    const r = validateCascade(addAt('usdc.near|wrap.near|2000'), dclCtx);
+    expect(r.ok).toBe(false);
+  });
+
+  it('rejects a DCL add_liquidity when no DCL allowlist is given', () => {
+    const { dcl: _, ...noDcl } = dclCtx;
+    expect(validateCascade(addAt(POOL), noDcl).ok).toBe(false);
+  });
+
+  it('rejects a numeric pool id sent to the DCL contract and a string id sent to v1', () => {
+    expect(validateCascade(addAt(3879), dclCtx).ok).toBe(false);
+    expect(validateCascade(addAt(POOL, EX), dclCtx).ok).toBe(false);
+  });
+
+  it('keeps the v1 rule for the v1 exchange', () => {
+    expect(validateCascade(addAt(3879, EX), dclCtx)).toMatchObject({ ok: true, reasons: [] });
   });
 });
 
@@ -251,7 +342,7 @@ describe('validateCascade — near_deposit (wrap) exemption', () => {
   it('allows a large near_deposit (wrapping own NEAR 1:1) past the deposit caps', () => {
     // 327 NEAR wrapped — far above the 0.15/0.3 NEAR storage caps, but it is the user's own value.
     const r = validateCascade([wrapTx(327_000_000_000_000_000_000_000_000n)], wrapCtx);
-    expect(r).toEqual({ ok: true });
+    expect(r).toMatchObject({ ok: true, reasons: [] });
   });
 
   it('still rejects near_deposit to a non-allowlisted receiver', () => {
@@ -288,5 +379,35 @@ describe('validateCascade — near_deposit (wrap) exemption', () => {
       wrapCtx,
     );
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('validateCascade — per-check result for the policy page', () => {
+  it('lists every check as passed for a well-formed cascade, with what it saw', () => {
+    const r = validateCascade(goodCascade(), ctx);
+    expect(r.checks.map((c) => [c.rule, c.pass])).toEqual([
+      ['signer', true],
+      ['receivers', true],
+      ['methods', true],
+      ['gas', true],
+      ['deposit', true],
+      ['arguments', true],
+    ]);
+    expect(r.summary).toEqual({
+      signer: ALICE,
+      receivers: [EX, WNEAR],
+      methods: ['storage_deposit', 'ft_transfer_call', 'add_liquidity'],
+      gas: '180000000000000',
+      deposit: '11020000000000000000001',
+    });
+  });
+
+  it('marks only the failing rule, with its message', () => {
+    const c = goodCascade();
+    patchAction(c, 0, { methodName: 'delete_account' });
+    const r = validateCascade(c, ctx);
+    const failed = r.checks.filter((x) => !x.pass);
+    expect(failed.map((x) => x.rule)).toEqual(['methods']);
+    expect(failed[0]?.messages.join()).toMatch(/delete_account: method is not allowlisted/);
   });
 });

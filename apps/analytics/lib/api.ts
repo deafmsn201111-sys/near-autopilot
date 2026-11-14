@@ -59,6 +59,7 @@ export async function apiPost(
   body?: unknown,
   timeoutMs = 20_000,
   extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const env = getEnv();
   try {
@@ -71,12 +72,40 @@ export async function apiPost(
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? null : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     return { status: res.status, body: json };
   } catch (e) {
     console.error(`analytics API ${path} unreachable`, e);
     return { status: 0, body: { error: UNREACHABLE } };
+  }
+}
+
+/** Server-side POST that asks for an event stream and returns the raw response to pass through, or null if unreachable. */
+export async function apiPostStream(
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+  extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<Response | null> {
+  const env = getEnv();
+  try {
+    return await fetch(`${env.API_BASE_URL}${path}`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        ...extraHeaders,
+        authorization: `Bearer ${env.API_TOKEN}`,
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
+    });
+  } catch (e) {
+    console.error(`analytics API ${path} unreachable`, e);
+    return null;
   }
 }

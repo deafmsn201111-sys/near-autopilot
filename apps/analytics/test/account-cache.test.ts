@@ -5,6 +5,7 @@ let forwardedFor = '203.0.113.7';
 let ownerCookie: string | undefined;
 let nearInWallet = 1;
 let supplied = 100;
+let ownerCheckFailed: boolean | undefined;
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', forwardedFor]]),
@@ -20,6 +21,8 @@ vi.mock('../lib/api', () => ({
       data: {
         accountId: 'alice.near',
         recommendations: [],
+        ownerVerified: false,
+        ...(ownerCheckFailed && { ownerCheckFailed }),
         holdings: [
           { where: 'wallet', token: 'near', amount: nearInWallet },
           { where: 'deposited', token: 'usdt', amount: supplied },
@@ -41,6 +44,7 @@ describe('account read cache', () => {
     ownerCookie = undefined;
     nearInWallet = 1;
     supplied = 100;
+    ownerCheckFailed = undefined;
   });
 
   it('interest and gas dust are not a new state; the cached read expiring does not lose the baseline', async () => {
@@ -65,6 +69,22 @@ describe('account read cache', () => {
     expect(reads).toHaveBeenLastCalledWith('/v1/analytics/account/alice.near?strategy=balanced', {
       'x-ownership-proof': 'eyJwcm9vZiI6MX0',
     });
+  });
+
+  it('an ownership check that could not run is read again a second later; a plain "not the owner" is cached', async () => {
+    vi.useFakeTimers();
+    const p = await load();
+    ownerCookie = 'eyJwcm9vZiI6MX0';
+    ownerCheckFailed = true;
+    await p.accountView('alice.near');
+    await p.accountRecommendations('alice.near');
+    expect(reads).toHaveBeenCalledTimes(1);
+    ownerCheckFailed = undefined;
+    vi.advanceTimersByTime(1_000);
+    await p.accountView('alice.near');
+    vi.advanceTimersByTime(30_000);
+    await p.accountView('alice.near');
+    expect(reads).toHaveBeenCalledTimes(2);
   });
 
   it('keys the read by strategy and asks the API for that strategy', async () => {
@@ -159,7 +179,7 @@ describe('account read cache', () => {
     const p = await load();
     for (let i = 0; i < 30; i++) await p.refreshAccountRead('alice.near');
     expect(reads).toHaveBeenCalledTimes(30);
-    expect(await p.refreshAccountRead('alice.near')).toBe(true);
+    expect(await p.refreshAccountRead('alice.near')).toBe(null);
     expect(reads).toHaveBeenCalledTimes(30);
   });
 

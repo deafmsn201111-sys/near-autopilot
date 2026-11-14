@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { DEFAULT_STRATEGY, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import type { RecommendationIntent } from './recommendation-intent';
+import type { TimelineItem } from './activity';
 
 /** Shapes of the product endpoints (opportunities, activity, system). */
 export type Level = 'low' | 'medium' | 'high';
@@ -20,7 +21,7 @@ export interface AccountRecommendation {
   title: string;
   why: string;
   intent: RecommendationIntent | null;
-  carry?: { text: string; provenance: 'calculated_estimate' };
+  carry?: { text: string; provenance: 'calculated_estimate' | 'protocol_reported' };
 }
 export interface Opportunity {
   id: string;
@@ -60,16 +61,6 @@ export interface OpportunityList {
   matching: number;
   opportunities: Opportunity[];
 }
-export interface ActivityItem {
-  at: string;
-  kind: string;
-  title: string;
-  result: string;
-  explanation: string;
-  tone: 'good' | 'neutral' | 'warning' | 'critical';
-  environment: string | null;
-  ref: string;
-}
 export interface SystemView {
   now: string;
   api: { ok: boolean };
@@ -100,8 +91,6 @@ export const opportunity = (id: string) =>
     of: number;
     history: Record<string, number | string | null>[];
   }>(`/v1/analytics/opportunities/${encodeURIComponent(id)}`);
-export const activity = (limit = 50) =>
-  tryApi<{ items: ActivityItem[] }>(`/v1/analytics/activity?limit=${limit}`);
 export const system = () => tryApi<SystemView>('/v1/analytics/system');
 
 export const ago = (iso: string | null | undefined, nowIso?: string): string => {
@@ -154,14 +143,13 @@ export interface PortfolioView {
   strategyNote?: string | null;
   earnings: { monthlyNetUsd: number | null; sentence: string };
   actions: PortfolioAction[];
-  lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
   simulatedChanges?: { count: number; since: string | null } | null;
   metrics?: { byToken: { symbol: string; usd: number; pct: number }[] };
   positions?: {
     key: string;
     label: string;
     sub: string;
-    tokens?: string[];
+    tokens?: { token: string; symbol: string }[];
     amount: number | null;
     usd: number | null;
     verified?: boolean;
@@ -171,44 +159,26 @@ export interface PortfolioView {
   /** A real account: false when an indexer was down and only the allowlisted tokens and pools were read. */
   discovery?: { complete: boolean };
 }
-export interface AgentEntry {
-  from: string;
-  to: string;
-  count: number;
-  headline: string;
-  notes: string[];
-  policy: { verdict: string; sentence: string }[];
-}
 
 export const portfolioView = (id: string) => tryApi<PortfolioView>(`/v1/analytics/portfolio/${id}`);
-export const agentActivity = (portfolio: string) =>
-  tryApi<{ entries: AgentEntry[] }>(
-    `/v1/analytics/agent-activity?portfolio=${portfolio}&limit=300`,
-  );
 
-/** $1,234 / $12.34 with a real minus sign. */
-export const money = (v: number | null | undefined, cents?: boolean): string => {
-  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
-  const c = cents ?? Math.abs(v) < 100;
-  const s = Math.abs(v).toLocaleString('en-US', {
-    minimumFractionDigits: c ? 2 : 0,
-    maximumFractionDigits: c ? 2 : 0,
-  });
-  return `${v < 0 && Number(s.replace(/,/g, '')) !== 0 ? '−' : ''}$${s}`;
-};
+export { money } from './format';
 
-type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
+type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated'> & {
   accountId: string;
   recommendations: AccountRecommendation[];
   /** Actions the agents saw but skipped as too small, in plain language. */
   skipped?: string[];
   /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
   ownerVerified: boolean;
+  ownerCheckFailed?: boolean;
 };
 
 type AccountResult = { data: AccountRead | null; error: string | null };
 
 const ACCOUNT_TTL_MS = 60_000;
+// One page render reads the account twice; a failed ownership check is read again on the next render.
+const FAILED_OWNER_CHECK_TTL_MS = 1_000;
 const accountReads = processWide(
   'accountReads',
   () => new Map<string, { at: number; read: Promise<AccountResult> }>(),
@@ -268,10 +238,20 @@ const readAccount = async (
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
   if (r.error) accountReads.delete(key);
+  else if (r.data?.ownerCheckFailed)
+    entry.at = Date.now() - ACCOUNT_TTL_MS + FAILED_OWNER_CHECK_TTL_MS;
   else entry.at = Date.now();
   const holdings = holdingsOf(r);
   if (holdings) lastHoldings.set(await holdingsKey(id, proof), holdings);
   return r;
+};
+
+export const accountEvents = async (id: string) => {
+  const proof = await ownershipProof();
+  return tryApi<{ owner: boolean; items: TimelineItem[] }>(
+    `/v1/analytics/account/${encodeURIComponent(id)}/events`,
+    proof ? { 'x-ownership-proof': proof } : {},
+  );
 };
 
 export const forgetAccount = async (id: string) => {
@@ -280,16 +260,18 @@ export const forgetAccount = async (id: string) => {
 };
 
 /**
- * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
- * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
- * stops retrying. Reads under other strategies are dropped; the next page render re-reads them from the fresh API cache.
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True when the
+ * holdings differ from the read it replaced or there was nothing to compare, false when they are the same, null when
+ * the read failed (the caller stops). Reads under other strategies are dropped; the next page render re-reads them
+ * from the fresh API cache.
  */
-export const refreshAccountRead = async (id: string): Promise<boolean> => {
+export const refreshAccountRead = async (id: string): Promise<boolean | null> => {
   const normalized = id.trim().toLowerCase();
   const before = lastHoldings.get(await holdingsKey(normalized, await ownershipProof()));
   await forgetAccount(normalized);
   const after = holdingsOf(await readAccount(normalized, DEFAULT_STRATEGY, true));
-  return before === undefined || after === null || after !== before;
+  if (after === null) return null;
+  return before === undefined || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */
@@ -303,7 +285,6 @@ export const accountView = async (id: string, strategy?: StrategyId) => {
           id: 'demo-5000',
           label: r.data.accountId,
           simulated: true,
-          lastDecision: null,
         } as PortfolioView)
       : null,
   };

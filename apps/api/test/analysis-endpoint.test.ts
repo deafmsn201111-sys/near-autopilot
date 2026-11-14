@@ -1,6 +1,7 @@
 import { KeyPairEd25519 } from '@near-js/crypto';
 import { analysisMemo } from '../src/analytics/ai-analysis';
 import { describe, expect, it } from 'vitest';
+import { RpcError } from '@near-autopilot/core';
 import {
   BURROW_REQUIRED_EXPORTS,
   ORACLE_REQUIRED_EXPORTS,
@@ -8,7 +9,11 @@ import {
 } from '@near-autopilot/burrow-adapter';
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
 import type { ToolLlm } from '@near-autopilot/orchestrator';
+import Fastify from 'fastify';
+import { request } from 'node:http';
+import { registerAccountView } from '../src/analytics/account-view';
 import { buildAnalyticsServer } from '../src/analytics/server';
+import { MemoryEventStore } from './support/memory-events';
 import type { CollectorStore } from '../src/collector/store';
 import { signOwnership } from './support/nep413';
 
@@ -129,11 +134,13 @@ function server(
   collector: CollectorStore,
   llm: ToolLlm | null = null,
   dclId?: string,
+  events?: MemoryEventStore,
 ) {
   return buildAnalyticsServer({
     apiToken: TOKEN,
     store: collector,
     intervalSeconds: 900,
+    ...(events ? { events } : {}),
     mainnet: {
       rpc: node,
       burrowId: BURROW,
@@ -149,7 +156,7 @@ function server(
           remainingTodayMicro: async () => 10n ** 9n,
           record: async () => {},
         },
-        memo: analysisMemo(),
+        memo: analysisMemo(undefined, 0),
       },
     } as never,
   });
@@ -202,13 +209,48 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
 
   it('calls the model for the owner of the account', async () => {
     const llm = countingLlm();
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
     const res = await analyse(
-      server(chain, store, llm),
+      server(listed, earning, llm),
       'alice.near',
       await proofHeader('alice.near'),
     );
     expect(res.statusCode).toBe(200);
     expect(llm.opened).toBe(1);
+  });
+
+  it('records the analysis, and the ownership proof as verified, with the account id only', async () => {
+    const events = new MemoryEventStore();
+    const app = server(chain, store, countingLlm(), undefined, events);
+    await analyse(app, 'alice.near', await proofHeader('alice.near'));
+    await analyse(app, 'alice.near');
+    expect(events.rows.map((e) => [e.kind, e.accountId, e.source, e.detail?.['source']])).toEqual([
+      ['verified', 'alice.near', 'server', undefined],
+      ['analyse', 'alice.near', 'server', 'heuristic'],
+      ['analyse', 'alice.near', 'server', 'heuristic'],
+    ]);
+    expect(JSON.stringify(events.rows)).not.toMatch(/127\.0\.0\.1|x-forwarded|remoteAddress/);
+  });
+
+  it('shows the public only confirmed transactions and the owner everything', async () => {
+    const events = new MemoryEventStore();
+    const app = server(chain, store, null, undefined, events);
+    await analyse(app, 'alice.near');
+    const read = async (proof?: string) =>
+      (
+        await app.inject({
+          url: '/v1/analytics/account/alice.near/events',
+          headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
+        })
+      ).json<{ owner: boolean; items: { type: string }[] }>();
+    expect(await read()).toEqual({ owner: false, items: [] });
+    const mine = await read(await proofHeader('alice.near'));
+    expect(mine.owner).toBe(true);
+    expect(mine.items.map((i) => i.type)).toContain('analyse');
   });
 
   it('does not accept a proof made for another account', async () => {
@@ -251,6 +293,131 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
       await proofHeader('alice.near', stranger),
     );
     expect(llm.opened).toBe(0);
+  });
+});
+
+describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
+  const stream = (app: ReturnType<typeof server>, account: string, proof?: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/v1/analytics/account/${account}/analysis`,
+      headers: {
+        ...headers,
+        accept: 'text/event-stream',
+        ...(proof ? { 'x-ownership-proof': proof } : {}),
+      },
+      payload: {},
+    });
+  const frames = (body: string) =>
+    body
+      .split('\n\n')
+      .filter(Boolean)
+      .map((frame) => {
+        const [event, data] = frame.split('\n');
+        return {
+          event: event?.slice('event: '.length),
+          data: JSON.parse(data!.slice(6)) as unknown,
+        };
+      });
+
+  it('streams one done and calls no model on a wallet with nothing to rank', async () => {
+    const llm = countingLlm();
+    const sent = frames(
+      (await stream(server(chain, store, llm), 'alice.near', await proofHeader('alice.near'))).body,
+    );
+    expect(sent).toEqual([
+      { event: 'done', data: expect.objectContaining({ fallback: 'nothing_to_rank' }) as unknown },
+    ]);
+    expect(llm.opened).toBe(0);
+  });
+
+  it('sends the run as it goes and ends with the same analysis as the JSON reply', async () => {
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
+    const app = server(listed, earning, countingLlm());
+    const proof = await proofHeader('alice.near');
+    const res = await stream(app, 'alice.near', proof);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('text/event-stream');
+    expect(res.headers['cache-control']).toBe('no-cache, no-transform');
+    const sent = frames(res.body);
+    expect(sent.map((f) => f.event)).toEqual(['read', 'ranked', 'done']);
+    const json: unknown = (
+      await app.inject({
+        method: 'POST',
+        url: '/v1/analytics/account/alice.near/analysis',
+        headers: { ...headers, 'x-ownership-proof': proof },
+        payload: {},
+      })
+    ).json();
+    expect(sent.at(-1)?.data).toEqual(json);
+    expect(json).toMatchObject({ source: 'heuristic', fallback: 'empty' });
+  });
+
+  it('stops the model run when the client disconnects', async () => {
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
+    let stopped!: () => void;
+    const modelStopped = new Promise<void>((resolve) => (stopped = resolve));
+    const hanging: ToolLlm = {
+      open: (req) => {
+        req.signal?.addEventListener('abort', () => stopped());
+        return { send: () => new Promise(() => {}) };
+      },
+    };
+    const events = new MemoryEventStore();
+    const app = server(listed, earning, hanging, undefined, events);
+    const base = await app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const proof = await proofHeader('alice.near');
+      const firstChunk = await new Promise<string>((resolve, reject) => {
+        const client = request(`${base}/v1/analytics/account/alice.near/analysis`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            'x-ownership-proof': proof,
+          },
+        });
+        client.on('response', (res) =>
+          res.once('data', (chunk: Buffer) => {
+            resolve(chunk.toString());
+            client.destroy();
+          }),
+        );
+        client.on('error', reject);
+        client.end('{}');
+      });
+      expect(firstChunk).toContain('event: read');
+      await modelStopped;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(events.rows.map((e) => e.kind)).not.toContain('analyse');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('sends the rule-based list as one done to a visitor without a proof', async () => {
+    const llm = countingLlm();
+    const sent = frames((await stream(server(chain, store, llm), 'alice.near')).body);
+    expect(sent).toEqual([
+      { event: 'done', data: expect.objectContaining({ fallback: 'not_owner' }) as unknown },
+    ]);
+    expect(llm.opened).toBe(0);
+  });
+
+  it('still answers a chain read failure with a plain 502', async () => {
+    const down = server(unreachable as NearRpcClient, unreachable as CollectorStore);
+    const res = await stream(down, 'alice.near');
+    expect(res.statusCode).toBe(502);
+    expect(res.headers['content-type']).toContain('application/json');
   });
 });
 
@@ -378,6 +545,50 @@ describe('what the model is sent', () => {
   });
 });
 
+describe('GET /v1/analytics/account/:id ownership', () => {
+  const flaky = {
+    call: async (method: string, params: Record<string, unknown>) => {
+      if (params['request_type'] === 'view_access_key')
+        throw new RpcError('RPC query timed out', true, { kind: 'timeout' });
+      return chain.call(method, params);
+    },
+  } as unknown as NearRpcClient;
+  const read = async (node: NearRpcClient, proof: string) => {
+    const res = await server(node, store).inject({
+      method: 'GET',
+      url: '/v1/analytics/account/alice.near',
+      headers: { ...headers, 'x-ownership-proof': proof },
+    });
+    return res.json<{ ownerVerified: boolean; ownerCheckFailed?: boolean }>();
+  };
+
+  it('a key read that could not run says so instead of "not the owner"', async () => {
+    const proof = await proofHeader('alice.near');
+    expect(await read(flaky, proof)).toMatchObject({
+      ownerVerified: false,
+      ownerCheckFailed: true,
+    });
+    const analysis = await server(flaky, store, countingLlm()).inject({
+      method: 'POST',
+      url: '/v1/analytics/account/alice.near/analysis',
+      headers: { ...headers, 'x-ownership-proof': proof },
+      payload: {},
+    });
+    expect(analysis.statusCode).toBe(503);
+    expect(analysis.body).not.toContain('only for the owner');
+  });
+
+  it('a signature by a key the account does not have is still "not the owner"', async () => {
+    const body = await read(chain, await proofHeader('alice.near', KeyPairEd25519.fromRandom()));
+    expect(body.ownerVerified).toBe(false);
+    expect(body.ownerCheckFailed).toBeUndefined();
+  });
+
+  it('the owner is verified', async () => {
+    expect((await read(chain, await proofHeader('alice.near'))).ownerVerified).toBe(true);
+  });
+});
+
 describe('prepare exact amount', () => {
   const app = server(chain, store);
   const prepare = (intent: Record<string, unknown>) =>
@@ -455,17 +666,16 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
       readonly receiverId: string;
       readonly actions: readonly {
         readonly methodName: string;
-        readonly args: { readonly receiver_id?: string; readonly msg?: string };
+        readonly args: { readonly actions?: unknown };
       }[];
     }[];
   }
   const executed = (body: Prepared) => {
     expect(body.transactions).toHaveLength(1);
     const tx = body.transactions[0]!;
-    expect(tx.receiverId).toBe(ORACLE);
-    expect(tx.actions[0]?.methodName).toBe('oracle_call');
-    expect(tx.actions[0]?.args.receiver_id).toBe(BURROW);
-    return JSON.parse(tx.actions[0]?.args.msg ?? '{}') as unknown;
+    expect(tx.receiverId).toBe(BURROW);
+    expect(tx.actions[0]?.methodName).toBe('execute_with_pyth');
+    return tx.actions[0]?.args;
   };
 
   it('repays from collateral with an empty wallet: plain supply first, the rest released from collateral', async () => {
@@ -479,12 +689,10 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     const body = res.json<Prepared>();
     expect(body.amount.raw).toBe('17170000');
     expect(executed(body)).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
-          { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
-        ],
-      },
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
+        { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
+      ],
     });
   });
 
@@ -520,12 +728,62 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     const body = res.json<Prepared>();
     expect(body.amount.raw).toBe('55870000');
     expect(executed(body)).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
-          { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
-        ],
-      },
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
+        { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
+      ],
     });
+  });
+});
+
+describe('wallet observation for Market Intelligence', () => {
+  const observed = async (collector: CollectorStore) => {
+    const { analysisInputs } = registerAccountView(Fastify(), collector, {
+      rpc: rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] }),
+      burrowId: BURROW,
+      rheaId: 'v2.ref-finance.near',
+      pools: [],
+    } as never);
+    const inputs = await analysisInputs('alice.near' as never, log as never);
+    if (!('observe' in inputs)) throw new Error('no observation');
+    return (await inputs.observe()).market?.volatility24hBps;
+  };
+  const warned: unknown[] = [];
+  const log = { warn: (...args: unknown[]) => warned.push(args), info: () => {}, error: () => {} };
+  const snapshot = (i: number, usd: string) => ({
+    snapshotId: `s${i}`,
+    asset: USDT,
+    observedAt: new Date(Date.now() - i * 2 * 60 * 60 * 1000),
+    source: 'pyth',
+    priceUsd: usd,
+    quoteCurrency: 'USD',
+    status: 'valid',
+  });
+
+  it("carries each held token's 24 h range from one slim read of the collector's stored prices", async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i < 6 ? '1.2' : '1'));
+    const calls: unknown[][] = [];
+    const history = {
+      ...store,
+      priceSeries: async (...args: unknown[]) => (calls.push(args), day),
+    } as unknown as CollectorStore;
+    expect(await observed(history)).toEqual(new Map([[USDT, 2000]]));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toEqual([USDT]);
+  });
+
+  it('one bad print in a flat day is no volatility', async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i === 5 ? '1.2' : '1'));
+    const history = { ...store, priceSeries: async () => day } as unknown as CollectorStore;
+    expect(await observed(history)).toEqual(new Map([[USDT, 0]]));
+  });
+
+  it('has no range, and logs it, when the price history cannot be read', async () => {
+    const failing = {
+      ...store,
+      priceSeries: async () => Promise.reject(new Error('db down')),
+    } as unknown as CollectorStore;
+    expect(await observed(failing)).toEqual(new Map());
+    expect(warned).toHaveLength(1);
   });
 });

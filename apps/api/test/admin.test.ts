@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  funnelSummary,
+  llmQuality,
   spendSummary,
   type AdminStore,
   type LlmSettings,
+  type QualityStats,
   type SettingsPatch,
   type SpendRow,
 } from '../src/analytics/admin';
@@ -98,6 +101,8 @@ describe('spendSummary', () => {
   });
 });
 
+const NO_RUNS: QualityStats = { outcomes: [], p50Ms: null, p95Ms: null, kinds: [], last: [] };
+
 const API_TOKEN = 'public-token-public-token-public-token-1';
 const ADMIN_TOKEN = 'admin-token-admin-token-admin-token-admin-1';
 
@@ -106,6 +111,7 @@ function fakeStore() {
   const store: AdminStore = {
     settings: async () => state.settings,
     recentCalls: async () => [row('2026-11-12T09:00:00Z', 250_000n)],
+    quality: async () => NO_RUNS,
     saveSettings: async (patch) => {
       state.patches.push(patch);
       state.settings = { ...state.settings, ...patch };
@@ -137,6 +143,7 @@ describe('/v1/admin', () => {
         since.push(s),
         [row('2026-11-05T23:00:00Z', 5_000_000n), row('2026-11-12T09:00:00Z', 1_000_000n)]
       ),
+      quality: async () => NO_RUNS,
       saveSettings: async () => {},
     };
     const res = await server(store).inject({
@@ -229,5 +236,122 @@ describe('/v1/admin', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(state.patches).toEqual([]);
+  });
+});
+
+describe('funnelSummary', () => {
+  it('pads 7 UTC days, oldest first, and drops a day outside the window', () => {
+    const f = funnelSummary(
+      [
+        { day: '2026-11-12', kind: 'analyse', events: 2, accounts: 1 },
+        { day: '2026-11-12', kind: null, events: 2, accounts: 1 },
+        { day: '2026-11-05', kind: 'connect', events: 9, accounts: 9 },
+        { day: null, kind: 'analyse', events: 2, accounts: 1 },
+        { day: null, kind: null, events: 2, accounts: 1 },
+      ],
+      NOW,
+    );
+    expect(f.days.map((d) => d.day)).toEqual([
+      '2026-11-06',
+      '2026-11-07',
+      '2026-11-08',
+      '2026-11-09',
+      '2026-11-10',
+      '2026-11-11',
+      '2026-11-12',
+    ]);
+    expect(f.days[6]).toEqual({
+      day: '2026-11-12',
+      connect: 0,
+      analyse: 2,
+      prepare: 0,
+      signed: 0,
+      accounts: 1,
+    });
+    expect(f.total).toEqual({ connect: 0, analyse: 2, prepare: 0, signed: 0, accounts: 1 });
+  });
+});
+
+describe('llmQuality', () => {
+  it('rates fallbacks over all runs and sorts by count, then name', () => {
+    const q = llmQuality({
+      ...NO_RUNS,
+      outcomes: [
+        { outcome: 'ok', count: 2 },
+        { outcome: 'deadline', count: 1 },
+        { outcome: 'invalid_output', count: 1 },
+      ],
+      kinds: [
+        { kind: 'put_idle_to_work', count: 1 },
+        { kind: 'improve_loan_safety', count: 1 },
+        { kind: 'rebalance', count: 3 },
+      ],
+    });
+    expect(q).toMatchObject({ calls: 4, fallbackRate: 0.5, validationErrorRate: 0.25 });
+    expect(q.fallbacks.map((f) => f.code)).toEqual(['deadline', 'invalid_output']);
+    expect(q.topKinds.map((k) => k.kind)).toEqual([
+      'rebalance',
+      'improve_loan_safety',
+      'put_idle_to_work',
+    ]);
+  });
+
+  it('has no rates without runs', () => {
+    expect(llmQuality(NO_RUNS)).toMatchObject({ calls: 0, fallbackRate: null, fallbacks: [] });
+  });
+});
+
+describe('/v1/admin/funnel and /v1/admin/llm', () => {
+  const app = () =>
+    buildAnalyticsServer({
+      apiToken: API_TOKEN,
+      store: {} as CollectorStore,
+      intervalSeconds: 900,
+      now: () => NOW,
+      admin: {
+        token: ADMIN_TOKEN,
+        store: {
+          ...fakeStore().store,
+          quality: async () => ({
+            ...NO_RUNS,
+            outcomes: [{ outcome: 'ok', count: 1 }],
+            last: [
+              {
+                at: NOW,
+                accountId: 'alice.near',
+                model: 'claude-haiku-5-5',
+                latencyMs: 1000,
+                tools: [],
+                outcome: 'ok',
+                input: null,
+                output: null,
+              },
+            ],
+          }),
+        },
+        defaultCapMicro: 5_000_000n,
+        events: {
+          funnel: async () => [
+            { day: '2026-11-12', kind: 'connect', events: 1, accounts: 1 },
+            { day: null, kind: 'connect', events: 1, accounts: 1 },
+            { day: null, kind: null, events: 1, accounts: 1 },
+          ],
+        },
+      },
+    });
+
+  it.each(['/v1/admin/funnel', '/v1/admin/llm'])('%s accepts only the admin token', async (url) => {
+    const a = app();
+    expect((await a.inject({ url })).statusCode).toBe(401);
+    expect((await a.inject({ url, headers: bearer(API_TOKEN) })).statusCode).toBe(401);
+    expect((await a.inject({ url, headers: bearer(ADMIN_TOKEN) })).statusCode).toBe(200);
+  });
+
+  it('serves the funnel and the LLM quality', async () => {
+    const a = app();
+    const funnel = await a.inject({ url: '/v1/admin/funnel', headers: bearer(ADMIN_TOKEN) });
+    expect(funnel.json()).toMatchObject({ total: { connect: 1, accounts: 1 } });
+    const llm = await a.inject({ url: '/v1/admin/llm', headers: bearer(ADMIN_TOKEN) });
+    expect(llm.json()).toMatchObject({ calls: 1, last: [{ outcome: 'ok' }] });
   });
 });
