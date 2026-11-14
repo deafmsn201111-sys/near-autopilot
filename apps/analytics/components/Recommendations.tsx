@@ -63,6 +63,13 @@ export function Recommendations({
   );
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<Pipeline | null>(null);
+  // Reset here instead of remounting on a strategy switch, which would drop the focus off the strategy control (#288).
+  const [shownFor, setShownFor] = useState(strategy);
+  if (shownFor !== strategy) {
+    setShownFor(strategy);
+    setAi(restore(saved));
+    setError(null);
+  }
   const running = startedAt !== null;
   const signature = portfolioSignature(initial, holdings);
   const analysis = ai?.signature === signature ? ai.analysis : null;
@@ -139,7 +146,7 @@ export function Recommendations({
       {cards.length > 0 && (
         <div
           className={`sg-list${running ? ' is-stale' : ''}`}
-          key={ai?.run ?? 'rules'}
+          key={`${strategy}:${ai?.run ?? 'rules'}`}
           aria-busy={running}
           inert={running}
         >
