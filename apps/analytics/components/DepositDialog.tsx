@@ -268,12 +268,13 @@ export function TokenButton({
   );
 }
 
-const CHAIN_LABEL: Record<OriginWallet['chain'], string> = {
+export const CHAIN_LABEL: Record<OriginWallet['chain'], string> = {
   evm: 'EVM',
   solana: 'Solana',
+  tron: 'Tron',
   btc: 'Bitcoin',
 };
-const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
+export const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
 
 /** EVM / Solana / Bitcoin wallets through HOT Kit, as connected in the dialog. */
 export function OriginWallets({
@@ -327,7 +328,15 @@ export function OriginWallets({
 }
 
 /** Funds the connected NEAR account from another chain in HOT's bridge popup (D42); nothing is built or signed here. */
-export function DepositButton({ account, label = 'Deposit' }: { account: string; label?: string }) {
+export function DepositButton({
+  account,
+  label = 'Add funds',
+  className = 'btn primary small',
+}: {
+  account: string;
+  label?: string;
+  className?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -347,12 +356,7 @@ export function DepositButton({ account, label = 'Deposit' }: { account: string;
 
   return (
     <>
-      <button
-        type="button"
-        className="btn primary small"
-        disabled={busy}
-        onClick={() => void open()}
-      >
+      <button type="button" className={className} disabled={busy} onClick={() => void open()}>
         {label}
       </button>
       {error && (

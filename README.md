@@ -128,7 +128,7 @@ from and withdrawals to another chain (below), in a separate client.
    holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
    them in your wallet or cancel.
 
-5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Add funds**
+5. **Add funds from another chain.** Connected, press **Add funds** in the wallet menu (your account, top right) or
    on the portfolio: it opens HOT Kit's bridge popup with your
    NEAR account locked as the recipient: you connect the wallet you send from (MetaMask, Phantom, a Tron or Bitcoin
    wallet, or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build), see its
@@ -137,7 +137,7 @@ from and withdrawals to another chain (below), in a separate client.
    `validateCascade` (D42). A swap between different tokens carries HOT's fee of up to 0.4% (0.01% stable to stable, none for the same
    token), already taken off the amount the popup shows you receive; the portfolio picks up the incoming tokens by itself. Without
    a connected NEAR account the button asks you to connect first. A deposit straight from an exchange is not offered.
-6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
+6. **Withdraw to another chain.** On your own portfolio or in the wallet menu, press **Withdraw**. Pick a token your NEAR
    wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
    typed; the server checks it is an address of that chain). **Get quote** asks 1Click for a real quote with your NEAR

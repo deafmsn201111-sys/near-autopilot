@@ -336,7 +336,8 @@ A 7px glyph before the source label in Meta type, text-3: filled dot = on-chain 
 
 - **Top bar:** sticky, page at 90% with blur, 60px. Nav links text-2, active = text-1 on `active` fill. Wallet button: token stack + account, chevron rotates when the popover is open.
 - **Wallet popover:** overlay, origin top-right, pop-in 160ms; Escape closes and returns focus.
-- **Phone:** 3-tab bar with `aria-current`; active icon in accent.
+- **Phone:** 3-tab bar with `aria-current`; active icon in accent. "For reviewers" leaves the top bar for a footer link.
+- **Context strip:** first on the portfolio. Demo, read-only and your wallet each have their own chip; every strip has a "Switch view" menu (your wallet, both demos, look up an account). The deposit entry point is "Add funds" everywhere.
 
 ### Loan safety gauge (signature)
 

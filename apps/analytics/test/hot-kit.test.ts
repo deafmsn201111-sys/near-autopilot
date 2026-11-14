@@ -167,6 +167,11 @@ describe('kit wallet type numbers', () => {
     });
     fake.state.pick = { type: WalletType.Btc, address: BTC.address };
     expect(await m.connectOriginWallet('btc')).toEqual({ chain: 'btc', address: BTC.address });
+    fake.state.pick = { type: WalletType.Tron, address: 'TTronAddre55' };
+    expect(await m.connectOriginWallet('tron')).toEqual({
+      chain: 'tron',
+      address: 'TTronAddre55',
+    });
   });
 });
 
