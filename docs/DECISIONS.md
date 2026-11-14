@@ -670,3 +670,28 @@ because `walletChainOf` would also open a wallet send on BTC, which D34 keeps ma
 with a NEAR session now loads the kit core (~110 kB gzip, lazy) after hydration. The near-connect wallet type is cast
 to the kit's 0.8.2 type; a kit upgrade must re-check that `connect(id)` shim. On a NEAR connect the kit also reads that account's token
 balances client-side (public chain data, read-only); it signs nothing on connect.
+
+## D36 — A withdrawal sends `ft_transfer` only to its stored 1Click quote's deposit address (#171)
+
+**Context:** #171. Getting money out of NEAR was manual. For a NEAR origin, 1Click's deposit address is a NEAR
+implicit account (64 hex, checked live on 14 Nov) that holds no storage on the token, so the transfer needs
+`storage_deposit` for it and a plain `ft_transfer` (an `ft_transfer_call` would bounce: the account has no contract).
+`ft_transfer` was not in `validateCascade`'s method allowlist.
+**Decision:** `POST /v1/withdraw/quote` quotes one of our tokens (`policy.allowedTokens`, as 1Click lists it on NEAR)
+to any 1Click token on Ethereum, Base, Arbitrum or Solana (the D32 filter applies; no Bitcoin), with the recipient
+checked as an address of that chain and the NEAR account as the refund address; the quote is verified like a deposit
+quote, its deposit address must be a NEAR implicit account, and it is stored in `deposit_quotes`. The intent
+`withdraw_1click { quoteId }` of `/v1/wallet/prepare` takes token, receiver and amount from that row only: the row must
+belong to the signer, be a NEAR-origin quote of a listed token, be more than 2 minutes from its deadline and not seen by
+1Click (stored and freshly asked), and the wallet must hold the amount. It builds one transaction on the token:
+`storage_deposit { account_id: <deposit address>, registration_only: true }` (bounds.min, capped at 0.0125 NEAR like
+other registrations; skipped when registered) and `ft_transfer` of the quoted amount, 1 yocto. `validateCascade` allows
+`ft_transfer` only when the context names `transferTo`, and only to it, with exactly 1 yocto and a positive amount;
+every other cascade has no `transferTo`, so `ft_transfer` stays refused there. No cap changes. A quote is built at most once:
+after every check passes, the build claims it with the same `transfer_issued_at` mark as a deposit transfer (#214), so
+a failed build does not use it up and a second build (another tab, a rebuild) gets 409; the dialog offers one signing
+attempt per quote. One EXACT_INPUT quote cannot be paid twice before 1Click sees the first transfer; after a decline
+the user gets a new quote.
+**Consequences:** A withdrawal is signed in the NEAR wallet like any cascade and confirmed step by step. Its status is
+the deposit status path (#29); the recipient address is kept in the `oneclick_quote` event, not in `deposit_quotes`.
+Native NEAR (needs a wrap first), Bitcoin and other chains are not offered yet.

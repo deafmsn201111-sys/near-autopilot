@@ -68,3 +68,6 @@ export function isRefundAddress(chain: DepositChain, address: string): boolean {
       return attempt(() => isBtcBase58(address)) || isBtcSegwit(address);
   }
 }
+
+/** A NEAR implicit account (64 lowercase hex): the shape of a 1Click deposit address on NEAR. */
+export const isNearImplicitAccount = (address: string) => /^[0-9a-f]{64}$/.test(address);

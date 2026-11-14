@@ -36,6 +36,8 @@ export const ALLOWED_METHODS = new Set([
   'near_withdraw',
   // priced Burrow borrow / withdraw / repay from collateral: Burrow fetches its own prices (D29).
   'execute_with_pyth',
+  // a 1Click withdrawal, only to the stored quote's deposit address (`transferTo`, D36).
+  'ft_transfer',
 ]);
 
 export interface CascadeValidationContext {
@@ -47,6 +49,8 @@ export interface CascadeValidationContext {
   readonly allowedPools?: ReadonlySet<number> | undefined;
   /** The DCL contract and the DCL pools (string ids, config `rhea.dclPools`) its `add_liquidity` may target. */
   readonly dcl?: { readonly contract: string; readonly pools: ReadonlySet<string> } | undefined;
+  /** The one account `ft_transfer` may send to: a stored 1Click quote's deposit address. Absent: no ft_transfer. */
+  readonly transferTo?: string | undefined;
 }
 
 export const CASCADE_RULES = [
@@ -116,6 +120,15 @@ function checkAction(
     if (typeof to !== 'string' || !ctx.allowedReceivers.has(to))
       fail('receivers', `${where}: transfers to an unexpected receiver ${String(to)}`);
     if (typeof a.args['msg'] !== 'string') fail('arguments', `${where}: msg must be a string`);
+  }
+  if (a.methodName === 'ft_transfer') {
+    if (a.deposit !== 1n) fail('deposit', `${where}: ft_transfer must attach exactly 1 yoctoNEAR`);
+    const amount = a.args['amount'];
+    if (!isDecimalString(amount) || BigInt(amount) === 0n)
+      fail('arguments', `${where}: amount must be a positive integer string`);
+    const to = a.args['receiver_id'];
+    if (ctx.transferTo === undefined || to !== ctx.transferTo)
+      fail('receivers', `${where}: transfers to an unexpected receiver ${String(to)}`);
   }
   if (a.methodName === 'execute_with_pyth') {
     if (a.deposit !== 1n)

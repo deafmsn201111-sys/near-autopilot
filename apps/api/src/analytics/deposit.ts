@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { accountIdSchema, BoundedMap, type ProvenanceTier } from '@near-autopilot/core';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
   DepositQuoteRefused,
@@ -9,7 +9,12 @@ import {
   type SwapStatus,
 } from '../gateway/one-click-deposit';
 import { incidentsFor, type ShieldClient, type ShieldIncident } from '../gateway/shield';
-import { DEPOSIT_CHAINS, isRefundAddress, type DepositChain } from '../gateway/refund-address';
+import {
+  DEPOSIT_CHAINS,
+  isNearImplicitAccount,
+  isRefundAddress,
+  type DepositChain,
+} from '../gateway/refund-address';
 import type { SolanaTransferFees } from '../gateway/solana-transfer-fee';
 import { eventRecorder, type EventStore } from './events';
 
@@ -188,6 +193,19 @@ const quoteBody = z
   })
   .strict();
 
+const withdrawBody = z
+  .object({
+    account: accountIdSchema,
+    originAsset: z.string().min(1).max(200),
+    destinationAsset: z.string().min(1).max(200),
+    amount: z.string().min(1).max(64),
+    recipient: z.string().min(1).max(200),
+  })
+  .strict();
+
+/** Chains a withdrawal may go to: those HOT Kit connects (no Bitcoin, #171). */
+const WITHDRAW_CHAINS: readonly DepositChain[] = ['eth', 'base', 'arb', 'sol'];
+
 class BadRequest extends Error {}
 class NotFound extends Error {}
 
@@ -203,6 +221,32 @@ export interface DepositStatusView {
 }
 
 const quoteId = z.string().regex(/^[\w-]{1,64}$/);
+
+const seenBy1Click = (s: string | null) => s !== null && s !== 'PENDING_DEPOSIT';
+
+/**
+ * Why a stored quote may not be sent now, or null: within SEND_MARGIN_MS of its deadline, or a deposit 1Click has
+ * seen, by the stored status and a fresh one (never cached), so a retry right after a send is refused once 1Click
+ * sees it.
+ */
+async function sendRefusal(
+  deps: Pick<DepositDeps, 'oneClick' | 'store'>,
+  q: StoredDepositQuote & { readonly status: string | null },
+  at: Date,
+  log: (err: unknown) => void,
+): Promise<{ readonly status: 409 | 502; readonly error: string } | null> {
+  if (at.getTime() >= q.deadline.getTime() - SEND_MARGIN_MS)
+    return { status: 409, error: 'This quote expires too soon to send. Get a new one.' };
+  if (seenBy1Click(q.status)) return { status: 409, error: ALREADY_SEEN };
+  try {
+    const fresh = await deps.oneClick.status(q.depositAddress);
+    await deps.store.saveStatus(q.id, fresh.status, at).catch(log);
+    return seenBy1Click(fresh.status) ? { status: 409, error: ALREADY_SEEN } : null;
+  } catch (err) {
+    log(err);
+    return { status: 502, error: STATUS_UNAVAILABLE };
+  }
+}
 
 export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: () => Date) {
   const newId = deps.newId ?? randomUUID;
@@ -386,18 +430,10 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       return reply.code(502).send({ error: UNAVAILABLE });
     }
     if (!q) return reply.code(404).send({ error: 'Unknown deposit.' });
-    if (at.getTime() >= q.deadline.getTime() - SEND_MARGIN_MS)
-      return reply.code(409).send({ error: 'This quote expires too soon to send. Get a new one.' });
-    const seen = (s: string | null) => s !== null && s !== 'PENDING_DEPOSIT';
-    if (seen(q.status)) return reply.code(409).send({ error: ALREADY_SEEN });
-    // Never the cached status: a retry right after a send must see the deposit 1Click already knows of.
-    try {
-      if (seen((await fetchStatus(q.id, at)).status))
-        return reply.code(409).send({ error: ALREADY_SEEN });
-    } catch (err) {
-      req.log.warn({ err }, '1Click status failed before a wallet transfer');
-      return reply.code(502).send({ error: STATUS_UNAVAILABLE });
-    }
+    const refused = await sendRefusal(deps, q, at, (err) =>
+      req.log.warn({ err }, '1Click status failed before a wallet transfer'),
+    );
+    if (refused) return reply.code(refused.status).send({ error: refused.error });
     const origin = origins.find((t) => t.assetId === q.originAsset);
     const chain = origin?.blockchain ?? '';
     const payment =
@@ -426,51 +462,37 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     };
   });
 
-  app.post('/v1/deposit/quote', async (req, reply) => {
-    const body = quoteBody.parse(req.body);
-    let origin: OneClickToken & { blockchain: DepositChain };
-    let destination: OneClickToken;
-    let amountIn: bigint;
-    try {
-      const { origins, destinations } = await lists();
-      const o = origins.find((t) => t.assetId === body.originAsset);
-      const d = destinations.find((t) => t.assetId === body.destinationAsset);
-      if (!o || !isDepositChain(o.blockchain)) throw new BadRequest('Unknown origin token.');
-      if (!d) throw new BadRequest('Unknown token to receive.');
-      const units = toBaseUnits(body.amount, o.decimals);
-      if (units === null)
-        throw new BadRequest(
-          `The amount must be a positive number with at most ${o.decimals} decimals.`,
-        );
-      if (!isRefundAddress(o.blockchain, body.refundTo))
-        throw new BadRequest(
-          `The refund address is not a valid ${CHAIN_NAMES[o.blockchain]} address.`,
-        );
-      origin = { ...o, blockchain: o.blockchain };
-      destination = d;
-      amountIn = units;
-    } catch (err) {
-      if (err instanceof BadRequest) return reply.code(400).send({ error: err.message });
-      req.log.warn({ err }, '1Click token list failed');
-      return reply.code(502).send({ error: UNAVAILABLE });
-    }
+  type Leg = { readonly asset: OneClickToken; readonly chain: string; readonly chainName: string };
 
+  /** A real 1Click quote, verified and stored before it is shown: the same path for a deposit and a withdrawal. */
+  const mint = async (
+    reply: FastifyReply,
+    r: {
+      readonly account: string;
+      readonly from: Leg;
+      readonly to: Leg;
+      readonly amountIn: bigint;
+      readonly refundTo: string;
+      readonly recipient: string;
+      readonly depositAddressOk: (address: string) => boolean;
+    },
+  ) => {
     const at = now();
     let q;
     try {
       q = await deps.oneClick.quote({
-        originAsset: origin.assetId,
-        destinationAsset: destination.assetId,
-        amountIn,
-        refundTo: body.refundTo,
-        recipient: body.account,
+        originAsset: r.from.asset.assetId,
+        destinationAsset: r.to.asset.assetId,
+        amountIn: r.amountIn,
+        refundTo: r.refundTo,
+        recipient: r.recipient,
         slippageBps: SLIPPAGE_BPS,
         now: at,
       });
-      if (!isRefundAddress(origin.blockchain, q.depositAddress))
+      if (!r.depositAddressOk(q.depositAddress))
         throw new DepositQuoteRefused('1Click deposit address is not of the origin chain');
     } catch (err) {
-      req.log.warn({ err }, '1Click deposit quote refused');
+      reply.log.warn({ err }, '1Click quote refused');
       return reply
         .code(502)
         .send({ error: err instanceof DepositQuoteRefused ? NOT_VERIFIED : NO_QUOTE });
@@ -482,13 +504,13 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       await deps.store.save({
         id,
         createdAt: at,
-        accountId: body.account,
-        originAsset: origin.assetId,
-        destinationAsset: destination.assetId,
+        accountId: r.account,
+        originAsset: r.from.asset.assetId,
+        destinationAsset: r.to.asset.assetId,
         amountIn: q.amountIn.toString(),
         amountOut: q.amountOut.toString(),
         minAmountOut: q.minAmountOut.toString(),
-        refundTo: body.refundTo,
+        refundTo: r.refundTo,
         depositAddress: q.depositAddress,
         deadline: q.deadline,
         correlationId: q.correlationId,
@@ -497,29 +519,35 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       });
     } catch (err) {
       // Not shown unless stored; the correlation id lets 1Click find the quote that was minted.
-      req.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
+      reply.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
       return reply.code(500).send({ error: 'internal error' });
     }
     await record({
       at,
       kind: 'oneclick_quote',
-      accountId: body.account,
+      accountId: r.account,
       source: 'server',
       detail: {
         quoteId: id,
-        chain: origin.blockchain,
-        from: origin.symbol,
-        to: destination.symbol,
+        chain: r.from.chain,
+        toChain: r.to.chain,
+        from: r.from.asset.symbol,
+        to: r.to.asset.symbol,
+        recipient: r.recipient,
         amountIn: q.amountIn.toString(),
         amountOut: q.amountOut.toString(),
       },
     });
     return {
       id,
-      chain: origin.blockchain,
-      chainName: CHAIN_NAMES[origin.blockchain],
-      origin: { ...asset(origin), payment: paymentToken(origin.blockchain, origin) },
-      destination: asset(destination),
+      chain: r.from.chain,
+      chainName: r.from.chainName,
+      to: { chain: r.to.chain, chainName: r.to.chainName },
+      origin: {
+        ...asset(r.from.asset),
+        payment: isDepositChain(r.from.chain) ? paymentToken(r.from.chain, r.from.asset) : null,
+      },
+      destination: asset(r.to.asset),
       amountIn: q.amountIn.toString(),
       amountOut: q.amountOut.toString(),
       minAmountOut: q.minAmountOut.toString(),
@@ -529,13 +557,147 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       },
       // As 1Click echoes it in the quote; it already comes off amountOut.
       fee: { bps: feeBps, provenance: 'protocol_reported' satisfies ProvenanceTier },
-      recipient: body.account,
-      refundTo: body.refundTo,
+      recipient: r.recipient,
+      refundTo: r.refundTo,
       depositAddress: q.depositAddress,
       deadline: q.deadline.toISOString(),
       // Counted down from the server clock, so a wrong browser clock cannot show time that is not there.
       expiresInSeconds: Math.floor((q.deadline.getTime() - at.getTime()) / 1000),
       timeEstimateSeconds: q.timeEstimateSeconds,
     };
+  };
+
+  const NEAR_LEG = { chain: 'near', chainName: 'NEAR' } as const;
+  const units = (amount: string, decimals: number) => {
+    const u = toBaseUnits(amount, decimals);
+    if (u === null)
+      throw new BadRequest(
+        `The amount must be a positive number with at most ${decimals} decimals.`,
+      );
+    return u;
+  };
+
+  app.post('/v1/deposit/quote', async (req, reply) => {
+    const body = quoteBody.parse(req.body);
+    let leg;
+    try {
+      const { origins, destinations } = await lists();
+      const o = origins.find((t) => t.assetId === body.originAsset);
+      const d = destinations.find((t) => t.assetId === body.destinationAsset);
+      if (!o || !isDepositChain(o.blockchain)) throw new BadRequest('Unknown origin token.');
+      if (!d) throw new BadRequest('Unknown token to receive.');
+      const amountIn = units(body.amount, o.decimals);
+      if (!isRefundAddress(o.blockchain, body.refundTo))
+        throw new BadRequest(
+          `The refund address is not a valid ${CHAIN_NAMES[o.blockchain]} address.`,
+        );
+      leg = { o, chain: o.blockchain, d, amountIn };
+    } catch (err) {
+      if (err instanceof BadRequest) return reply.code(400).send({ error: err.message });
+      req.log.warn({ err }, '1Click token list failed');
+      return reply.code(502).send({ error: UNAVAILABLE });
+    }
+    const { o, chain, d, amountIn } = leg;
+    return mint(reply, {
+      account: body.account,
+      from: { asset: o, chain, chainName: CHAIN_NAMES[chain] },
+      to: { asset: d, ...NEAR_LEG },
+      amountIn,
+      refundTo: body.refundTo,
+      recipient: body.account,
+      depositAddressOk: (a) => isRefundAddress(chain, a),
+    });
   });
+
+  // Withdraw (#171): the user's NEAR token to another chain. The NEAR transfer is built by /v1/wallet/prepare
+  // (withdraw_1click) from the stored quote; a refund comes back to the NEAR account.
+  app.post('/v1/withdraw/quote', async (req, reply) => {
+    const body = withdrawBody.parse(req.body);
+    let leg;
+    try {
+      const { origins, destinations } = await lists();
+      const o = destinations.find((t) => t.assetId === body.originAsset);
+      const d = origins.find((t) => t.assetId === body.destinationAsset);
+      if (!o) throw new BadRequest('Unknown token to send.');
+      const chain = d?.blockchain as DepositChain | undefined;
+      if (!d || !chain || !WITHDRAW_CHAINS.includes(chain))
+        throw new BadRequest('Unknown token to receive.');
+      const amountIn = units(body.amount, o.decimals);
+      if (!isRefundAddress(chain, body.recipient))
+        throw new BadRequest(`The recipient is not a valid ${CHAIN_NAMES[chain]} address.`);
+      leg = { o, d, chain, amountIn };
+    } catch (err) {
+      if (err instanceof BadRequest) return reply.code(400).send({ error: err.message });
+      req.log.warn({ err }, '1Click token list failed');
+      return reply.code(502).send({ error: UNAVAILABLE });
+    }
+    const { o, d, chain, amountIn } = leg;
+    return mint(reply, {
+      account: body.account,
+      from: { asset: o, ...NEAR_LEG },
+      to: { asset: d, chain, chainName: CHAIN_NAMES[chain] },
+      amountIn,
+      refundTo: body.account,
+      recipient: body.recipient,
+      depositAddressOk: isNearImplicitAccount,
+    });
+  });
+}
+
+/** What the NEAR wallet sends for a stored withdrawal quote, all from our row. */
+export interface WithdrawTransfer {
+  readonly quoteId: string;
+  /** The NEP-141 contract: one of our own tokens (`destinationTokens`). */
+  readonly token: string;
+  readonly symbol: string;
+  readonly decimals: number;
+  /** The quote's deposit address, a NEAR implicit account. */
+  readonly receiver: string;
+  readonly amount: bigint;
+  /**
+   * Marks the quote's transfer as handed out (#214), once all checks passed: false when it already was. One EXACT_INPUT
+   * quote built twice could be paid twice before 1Click sees the first transfer.
+   */
+  readonly claim: () => Promise<boolean>;
+}
+export type WithdrawLookup = (
+  quoteId: string,
+  account: string,
+) => Promise<WithdrawTransfer | { readonly status: 404 | 409 | 502; readonly error: string }>;
+
+/**
+ * The withdrawal a NEAR transfer may be built for: a stored quote of this account, from one of our tokens to a NEAR
+ * implicit deposit address and sendable now (`sendRefusal`); the caller claims it once its own checks pass.
+ */
+export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLookup {
+  return async (quoteId, account) => {
+    const at = now();
+    let q;
+    let tokens;
+    try {
+      [q, tokens] = await Promise.all([deps.store.find(quoteId), deps.oneClick.tokens()]);
+    } catch {
+      return { status: 502, error: UNAVAILABLE };
+    }
+    if (!q || q.accountId !== account) return { status: 404, error: 'Unknown withdrawal.' };
+    const token = q.originAsset.startsWith(NEP141) ? q.originAsset.slice(NEP141.length) : '';
+    const listed = tokens.find((t) => t.blockchain === 'near' && t.assetId === q.originAsset);
+    if (
+      !listed ||
+      !deps.destinationTokens.includes(token) ||
+      !isNearImplicitAccount(q.depositAddress)
+    )
+      return { status: 409, error: 'This quote is not a withdrawal from NEAR.' };
+    const refused = await sendRefusal(deps, q, at, () => undefined);
+    if (refused) return refused;
+    return {
+      quoteId: q.id,
+      token,
+      symbol: listed.symbol,
+      decimals: listed.decimals,
+      receiver: q.depositAddress,
+      amount: BigInt(q.amountIn),
+      claim: () => deps.store.issueTransfer(q.id, now(), false),
+    };
+  };
 }

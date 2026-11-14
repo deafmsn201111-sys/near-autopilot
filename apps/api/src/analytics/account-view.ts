@@ -17,6 +17,7 @@ import {
   STRATEGY_IDS,
   strategySchema,
   UnsupportedIntentError,
+  accountId,
   type AccountId,
   type FunctionCallAction,
   type Strategy,
@@ -45,6 +46,7 @@ import {
 } from '../wallet/cascade';
 import type { CascadeValidationContext } from '../wallet/validate-cascade';
 import { sealCascade } from '../wallet/seal';
+import { buildWithdrawTransfer } from '../wallet/withdraw';
 import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
 import { prepareSwapRepay } from '../wallet/swap-repay';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
@@ -99,11 +101,13 @@ import {
   type WalletObservation,
 } from './lp-recentre';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { formatUnits } from '@near-autopilot/financial-engine';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
+import type { WithdrawLookup } from './deposit';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
@@ -127,6 +131,8 @@ export interface MainnetReadDeps {
   readonly discovery?: AccountDiscovery | null;
   /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
   readonly ai?: ToolLlmDeps | null;
+  /** Stored 1Click withdrawal quotes (#171). Absent: `withdraw_1click` is refused. */
+  readonly withdraw?: WithdrawLookup;
 }
 
 interface DclPositionView {
@@ -2657,11 +2663,72 @@ export function registerAccountView(
             withdraw: amount,
             maxSlippageBps: slip,
           }),
+          // Send a stored 1Click withdrawal quote from NEAR (#171): token, receiver and amount come from the quote.
+          z.object({
+            action: z.literal('withdraw_1click'),
+            quoteId: z.string().regex(/^[\w-]{1,64}$/),
+          }),
         ]),
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'invalid prepare request' });
     const { account, intent } = parsed.data;
+
+    if (intent.action === 'withdraw_1click') {
+      if (!deps.withdraw) return reply.code(404).send({ error: 'withdrawals are unavailable' });
+      try {
+        const w = await deps.withdraw(intent.quoteId, account);
+        if ('error' in w) return reply.code(w.status).send({ error: w.error });
+        const token = accountId(w.token);
+        const [balance, registered] = await Promise.all([
+          tokens.getBalance(token, account),
+          tokens.isStorageRegistered(token, accountId(w.receiver)),
+        ]);
+        const human = Number(w.amount) / 10 ** w.decimals;
+        if (balance < w.amount)
+          return reply
+            .code(409)
+            .send({ error: `your wallet holds less ${w.symbol} than this quote sends` });
+        let storageDeposit = 0n;
+        if (!registered) {
+          const bounds = z
+            .object({ min: z.string().regex(/^\d{1,30}$/) })
+            .safeParse(await viewer.view(token, 'storage_balance_bounds', {}));
+          storageDeposit = bounds.success ? BigInt(bounds.data.min) : MAX_REGISTRATION_YOCTO + 1n;
+          if (storageDeposit > MAX_REGISTRATION_YOCTO)
+            return reply
+              .code(409)
+              .send({ error: `${w.symbol} asks an unusual storage price; not registered by us` });
+        }
+        const register =
+          storageDeposit > 0n
+            ? `register the 1Click deposit address (${formatNear(storageDeposit)} NEAR, one-time) and `
+            : '';
+        if (!(await w.claim()))
+          return reply
+            .code(409)
+            .send({ error: 'This quote was already built once. Get a new quote.' });
+        const cascade = assembleCascade(account, [
+          buildWithdrawTransfer({
+            token,
+            receiver: w.receiver,
+            amount: w.amount,
+            storageDeposit,
+            preview: `In one transaction: ${register}send ${formatUnits(w.amount, w.decimals)} ${w.symbol} to the 1Click deposit address of your quote.`,
+          }),
+        ]);
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          { signerId: account, allowedReceivers: new Set([token]), transferTo: w.receiver },
+          { amount: { raw: w.amount.toString(), human, symbol: w.symbol } },
+        );
+      } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
 
     // add_liquidity — balanced ("50/50") deposit into a Rhea v1 SIMPLE_POOL. Handled on its own: it sizes two
     // tokens at the pool's reserve ratio, so nothing is stranded, and assembles register? -> deposit x2 -> add.
