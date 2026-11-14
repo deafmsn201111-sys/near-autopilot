@@ -412,7 +412,8 @@ const hfOf = (wad: bigint) => Number(wad / 10n ** 14n) / 1e4;
 const hfText = (wad: bigint | null) =>
   wad === null ? null : (Number(wad / 10n ** 14n) / 1e4).toFixed(2);
 /** prepare takes at most $1M as the approximate size; the exact amount carries the real size. */
-export const approxUsdOf = (n: number) => Math.min(Math.round(n * 100) / 100, 1_000_000);
+export const PREPARE_CAP_USD = 1_000_000;
+export const approxUsdOf = (n: number) => Math.min(Math.round(n * 100) / 100, PREPARE_CAP_USD);
 const human = (raw: bigint, decimals: number) =>
   (Number(raw) / 10 ** decimals).toLocaleString('en-US', { maximumFractionDigits: 4 });
 
