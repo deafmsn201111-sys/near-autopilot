@@ -23,3 +23,21 @@
 		-Server
 	}
 }
+
+beta.near-autopilot.tech {
+	encode gzip
+
+	reverse_proxy beta-analytics:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	header {
+		defer
+		+Content-Security-Policy "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

@@ -159,6 +159,9 @@ services:
     ports:
       - '80:80'
       - '443:443'
+    networks:
+      default: {}
+      beta-edge: {}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -168,3 +171,8 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+
+networks:
+  beta-edge:
+    name: near-autopilot-beta-edge
+    external: true
