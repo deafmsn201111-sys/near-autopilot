@@ -72,12 +72,18 @@ export function balanceChanges(c: PreparedCascade): BalanceChange[] {
   const sized = c.amounts ?? (c.amount ? [c.amount] : []);
   const from =
     action === 'repay_from_collateral'
-      ? 'from your Burrow collateral'
+      ? 'from your Burrow balance'
       : action === 'withdraw'
         ? 'from your Burrow deposit'
         : 'from your wallet';
-  const out = sized.map((a) => change('out', a, from));
   const swap = c.cost?.swap;
+  // The amount is the debt repaid; the collateral is withdrawn and swapped inside the cascade, nothing leaves the wallet.
+  if (action === 'repay_with_collateral')
+    return sized.map((a) => ({
+      ...change('debt', a, 'off your Burrow loan, paid by swapping your collateral'),
+      ...(swap ? { min: swap.minReceived.human } : {}),
+    }));
+  const out = sized.map((a) => change('out', a, from));
   if (swap)
     return [
       ...out,

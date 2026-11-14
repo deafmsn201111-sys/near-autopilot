@@ -80,7 +80,7 @@ export function OwnershipCheck({
     return (
       <Gate
         title="AI analysis is only for the owner"
-        body={`Connect the wallet of ${account} and sign a short ownership message to unlock it. Until then the agents' rules run on their own.`}
+        body={`Connect the wallet of ${account} and sign a short ownership message to run it yourself.`}
       />
     );
 

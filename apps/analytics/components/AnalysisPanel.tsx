@@ -517,8 +517,10 @@ const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 const explained = (ok: number, replaced: number) =>
   replaced > 0
     ? `${plural(replaced, 'AI explanation')} used a number no agent returned: shown in the agent's own words instead`
-    : ok === 1
-      ? 'The AI explanation uses only numbers the agents returned'
-      : `All ${ok} AI explanations use only numbers the agents returned`;
+    : ok === 0
+      ? 'No AI explanation to check'
+      : ok === 1
+        ? 'The AI explanation uses only numbers the agents returned'
+        : `All ${ok} AI explanations use only numbers the agents returned`;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

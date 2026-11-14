@@ -177,7 +177,9 @@ function Review({
               <div>
                 {line}
                 {cascade.transactions[i] && (
-                  <small>to {receiver(cascade.transactions[i].receiverId)}</small>
+                  <small title={cascade.transactions[i].receiverId}>
+                    to {receiver(cascade.transactions[i].receiverId)}
+                  </small>
                 )}
               </div>
             </li>

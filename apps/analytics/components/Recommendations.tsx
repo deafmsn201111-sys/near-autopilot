@@ -126,11 +126,17 @@ export function Recommendations({
   const top = topIndex(cards.map((r) => stageOf(r.id).kind));
   const open = cards.filter((r) => stageOf(r.id).kind !== 'done').length;
 
+  // An unverified token may copy a real symbol and logo; a symbol two tokens share names neither.
+  const idsOf = new Map<string, Set<string>>();
+  for (const h of holdings)
+    if (h.token && h.verified !== false)
+      idsOf.set(h.symbol, (idsOf.get(h.symbol) ?? new Set()).add(h.token));
+  const unique = [...idsOf].flatMap(([symbol, ids]) =>
+    ids.size === 1 ? [{ symbol, token: [...ids][0] as string }] : [],
+  );
   const known = {
-    iconOf: Object.fromEntries(
-      holdings.flatMap((h) => (h.token ? [[h.symbol, icons[h.token] ?? null]] : [])),
-    ),
-    symbolOf: Object.fromEntries(holdings.flatMap((h) => (h.token ? [[h.token, h.symbol]] : []))),
+    iconOf: Object.fromEntries(unique.map((t) => [t.symbol, icons[t.token] ?? null])),
+    symbolOf: Object.fromEntries(unique.map((t) => [t.token, t.symbol])),
   };
   return (
     <KnownTokens.Provider value={known}>

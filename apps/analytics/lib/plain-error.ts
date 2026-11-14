@@ -118,7 +118,7 @@ export function staleNotices({
 
 /** Wallets throw Errors, strings or plain objects: the readable text of any of them. */
 export function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
+  if (e instanceof Error && e.message) return e.message;
   if (typeof e === 'string' && e) return e;
   if (e && typeof e === 'object') {
     const { message, error } = e as { message?: unknown; error?: unknown };
