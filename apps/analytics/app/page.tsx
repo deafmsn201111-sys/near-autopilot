@@ -464,7 +464,7 @@ async function Portfolio({ sp }: { sp: Search }) {
       {isAccount && recs && (
         <section className="block">
           <Recommendations
-            key={accountParam}
+            key={`${accountParam}:${strategy}`}
             account={accountParam}
             strategy={strategy}
             recommendations={recs.recommendations}

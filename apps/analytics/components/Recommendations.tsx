@@ -54,13 +54,6 @@ export function Recommendations({
     restore(saved),
   );
   const [error, setError] = useState<string | null>(null);
-  // The panel stays mounted across a strategy switch so the focused radio keeps focus; the analysis is per strategy.
-  const [shownFor, setShownFor] = useState(strategy);
-  if (shownFor !== strategy) {
-    setShownFor(strategy);
-    setAi(restore(saved));
-    setError(null);
-  }
   const [live, setLive] = useState<Pipeline | null>(null);
   const running = startedAt !== null;
   const signature = portfolioSignature(initial, holdings);

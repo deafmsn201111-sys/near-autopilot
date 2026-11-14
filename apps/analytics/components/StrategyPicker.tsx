@@ -27,9 +27,7 @@ export function StrategyPicker({
     startTransition(async () => {
       setChosen(id);
       await saveStrategy(account, id);
-      router.push(`/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`, {
-        scroll: false,
-      });
+      router.push(`/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`);
     });
 
   return (

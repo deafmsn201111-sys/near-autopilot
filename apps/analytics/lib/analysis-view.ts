@@ -45,7 +45,7 @@ export function verdictOf({
       title: `${count} ${count === 1 ? 'move' : 'moves'} worth doing.`,
       sub:
         (skipped.length > 0
-          ? `${skipped.length} more checked and skipped: they don’t beat the costs.`
+          ? `${skipped.length} more checked and skipped: ${skipped.length === 1 ? 'it doesn’t' : 'they don’t'} beat the costs.`
           : 'Ranked by what they change for you.') + missing,
     };
   if (incomplete.length > 0)
