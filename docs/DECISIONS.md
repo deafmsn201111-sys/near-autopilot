@@ -349,6 +349,10 @@ finality, before the new state was readable.
   **Consequences:** A signed transaction costs up to 4 account reads; a visitor looping the action spends their own
   limit, and the API reads one account at most every 5 s past its cache. A transaction that changes no holding (only
   one below 4 significant digits) shows the note for the full ~15 s.
+  **Amendment (#160):** a swap's output lands a few blocks after its input leaves, so the first changed read can show
+  only the debit. The refresh now reads up to 6 times, 5 s apart, and stops at the first read after a change that
+  shows nothing new, or on a failed read (`refreshAccount` returns null); a signed transaction costs up to 6 reads,
+  usually 3. A credit landing more than 5 s after the debit still needs a reload.
   **Amendment (#117):** the watcher reads the native balance (`view_account`, still one RPC call per 6 s tick)
   instead of the access-key nonces, so an incoming NEAR transfer triggers the same refresh; an own transaction moves
   the balance too. Answers from an older block are dropped. Like the holdings check, it compares the balance at 4

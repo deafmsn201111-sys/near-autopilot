@@ -260,16 +260,18 @@ export const forgetAccount = async (id: string) => {
 };
 
 /**
- * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True once the
- * holdings differ from the read it replaced, or when there is nothing to compare or the read failed, so the caller
- * stops retrying. Reads under other strategies are dropped; the next page render re-reads them from the fresh API cache.
+ * After a transaction: replaces this visitor's cached read with a fresh one (past the API cache, D20). True when the
+ * holdings differ from the read it replaced or there was nothing to compare, false when they are the same, null when
+ * the read failed (the caller stops). Reads under other strategies are dropped; the next page render re-reads them
+ * from the fresh API cache.
  */
-export const refreshAccountRead = async (id: string): Promise<boolean> => {
+export const refreshAccountRead = async (id: string): Promise<boolean | null> => {
   const normalized = id.trim().toLowerCase();
   const before = lastHoldings.get(await holdingsKey(normalized, await ownershipProof()));
   await forgetAccount(normalized);
   const after = holdingsOf(await readAccount(normalized, DEFAULT_STRATEGY, true));
-  return before === undefined || after === null || after !== before;
+  if (after === null) return null;
+  return before === undefined || after !== before;
 };
 
 /** A real mainnet account in the same shape as a demo portfolio (read-only; no agent history). */

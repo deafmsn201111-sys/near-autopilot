@@ -26,6 +26,8 @@ const call = (over: Partial<LlmCallRecord> = {}): LlmCallRecord => ({
   latencyMs: 1500,
   tools: ['liquidation_guardian'],
   outcome: 'ok',
+  input: { strategy: 'balanced', candidates: [{ id: 'a', kind: 'improve_loan_safety' }] },
+  output: { picks: [{ id: 'a', kind: 'improve_loan_safety', why: 'Repay.' }] },
   ...over,
 });
 
@@ -133,6 +135,23 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     await ledger().record(call({ at: new Date('2026-11-01T00:00:00Z') }));
     expect(await ledger().recentCalls(new Date('2026-11-06T00:00:00Z'))).toEqual([
       { at: NOW, model: 'claude-haiku-5-5', costMicroUsd: 1_000n },
+    ]);
+  });
+
+  it('reads back the calls since a time with input, output, tools and outcome', async () => {
+    await ledger().record(call({ outcome: 'invalid_output', output: { reply: 'no' } }));
+    await ledger().record(call({ at: new Date('2026-11-01T00:00:00Z') }));
+    expect(await ledger().calls(new Date('2026-11-06T00:00:00Z'))).toEqual([
+      {
+        at: NOW,
+        accountId: 'alice.near',
+        model: 'claude-haiku-5-5',
+        latencyMs: 1500,
+        tools: ['liquidation_guardian'],
+        outcome: 'invalid_output',
+        input: call().input,
+        output: { reply: 'no' },
+      },
     ]);
   });
 

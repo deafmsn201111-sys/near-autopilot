@@ -111,6 +111,7 @@ const app = buildAnalyticsServer(
             token: env.ADMIN_API_TOKEN,
             store: llmLedger,
             defaultCapMicro,
+            events,
           },
         }
       : {}),
