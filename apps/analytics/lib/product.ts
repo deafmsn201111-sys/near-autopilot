@@ -171,11 +171,14 @@ type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated'> & {
   skipped?: string[];
   /** The visitor proved with a NEP-413 signature that they own this account: only then may the LLM analyse it. */
   ownerVerified: boolean;
+  ownerCheckFailed?: boolean;
 };
 
 type AccountResult = { data: AccountRead | null; error: string | null };
 
 const ACCOUNT_TTL_MS = 60_000;
+// One page render reads the account twice; a failed ownership check is read again on the next render.
+const FAILED_OWNER_CHECK_TTL_MS = 1_000;
 const accountReads = processWide(
   'accountReads',
   () => new Map<string, { at: number; read: Promise<AccountResult> }>(),
@@ -235,6 +238,8 @@ const readAccount = async (
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
   if (r.error) accountReads.delete(key);
+  else if (r.data?.ownerCheckFailed)
+    entry.at = Date.now() - ACCOUNT_TTL_MS + FAILED_OWNER_CHECK_TTL_MS;
   else entry.at = Date.now();
   const holdings = holdingsOf(r);
   if (holdings) lastHoldings.set(await holdingsKey(id, proof), holdings);

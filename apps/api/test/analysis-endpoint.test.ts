@@ -1,6 +1,7 @@
 import { KeyPairEd25519 } from '@near-js/crypto';
 import { analysisMemo } from '../src/analytics/ai-analysis';
 import { describe, expect, it } from 'vitest';
+import { RpcError } from '@near-autopilot/core';
 import {
   BURROW_REQUIRED_EXPORTS,
   ORACLE_REQUIRED_EXPORTS,
@@ -493,6 +494,50 @@ describe('what the model is sent', () => {
       payload: {},
     });
     expect(JSON.stringify(sent[0])).not.toContain('alice.near');
+  });
+});
+
+describe('GET /v1/analytics/account/:id ownership', () => {
+  const flaky = {
+    call: async (method: string, params: Record<string, unknown>) => {
+      if (params['request_type'] === 'view_access_key')
+        throw new RpcError('RPC query timed out', true, { kind: 'timeout' });
+      return chain.call(method, params);
+    },
+  } as unknown as NearRpcClient;
+  const read = async (node: NearRpcClient, proof: string) => {
+    const res = await server(node, store).inject({
+      method: 'GET',
+      url: '/v1/analytics/account/alice.near',
+      headers: { ...headers, 'x-ownership-proof': proof },
+    });
+    return res.json<{ ownerVerified: boolean; ownerCheckFailed?: boolean }>();
+  };
+
+  it('a key read that could not run says so instead of "not the owner"', async () => {
+    const proof = await proofHeader('alice.near');
+    expect(await read(flaky, proof)).toMatchObject({
+      ownerVerified: false,
+      ownerCheckFailed: true,
+    });
+    const analysis = await server(flaky, store, countingLlm()).inject({
+      method: 'POST',
+      url: '/v1/analytics/account/alice.near/analysis',
+      headers: { ...headers, 'x-ownership-proof': proof },
+      payload: {},
+    });
+    expect(analysis.statusCode).toBe(503);
+    expect(analysis.body).not.toContain('only for the owner');
+  });
+
+  it('a signature by a key the account does not have is still "not the owner"', async () => {
+    const body = await read(chain, await proofHeader('alice.near', KeyPairEd25519.fromRandom()));
+    expect(body.ownerVerified).toBe(false);
+    expect(body.ownerCheckFailed).toBeUndefined();
+  });
+
+  it('the owner is verified', async () => {
+    expect((await read(chain, await proofHeader('alice.near'))).ownerVerified).toBe(true);
   });
 });
 

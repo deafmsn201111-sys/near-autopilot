@@ -5,6 +5,7 @@ import {
   nonceTimeMs,
   ownershipMessage,
 } from '@near-autopilot/core/ownership';
+import { RpcError } from '@near-autopilot/core';
 import { z } from 'zod';
 
 const NEP413_TAG = 2 ** 31 + 413;
@@ -78,15 +79,19 @@ export function proofFromHeader(header: string | string[] | undefined): unknown 
 
 /**
  * True only when `raw` is a fresh NEP-413 signature of our fixed message for `accountId`, made by one of the
- * account's full-access keys. Anything else, including a failed key read, is false: the caller falls back to
- * heuristics.
+ * account's full-access keys. Anything else is false: the caller falls back to heuristics. A key read that could not
+ * run (timeout, rate limit, HTTP error, a node down after the RPC client's retries) throws instead, so it is not mistaken
+ * for "not the owner"; a node's own answer (UNKNOWN_ACCESS_KEY) is a real "no".
  */
 export async function verifyOwnership(
   raw: unknown,
   accountId: string,
   deps: OwnershipDeps,
 ): Promise<boolean> {
-  return check(raw, accountId, deps).catch(() => false);
+  return check(raw, accountId, deps).catch((error: unknown) => {
+    if (error instanceof RpcError && error.kind !== 'rpc_error') throw error;
+    return false;
+  });
 }
 
 async function check(raw: unknown, accountId: string, deps: OwnershipDeps): Promise<boolean> {

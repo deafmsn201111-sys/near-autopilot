@@ -11,6 +11,7 @@ import {
   withdrawableToKeep,
   type RepaySizing,
   type RepaySource,
+  errorMessage,
   PreconditionError,
   STRATEGIES,
   STRATEGY_IDS,
@@ -1218,12 +1219,18 @@ export function registerAccountView(
   // Positive results only (junk proofs cost no memory), for 60 s: a revoked key or expired proof is honoured at most
   // that long.
   const owners = new BoundedMap<string, number>(ACCOUNT_CACHE_MAX);
-  const isOwner = async (header: unknown, id: string) => {
+  const OWNER_CHECK_FAILED = "Couldn't check your signature right now. Try again in a moment.";
+  const isOwner = async (header: unknown, id: string, log: FastifyRequest['log']) => {
     if (typeof header !== 'string') return false;
     const key = `${id}:${header}`;
     const at = owners.get(key);
     if (at !== undefined && Date.now() - at < OWNER_CACHE_TTL_MS) return true;
-    const ok = await verifyOwnership(proofFromHeader(header), id, ownership);
+    const ok = await verifyOwnership(proofFromHeader(header), id, ownership).catch(
+      (err: unknown) => {
+        log.warn({ account: id, err: errorMessage(err) }, 'ownership key read failed');
+        return null;
+      },
+    );
     if (ok) {
       owners.set(key, Date.now());
       const at = new Date();
@@ -1885,11 +1892,16 @@ export function registerAccountView(
     // Verified per request, outside the cache: only the wallet's owner may unlock the LLM analysis.
     const strategy = strategySchema.safeParse((req.query as { strategy?: unknown }).strategy);
     if (!strategy.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
-    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
+    const owner = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log);
     const fresh = freshQuery.safeParse(req.query).data?.fresh === '1';
     const out = await readAccount(parsed.data, req.log, strategy.data, fresh);
     if (out.status !== 200) return reply.code(out.status).send(out.body);
-    return { ...out.body, ownerVerified: await ownerVerified };
+    const ownerVerified = await owner;
+    return {
+      ...out.body,
+      ownerVerified: ownerVerified === true,
+      ...(ownerVerified === null && { ownerCheckFailed: true }),
+    };
   });
 
   /**
@@ -2065,7 +2077,7 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     if (!events) return { owner: false, items: [] };
     const [owner, rows] = await Promise.all([
-      isOwner(req.headers[OWNERSHIP_HEADER], parsed.data),
+      isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log).then((ok) => ok === true),
       events.forAccount(parsed.data, 500),
     ]);
     return { owner, items: activityTimeline(rows, { owner }) };
@@ -2077,13 +2089,15 @@ export function registerAccountView(
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
     if (!body.success) return reply.code(400).send({ error: UNKNOWN_STRATEGY });
-    const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
+    const owner = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log);
     const inputs = await analysisInputs(parsed.data, req.log, body.data.strategy);
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
+    const ownerVerified = await owner;
+    if (ownerVerified === null) return reply.code(503).send({ error: OWNER_CHECK_FAILED });
     const run = async (onEvent?: (e: AnalysisEvent) => void) => {
       const analysis = await analyseAccount(
         deps.ai ?? null,
-        { ...inputs, ownerVerified: await ownerVerified },
+        { ...inputs, ownerVerified },
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
