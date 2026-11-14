@@ -33,6 +33,8 @@ describe('saved analysis encryption', () => {
     expect(
       openAnalysis(KEY, 'alice.near/balanced', { ...sealed, ct: flipped.toString('base64') }),
     ).toBeNull();
+    const shortTag = Buffer.from(sealed.tag, 'base64').subarray(0, 4).toString('base64');
+    expect(openAnalysis(KEY, 'alice.near/balanced', { ...sealed, tag: shortTag })).toBeNull();
     expect(openAnalysis(KEY, 'alice.near/balanced', PAYLOAD)).toBeNull();
     expect(openAnalysis(KEY, 'alice.near/balanced', null)).toBeNull();
   });

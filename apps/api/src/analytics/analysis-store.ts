@@ -13,6 +13,9 @@ export const analysisKeySchema = z
   .regex(/^[0-9a-f]{64}$/, 'must be 64 hex characters (openssl rand -hex 32)')
   .transform((hex) => Buffer.from(hex, 'hex'));
 
+// A full 16-byte tag only: without authTagLength Node also accepts truncated tags, which are easier to forge.
+const GCM = { authTagLength: 16 } as const;
+
 const sealedSchema = z.object({
   v: z.literal(1),
   iv: z.string(),
@@ -24,7 +27,7 @@ export type SealedAnalysis = z.infer<typeof sealedSchema>;
 /** The binding (account + strategy) is the GCM associated data: a row copied to another account does not open. */
 export function sealAnalysis(key: Buffer, binding: string, payload: unknown): SealedAnalysis {
   const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', key, iv).setAAD(Buffer.from(binding));
+  const cipher = createCipheriv('aes-256-gcm', key, iv, GCM).setAAD(Buffer.from(binding));
   const ct = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
   return {
     v: 1,
@@ -39,7 +42,12 @@ export function openAnalysis(key: Buffer, binding: string, stored: unknown): unk
   const sealed = sealedSchema.safeParse(stored);
   if (!sealed.success) return null;
   try {
-    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(sealed.data.iv, 'base64'))
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      key,
+      Buffer.from(sealed.data.iv, 'base64'),
+      GCM,
+    )
       .setAAD(Buffer.from(binding))
       .setAuthTag(Buffer.from(sealed.data.tag, 'base64'));
     const plain = Buffer.concat([
