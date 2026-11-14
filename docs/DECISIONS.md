@@ -72,7 +72,8 @@ Signing).
 cascade caps in `apps/api/src/wallet/validate-cascade.ts` stay as they are: 0.15 NEAR per action, 0.3 NEAR per
 cascade, plus the signer, receiver and method allowlists and the gas cap.
 **Consequences:** A visitor can sign a validated cascade for their own account in their own wallet. The server still
-holds no key. Raising a cap needs a new entry here.
+holds no key. Raising a cap needs a new entry here. The local `docker-compose.yml` defaults to signing on too
+(`${MAINNET_WALLET_SIGNING-1}`, `.env.example` sets `1`; an empty value in `.env` keeps it off), with the same caps.
 
 ## D10 — Rate limits on the public site and the account read cache
 
@@ -143,7 +144,8 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
 - Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
   repay text states the health factor the repayment actually reaches. When the account view's loan card repays from
   collateral (the wallet cannot reach the target), the guardian tool returns that card instead of the agent's wallet
-  repay, so the AI path never offers a repay the wallet cannot pay (#64). Repayments are sized to HF 1.6, never the
+  repay, so the AI path never offers a repay the wallet cannot pay (#64). The same holds for the card that withdraws
+  another collateral token, swaps it and repays (D25, #69). Repayments are sized to HF 1.6, never the
   whole debt by default; the user can pick another amount. Allocator swaps (they would
   move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
   dropped.
@@ -196,8 +198,8 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
-- Fallback codes (`off`, `kill_switch` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
-  `deadline`, `loop_limit` (too many turns or tool calls).
+- Fallback codes (`off`, `kill_switch`, `not_owner`, `busy` and `nothing_to_rank` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+  `nothing_to_rank` (the agent tools, run as code first, offered no card), `deadline`, `loop_limit` (too many turns or tool calls).
 
 ## D15 — Leaked secrets are rotated, history is not rewritten
 
@@ -415,3 +417,30 @@ global limit and the 45 s deadline are the same code path. The Next.js route pas
 `flush_interval -1`. SSE over a POST `fetch` stream rather than `EventSource` (GET only, no body, no custom headers).
 **Consequences:** If a stream breaks before `done`, the browser repeats the request as JSON, which may make a second
 model call (it counts against the same limits). A client that leaves keeps the server run going; its result is cached.
+
+## D25 — Repay a loan with another collateral token (withdraw → swap → repay)
+
+**Context:** #69. wNEAR collateral, USDC debt and no USDC in the wallet left the guardian without a button. The first
+step (withdraw) lowers the health factor, and the user may stop after any step.
+**Decision:** (grill, 13 Nov)
+
+- The loan card offers `repay_with_collateral` when the wallet cannot cover the repay and no collateral is the debt
+  token: the largest Burrow collateral token with an allowlisted Rhea v1 pool to the debt token. It swaps the
+  collateral token already in the wallet first and withdraws only the rest, so a run stopped after step 1 comes back
+  as swap → repay on the next read (no separate "continue").
+- Floor: the health factor after the withdraw (and the swap, which does not touch Burrow) stays at or above **1.15**,
+  the agents' danger line (1.10) plus 0.05 for prices moving between the steps. If no withdrawal keeps it there, the
+  card has no button and says why. The swap is sized to reach the preset's target HF, or the most the floor allows;
+  the card plans 0.02 above the floor so a small price tick before the click does not make prepare refuse it.
+- The card sizes from a live Rhea quote at 0.5% slippage; prepare re-reads the account, re-quotes, sizes the repay
+  from the swap's minimum output plus the debt token already in the wallet (capped at the debt + 0.1%), refuses a
+  withdrawal that breaks the floor at the fresh read (409), and writes the HF after each step into the preview.
+- Separate transactions signed in order (register on a token if needed, Burrow `oracle_call` withdraw, Rhea swap,
+  Burrow repay). No new method, receiver or cap: `validateCascade` allows the oracle, Burrow, Rhea and the two tokens.
+- No amount picker on this card; the AI path gets the same card from the guardian tool (no new orchestrator proposal
+  kind).
+- Not for a wNEAR debt: Rhea may pay a swap into wNEAR out as native NEAR, and the repay step needs the token. The
+  candidate token may sit on Burrow or only in the wallet; the quote runs only when the wallet cannot repay to the
+  strictest preset's target.
+  **Consequences:** one extra Rhea quote per account read, only for a loan under the strictest preset's safe line with
+  no same-token collateral. Prices can still move between the steps; the floor is the margin.

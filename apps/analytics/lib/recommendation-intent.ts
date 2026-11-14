@@ -15,7 +15,24 @@ export type RecommendationIntent =
       readonly sizing?: RepaySizing;
     }
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
-  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
+  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
+  | {
+      /** Withdraw another collateral token, swap it into the debt token, repay: separate transactions in order. */
+      readonly action: 'repay_with_collateral';
+      readonly token: string;
+      readonly collateralToken: string;
+      readonly approxUsd: number;
+      readonly amount: string;
+      readonly withdraw?: string;
+      readonly maxSlippageBps: number;
+      readonly plan: {
+        readonly hfNow: number;
+        readonly hfAfterWithdraw: number;
+        readonly hfAfterRepay: number | null;
+        readonly floorHf: number;
+        readonly transactions: number;
+      };
+    };
 
 export interface Recommendation {
   readonly id: string;
@@ -82,6 +99,17 @@ export function recommendationToPrepare(
     case 'reposition_dcl':
       mapped = { action: 'reposition_dcl', lptId: intent.lptId };
       break;
+    case 'repay_with_collateral':
+      mapped = {
+        action: 'repay_with_collateral',
+        token: intent.token,
+        collateralToken: intent.collateralToken,
+        approxUsd: intent.approxUsd,
+        amount: intent.amount,
+        ...(intent.withdraw ? { withdraw: intent.withdraw } : {}),
+        maxSlippageBps: intent.maxSlippageBps,
+      };
+      break;
   }
   return { account, intent: mapped };
 }
@@ -101,5 +129,7 @@ export function actionLabel(intent: RecommendationIntent): string {
       return 'Prepare rebalance';
     case 'reposition_dcl':
       return 'Prepare reposition';
+    case 'repay_with_collateral':
+      return `Prepare ${intent.plan.transactions} transactions to repay`;
   }
 }

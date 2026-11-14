@@ -78,12 +78,18 @@ export function Recommendations({
       {analysis && !running && (
         <p className="muted-note">
           <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
-            <i aria-hidden="true">{analysis.source === 'llm' ? '✓' : '!'}</i>
-            {analysis.source === 'heuristic'
-              ? 'Heuristic (AI unavailable)'
-              : analysis.recommendations.length
-                ? 'AI-ranked'
-                : 'AI-checked · nothing to act on'}
+            <i aria-hidden="true">
+              {analysis.source === 'llm'
+                ? '✓'
+                : analysis.fallback === 'nothing_to_rank'
+                  ? 'i'
+                  : '!'}
+            </i>
+            {analysis.source === 'llm'
+              ? 'AI-ranked'
+              : analysis.fallback === 'nothing_to_rank'
+                ? 'Nothing for the AI to rank'
+                : 'Heuristic (AI unavailable)'}
           </span>
           {analysis.note && <small> {analysis.note}</small>}
         </p>
@@ -221,6 +227,19 @@ function AiTrace({
     if (calledTools.length === 0) return null;
     return <p className="muted-note">Agents called: {calledTools.join(', ')}</p>;
   }
+  if (!live && !model)
+    return (
+      <section className="ai-trace" aria-label="What the agents checked">
+        <header>
+          <h3>What the agents checked</h3>
+        </header>
+        <ul className="ai-agents">
+          {trace.map((step, i) => (
+            <AgentRow key={step.tool} agent={step.agent} step={step} index={i} />
+          ))}
+        </ul>
+      </section>
+    );
   const who = model ? modelName(model) : 'The AI';
   const waiting = asked.filter((a) => !trace.some((t) => t.tool === a.tool));
   const current = !live
