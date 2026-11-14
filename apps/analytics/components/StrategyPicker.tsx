@@ -18,6 +18,11 @@ export function StrategyPicker({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [chosen, setChosen] = useState(current);
+  const [landed, setLanded] = useState(current);
+  if (landed !== current) {
+    setLanded(current);
+    setChosen(current);
+  }
   const s = STRATEGIES[chosen];
 
   const choose = (id: StrategyId) => {

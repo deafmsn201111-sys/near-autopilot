@@ -3825,6 +3825,7 @@ main.page {
 .ds-card {
   position: relative;
   display: grid;
+  align-content: start;
   gap: var(--s4);
 }
 .ds-card-act {
@@ -4074,4 +4075,15 @@ main.page {
   .ds-gauge-you {
     transition: none;
   }
+}
+.hero-safe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.eyebrow .ds-prov {
+  margin-left: 6px;
+  text-transform: none;
+  letter-spacing: 0;
 }

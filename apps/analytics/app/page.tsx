@@ -398,12 +398,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {isAccount && <AccountForm compact />}
 
       {isAccount && (
-        <StrategyPicker
-          key={strategy}
-          account={accountParam}
-          current={strategy}
-          note={data.strategyNote}
-        />
+        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
       )}
 
       {!data.asOf && (
