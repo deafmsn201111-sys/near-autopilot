@@ -67,13 +67,16 @@ export async function POST(req: Request): Promise<Response> {
   const forward: Record<string, string> = proof ? { 'x-ownership-proof': proof } : {};
   if (streamed) {
     retries.set(click, Date.now());
-    return stream(await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward));
+    return stream(
+      await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward, req.signal),
+    );
   }
   const { status, body: out } = await apiPost(
     path,
     { strategy: strategy.data },
     LLM_TIMEOUT_MS,
     forward,
+    req.signal,
   );
   return NextResponse.json(out, { status: status || 502 });
 }

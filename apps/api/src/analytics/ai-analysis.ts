@@ -63,6 +63,7 @@ export type FallbackCode =
   | 'empty'
   | 'nothing_to_rank'
   | 'deadline'
+  | 'cancelled'
   | 'loop_limit';
 
 /** A run that reached the model ends in one of these; the excluded codes never reach it. */
@@ -125,19 +126,55 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 10 * 60_000;
 const RUN_WINDOW_MS = 10 * 60_000;
 const MAX_RUNS_PER_WINDOW = 60;
+/** Covers a broken stream's JSON retry reaching the API (its wallet read included) to join the run. */
+const LEAVE_GRACE_MS = 2_000;
+
+type Watch = (signal?: AbortSignal) => void;
+
+/** A shared run stops once every caller has left and none joined within the grace; a caller with no signal never leaves. */
+function callersGone(graceMs: number) {
+  const stop = new AbortController();
+  const left: (() => void)[] = [];
+  let watching = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const watch: Watch = (signal) => {
+    clearTimeout(timer);
+    if (!signal) return void (watching = Infinity);
+    watching++;
+    const leave = () => {
+      if (--watching > 0) return;
+      if (graceMs > 0) timer = setTimeout(() => stop.abort(), graceMs);
+      else stop.abort();
+    };
+    left.push(() => signal.removeEventListener('abort', leave));
+    if (signal.aborted) leave();
+    else signal.addEventListener('abort', leave, { once: true });
+  };
+  const done = () => {
+    clearTimeout(timer);
+    left.forEach((off) => off());
+  };
+  return { signal: stop.signal, watch, done };
+}
 
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
 export interface AnalysisMemo {
   readonly results: BoundedMap<string, { readonly at: number; readonly analysis: Analysis }>;
-  readonly running: Map<string, Promise<Analysis>>;
+  readonly running: Map<string, { readonly result: Promise<Analysis>; readonly watch: Watch }>;
+  /** How long a run whose callers all left waits for a retry to join before it stops. */
+  readonly leaveGraceMs: number;
   /** Start times of the runs that reached the model in the last window. */
   readonly runs: number[];
   readonly maxRuns: number;
 }
 
-export const analysisMemo = (maxRuns = MAX_RUNS_PER_WINDOW): AnalysisMemo => ({
+export const analysisMemo = (
+  maxRuns = MAX_RUNS_PER_WINDOW,
+  leaveGraceMs = LEAVE_GRACE_MS,
+): AnalysisMemo => ({
   results: new BoundedMap(CACHE_MAX),
   running: new Map(),
+  leaveGraceMs,
   runs: [],
   maxRuns,
 });
@@ -781,6 +818,7 @@ const NOTES: Record<FallbackCode, string> = {
   empty: 'The AI ranked nothing; showing the rule-based list.',
   nothing_to_rank: `Nothing to rank: the agents found no action worth $${MIN_ACTION_USD} or more on this portfolio.`,
   deadline: 'AI analysis took too long; showing the rule-based list.',
+  cancelled: 'AI analysis was stopped; showing the rule-based list.',
   loop_limit: 'AI analysis failed; showing the rule-based list.',
 };
 
@@ -808,6 +846,7 @@ export async function analyseAccount(
   onError: (e: unknown) => void = () => {},
   deadlineMs: number = DEADLINE_MS,
   onEvent: (e: AnalysisEvent) => void = () => {},
+  signal?: AbortSignal,
 ): Promise<Analysis> {
   const fallback = (code: FallbackCode): Analysis => ({
     source: 'heuristic',
@@ -829,13 +868,28 @@ export async function analyseAccount(
   // A retry while this account's run is still going (a broken stream's JSON fallback) waits for it: one click, one run.
   const key = `${ctx.accountId}|${strategy}`;
   const running = ai.memo.running.get(key);
-  if (running) return running;
-  const run = runModel(ai, ctx, strategy, fallback, onError, deadlineMs, onEvent);
-  ai.memo.running.set(key, run);
+  if (running) {
+    running.watch(signal);
+    return running.result;
+  }
+  const callers = callersGone(ai.memo.leaveGraceMs);
+  callers.watch(signal);
+  const result = runModel(
+    ai,
+    ctx,
+    strategy,
+    fallback,
+    onError,
+    deadlineMs,
+    onEvent,
+    callers.signal,
+  );
+  ai.memo.running.set(key, { result, watch: callers.watch });
   try {
-    return await run;
+    return await result;
   } finally {
     ai.memo.running.delete(key);
+    callers.done();
   }
 }
 
@@ -847,6 +901,7 @@ async function runModel(
   onError: (e: unknown) => void,
   deadlineMs: number,
   onEvent: (e: AnalysisEvent) => void,
+  signal: AbortSignal,
 ): Promise<Analysis> {
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };
@@ -868,20 +923,31 @@ async function runModel(
 
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let leave = () => {};
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      abort.abort();
-      reject(new Error(`no answer within ${deadlineMs} ms`));
-    }, deadlineMs);
+    const stop = (code: 'cancelled' | 'deadline', why: string) => {
+      abort.abort(code);
+      reject(new Error(why));
+    };
+    timer = setTimeout(() => stop('deadline', `no answer within ${deadlineMs} ms`), deadlineMs);
+    leave = () => stop('cancelled', 'stopped by the caller');
+    if (signal.aborted) leave();
+    signal.addEventListener('abort', leave, { once: true });
   });
-  const early = (out: Analysis) => (clearTimeout(timer), out);
+  deadline.catch(() => {});
+  const stopped = () => abort.signal.reason as 'cancelled' | 'deadline';
+  const settle = () => {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', leave);
+  };
+  const early = (out: Analysis) => (settle(), out);
 
   let obs: WalletObservation;
   try {
     obs = await Promise.race([ctx.observe(), deadline]);
   } catch (e) {
     onError(e);
-    return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
+    return early(fallback(abort.signal.aborted ? stopped() : 'model_error'));
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
     guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
@@ -947,7 +1013,7 @@ async function runModel(
     }
   }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
-  if (abort.signal.aborted) return early(fallback('deadline'));
+  if (abort.signal.aborted) return early(fallback(stopped()));
   if (!admit(ai.memo)) return early(fallback('busy'));
   onEvent({ type: 'read', model: ai.model, ...read });
 
@@ -1074,13 +1140,13 @@ async function runModel(
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
     reply = await Promise.race([run(), deadline]).finally(() => {
-      clearTimeout(timer);
+      settle();
       release();
     });
   } catch (e) {
     if (e instanceof BudgetReached) return failed('cap');
     onError(e);
-    if (abort.signal.aborted) return failed('deadline');
+    if (abort.signal.aborted) return failed(stopped());
     return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
   }
   const { text, trace } = reply;

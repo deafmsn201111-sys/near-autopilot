@@ -638,3 +638,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   backs it off like a check; an overlapping run is skipped, and shutdown waits for the running one.
 - `status_at` is now the time of the last check, written on every check (Admin → 1Click "Checked").
 - `DepositQuoteStore.unfinished(since)`; `@near-autopilot/db` re-exports `notInArray`.
+
+## 2026-11-14 — AI analysis stops when the visitor leaves (#151)
+
+- `analyseAccount` takes an optional outer `AbortSignal`; aborting it rejects the deadline race and aborts the run's
+  own controller, so the tool loop stops and the Anthropic call in flight is cancelled. Outcome `cancelled` (new
+  fallback code; migration 0024 widens `llm_calls_outcome_check`). The run keeps its global-limit slot.
+- Merged with #150's in-flight join: a shared run counts its callers and stops only when all have left and none
+  joined within `LEAVE_GRACE_MS` (2 s; 5 s let a typical 3–4 s run finish for nobody), so a broken stream's JSON retry still gets the same run.
+- `POST /v1/analytics/account/:id/analysis` aborts on `reply.raw` close before the response finished; the Next proxy
+  passes `req.signal` to the upstream fetch (`AbortSignal.any` with the 60 s timeout).

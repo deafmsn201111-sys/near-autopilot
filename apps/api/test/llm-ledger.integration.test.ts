@@ -227,6 +227,11 @@ describe.skipIf(!adminUrl)('DrizzleLlmLedger (PostgreSQL)', () => {
     expect(rows.map((r) => r.at.toISOString())).toEqual(['2026-11-05T10:00:01.000Z']);
   });
 
+  it('stores a run the visitor cancelled', async () => {
+    await ledger().record(call({ outcome: 'cancelled' }));
+    expect(await handle.db.select().from(llmCalls)).toMatchObject([{ outcome: 'cancelled' }]);
+  });
+
   it('rejects an outcome outside the enum', async () => {
     await expect(
       handle.db.execute(

@@ -640,7 +640,16 @@ export const llmCalls = pgTable(
     latencyMs: integer('latency_ms').notNull(),
     tools: jsonb('tools').$type<string[]>().notNull(),
     outcome: text('outcome', {
-      enum: ['ok', 'cap', 'model_error', 'invalid_output', 'empty', 'deadline', 'loop_limit'],
+      enum: [
+        'ok',
+        'cap',
+        'model_error',
+        'invalid_output',
+        'empty',
+        'deadline',
+        'cancelled',
+        'loop_limit',
+      ],
     }).notNull(),
     /** Strategy and candidate cards offered (migration 0023); null on rows from before it. */
     input: jsonb('input').$type<unknown>(),

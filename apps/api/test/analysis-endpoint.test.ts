@@ -10,6 +10,7 @@ import {
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
 import type { ToolLlm } from '@near-autopilot/orchestrator';
 import Fastify from 'fastify';
+import { request } from 'node:http';
 import { registerAccountView } from '../src/analytics/account-view';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import { MemoryEventStore } from './support/memory-events';
@@ -155,7 +156,7 @@ function server(
           remainingTodayMicro: async () => 10n ** 9n,
           record: async () => {},
         },
-        memo: analysisMemo(),
+        memo: analysisMemo(undefined, 0),
       },
     } as never,
   });
@@ -354,6 +355,53 @@ describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
     ).json();
     expect(sent.at(-1)?.data).toEqual(json);
     expect(json).toMatchObject({ source: 'heuristic', fallback: 'empty' });
+  });
+
+  it('stops the model run when the client disconnects', async () => {
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
+    let stopped!: () => void;
+    const modelStopped = new Promise<void>((resolve) => (stopped = resolve));
+    const hanging: ToolLlm = {
+      open: (req) => {
+        req.signal?.addEventListener('abort', () => stopped());
+        return { send: () => new Promise(() => {}) };
+      },
+    };
+    const events = new MemoryEventStore();
+    const app = server(listed, earning, hanging, undefined, events);
+    const base = await app.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const proof = await proofHeader('alice.near');
+      const firstChunk = await new Promise<string>((resolve, reject) => {
+        const client = request(`${base}/v1/analytics/account/alice.near/analysis`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            'x-ownership-proof': proof,
+          },
+        });
+        client.on('response', (res) =>
+          res.once('data', (chunk: Buffer) => {
+            resolve(chunk.toString());
+            client.destroy();
+          }),
+        );
+        client.on('error', reject);
+        client.end('{}');
+      });
+      expect(firstChunk).toContain('event: read');
+      await modelStopped;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(events.rows.map((e) => e.kind)).not.toContain('analyse');
+    } finally {
+      await app.close();
+    }
   });
 
   it('sends the rule-based list as one done to a visitor without a proof', async () => {

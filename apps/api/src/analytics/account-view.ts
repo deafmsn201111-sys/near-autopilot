@@ -2142,6 +2142,8 @@ export function registerAccountView(
 
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
+    const visitorLeft = new AbortController();
+    reply.raw.on('close', () => reply.raw.writableFinished || visitorLeft.abort());
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
     const body = z.object({ strategy: strategySchema }).safeParse(req.body ?? {});
@@ -2158,7 +2160,9 @@ export function registerAccountView(
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
+        visitorLeft.signal,
       );
+      if (analysis.fallback === 'cancelled') return analysis;
       await record({
         at: new Date(),
         kind: 'analyse',
@@ -2174,7 +2178,7 @@ export function registerAccountView(
     if (!req.headers.accept?.includes('text/event-stream')) return run();
     // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
     const out = new PassThrough();
-    // ponytail: a tool that returns after the deadline would write after `done`; the run is not aborted on disconnect.
+    // ponytail: a tool that returns after the deadline would write after `done`.
     const send = (event: string, data: unknown) =>
       out.writable && out.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     run(({ type, ...data }) => send(type, data))

@@ -42,25 +42,29 @@ describe('POST /api/analysis', () => {
 
   it('forwards a valid account to the analysis endpoint', async () => {
     const { POST } = await import('../app/api/analysis/route');
-    const res = await POST(request({ account: 'Alice.near ' }));
+    const req = request({ account: 'Alice.near ' });
+    const res = await POST(req);
     expect(res.status).toBe(200);
     expect(apiPost).toHaveBeenCalledWith(
       '/v1/analytics/account/alice.near/analysis',
       { strategy: 'balanced' },
       60_000,
       {},
+      req.signal,
     );
   });
 
   it('passes an event stream through unbuffered when the browser asks for one', async () => {
     proof = 'signed-proof';
     const { POST } = await import('../app/api/analysis/route');
-    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    const req = request({ account: 'alice.near' }, undefined, 'text/event-stream');
+    const res = await POST(req);
     expect(apiPostStream).toHaveBeenCalledWith(
       '/v1/analytics/account/alice.near/analysis',
       { strategy: 'balanced' },
       60_000,
       { 'x-ownership-proof': 'signed-proof' },
+      req.signal,
     );
     expect(apiPost).not.toHaveBeenCalled();
     expect(res.headers.get('content-type')).toBe('text/event-stream');
@@ -94,6 +98,7 @@ describe('POST /api/analysis', () => {
       { strategy: 'aggressive' },
       60_000,
       {},
+      expect.any(AbortSignal),
     );
   });
 
@@ -119,6 +124,7 @@ describe('POST /api/analysis', () => {
       {
         'x-ownership-proof': 'signed-proof',
       },
+      expect.any(AbortSignal),
     );
   });
 

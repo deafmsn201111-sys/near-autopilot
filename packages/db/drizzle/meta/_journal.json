@@ -169,6 +169,13 @@
       "when": 1794080000000,
       "tag": "0023_llm_call_io",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794090000000,
+      "tag": "0024_llm_calls_cancelled",
+      "breakpoints": true
     }
   ]
 }
