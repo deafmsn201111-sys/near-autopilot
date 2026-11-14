@@ -170,18 +170,24 @@ export interface PortfolioView {
  * page. A key always names the visitor, so no one sees another visitor's read.
  */
 // ponytail: in-process and lost on restart; a few hundred reads cover live visitors, a shared store if we scale out
-const lastGood = processWide('lastGoodReads', () => new BoundedMap<string, unknown>(500));
+const lastGood = processWide(
+  'lastGoodReads',
+  () => new BoundedMap<string, { at: number; data: unknown }>(500),
+);
+const LAST_GOOD_MAX_AGE_MS = 24 * 60 * 60_000;
 
 const orLastGood = <T>(
   key: string,
   r: { data: T | null; error: string | null; status: number | null },
 ) => {
   if (r.data) {
-    lastGood.set(key, r.data);
+    lastGood.set(key, { at: Date.now(), data: r.data });
     return { ...r, stale: false };
   }
-  const last = lastGood.get(key) as T | undefined;
-  return last ? { ...r, data: last, stale: true } : { ...r, stale: false };
+  const last = lastGood.get(key);
+  return last && Date.now() - last.at < LAST_GOOD_MAX_AGE_MS
+    ? { ...r, data: last.data as T, stale: true }
+    : { ...r, stale: false };
 };
 
 export const portfolioView = async (id: string) =>
@@ -204,6 +210,8 @@ type AccountResult = { data: AccountRead | null; error: string | null; status: n
 const ACCOUNT_TTL_MS = 60_000;
 // One page render reads the account twice; a failed ownership check is read again on the next render.
 const FAILED_OWNER_CHECK_TTL_MS = 1_000;
+// A failed read answers the rest of the same render (and a quick reload) instead of waiting on the API again.
+const FAILED_READ_TTL_MS = 5_000;
 const accountReads = processWide(
   'accountReads',
   () => new Map<string, { at: number; read: Promise<AccountResult> }>(),
@@ -263,7 +271,7 @@ const readAccount = async (
   accountReads.set(key, entry);
   const r = await entry.read;
   if (accountReads.get(key) !== entry) return r;
-  if (r.error) accountReads.delete(key);
+  if (r.error) entry.at = Date.now() - ACCOUNT_TTL_MS + FAILED_READ_TTL_MS;
   else if (r.data?.ownerCheckFailed)
     entry.at = Date.now() - ACCOUNT_TTL_MS + FAILED_OWNER_CHECK_TTL_MS;
   else entry.at = Date.now();

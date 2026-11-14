@@ -380,14 +380,16 @@ async function Portfolio({ sp }: { sp: Search }) {
         const token = curatedId(a.symbol);
         return { ...a, key: a.symbol, verified: true, icon: token ? (icons[token] ?? null) : null };
       });
+  const serverSigning = isAccount && walletSigningEnabled();
   // An old read is for looking only: actions are built from a fresh one.
-  const signingEnabled = isAccount && !read.stale ? walletSigningEnabled() : false;
+  const stale = read.stale || recsRead?.stale === true;
+  const signingEnabled = serverSigning && !stale;
   const mode = portfolioMode({
     isAccount,
     account: accountParam,
     connected: cookieAccount,
     verified: recs && !recs.ownerCheckFailed ? recs.ownerVerified === true : null,
-    signingEnabled,
+    signingEnabled: serverSigning,
   });
   return (
     <>
@@ -429,7 +431,7 @@ async function Portfolio({ sp }: { sp: Search }) {
           isAccount &&
           accountParam &&
           accountParam === cookieAccount &&
-          !read.stale && (
+          !stale && (
             <>
               <DepositButton account={accountParam} />
               <WithdrawDialog

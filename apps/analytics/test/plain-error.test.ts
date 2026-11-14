@@ -120,3 +120,19 @@ describe('Add funds that could not open HOT', () => {
     );
   });
 });
+
+describe('review follow-ups', () => {
+  it('a malformed account id asks to check the name', () => {
+    expect(plainReadError(400, 'not a valid NEAR account id').blamesInput).toBe(true);
+  });
+
+  it('a timeout that reaches us as 502 or a stream message still reads as too long', () => {
+    expect(aiFailure({ error: 'AI analysis took too long' })?.title).toBe('The AI took too long.');
+    expect(aiFailure({ error: 'busy, try later' })?.title).toBe('The AI is busy right now.');
+  });
+
+  it('a request we sent wrong offers no retry that would fail the same way', () => {
+    expect(aiFailure({ status: 400, error: 'invalid JSON body' })?.retry).toBe(false);
+    expect(aiFailure({ status: 429 })?.retry).toBe(true);
+  });
+});

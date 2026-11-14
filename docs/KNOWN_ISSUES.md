@@ -43,6 +43,9 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   tokens that fails can be refunded to the user's HOT intents balance, which the portfolio does not read. 1:1 deposits
   arrive or refund on the origin chain. → #260.
 
+- **The last good read lives in one web process.** A stale view after a failed read (#256) comes from memory: a
+  restart or a second instance has nothing to show and falls back to the plain error. A shared store if we scale out.
+
 ## Watch list (external)
 
 - Burrow/Rhea schema drift. Pyth staleness/confidence. NEAR RPC rate limits. DefiLlama yield staleness.

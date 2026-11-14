@@ -1,5 +1,5 @@
 'use client';
-import { CONNECT_CLOSED, CONNECT_FAILED } from '../lib/plain-error';
+import { CONNECT_FAILED } from '../lib/plain-error';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { clearOwnershipProof, walletSummary } from '../app/account-actions';
@@ -67,7 +67,7 @@ export function ConnectButton({
             window.location.assign(portfolioUrl(id));
           };
           connect(open)
-            .then((id) => (id ? open(id) : setNote(CONNECT_CLOSED)))
+            .then((id) => id && open(id))
             .catch(() => setNote(CONNECT_FAILED));
         }}
       >

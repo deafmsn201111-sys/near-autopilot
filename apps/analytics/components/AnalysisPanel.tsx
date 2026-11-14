@@ -133,7 +133,7 @@ export function AnalysisPanel({
   const failure = running
     ? null
     : error
-      ? aiFailure({ status: error.status })
+      ? aiFailure(error)
       : !aiRanked && analysis?.fallback
         ? aiFailure({ fallback: analysis.fallback })
         : null;

@@ -81,3 +81,17 @@ describe('a read that fails after a good one', () => {
     expect(r).toMatchObject({ stale: true, data: { asOf: '2026-11-14T09:55:00.000Z' } });
   });
 });
+
+describe('one render over a failed read', () => {
+  beforeEach(() => vi.resetModules());
+
+  it('asks the API once, not once per section', async () => {
+    const api = await import('../lib/api');
+    const spy = vi.spyOn(api, 'tryApi');
+    const p = await load();
+    answer = down;
+    await p.accountView('carol.near');
+    await p.accountRecommendations('carol.near');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
