@@ -109,6 +109,8 @@ from and withdrawals to another chain (below), in a separate client.
 - Two demo portfolios ($500 and $5,000, labelled simulated) are analysed every cycle. Each option is costed after
   fees, swaps, gas, borrowing interest and impermanent loss.
 - An action below the hurdle is refused: a net benefit under $0.50, or a benefit under 3× its cost.
+  The same bar decides whether idle money is worth supplying on Burrow: a year of its interest must clear it,
+  whatever the rate (no rate floor; D40).
 - The health guardian repays debt or adds collateral when the Burrow health factor falls. It never borrows.
 - The Shadow Gateway compares a Rhea quote with a 1Click dry quote for each allowed plan. It records the best route
   with `executed: false`.

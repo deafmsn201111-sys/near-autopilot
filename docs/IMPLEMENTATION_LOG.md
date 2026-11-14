@@ -814,3 +814,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `lib/account-signal.ts` `readTokens`: one keyless FastNEAR `/v1/account/{id}/ft` call per watcher tick (zod-checked),
   turned into a sorted `contract:balance` fingerprint. `watchStep` also fires when it changes; a failed token read
   keeps the baseline. #117 covered native NEAR only; a USDC/USDT transfer or a 1Click deposit now shows within a tick.
+
+## 2026-11-14 — Idle-supply card judged by what it earns, not a 1% rate floor (#145)
+
+- `MIN_SUPPLY_APR_PCT` is gone from the rule-based list and the AI allocator; both keep only the product-wide hurdle
+  (`yearWorthTheFee`): a year of interest must clear $0.50 net and 3× gas. $10,000 of NEAR at 0.32% now gets a card;
+  a ~$2 wallet still gets none. Mainnet gas, Burrow registration and rate swings measured in D40.

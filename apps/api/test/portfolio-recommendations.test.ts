@@ -493,6 +493,22 @@ describe('portfolioRecommendations', () => {
   });
 
   describe('idle money after costs (#194)', () => {
+    it('judges a low rate by what it earns, not by the rate alone (#145)', () => {
+      const supplies = (usd: number, aprPct: number) =>
+        portfolioRecommendations(
+          ctx({ idleEarn: [{ token: 'wrap.near', symbol: 'NEAR', usd, aprPct }] }),
+        ).some((x) => x.kind === 'put_idle_to_work');
+      expect(supplies(10_000, 0.32)).toBe(true);
+      expect(supplies(1.47, 0.32)).toBe(false);
+      expect(supplies(1.2, 5)).toBe(false);
+      expect(supplies(175, 0.32)).toBe(true);
+      expect(supplies(168, 0.32)).toBe(false);
+      const card = portfolioRecommendations(
+        ctx({ idleEarn: [{ token: 'wrap.near', symbol: 'NEAR', usd: 10_000, aprPct: 0.32 }] }),
+      ).find((x) => x.kind === 'put_idle_to_work');
+      expect(card?.why).toContain('about 0.32% a year, about $32.00 a year');
+    });
+
     it('says plainly when the yearly interest is not worth the network fee, instead of a cents card', () => {
       const advice = portfolioAdvice(
         ctx({ idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 3, aprPct: 10 }] }),

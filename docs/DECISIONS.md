@@ -412,7 +412,7 @@ are unchanged.
 **Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
 turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
 (fail-closed) instead of scaled down. When several tokens are idle, both paths rank them by dollars a year at the live
-Burrow rate, each at least $1 and 1% a year (#139): the rule-based card offers the top earner and names the runner-up;
+Burrow rate, each at least $1 and worth its fee (#139; the 1% floor is gone, D40): the rule-based card offers the top earner and names the runner-up;
 the AI path gets every such token as a candidate (at most 8) and the model may rank another first, saying why.
 
 ## D24 — The AI pipeline streams over Server-Sent Events through the site proxy
@@ -746,3 +746,33 @@ from the first deposit). Only the NEAR sent counts against the 1 NEAR reserve; r
 `near_deposit` keeps its existing exemption from the deposit caps although the wrapped NEAR now leaves the wallet: it
 leaves only through D36's `ft_transfer` to the stored quote's deposit address, in the same receipt. No cap changes.
 **Consequences:** One signature. A failed step reverts the wrap too.
+
+## D40 — An idle-supply card is judged by what it earns, not by a rate floor (#145)
+
+**Context:** #145. Both the rule-based list and the AI allocator hid any Burrow supply under a flat 1% APR (#119),
+whatever the amount: $10,000 of NEAR at 0.32% (~$32 a year) was hidden. Both paths already applied the product-wide
+hurdle after it (`yearWorthTheFee` in `portfolio-view.ts`: benefit minus gas ≥ $0.50, benefit ≥ 3× gas).
+Mainnet, 14 Nov: `gas_price` 100,000,000 yocto (0.0001 NEAR per Tgas, the protocol minimum); a supply and a later
+withdraw attach at most 270 Tgas (wrap 10 + registration 10 + `ft_transfer_call` 100 + `oracle_call` 150), so at
+most 0.027 NEAR ≈ $0.036 at $1.33 a NEAR, inside the $0.05 gas the hurdle charges. Burrow's `storage_balance_bounds`
+min is 0.1 NEAR and is refunded on unregister, so it is not a cost. Supply rates moved 1.5–10× within one day
+(USDt 5.5–8.5%, USDC.e 5.1–9.3%, USDT.e 4.2–44.8%), which the 3× margin absorbs.
+**Decision:** The 1% floor is gone. One rule decides on both wallet paths, the same hurdle the other wallet cards use: a year of the supply's
+interest (live Burrow net supply rate × amount) must clear the hurdle, so about $0.55 a year. Smallest amount that
+shows a card at the 14 Nov rates:
+
+| Token  | Net supply APR | Smallest card |
+| ------ | -------------- | ------------- |
+| NEAR   | 0.33%          | ~$167         |
+| USDC   | 11.85%         | ~$5           |
+| USDC.e | 9.26%          | ~$6           |
+| USDt   | 5.54%          | ~$10          |
+| DAI    | 3.76%          | ~$15          |
+
+A ~$2 judge wallet gets no supply card; a ~$100 wallet gets one for stablecoins, not for NEAR; the $500 and $5,000
+demos keep theirs; $10,000 of NEAR gets one. A year is the horizon because APR is a yearly rate and a Burrow supply has
+no term.
+**Consequences:** No second threshold to explain on a wallet. The dry-run demo autopilot (`decision-engine.ts`)
+keeps its stricter check (30 days, gas in and out), so it may skip a small supply the wallet card shows. A rate under 1%
+is shown with two decimals (`ratePct`). Gas stays a fixed $0.05 estimate: above ~$1.85 a NEAR the round trip
+can cost more than that, so the gas would then need pricing from the live NEAR price.
