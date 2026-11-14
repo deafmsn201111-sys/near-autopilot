@@ -42,7 +42,7 @@ describe('httpDiscovery', () => {
   });
 
   it('caps an account with hundreds of tokens', async () => {
-    const tokens = Array.from({ length: 500 }, (_, i) => ({
+    const tokens = Array.from({ length: 2500 }, (_, i) => ({
       contract_id: `spam${i}.near`,
       balance: '1',
     }));

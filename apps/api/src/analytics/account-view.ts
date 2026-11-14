@@ -920,7 +920,10 @@ export function unlistedByValue<T extends { readonly token: string; readonly raw
     if (p === undefined) return -2;
     return d === undefined ? -1 : (Number(t.raw) / 10 ** d) * p;
   };
-  return [...tokens].sort((x, y) => value(y) - value(x));
+  return tokens
+    .map((t) => ({ t, v: value(t) }))
+    .sort((x, y) => y.v - x.v)
+    .map(({ t }) => t);
 }
 
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
