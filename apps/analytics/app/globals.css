@@ -941,6 +941,22 @@ tr.detail details[open] {
   margin: 0;
   word-break: break-all;
 }
+.deposit-status {
+  border-left: 3px solid var(--muted);
+  padding: 6px 0 6px 12px;
+  margin-bottom: 16px;
+  word-break: break-word;
+}
+.deposit-status.ok {
+  border-color: var(--good);
+}
+.deposit-status.warn {
+  border-color: var(--critical);
+}
+.deposit-status p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
 .deposit-token {
   display: flex;
   align-items: center;

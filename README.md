@@ -131,10 +131,14 @@ from another chain (below), in a separate client.
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
    a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
    partner key, `ONE_CLICK_JWT`, gives the partner schedule). Send exactly that amount from your wallet on that chain;
-   1Click delivers to your NEAR account, or refunds to your address if the swap fails. Tracking the deposit's status
-   is not on the page yet. What we keep: one `deposit_quotes` row per address shown (your NEAR account, the tokens
-   and amounts, your refund address on the other chain, the deposit address, deadline, fee and 1Click's id and
-   signature), deleted after 30 days; no IP address.
+   1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
+   deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
+   transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;
+   it stops at a final status, or 30 min after the deadline if nothing arrived ("expired"), and keeps the last status with a
+   **Check again** button. The browser sends only our quote id; the server looks up the address, asks 1Click
+   (cached 5 s per quote, rate-limited per visitor). What we keep: one `deposit_quotes` row per address shown (your
+   NEAR account, the tokens and amounts, your refund address on the other chain, the deposit address, deadline, fee,
+   1Click's id and signature, and the latest status with its time), deleted after 30 days; no IP address.
 
 **Not done**
 

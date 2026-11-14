@@ -59,7 +59,18 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
   it('stores a quote as given', async () => {
     const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
     await store.save(quote('dq_1', NOW));
-    expect(await handle.db.select().from(depositQuotes)).toEqual([quote('dq_1', NOW)]);
+    expect(await handle.db.select().from(depositQuotes)).toEqual([
+      { ...quote('dq_1', NOW), status: null, statusAt: null },
+    ]);
+  });
+
+  it('finds a quote by id and saves its latest status with the time', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    await store.save(quote('dq_1', NOW));
+    expect(await store.find('dq_1')).toMatchObject(quote('dq_1', NOW));
+    expect(await store.find('dq_2')).toBeNull();
+    await store.saveStatus('dq_1', 'PROCESSING', NOW);
+    expect(await store.find('dq_1')).toMatchObject({ status: 'PROCESSING', statusAt: NOW });
   });
 
   it('stores a quote without a fee', async () => {

@@ -1,19 +1,25 @@
 'use client';
 import { describeProvenance } from '@near-autopilot/core';
 import qrcode from 'qrcode-generator';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEPOSIT_CHAINS,
   defaultDestination,
+  describeStatus,
   defaultOrigin,
   formatUnits,
   loadDepositAssets,
+  loadDepositStatus,
   requestDepositQuote,
+  statusDelayMs,
+  stopReason,
   searchTokens,
   type DepositAsset,
   type DepositAssets,
   type DepositQuote,
+  type DepositStatus,
 } from '../lib/deposit';
+import { poll, tabHidden } from '../lib/polling';
 import { TokenIcon } from './TokenIcon';
 
 const REFUND_HINT: Record<string, string> = {
@@ -66,6 +72,79 @@ function useNow() {
   return now;
 }
 
+/** Polls the quote's 1Click status on a backoff until a final status, the deadline (unpaid only) or the check limit. */
+function useDepositStatus(id: string) {
+  const [status, setStatus] = useState<DepositStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
+  const [round, setRound] = useState(0);
+  const sent = useRef(0);
+  const shown = useRef(0);
+
+  // Responses can overlap on a slow network: only one newer than what is on screen may replace it.
+  const check = useCallback(async () => {
+    const n = ++sent.current;
+    const r = await loadDepositStatus(id);
+    if (n < shown.current) return null;
+    shown.current = n;
+    setError(r.ok ? null : r.error);
+    if (r.ok) setStatus(r.data);
+    return r.ok ? r.data : null;
+  }, [id]);
+
+  // Each round checks at once, then on the backoff; "Check again" starts a new round.
+  useEffect(() => {
+    let alive = true;
+    let checks = 0;
+    let last: DepositStatus | null = null;
+    setStopped(false);
+    const tick = () => {
+      checks++;
+      void check().then((s) => {
+        last = s ?? last;
+        if (alive && stopReason(last, checks)) {
+          stop();
+          setStopped(true);
+        }
+      });
+    };
+    // No time window: the check limit bounds a round, and a hidden tab pauses it.
+    const stop = poll(tick, { everyMs: statusDelayMs, forMs: Infinity, hidden: tabHidden });
+    tick();
+    return () => {
+      alive = false;
+      stop();
+    };
+  }, [check, round]);
+
+  return { status, error, stopped, checkAgain: () => setRound((r) => r + 1) };
+}
+
+function StatusLine({ q }: { q: DepositQuote }) {
+  const { status, error, stopped, checkAgain } = useDepositStatus(q.id);
+  const screen = describeStatus(status, q);
+  return (
+    <div className={`deposit-status ${screen.tone}`} role="status">
+      <b>{screen.title}</b>
+      {screen.detail && <p>{screen.detail}</p>}
+      {screen.txUrl && (
+        <p>
+          <a href={screen.txUrl} target="_blank" rel="noreferrer">
+            View the NEAR transaction
+          </a>
+        </p>
+      )}
+      {error && <p className="deposit-warn">{error}</p>}
+      <p className="muted-note">
+        {stopped ? 'Stopped checking automatically. ' : 'Checked automatically. '}
+        <button type="button" className="btn secondary small" onClick={checkAgain}>
+          Check again
+        </button>
+      </p>
+    </div>
+  );
+}
+
 function QuoteView({
   q,
   originIcon,
@@ -98,6 +177,7 @@ function QuoteView({
           <b className="num">{remaining(left)}</b>. Another token or another chain can be lost.
         </p>
       )}
+      <StatusLine q={q} />
       {!expired && (
         <div className="deposit-address">
           <Qr text={q.depositAddress} />

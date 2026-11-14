@@ -535,3 +535,18 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `read` on the analysis, set without a model run), the agents, and a neutral "AI not asked" step carrying the "Why: …"
   line with a provenance tag; the generic "Nothing to improve right now" is gone for that case.
 - #143's original goal (a `source: 'llm'` result) is superseded by #119's decision not to call the model at all.
+
+## 2026-11-14 — 1Click deposit status polling with limits (#29)
+
+- `OneClickDepositClient.status`: `GET /v0/status?depositAddress=…` (JWT if set), zod per field; an unknown status
+  is `UNKNOWN`, a malformed amount, reason or tx hash is dropped; only a base58 NEAR tx hash is kept, 1Click's
+  `explorerUrl` is never used (the UI links nearblocks.io itself).
+- `GET /v1/deposit/status/:id`: our quote id → stored deposit address → 1Click; answers cached 5 s per quote in a
+  `BoundedMap` (1000 quotes), concurrent callers share one call; `deadlinePassed` from the server clock. The latest
+  status and its time go to `deposit_quotes.status` / `status_at` (migration 0022) when it changes.
+- `apps/analytics`: `/api/deposit/status/[id]` proxy with its own `consume('deposit-status')` limit (60 per visitor,
+  10 000 overall per 10 min); `poll()` takes a schedule (`everyMs` as a function of ticks done); the deposit dialog
+  polls 5 s → ×1.5 → 30 s, at most 120 checks, stops at `SUCCESS`/`REFUNDED`/`FAILED` or, while `PENDING_DEPOSIT`,
+  30 min after the deadline (a late deposit can take a confirmation to show up); `INCOMPLETE_DEPOSIT` keeps
+  polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
+  address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.

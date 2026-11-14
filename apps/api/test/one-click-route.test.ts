@@ -57,6 +57,10 @@ const quoted = (over: Partial<DepositQuote> = {}): DepositQuote => ({
   ...over,
 });
 
+const unused = async (): Promise<never> => {
+  throw new Error('not used');
+};
+
 function setup(o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['icon'] } = {}) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
@@ -67,8 +71,14 @@ function setup(o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['ico
         asked.push(r);
         return (o.quote ?? (async () => quoted()))();
       },
+      status: unused,
     },
-    store: { save: async (q) => void saved.push(q), purge: async () => undefined },
+    store: {
+      save: async (q) => void saved.push(q),
+      purge: async () => undefined,
+      find: unused,
+      saveStatus: unused,
+    },
     destinationTokens: ['wrap.near', USDC_NEAR_ID, 'usdt.tether-token.near'],
     newId: () => 'dq_1',
     ...(o.icon ? { icon: o.icon } : {}),
@@ -267,10 +277,12 @@ describe('POST /v1/deposit/quote', () => {
       intervalSeconds: 900,
       now: () => NOW,
       deposit: {
-        oneClick: { tokens: async () => TOKENS, quote: async () => quoted() },
+        oneClick: { tokens: async () => TOKENS, quote: async () => quoted(), status: unused },
         store: {
           save: async () => Promise.reject(new Error('db down')),
           purge: async () => undefined,
+          find: unused,
+          saveStatus: unused,
         },
         destinationTokens: [USDC_NEAR_ID],
       },
