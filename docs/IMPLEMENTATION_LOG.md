@@ -602,3 +602,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `latestPrices` and `GET /v1/analytics/series/prices`.
 - The wallet observation reads the held tokens' history with one `priceSeries(since, assets)` query (slim columns,
   asset filter) instead of one wide `priceHistory` query per token.
+
+## 2026-11-14 — Admin Funnel and LLM quality aggregate in SQL (#177)
+
+- `DrizzleEventStore.funnel(from, to)`: one `GROUPING SETS ((day, kind), (day), (kind), ())` query with `count(*)`
+  and `count(distinct account_id)`; the API only pads the 7 UTC days.
+- `DrizzleLlmLedger.quality(from, to)`: counts by outcome, `percentile_cont(0.5 / 0.95)` latency, pick kinds via
+  `jsonb_array_elements(output->'picks')` (string kinds only), and the 20 newest rows with input/output
+  (`ORDER BY at DESC, id DESC LIMIT 20`). Responses unchanged; the fixed-row tests moved to the Postgres
+  integration tests.
