@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { STRATEGIES } from '@near-autopilot/core';
 import { buildPortfolioView, narrate } from '../src/analytics/portfolio-view';
 
 const hf = (x: number) => (BigInt(Math.round(x * 1e6)) * 10n ** 12n).toString();
@@ -49,6 +50,13 @@ describe('demo portfolio valuation at NEAR $3, USDt $1 (README)', () => {
 });
 
 describe('portfolio view (demo-5000)', () => {
+  it('draws the gauge with the Balanced strategy lines', () => {
+    expect(view(1.6).health).toMatchObject({
+      urgentBelow: STRATEGIES.balanced.warningBelow,
+      safeFrom: STRATEGIES.balanced.healthyAt,
+    });
+  });
+
   it('values the simulated holdings at the given prices', () => {
     const v = view(1.55);
     // wallet 300 NEAR + 600 USDt, collateral 1150 NEAR, supplied 50 USDt, debt 2000 USDt

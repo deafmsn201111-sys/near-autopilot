@@ -1034,11 +1034,13 @@ describe('loanHealth', () => {
       STRATEGIES[id],
     ).label;
 
-  it('calls a loan safe from the strategy healthy line, at risk below the agents danger line', () => {
+  it('calls a loan safe from the strategy healthy line, at risk below its urgent line', () => {
     expect(at(1.6, 'balanced')).toBe('Safe');
     expect(at(1.6, 'conservative')).toBe('Needs watching');
+    expect(at(1.4, 'conservative')).toBe('At risk');
     expect(at(1.3, 'aggressive')).toBe('Safe');
-    expect(at(1.05, 'aggressive')).toBe('At risk');
+    expect(at(1.2, 'aggressive')).toBe('Needs watching');
+    expect(at(1.1, 'aggressive')).toBe('At risk');
   });
 
   it('sends the health factor and the lines its label is judged by, for the gauge', () => {
@@ -1049,9 +1051,10 @@ describe('loanHealth', () => {
       ),
     ).toMatchObject({
       healthFactor: 1.42,
-      urgentBelow: 1.1,
+      urgentBelow: STRATEGIES.conservative.warningBelow,
       safeFrom: STRATEGIES.conservative.healthyAt,
-      label: 'Needs watching',
+      level: 'high',
+      label: 'At risk',
     });
   });
 

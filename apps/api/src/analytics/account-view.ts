@@ -1188,9 +1188,7 @@ export const concentratedToken = <T extends { readonly token: string }>(
   actionable: (token: string) => boolean,
 ): T | undefined => byToken.find((b) => actionable(b.token) && !STABLES.has(b.token));
 
-const DANGER_HF = ORCH.risk.dangerBelowBps / 10_000;
-
-/** The loan's safety label on the account view: "Safe" from the strategy's healthy line, "At risk" below the agents' danger line. */
+/** The loan's safety label on the account view: "Safe" from the strategy's healthy line, "At risk" below its urgent line. */
 export function loanHealth(
   loan: {
     readonly hasDebt: boolean;
@@ -1207,7 +1205,7 @@ export function loanHealth(
       sentence: 'Nothing is borrowed: there is nothing to liquidate.',
     } as const;
   const hf = loan.healthFactor;
-  const lines = { urgentBelow: DANGER_HF, safeFrom: strategy.healthyAt };
+  const lines = { urgentBelow: strategy.warningBelow, safeFrom: strategy.healthyAt };
   if (hf === null)
     return {
       healthFactor: null,
@@ -1216,7 +1214,7 @@ export function loanHealth(
       sentence: 'The loan could not be valued: a price or a risk parameter is missing.',
     } as const;
   const safe = hf >= strategy.healthyAt;
-  const watch = hf >= DANGER_HF;
+  const watch = hf >= strategy.warningBelow;
   return {
     healthFactor: hf,
     ...lines,

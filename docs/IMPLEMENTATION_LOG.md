@@ -985,3 +985,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `accountPortfolio` leaves unverified legs out of every total and allocation; their estimate goes to
   `totals.unverifiedUsd`. `prepare` refuses a swap into a token outside our list or Burrow's (fail closed). D44.
 - UI: unverified rows read "Not counted"; the "Unverified tokens" note shows the estimate kept out of the total.
+
+## #287 Loan gauge's urgent line follows the strategy
+
+- `loanHealth` draws the gauge's "urgent" line and the "At risk" level at the strategy's `warningBelow`
+  (Conservative 1.50, Balanced 1.30, Aggressive 1.15) instead of the agents' fixed 1.10, so the gauge, the hero chip
+  and the urgent repay card agree. The demo portfolio uses the Balanced lines.
