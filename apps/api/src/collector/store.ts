@@ -480,8 +480,9 @@ export class CollectorStore {
       .orderBy(asc(priceObservations.observedAt));
   }
 
-  /** Every price observation since `since`, slim columns only (charts and sparklines). */
-  async priceSeries(since: Date) {
+  /** Price observations since `since` (of `assets` when given), slim columns only (charts, sparklines, ranges). */
+  async priceSeries(since: Date, assets?: readonly string[]) {
+    if (assets?.length === 0) return [];
     return this.db
       .select({
         snapshotId: priceObservations.snapshotId,
@@ -493,7 +494,12 @@ export class CollectorStore {
         observedAt: priceObservations.observedAt,
       })
       .from(priceObservations)
-      .where(gte(priceObservations.observedAt, since))
+      .where(
+        and(
+          gte(priceObservations.observedAt, since),
+          assets ? inArray(priceObservations.asset, [...assets]) : undefined,
+        ),
+      )
       .orderBy(asc(priceObservations.observedAt));
   }
 

@@ -586,6 +586,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `/admin/1click` page and an admin nav (Spend · 1Click). Statuses are what the user's deposit screen last saw;
   server-side refresh is a separate issue.
 
+## 2026-11-14 — AI trace: ranking sentence (#110)
+
+- `apps/api`: `picksSchema` takes an optional `ranking` (1–300 chars; an invalid one drops only itself). It reaches
+  `run.ranking` only when every number in it appears in the code-built text of a card the user sees or in the tools'
+  shared context, there are ≥ 2 cards and no warning was put back; otherwise null. The prompt asks for it.
+- `apps/analytics`: `run.ranking` zod-checked (≤ 300, null on anything else), carried on `Pipeline`, shown under the
+  "ranked them" step as "Why this order: …" (React text only).
+
 ## 2026-11-14 — Priced Burrow actions via `execute_with_pyth` (#166)
 
 - `packages/burrow-adapter/src/builders.ts`: borrow, withdraw and repay from collateral build `execute_with_pyth`
@@ -593,6 +601,32 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   dropped. `BURROW_REQUIRED_EXPORTS` checks `execute_with_pyth`.
 - `apps/api/src/wallet/validate-cascade.ts`: allowlist `execute_with_pyth`, drop `oracle_call` (D29);
   `account-view.ts` prepare intents allow Burrow as the receiver instead of the oracle.
+
+## #159 — 24 h range: outlier filter and one slim query
+
+- `range24hBps` takes the high-low range over a rolling median of five snapshots: one or two bad prints in a row no
+  longer raise a `volatility_spike`; a move that holds three snapshots (45 min) still does.
+- `snapshotPrices` groups price rows into per-snapshot consensus prices per asset; used by `range24hBps`,
+  `latestPrices` and `GET /v1/analytics/series/prices`.
+- The wallet observation reads the held tokens' history with one `priceSeries(since, assets)` query (slim columns,
+  asset filter) instead of one wide `priceHistory` query per token.
+
+## 2026-11-14 — Admin Funnel and LLM quality aggregate in SQL (#177)
+
+- `DrizzleEventStore.funnel(from, to)`: one `GROUPING SETS ((day, kind), (day), (kind), ())` query with `count(*)`
+  and `count(distinct account_id)`; the API only pads the 7 UTC days.
+- `DrizzleLlmLedger.quality(from, to)`: counts by outcome, `percentile_cont(0.5 / 0.95)` latency, pick kinds via
+  `jsonb_array_elements(output->'picks')` (string kinds only), and the 20 newest rows with input/output
+  (`ORDER BY at DESC, id DESC LIMIT 20`), in one read-only repeatable-read transaction. Responses unchanged, except a
+  partly malformed `picks` array now counts its valid string kinds (before: the whole output was skipped). The
+  fixed-row tests moved to the Postgres integration tests.
+
+## 2026-11-14 — Strategy decides where idle money goes (#132)
+
+- `Strategy.idle` (core): the rule line and whether the preset weighs a loop. The idle-supply card carries it as a
+  `calculated_estimate` line; Aggressive computes the same-asset loop at HF 1.35 from the token's Burrow market and
+  says whether it beats plain supply. The supply intent is unchanged; no new builder, no limit changed (D30).
+- The AI Capital Allocator card copies the rule card's line for the same token; the strategy prompt names the idle rule.
 
 ## 2026-11-14 — AI analysis stops when the visitor leaves (#151)
 

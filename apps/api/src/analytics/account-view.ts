@@ -100,9 +100,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
-import { loopStrategies, type LoopMarket } from './looping';
+import { loopFor, loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
-import { consensus, range24hBps } from './series';
+import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
@@ -611,8 +611,14 @@ export interface PortfolioRecommendation {
   readonly why: string;
   /** The parameterised intent the transaction engine turns into a cascade to sign; null = advice with no button. */
   readonly intent: RecommendationIntent | null;
-  /** Loan cards: what the loan costs against what the Burrow deposits earn, so a profitable loan never reads as bad. */
-  readonly carry?: { readonly text: string; readonly provenance: 'calculated_estimate' };
+  /**
+   * A computed line under the why. Loan cards: what the loan costs against what the deposits earn, so a profitable
+   * loan never reads as bad. Idle cards: what the strategy weighed against plain supply.
+   */
+  readonly carry?: {
+    readonly text: string;
+    readonly provenance: 'calculated_estimate' | 'protocol_reported';
+  };
 }
 
 /** Today's rates on the Burrow position; a side's figure is null when one of its positions is unpriced or unrated. */
@@ -641,8 +647,17 @@ export interface RecommendationContext {
     readonly collateralAdjUsd: number;
     readonly debtAdjUsd: number;
   } | null;
-  /** Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage. */
-  readonly idleEarn: readonly { token: string; symbol: string; usd: number; aprPct: number }[];
+  /**
+   * Wallet assets that are priced and could earn a Burrow supply rate, largest USD first. aprPct is a percentage.
+   * loop is the token's Burrow market, for the same-asset loop an Aggressive strategy weighs.
+   */
+  readonly idleEarn: readonly {
+    token: string;
+    symbol: string;
+    usd: number;
+    aprPct: number;
+    loop?: LoopMarket;
+  }[];
   /** The largest debt, with what the wallet and the collateral hold of the same token (whole tokens). */
   readonly largestDebt:
     | (BurrowTokenFacts & {
@@ -791,6 +806,7 @@ export function portfolioAdvice(
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
+      carry: idleRule(idle, strategy),
     });
   } else if (earning[0] && earning[0].usd >= 0.1) {
     const small = earning[0];
@@ -818,6 +834,49 @@ export function portfolioAdvice(
   if (withdrawal) recs.push(withdrawal);
 
   return { recommendations: recs, skipped };
+}
+
+const pct1 = (apr: number) => `${(apr * 100).toFixed(1)}%`;
+
+/** What the strategy weighed against plain supply of this idle token (#132). The app never borrows: no loop button. */
+function idleRule(
+  idle: RecommendationContext['idleEarn'][number],
+  strategy: Strategy,
+): NonNullable<PortfolioRecommendation['carry']> {
+  const { label, idle: rule, targetHealthFactor: h } = strategy;
+  const supply = `${idle.aprPct.toFixed(1)}%`;
+  if (!rule.weighsLoop)
+    return {
+      text: `${label}: Burrow supply at ${supply} a year; ${rule.rule}.`,
+      provenance: 'protocol_reported',
+    };
+  const l =
+    idle.loop &&
+    loopFor(idle.loop, {
+      equityUsd: idle.usd,
+      targetHealthFactor: h,
+      gasUsdPerTx: GAS,
+      horizonDays: HORIZON,
+    });
+  if (!l)
+    return {
+      text: `${label}: ${rule.rule}, but no ${idle.symbol} loop can be computed from Burrow's market today, so this supplies at ${supply} a year.`,
+      provenance: 'protocol_reported',
+    };
+  // after the gas of every round in and out, like the loop action: on a small amount the fees eat the interest
+  const netApr = (l.netUsd / l.equityUsd) * (365 / l.horizonDays);
+  const loop = `${label}: a ${l.leverage.toFixed(1)}× ${idle.symbol} loop at health factor ${h}`;
+  const drift =
+    l.daysToLiquidationFromRates === null
+      ? ''
+      : ` At today's rates its health factor reaches 1.0 in about ${Math.round(l.daysToLiquidationFromRates)} days without a top-up.`;
+  const text =
+    netApr * 100 <= idle.aprPct
+      ? `${loop} would earn ${pct1(netApr)} a year after fees (${pct1(l.supplyApr)} supply on ${l.leverage.toFixed(1)}×, ${pct1(l.borrowApr)} borrow on ${(l.leverage - 1).toFixed(1)}×), less than plain supply at ${supply}, so this supplies.`
+      : !l.fitsLiquidity
+        ? `${loop} would earn ${pct1(netApr)} a year after fees, but Burrow has too little ${idle.symbol} left to lend for it, so this supplies at ${supply}.`
+        : `${loop} would earn about ${pct1(netApr)} a year after fees (${money2(idle.usd * netApr)}), more than plain supply at ${supply}, but it borrows: it loses money above a ${pct1(l.breakEvenBorrowApr)} borrow rate and the loan can be liquidated.${drift} The app does not borrow; supplying is the first step of a loop.`;
+  return { text, provenance: 'calculated_estimate' };
 }
 
 export function carryLine(c: LoanCarry): NonNullable<PortfolioRecommendation['carry']> {
@@ -1271,14 +1330,9 @@ export function registerAccountView(
   const latestPrices = async () => {
     const snap = await store.latestSnapshot();
     if (!snap) return new Map<string, number>();
-    const obs = await store.pricesForSnapshot(snap.id);
-    const by = new Map<string, typeof obs>();
-    for (const o of obs) by.set(o.asset, [...(by.get(o.asset) ?? []), o]);
     const out = new Map<string, number>();
-    for (const [asset, list] of by) {
-      const c = consensus(list);
-      if (c.price !== null) out.set(asset, c.price);
-    }
+    for (const [asset, [point]] of snapshotPrices(await store.pricesForSnapshot(snap.id)))
+      if (typeof point?.price === 'number') out.set(asset, point.price);
     const summary = (snap.summary ?? {}) as {
       prices?: { token: string; usd: string; quality: string }[];
     };
@@ -1728,6 +1782,7 @@ export function registerAccountView(
         symbol: h.symbol,
         usd: h.usd as number,
         aprPct: (rate(h.token, 'netSupplyApr') ?? 0) * 100,
+        loop: market(h.token),
       }))
       .filter((a) => a.aprPct > 0)
       .sort((a, b) => b.usd - a.usd);
@@ -2009,19 +2064,21 @@ export function registerAccountView(
     const [reference, lp, ranges] = await Promise.all([
       burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
       readLp(id, prices, decimalsOf),
-      Promise.all(
-        priced.map(async (t) => {
-          try {
-            return [t, range24hBps(await store.priceHistory(t, since))] as const;
-          } catch (err) {
-            log.warn({ err, token: t }, 'price history read failed: no 24 h range');
-            return [t, null] as const;
-          }
-        }),
-      ),
+      (async () => {
+        if (priced.length === 0) return new Map<string, SnapshotPrice[]>();
+        try {
+          return snapshotPrices(await store.priceSeries(since, priced));
+        } catch (err) {
+          log.warn({ err }, 'price history read failed: no 24 h range');
+          return new Map<string, SnapshotPrice[]>();
+        }
+      })(),
     ]);
     const volatility24hBps = new Map<TokenId, number>();
-    for (const [t, bps] of ranges) if (bps !== null) volatility24hBps.set(t, bps);
+    for (const t of priced) {
+      const bps = range24hBps(ranges.get(t) ?? []);
+      if (bps !== null) volatility24hBps.set(t, bps);
+    }
     return {
       now: clock.now(),
       accountId: id,

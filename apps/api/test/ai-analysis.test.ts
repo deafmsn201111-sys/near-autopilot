@@ -680,6 +680,7 @@ describe('analyseAccount', () => {
       ms: expect.any(Number) as number,
       read: { tokens: 2, loan: true },
       checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
+      ranking: null,
     });
     const off = await analyseAccount(null, {
       ...ctx,
@@ -786,6 +787,9 @@ describe('analyseAccount', () => {
     ['a magnitude word', 'Repay a thousand USDt now.'],
     ['a sign the tools never showed', 'Your loan is -1.37 from safety.'],
     ['a number from another card', 'Repay 8 USDt now.'],
+    ['a scale suffix on a shown number', 'Repay now: $1.37k is at risk.'],
+    ['a multiplier on a shown number', 'The loan costs 1.37x what it should.'],
+    ['a "times" on a shown number', 'The loan is 1.37 times riskier.'],
   ])('keeps the code explanation for %s', async (_, why) => {
     expect(await whyFor(REPAY, why)).not.toBe(why);
   });
@@ -796,6 +800,52 @@ describe('analyseAccount', () => {
     'Repay now: the 1.0 line is liquidation.',
   ])('keeps a why that quotes only its own card and the shared context: %s', async (why) => {
     expect(await whyFor(REPAY, why)).toBe(why);
+  });
+
+  const BOTH = [
+    { id: REPAY, why: 'Repay first.' },
+    { id: 'reduce-concentration', why: 'Then spread out.' },
+  ];
+  const rankingFor = async (ranking?: unknown, picks: unknown = BOTH) => {
+    const { llm } = fake([
+      () => callAll,
+      () => ({ kind: 'final', text: JSON.stringify({ picks, ranking }) }),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.source).toBe('llm');
+    return out.run?.ranking;
+  };
+  const honest = 'The loan comes first: at health factor 1.37, repaying 33.125 USDt reaches 1.60.';
+
+  it('shows the ranking sentence when its numbers come from the shown cards and the tools', async () => {
+    expect(await rankingFor(honest)).toBe(honest);
+  });
+
+  it.each([
+    ['a number no tool returned', 'Repay first: $999,999 is at stake.'],
+    ['a number from a card the user does not see', 'Supplying at 8% can wait.'],
+    ['a sentence over 300 characters', 'The loan comes first. '.repeat(15)],
+    ['an empty sentence', ''],
+  ])('drops the ranking sentence with %s and keeps the cards', async (_, ranking) => {
+    expect(await rankingFor(ranking)).toBeNull();
+  });
+
+  it('drops the ranking sentence when code puts a skipped warning first', async () => {
+    expect(
+      await rankingFor(honest, [{ id: 'reduce-concentration', why: 'Spread out.' }]),
+    ).toBeNull();
+  });
+
+  it('drops the ranking sentence when there is only one card to order', async () => {
+    expect(await rankingFor(honest, [{ id: REPAY, why: 'Repay first.' }])).toBeNull();
+  });
+
+  it('works without a ranking sentence', async () => {
+    expect(await rankingFor()).toBeNull();
   });
 
   it('turns the allocator idle-supply proposal into a supply recommendation with an exact amount', async () => {
@@ -815,6 +865,35 @@ describe('analyseAccount', () => {
       agent: 'Capital Allocator',
       intent: { action: 'supply', token: USDT },
     });
+  });
+
+  it("carries the rule card's line on what the strategy weighed onto the AI supply card (#132)", async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
+    ]);
+    const weighed = {
+      text: 'Aggressive: a loop would earn less.',
+      provenance: 'calculated_estimate',
+    } as const;
+    const idle: PortfolioRecommendation = {
+      id: 'put-idle-to-work',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: '$100 of USDt is sitting idle',
+      why: 'USDt in your wallet earns nothing.',
+      intent: { action: 'supply', token: USDT, approxUsd: 100 },
+      carry: weighed,
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [idle],
+      checks: [idle],
+      ownerVerified: true,
+    });
+    expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')?.carry).toEqual(weighed);
   });
 
   it('supplies the whole idle balance like the rule-based card, past the $100 swap limit', async () => {

@@ -7,6 +7,7 @@ import {
   type DatabaseHandle,
 } from '@near-autopilot/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { funnelSummary, windowStart } from '../src/analytics/admin';
 import { DrizzleEventStore } from '../src/analytics/events-store';
 
 /** The events store on a real PostgreSQL (skipped unless DATABASE_TEST_URL is set; CI sets it). */
@@ -97,19 +98,43 @@ describe.skipIf(!adminUrl)('DrizzleEventStore (PostgreSQL)', () => {
     ]);
   });
 
-  it('lists the funnel steps since a time, without the other kinds', async () => {
-    await store.add({ at: NOW, kind: 'connect', accountId: 'a.near', source: 'client' });
-    await store.add({ at: NOW, kind: 'verified', accountId: 'a.near', source: 'server' });
-    await store.add({ at: NOW, kind: 'prepare_blocked', accountId: 'a.near', source: 'server' });
-    await store.add({
-      at: new Date(NOW.getTime() - DAY),
-      kind: 'analyse',
-      accountId: 'a.near',
-      source: 'server',
-    });
-    expect(await store.since(new Date(NOW.getTime() - 1))).toEqual([
-      { at: NOW, kind: 'connect', accountId: 'a.near' },
+  it('counts each funnel step per UTC day for 7 days with unique accounts per day and overall', async () => {
+    const now = new Date('2026-11-12T10:00:00Z');
+    const rows = [
+      ['2026-11-12T09:00:00Z', 'connect', 'alice.near'],
+      ['2026-11-12T09:01:00Z', 'analyse', 'alice.near'],
+      ['2026-11-12T09:02:00Z', 'analyse', 'alice.near'],
+      ['2026-11-12T09:03:00Z', 'prepare', 'alice.near'],
+      ['2026-11-12T09:04:00Z', 'signed', 'alice.near'],
+      ['2026-11-12T09:05:00Z', 'verified', 'erin.near'],
+      ['2026-11-12T09:06:00Z', 'prepare_blocked', 'erin.near'],
+      ['2026-11-12T10:00:01Z', 'connect', 'frank.near'],
+      ['2026-11-12T00:00:00Z', 'connect', 'bob.near'],
+      ['2026-11-11T23:59:59Z', 'connect', 'bob.near'],
+      ['2026-11-06T00:00:00Z', 'analyse', 'carol.near'],
+      ['2026-11-05T23:59:59Z', 'connect', 'dave.near'],
+    ] as const;
+    for (const [at, kind, accountId] of rows)
+      await store.add({ at: new Date(at), kind, accountId, source: 'server' });
+
+    const f = funnelSummary(await store.funnel(windowStart(now), now), now);
+    const zeros = { connect: 0, analyse: 0, prepare: 0, signed: 0, accounts: 0 };
+    expect(f.days).toEqual([
+      { day: '2026-11-06', ...zeros, analyse: 1, accounts: 1 },
+      { day: '2026-11-07', ...zeros },
+      { day: '2026-11-08', ...zeros },
+      { day: '2026-11-09', ...zeros },
+      { day: '2026-11-10', ...zeros },
+      { day: '2026-11-11', ...zeros, connect: 1, accounts: 1 },
+      { day: '2026-11-12', connect: 2, analyse: 2, prepare: 1, signed: 1, accounts: 2 },
     ]);
+    expect(f.total).toEqual({ connect: 3, analyse: 3, prepare: 1, signed: 1, accounts: 3 });
+  });
+
+  it('has an all-zero funnel with no events', async () => {
+    const f = funnelSummary(await store.funnel(windowStart(NOW), NOW), NOW);
+    expect(f.days).toHaveLength(7);
+    expect(f.total).toEqual({ connect: 0, analyse: 0, prepare: 0, signed: 0, accounts: 0 });
   });
 
   it('purges rows older than 30 days only', async () => {

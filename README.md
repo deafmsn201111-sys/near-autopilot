@@ -237,7 +237,10 @@ concentration share, positions out of range) and that number's provenance label,
 (its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
 pipeline of the run: what was read on-chain, what each agent returned, what the model ranked, and what code checked
 before showing it (explanations whose numbers all came from the agents, explanations replaced, warnings put back,
-made-up actions dropped). The line is built on the server
+made-up actions dropped). The model may add one sentence (at most 300 characters) on why the cards are in this
+order; it is shown under the ranking step as "Why this order: …" only when every number in it appears on a card the
+user sees or in the tools' shared context, there are at least two cards, and code did not put back a warning the
+model left out (that changes the order); otherwise it is dropped. The line is built on the server
 from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
 it says so; it never reports "healthy" without a comparison.
 
@@ -379,6 +382,18 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
   | Conservative | 1.80              | 2.00             | 1.50            | 50% / 75% / 40%                         |
   | Balanced     | 1.50              | 1.60             | 1.30            | 60% / 85% / 50%                         |
   | Aggressive   | 1.25              | 1.35             | 1.15            | 75% / 95% / 65%                         |
+
+  A strategy is the set of risks it accepts, not a forecast; within that set the code picks the highest yield it can
+  compute. The idle-money card names what its strategy weighed, as a "calculated estimate" line under the reason:
+
+  | Strategy     | Idle money may go to                                        | Today                                                         |
+  | ------------ | ----------------------------------------------------------- | ------------------------------------------------------------- |
+  | Conservative | Burrow lending only                                         | supply                                                        |
+  | Balanced     | Burrow lending, or a stablecoin pool that pays clearly more | supply (no stablecoin pool is tracked yet)                    |
+  | Aggressive   | the highest yield, leverage included                        | supply, or a same-asset loop at HF 1.35 shown as numbers only |
+
+  The app never borrows, so a loop has no button: when it pays more, the supply card keeps its button (the loop's
+  first step) and says what the loop would earn, at which borrow rate it stops paying, and that it can be liquidated.
 
 - **Verify ownership** (optional, unlocks AI analysis). Connecting alone does not prove that you own an account: the
   site only learns an account name from the wallet, and anyone can type any account. So the AI analysis (which costs

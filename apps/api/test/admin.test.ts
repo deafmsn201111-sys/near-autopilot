@@ -4,9 +4,8 @@ import {
   llmQuality,
   spendSummary,
   type AdminStore,
-  type FunnelEvent,
-  type QualityRow,
   type LlmSettings,
+  type QualityStats,
   type SettingsPatch,
   type SpendRow,
 } from '../src/analytics/admin';
@@ -102,6 +101,8 @@ describe('spendSummary', () => {
   });
 });
 
+const NO_RUNS: QualityStats = { outcomes: [], p50Ms: null, p95Ms: null, kinds: [], last: [] };
+
 const API_TOKEN = 'public-token-public-token-public-token-1';
 const ADMIN_TOKEN = 'admin-token-admin-token-admin-token-admin-1';
 
@@ -110,7 +111,7 @@ function fakeStore() {
   const store: AdminStore = {
     settings: async () => state.settings,
     recentCalls: async () => [row('2026-11-12T09:00:00Z', 250_000n)],
-    calls: async () => [],
+    quality: async () => NO_RUNS,
     saveSettings: async (patch) => {
       state.patches.push(patch);
       state.settings = { ...state.settings, ...patch };
@@ -142,7 +143,7 @@ describe('/v1/admin', () => {
         since.push(s),
         [row('2026-11-05T23:00:00Z', 5_000_000n), row('2026-11-12T09:00:00Z', 1_000_000n)]
       ),
-      calls: async () => [],
+      quality: async () => NO_RUNS,
       saveSettings: async () => {},
     };
     const res = await server(store).inject({
@@ -238,151 +239,65 @@ describe('/v1/admin', () => {
   });
 });
 
-const ev = (at: string, kind: FunnelEvent['kind'], accountId = 'alice.near'): FunnelEvent => ({
-  at: new Date(at),
-  kind,
-  accountId,
-});
-
 describe('funnelSummary', () => {
-  it('counts each step per UTC day for 7 days with unique accounts per day and overall', () => {
+  it('pads 7 UTC days, oldest first, and drops a day outside the window', () => {
     const f = funnelSummary(
       [
-        ev('2026-11-12T09:00:00Z', 'connect'),
-        ev('2026-11-12T09:01:00Z', 'analyse'),
-        ev('2026-11-12T09:02:00Z', 'analyse'),
-        ev('2026-11-12T09:03:00Z', 'prepare'),
-        ev('2026-11-12T09:04:00Z', 'signed'),
-        ev('2026-11-12T00:00:00Z', 'connect', 'bob.near'),
-        ev('2026-11-11T23:59:59Z', 'connect', 'bob.near'),
-        ev('2026-11-06T00:00:00Z', 'analyse', 'carol.near'),
-        ev('2026-11-05T23:59:59Z', 'connect', 'dave.near'),
+        { day: '2026-11-12', kind: 'analyse', events: 2, accounts: 1 },
+        { day: '2026-11-12', kind: null, events: 2, accounts: 1 },
+        { day: '2026-11-05', kind: 'connect', events: 9, accounts: 9 },
+        { day: null, kind: 'analyse', events: 2, accounts: 1 },
+        { day: null, kind: null, events: 2, accounts: 1 },
       ],
       NOW,
     );
-    expect(f.days).toHaveLength(7);
-    expect(f.days[0]).toEqual({
-      day: '2026-11-06',
-      connect: 0,
-      analyse: 1,
-      prepare: 0,
-      signed: 0,
-      accounts: 1,
-    });
-    expect(f.days[5]).toEqual({
-      day: '2026-11-11',
-      connect: 1,
-      analyse: 0,
-      prepare: 0,
-      signed: 0,
-      accounts: 1,
-    });
+    expect(f.days.map((d) => d.day)).toEqual([
+      '2026-11-06',
+      '2026-11-07',
+      '2026-11-08',
+      '2026-11-09',
+      '2026-11-10',
+      '2026-11-11',
+      '2026-11-12',
+    ]);
     expect(f.days[6]).toEqual({
       day: '2026-11-12',
-      connect: 2,
+      connect: 0,
       analyse: 2,
-      prepare: 1,
-      signed: 1,
-      accounts: 2,
+      prepare: 0,
+      signed: 0,
+      accounts: 1,
     });
-    expect(f.total).toEqual({ connect: 3, analyse: 3, prepare: 1, signed: 1, accounts: 3 });
+    expect(f.total).toEqual({ connect: 0, analyse: 2, prepare: 0, signed: 0, accounts: 1 });
   });
-
-  it('is all zeros with no events', () => {
-    const f = funnelSummary([], NOW);
-    expect(f.total).toEqual({ connect: 0, analyse: 0, prepare: 0, signed: 0, accounts: 0 });
-  });
-});
-
-const call = (over: Partial<QualityRow> = {}): QualityRow => ({
-  at: new Date('2026-11-12T09:00:00Z'),
-  accountId: 'alice.near',
-  model: 'claude-haiku-5-5',
-  latencyMs: 1000,
-  tools: ['liquidation_guardian'],
-  outcome: 'ok',
-  input: { strategy: 'balanced', candidates: [] },
-  output: { picks: [{ kind: 'improve_loan_safety', why: 'w' }] },
-  ...over,
 });
 
 describe('llmQuality', () => {
-  it('gives fallback and validation-error rates, p50/p95 latency and top recommendation kinds', () => {
-    const rows = [
-      call({ latencyMs: 1000 }),
-      call({
-        latencyMs: 2000,
-        output: {
-          picks: [
-            { kind: 'improve_loan_safety', why: 'a' },
-            { kind: 'put_idle_to_work', why: 'b' },
-          ],
-        },
-      }),
-      call({ latencyMs: 3000, outcome: 'invalid_output', output: { reply: 'nope' } }),
-      call({ latencyMs: 4000, outcome: 'deadline', output: null }),
-      call({ latencyMs: 5000, outcome: 'invalid_output', output: null }),
-    ];
-    const q = llmQuality(rows, NOW);
-    expect(q.calls).toBe(5);
-    expect(q.fallbackRate).toBe(0.6);
-    expect(q.validationErrorRate).toBe(0.4);
-    expect(q.fallbacks).toEqual([
-      { code: 'invalid_output', count: 2, rate: 0.4 },
-      { code: 'deadline', count: 1, rate: 0.2 },
-    ]);
-    // percentile_cont: p50 of 1..5 s = 3000, p95 = 4000 + 0.8 * 1000.
-    expect(q.p50Ms).toBe(3000);
-    expect(q.p95Ms).toBe(4800);
-    expect(q.topKinds).toEqual([
-      { kind: 'improve_loan_safety', count: 2 },
-      { kind: 'put_idle_to_work', count: 1 },
-    ]);
-  });
-
-  it('lists the 20 newest runs, newest first, with input, output and agents called', () => {
-    const rows = Array.from({ length: 25 }, (_, i) =>
-      call({ at: new Date(Date.UTC(2026, 10, 12, 0, i)), latencyMs: i }),
-    );
-    const q = llmQuality(rows, NOW);
-    expect(q.last).toHaveLength(20);
-    expect(q.last[0]).toEqual({
-      at: '2026-11-12T00:24:00.000Z',
-      accountId: 'alice.near',
-      model: 'claude-haiku-5-5',
-      latencyMs: 24,
-      outcome: 'ok',
-      tools: ['liquidation_guardian'],
-      input: { strategy: 'balanced', candidates: [] },
-      output: { picks: [{ kind: 'improve_loan_safety', why: 'w' }] },
-    });
-    expect(q.last[19]?.latencyMs).toBe(5);
-  });
-
-  it('leaves out runs older than 7 days and has no rates or percentiles without runs', () => {
-    const q = llmQuality([call({ at: new Date('2026-11-05T23:59:59Z') })], NOW);
-    expect(q).toMatchObject({
-      calls: 0,
-      fallbackRate: null,
-      validationErrorRate: null,
-      p50Ms: null,
-      p95Ms: null,
-      fallbacks: [],
-      topKinds: [],
-      last: [],
-    });
-  });
-
-  it('ignores an output that is not the picks shape', () => {
-    const q = llmQuality(
-      [
-        call({ output: { picks: 'all' } }),
-        call({ output: 7 }),
-        call({ output: { picks: [{ id: 'x', kind: null, why: 'w' }] } }),
+  it('rates fallbacks over all runs and sorts by count, then name', () => {
+    const q = llmQuality({
+      ...NO_RUNS,
+      outcomes: [
+        { outcome: 'ok', count: 2 },
+        { outcome: 'deadline', count: 1 },
+        { outcome: 'invalid_output', count: 1 },
       ],
-      NOW,
-    );
-    expect(q.topKinds).toEqual([]);
+      kinds: [
+        { kind: 'put_idle_to_work', count: 1 },
+        { kind: 'improve_loan_safety', count: 1 },
+        { kind: 'rebalance', count: 3 },
+      ],
+    });
+    expect(q).toMatchObject({ calls: 4, fallbackRate: 0.5, validationErrorRate: 0.25 });
+    expect(q.fallbacks.map((f) => f.code)).toEqual(['deadline', 'invalid_output']);
+    expect(q.topKinds.map((k) => k.kind)).toEqual([
+      'rebalance',
+      'improve_loan_safety',
+      'put_idle_to_work',
+    ]);
+  });
+
+  it('has no rates without runs', () => {
+    expect(llmQuality(NO_RUNS)).toMatchObject({ calls: 0, fallbackRate: null, fallbacks: [] });
   });
 });
 
@@ -395,9 +310,33 @@ describe('/v1/admin/funnel and /v1/admin/llm', () => {
       now: () => NOW,
       admin: {
         token: ADMIN_TOKEN,
-        store: { ...fakeStore().store, calls: async () => [call()] },
+        store: {
+          ...fakeStore().store,
+          quality: async () => ({
+            ...NO_RUNS,
+            outcomes: [{ outcome: 'ok', count: 1 }],
+            last: [
+              {
+                at: NOW,
+                accountId: 'alice.near',
+                model: 'claude-haiku-5-5',
+                latencyMs: 1000,
+                tools: [],
+                outcome: 'ok',
+                input: null,
+                output: null,
+              },
+            ],
+          }),
+        },
         defaultCapMicro: 5_000_000n,
-        events: { since: async () => [ev('2026-11-12T09:00:00Z', 'connect')] },
+        events: {
+          funnel: async () => [
+            { day: '2026-11-12', kind: 'connect', events: 1, accounts: 1 },
+            { day: null, kind: 'connect', events: 1, accounts: 1 },
+            { day: null, kind: null, events: 1, accounts: 1 },
+          ],
+        },
       },
     });
 
