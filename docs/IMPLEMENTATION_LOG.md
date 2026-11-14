@@ -620,3 +620,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   (`ORDER BY at DESC, id DESC LIMIT 20`), in one read-only repeatable-read transaction. Responses unchanged, except a
   partly malformed `picks` array now counts its valid string kinds (before: the whole output was skipped). The
   fixed-row tests moved to the Postgres integration tests.
+
+## 2026-11-14 — Strategy decides where idle money goes (#132)
+
+- `Strategy.idle` (core): the rule line and whether the preset weighs a loop. The idle-supply card carries it as a
+  `calculated_estimate` line; Aggressive computes the same-asset loop at HF 1.35 from the token's Burrow market and
+  says whether it beats plain supply. The supply intent is unchanged; no new builder, no limit changed (D30).
+- The AI Capital Allocator card copies the rule card's line for the same token; the strategy prompt names the idle rule.

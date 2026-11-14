@@ -867,6 +867,35 @@ describe('analyseAccount', () => {
     });
   });
 
+  it("carries the rule card's line on what the strategy weighed onto the AI supply card (#132)", async () => {
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn 8%.' }]),
+    ]);
+    const weighed = {
+      text: 'Aggressive: a loop would earn less.',
+      provenance: 'calculated_estimate',
+    } as const;
+    const idle: PortfolioRecommendation = {
+      id: 'put-idle-to-work',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: '$100 of USDt is sitting idle',
+      why: 'USDt in your wallet earns nothing.',
+      intent: { action: 'supply', token: USDT, approxUsd: 100 },
+      carry: weighed,
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [idle],
+      checks: [idle],
+      ownerVerified: true,
+    });
+    expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')?.carry).toEqual(weighed);
+  });
+
   it('supplies the whole idle balance like the rule-based card, past the $100 swap limit', async () => {
     const { llm } = fake([
       () => callAll,

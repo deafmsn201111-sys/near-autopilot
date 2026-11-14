@@ -400,6 +400,74 @@ describe('portfolioRecommendations', () => {
     expect(i?.why).toContain('$600 of USDC would earn about $12.00 a year');
   });
 
+  describe('the strategy decides where idle money goes (#132)', () => {
+    const usdcMarket = (supplyApr: string, borrowApr: string) => ({
+      token: USDC,
+      status: 'OK',
+      supplyApr,
+      netSupplyApr: supplyApr,
+      borrowApr,
+      collateralFactor: 0.95,
+      canUseAsCollateral: true,
+      canBorrow: true,
+    });
+    const idleUsdc = (loop?: ReturnType<typeof usdcMarket>) =>
+      ctx({
+        idleEarn: [{ token: USDC, symbol: 'USDC', usd: 500, aprPct: 10, ...(loop && { loop }) }],
+      });
+    const card = (c: RecommendationContext, s: keyof typeof STRATEGIES) =>
+      portfolioRecommendations(c, STRATEGIES[s]).find((x) => x.kind === 'put_idle_to_work');
+
+    it('Conservative supplies and says it keeps to plain lending', () => {
+      const c = card(idleUsdc(usdcMarket('0.10', '0.16')), 'conservative');
+      expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
+      expect(c?.carry).toEqual({
+        text: 'Conservative: plain lending only, no leverage and no impermanent loss.',
+        provenance: 'calculated_estimate',
+      });
+    });
+
+    it('Balanced supplies and says no stablecoin pool is tracked yet', () => {
+      const c = card(idleUsdc(usdcMarket('0.10', '0.16')), 'balanced');
+      expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
+      expect(c?.carry?.text).toBe(
+        'Balanced: lending, or a stablecoin pool when one pays clearly more; none is tracked yet.',
+      );
+    });
+
+    it('Aggressive weighs a loop at its health factor and supplies when the loop pays less', () => {
+      // L = 1.35 / (1.35 - 0.95^2) = 3.0168; 3.0168 x 10% - 2.0168 x 16% = -2.1%
+      const c = card(idleUsdc(usdcMarket('0.10', '0.16')), 'aggressive');
+      expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
+      expect(c?.carry?.text).toBe(
+        'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn -2.1% a year (10.0% supply on 3.0×, 16.0% borrow on 2.0×), less than plain supply, so this supplies.',
+      );
+    });
+
+    it('Aggressive names the loop when it pays more, with its risk, and keeps the supply button', () => {
+      // 3.0168 x 10% - 2.0168 x 5% = 20.1%, $100.42 a year on $500; break-even borrow 3.0168 x 10% / 2.0168 = 15.0%
+      const c = card(idleUsdc(usdcMarket('0.10', '0.05')), 'aggressive');
+      expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
+      expect(c?.carry?.text).toBe(
+        'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn about 20.1% a year ($100.42), more than plain supply, but it borrows: it loses money above a 15.0% borrow rate and the loan can be liquidated. The app does not borrow; supplying is the first step of a loop.',
+      );
+    });
+
+    it('Aggressive says so when Burrow allows no loop for the token', () => {
+      expect(card(idleUsdc(), 'aggressive')?.carry?.text).toBe(
+        'Aggressive: highest yield, leverage included; Burrow allows no USDC loop, so this supplies.',
+      );
+    });
+
+    it('the three presets give three different cards on the same idle USDC', () => {
+      const c = idleUsdc(usdcMarket('0.10', '0.16'));
+      const texts = (['conservative', 'balanced', 'aggressive'] as const).map(
+        (s) => card(c, s)?.carry?.text,
+      );
+      expect(new Set(texts).size).toBe(3);
+    });
+  });
+
   it('flags an out-of-range DCL position with a reposition intent', () => {
     const r = portfolioRecommendations(
       ctx({ dclOutOfRange: [{ lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120 }] }),

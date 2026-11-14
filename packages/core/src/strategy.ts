@@ -17,6 +17,8 @@ export interface Strategy {
   readonly concentrationWarningPct: number;
   /** The concentration card suggests swapping down to this share. */
   readonly concentrationTargetPct: number;
+  /** Where idle money may go (DECISIONS.md, #132): Aggressive alone weighs a same-asset loop against plain supply. */
+  readonly idle: { readonly weighsLoop: boolean; readonly rule: string };
 }
 
 /** Owner decision of 13 Nov (DECISIONS.md): Balanced is the product's thresholds before presets. */
@@ -29,6 +31,10 @@ export const STRATEGIES: Readonly<Record<StrategyId, Strategy>> = {
     concentrationInfoPct: 50,
     concentrationWarningPct: 75,
     concentrationTargetPct: 40,
+    idle: {
+      weighsLoop: false,
+      rule: 'Conservative: plain lending only, no leverage and no impermanent loss.',
+    },
   },
   balanced: {
     label: 'Balanced',
@@ -38,6 +44,11 @@ export const STRATEGIES: Readonly<Record<StrategyId, Strategy>> = {
     concentrationInfoPct: 60,
     concentrationWarningPct: 85,
     concentrationTargetPct: 50,
+    // ponytail: no stablecoin pair is in the collector's pools; once one is, Balanced compares its net APR here
+    idle: {
+      weighsLoop: false,
+      rule: 'Balanced: lending, or a stablecoin pool when one pays clearly more; none is tracked yet.',
+    },
   },
   aggressive: {
     label: 'Aggressive',
@@ -47,6 +58,7 @@ export const STRATEGIES: Readonly<Record<StrategyId, Strategy>> = {
     concentrationInfoPct: 75,
     concentrationWarningPct: 95,
     concentrationTargetPct: 65,
+    idle: { weighsLoop: true, rule: 'Aggressive: highest yield, leverage included.' },
   },
 };
 
