@@ -927,6 +927,9 @@ describe('analyseAccount', () => {
     expect(tools).toEqual([]);
     expect(l.rows).toEqual([]);
     expect(out.fallback).toBe('nothing_to_rank');
+    expect(out.trace.find((s) => s.tool === 'capital_allocator')?.text).toBe(
+      'wNEAR earns about 0.30% a year on Burrow, under the 1% worth suggesting',
+    );
   });
 
   it('still asks the model when the page shows a card the agents did not offer', async () => {

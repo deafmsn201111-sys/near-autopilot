@@ -457,13 +457,20 @@ function allocatorTool(
       const proposals = await propose(new CapitalAllocatorAgent(), obs);
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
+      let lowRate: StepLine | null = null;
       for (const p of proposals) {
         if (p.kind !== 'lending.supply') continue;
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const apr = Number(yieldWad / 10n ** 14n) / 100;
-        if (apr < MIN_SUPPLY_APR_PCT) continue;
+        if (apr < MIN_SUPPLY_APR_PCT) {
+          lowRate ??= {
+            text: `${view.symbol} earns about ${apr.toFixed(2)}% a year on Burrow, under the ${MIN_SUPPLY_APR_PCT}% worth suggesting`,
+            provenance: 'protocol_reported',
+          };
+          continue;
+        }
         const aprPct = apr.toFixed(1);
         const id = `capital-allocator:supply:${p.token}`;
         byCandidate.set(id, {
@@ -488,7 +495,7 @@ function allocatorTool(
       for (const c of candidates) found.set(c.id, c);
       const supplyProposed = proposals.some((p) => p.kind === 'lending.supply');
       steps.set('capital_allocator', {
-        none: {
+        none: lowRate ?? {
           text: supplyProposed
             ? 'Idle tokens found, but no supply rate or price to size them'
             : 'Nothing idle to put to work',
