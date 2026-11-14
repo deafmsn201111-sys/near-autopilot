@@ -5,17 +5,29 @@ export type StepState =
   | { readonly kind: 'signing' }
   | { readonly kind: 'checking'; readonly hash: string }
   | { readonly kind: 'stopped'; readonly reason: string }
+  | { readonly kind: 'sent'; readonly hash: string }
   | {
       readonly kind: 'done' | 'failed' | 'unknown';
       readonly hash: string;
       readonly result: StepResult;
     };
 
-export const stepAfterCheck = (hash: string, result: StepResult): StepState => ({
-  kind: result.status === 'confirmed' ? 'done' : result.status === 'failed' ? 'failed' : 'unknown',
-  hash,
-  result,
-});
+export const stepAfterCheck = (hash: string, result: StepResult): StepState =>
+  result.status === 'unchecked'
+    ? { kind: 'sent', hash }
+    : {
+        kind:
+          result.status === 'confirmed'
+            ? 'done'
+            : result.status === 'failed'
+              ? 'failed'
+              : 'unknown',
+        hash,
+        result,
+      };
+
+/** A step the server could not check still went through the wallet: the cascade goes on. */
+export const mayContinue = (s: StepState) => s.kind === 'done' || s.kind === 'sent';
 
 /** The one line under the steps: where the cascade stands. */
 export function progressFooter(steps: readonly StepState[], busy: boolean): string {
@@ -28,5 +40,7 @@ export function progressFooter(steps: readonly StepState[], busy: boolean): stri
     return 'Not signed in your wallet. Nothing after that step was sent.';
   if (steps.length > 0 && steps.every((s) => s.kind === 'done'))
     return 'Done. Every step is confirmed on NEAR.';
+  if (steps.length > 0 && steps.every(mayContinue))
+    return 'Sent. Some steps could not be checked here: verify them on NearBlocks.';
   return '';
 }

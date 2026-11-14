@@ -38,7 +38,7 @@ const rows: StoredEvent[] = [
     source: 'rpc',
     cascadeId: 'c1',
     txHash: 'h1',
-    detail: { lines: ['Repaid 120 USDC on Burrow'] },
+    detail: { step: 'repay', lines: ['Repaid 120 USDC on Burrow'] },
   }),
   ev({
     at: at(4),
@@ -46,7 +46,7 @@ const rows: StoredEvent[] = [
     source: 'rpc',
     cascadeId: 'c1',
     txHash: 'h2',
-    detail: { lines: ['Withdrew 0.5 wNEAR from Burrow'] },
+    detail: { step: 'withdraw', lines: ['Withdrew 0.5 wNEAR from Burrow'] },
   }),
   ev({
     at: at(5),
@@ -75,7 +75,7 @@ const rows: StoredEvent[] = [
     source: 'rpc',
     cascadeId: 'c4',
     txHash: 'h3',
-    detail: { lines: [] },
+    detail: { step: 'repay', lines: [] },
   }),
 ];
 
@@ -100,6 +100,21 @@ describe('activityTimeline', () => {
       ],
     });
     expect(t.find((i) => i.type === 'analyse')).toMatchObject({ source: 'ai' });
+  });
+
+  it('a step signed twice still leaves the cascade partly signed', () => {
+    const twice = [
+      ev({
+        at: at(0),
+        kind: 'prepare',
+        cascadeId: 'c9',
+        intent: { action: 'repay' },
+        detail: twoSteps,
+      }),
+      ev({ at: at(1), kind: 'signed', cascadeId: 'c9', txHash: 'x1', detail: { step: 'repay' } }),
+      ev({ at: at(2), kind: 'signed', cascadeId: 'c9', txHash: 'x2', detail: { step: 'repay' } }),
+    ];
+    expect(activityTimeline(twice, { owner: true })[0]).toMatchObject({ status: 'partial' });
   });
 
   it('the public sees only confirmed transactions and their cascades', () => {

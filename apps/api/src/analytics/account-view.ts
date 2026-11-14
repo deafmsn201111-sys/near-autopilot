@@ -42,7 +42,7 @@ import {
 } from '../wallet/cascade';
 import type { CascadeValidationContext } from '../wallet/validate-cascade';
 import { sealCascade } from '../wallet/seal';
-import { activityTimeline, eventRecorder, type EventStore } from './events';
+import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
@@ -1067,7 +1067,10 @@ export function registerAccountView(
     const ok = await verifyOwnership(proofFromHeader(header), id, ownership);
     if (ok) {
       owners.set(key, Date.now());
-      await record({ at: new Date(), kind: 'verified', accountId: id, source: 'server' });
+      const at = new Date();
+      // ponytail: check-then-insert; two first proofs in the same instant may both be stored.
+      if (events && !(await events.hasSince(id, 'verified', utcDay(at)).catch(() => true)))
+        await record({ at, kind: 'verified', accountId: id, source: 'server' });
     } else owners.delete(key);
     return ok;
   };

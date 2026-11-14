@@ -97,6 +97,7 @@ class BadRequest extends Error {}
 
 export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: () => Date) {
   const newId = deps.newId ?? randomUUID;
+  const record = eventRecorder(deps.events, app.log);
 
   const lists = async () => {
     const tokens = await deps.oneClick.tokens();
@@ -201,10 +202,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       req.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
       return reply.code(500).send({ error: 'internal error' });
     }
-    await eventRecorder(
-      deps.events,
-      req.log,
-    )({
+    await record({
       at,
       kind: 'oneclick_quote',
       accountId: body.account,

@@ -49,6 +49,11 @@ describe('confirmStep', () => {
     expect(f.calls).toHaveLength(3);
   });
 
+  it('a cascade the server has no record of is sent but unchecked, not failed', async () => {
+    const f = answers({ status: 404, body: { error: 'unknown cascade' } });
+    expect(await confirmStep(req, f)).toEqual({ status: 'unchecked' });
+  });
+
   it('stops at once on a refusal and says why', async () => {
     const f = answers({
       status: 422,

@@ -18,7 +18,8 @@ export type StepResult =
       readonly failure: { readonly contract: string; readonly error: string };
       readonly funds: string;
     }
-  | { readonly status: 'unknown'; readonly reason: string };
+  | { readonly status: 'unknown'; readonly reason: string }
+  | { readonly status: 'unchecked' };
 
 export interface ConfirmRequest {
   readonly account: string;
@@ -63,6 +64,8 @@ export async function confirmStep(
     if (res.status === 200 && (body['status'] === 'confirmed' || body['status'] === 'failed'))
       return body as unknown as StepResult;
     if (res.status === 202 || res.status === 502) continue;
+    // The server has no record of this cascade (not stored, or events off): the step was sent but cannot be checked.
+    if (res.status === 404) return { status: 'unchecked' };
     if (typeof body['error'] === 'string')
       reason = `Could not confirm this step: ${body['error']}.`;
     return { status: 'unknown', reason };

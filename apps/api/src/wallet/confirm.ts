@@ -79,7 +79,10 @@ export function registerConfirm(app: FastifyInstance, deps: ConfirmDeps) {
     const fallback = typeof preview[step] === 'string' ? [preview[step]] : [];
 
     const known = rows.find((r) => r.kind === 'signed' && r.txHash === hash);
-    if (known) return { status: 'confirmed', lines: known.detail?.['lines'] ?? fallback };
+    if (known)
+      return known.detail?.['step'] === expected.intentId
+        ? { status: 'confirmed', lines: known.detail['lines'] ?? fallback }
+        : reply.code(409).send({ error: NOT_OURS });
 
     let out: TxOutcome | null;
     try {

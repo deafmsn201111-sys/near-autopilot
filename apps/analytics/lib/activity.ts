@@ -57,15 +57,8 @@ export function headline(item: TimelineItem): string {
   }
 }
 
-/** What a signed step did: the decoded on-chain result, or the prepared line when the logs said nothing. */
-export const stepLines = (
-  item: Extract<TimelineItem, { type: 'cascade' }>,
-  index: number,
-): string[] => {
-  const lines = item.signed[index]?.lines ?? [];
-  if (lines.length) return lines;
-  const planned = item.preview[index];
-  return planned ? [planned] : [];
-};
+/** What a signed step did, as the server stored it (the decoded result, or the prepared line when logs were silent). */
+export const stepLines = (item: Extract<TimelineItem, { type: 'cascade' }>, index: number) =>
+  item.signed[index]?.lines ?? [];
 
 export const shortHash = (h: string) => (h.length > 12 ? `${h.slice(0, 6)}…${h.slice(-4)}` : h);

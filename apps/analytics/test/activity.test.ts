@@ -26,10 +26,10 @@ describe('activity timeline wording', () => {
     ).toBe('Got a 1Click deposit quote (USDC → wNEAR)');
   });
 
-  it('shows what NEAR confirmed, and the prepared line when the logs said nothing', () => {
+  it('shows the lines the server stored for each signed step', () => {
     const item = cascade([{ lines: ['Repaid 120 USDC on Burrow'] }, { lines: [] }]);
     expect(stepLines(item, 0)).toEqual(['Repaid 120 USDC on Burrow']);
-    expect(stepLines(item, 1)).toEqual(['Withdraw 0.5 NEAR']);
+    expect(stepLines(item, 1)).toEqual([]);
   });
 
   it('shortens a hash for the explorer link', () => {

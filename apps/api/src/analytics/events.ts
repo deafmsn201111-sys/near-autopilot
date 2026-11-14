@@ -99,6 +99,7 @@ export function activityTimeline(
       );
       if (!opts.owner && signed.length === 0) continue;
       const steps = Array.isArray(r.detail?.['steps']) ? r.detail['steps'].length : 0;
+      const doneSteps = new Set(signed.map((s) => s.detail?.['step'])).size;
       items.push({
         type: 'cascade',
         at,
@@ -110,7 +111,7 @@ export function activityTimeline(
             ? 'blocked'
             : signed.length === 0
               ? 'not_signed'
-              : signed.length >= steps
+              : doneSteps >= steps
                 ? 'confirmed'
                 : 'partial',
         steps,
@@ -184,7 +185,8 @@ function publicSummary(summary: unknown, accountId: string) {
   };
 }
 
-const utcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+export const utcDay = (d: Date) =>
+  new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 export function registerEvents(app: FastifyInstance, store: EventStore, now: () => Date) {
   /** The browser reports a wallet connect. Unproven, stored as client-reported, at most once per account per UTC day. */
@@ -195,9 +197,15 @@ export function registerEvents(app: FastifyInstance, store: EventStore, now: () 
       .safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid event' });
     const at = now();
-    if (await store.hasSince(body.data.account, 'connect', utcDay(at))) return { stored: false };
-    await store.add({ at, kind: 'connect', accountId: body.data.account, source: 'client' });
-    return { stored: true };
+    // ponytail: check-then-insert; two reports in the same instant may both be stored. A unique index per day if it matters.
+    try {
+      if (await store.hasSince(body.data.account, 'connect', utcDay(at))) return { stored: false };
+      await store.add({ at, kind: 'connect', accountId: body.data.account, source: 'client' });
+      return { stored: true };
+    } catch (err) {
+      req.log.warn({ err }, 'connect not stored');
+      return { stored: false };
+    }
   });
 
   /** Verdicts of the cascades real prepares built (latest first). Account ids are shortened for this public page. */

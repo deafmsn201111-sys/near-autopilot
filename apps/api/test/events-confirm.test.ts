@@ -174,6 +174,13 @@ describe('POST /v1/wallet/confirm', () => {
     expect(signedRows()).toHaveLength(0);
   });
 
+  it('a hash confirmed for one step does not confirm another step', async () => {
+    const { confirm, signedRows } = await setup();
+    await confirm(REPAY, 0);
+    expect((await confirm(REPAY, 1)).statusCode).toBe(409);
+    expect(signedRows()).toHaveLength(1);
+  });
+
   it('a hash already stored under another cascade is refused', async () => {
     const { confirm, events } = await setup();
     await events.add({

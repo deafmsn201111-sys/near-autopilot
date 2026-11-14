@@ -7,6 +7,7 @@ const ICON: Record<StepState['kind'], string> = {
   signing: '✍',
   checking: '⏳',
   stopped: '–',
+  sent: '↗',
   done: '✓',
   failed: '✗',
   unknown: '?',
@@ -16,11 +17,24 @@ function Detail({ s }: { s: StepState }) {
   if (s.kind === 'signing') return <span className="muted-note">Approve it in your wallet…</span>;
   if (s.kind === 'checking') return <span className="muted-note">Executing on NEAR…</span>;
   if (s.kind === 'stopped') return <span className="muted-note">Not signed: {s.reason}</span>;
+  if (s.kind === 'sent')
+    return (
+      <a
+        className="muted-note"
+        href={`https://nearblocks.io/txns/${s.hash}`}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Sent; not checked here. See it on NearBlocks
+      </a>
+    );
   if (s.kind === 'waiting' || !('result' in s)) return null;
   const r = s.result;
   return (
     <>
-      {r.status !== 'unknown' && r.lines.length > 0 && <span>{r.lines.join(' · ')}</span>}
+      {(r.status === 'confirmed' || r.status === 'failed') && r.lines.length > 0 && (
+        <span>{r.lines.join(' · ')}</span>
+      )}
       {r.status === 'failed' && (
         <span className="warn-text">
           Failed in <code>{r.failure.contract}</code>: {r.failure.error}. {r.funds}
@@ -58,7 +72,12 @@ export function SignProgress({
     if (!ref.current?.open) ref.current?.showModal();
   }, []);
   return (
-    <dialog ref={ref} className="modal" onCancel={(e) => busy && e.preventDefault()}>
+    <dialog
+      ref={ref}
+      className="modal"
+      onCancel={(e) => busy && e.preventDefault()}
+      onClose={onClose}
+    >
       <h3>
         {steps.length} {steps.length === 1 ? 'step' : 'steps'} to sign
       </h3>
@@ -81,10 +100,7 @@ export function SignProgress({
           type="button"
           className="btn small"
           disabled={busy}
-          onClick={() => {
-            ref.current?.close();
-            onClose();
-          }}
+          onClick={() => ref.current?.close()}
         >
           Close
         </button>

@@ -13,7 +13,7 @@ import {
 } from '../lib/prepare-format';
 import type { PrepareRequest, PreparedCascade } from '../lib/prepare-types';
 import { confirmStep } from '../lib/events-client';
-import { progressFooter, stepAfterCheck, type StepState } from '../lib/sign-progress';
+import { mayContinue, progressFooter, stepAfterCheck, type StepState } from '../lib/sign-progress';
 import { signCascade } from '../lib/wallet-sign';
 import { SignProgress } from './SignProgress';
 
@@ -81,8 +81,9 @@ export function PrepareDialog({
         const result = cascadeId
           ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
           : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
-        setStep(i, stepAfterCheck(hash, result));
-        return result.status === 'confirmed';
+        const next = stepAfterCheck(hash, result);
+        setStep(i, next);
+        return mayContinue(next);
       },
     });
     if (!r.ok && r.hashes.length === at)
