@@ -390,6 +390,7 @@ async function Portfolio({ sp }: { sp: Search }) {
     connected: cookieAccount,
     verified: recs && !recs.ownerCheckFailed ? recs.ownerVerified === true : null,
     signingEnabled: serverSigning,
+    stale,
   });
   return (
     <>

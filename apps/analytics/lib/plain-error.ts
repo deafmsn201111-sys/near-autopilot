@@ -43,7 +43,7 @@ const FAILED = {
   invalid_output: 'failed',
   loop_limit: 'failed',
   empty: 'failed',
-  cancelled: 'failed',
+  cancelled: 'stopped',
   cap: 'paused',
 } as const;
 
@@ -55,6 +55,7 @@ const TEXT = {
     `Our server did not answer; try again in a minute. ${RULES}`,
   ],
   failed: ['The AI run failed.', `Run it again. ${RULES}`],
+  stopped: ['The AI run was stopped.', `Run it again when you are ready. ${RULES}`],
   paused: ['AI analysis is paused for today.', `The daily AI budget is used up. ${RULES}`],
 } as const;
 

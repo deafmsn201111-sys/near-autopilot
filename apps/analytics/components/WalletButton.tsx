@@ -53,7 +53,7 @@ export function ConnectButton({
   const [opening, setOpening] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   return (
-    <>
+    <span className="connect-wrap">
       <button
         type="button"
         className={className}
@@ -78,7 +78,7 @@ export function ConnectButton({
           {note}
         </span>
       )}
-    </>
+    </span>
   );
 }
 

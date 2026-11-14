@@ -5466,8 +5466,23 @@ html[data-refreshing] .ht-row {
   color: var(--text-1);
   font-weight: 600;
 }
+.connect-wrap {
+  position: relative;
+  display: inline-flex;
+}
+/* Floats under the button so a header row of fixed height never grows or overflows. */
 .connect-note {
-  color: var(--text-2);
+  position: absolute;
+  top: calc(100% + var(--s2));
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 32px));
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-s);
+  background: var(--bg-overlay);
+  box-shadow: var(--pop-shadow);
+  color: var(--text-1);
   font-size: var(--fs-xs);
 }
 

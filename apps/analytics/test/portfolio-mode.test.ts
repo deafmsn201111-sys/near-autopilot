@@ -85,3 +85,18 @@ describe('portfolioMode', () => {
     expect(m.kind).toBe('mine');
   });
 });
+
+describe('portfolioMode on an older read', () => {
+  it('says the read is old instead of promising signing', async () => {
+    const { portfolioMode } = await import('../lib/portfolio-mode');
+    const m = portfolioMode({
+      isAccount: true,
+      account: 'alice.near',
+      connected: 'alice.near',
+      verified: false,
+      signingEnabled: true,
+      stale: true,
+    });
+    expect(m.note).toMatch(/^Showing an older read/);
+  });
+});
