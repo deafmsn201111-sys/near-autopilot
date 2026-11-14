@@ -10,6 +10,7 @@ import {
   portfolioAdvice,
   strategyNote,
   type PortfolioMetrics,
+  type PortfolioRecommendation,
   type RecommendationContext,
 } from '../src/analytics/account-view';
 
@@ -1131,5 +1132,150 @@ describe('keepsProfitableLoan', () => {
         STRATEGIES.balanced,
       ),
     ).toBe(false);
+  });
+});
+
+describe('facts strip from computed numbers (#284)', () => {
+  const USDT = 'usdt.tether-token.near';
+  const fact = (r: PortfolioRecommendation | undefined, label: string) =>
+    r?.facts?.find((f) => f.label === label);
+  const numbersOf = (s: string) => s.match(/\d[\d,]*(\.\d+)?/g) ?? [];
+
+  it('an idle supply card shows the yearly earnings in green, the Burrow rate and the network fee', () => {
+    const r = portfolioRecommendations(
+      ctx({ idleEarn: [{ token: USDT, symbol: 'USDt', usd: 500, aprPct: 8 }] }),
+    ).find((x) => x.kind === 'put_idle_to_work');
+    expect(fact(r, 'Earns')).toMatchObject({
+      value: '+$40.00',
+      sub: 'a year',
+      good: true,
+      provenance: 'calculated_estimate',
+    });
+    expect(fact(r, 'Rate')).toMatchObject({ value: '8.0%', provenance: 'protocol_reported' });
+    expect(fact(r, 'Cost')?.value).toMatch(/^≈ \$\d+\.\d\d$/);
+    expect(r?.why).toContain('$40.00 a year');
+    expect(r?.why).toContain('8.0%');
+  });
+
+  it('a supply-all card sums the earnings and names the range of rates', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        idleEarn: [
+          { token: USDT, symbol: 'USDt', usd: 500, aprPct: 8 },
+          { token: USDC, symbol: 'USDC', usd: 300, aprPct: 5 },
+        ],
+      }),
+    ).find((x) => x.id === 'supply-all-idle');
+    expect(fact(r, 'Earns')?.value).toBe('+$55.00');
+    expect(fact(r, 'Rate')?.value).toBe('5.0–8.0%');
+    expect(r?.why).toContain('$55.00 a year');
+  });
+
+  it('a repay-with-idle card shows what it saves, the loan rate and the fee', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+        loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+        largestDebt: { ...demoDebt, usd: 150, amount: 150, borrowAprPct: 13.6 },
+      }),
+    ).find((x) => x.id === 'repay-with-idle');
+    expect(fact(r, 'Saves')).toMatchObject({ value: '+$20.40', good: true });
+    expect(fact(r, 'Rate')).toMatchObject({ value: '13.6%', sub: 'the loan costs a year' });
+    expect(r?.why).toContain('$20.40 a year');
+  });
+
+  it('a loan card shows the buffer before → after with the health factors of its text', () => {
+    const r = portfolioRecommendations(ctx({ loan: demoLoan, largestDebt: demoDebt })).find(
+      (x) => x.kind === 'improve_loan_safety',
+    );
+    const buffer = fact(r, 'Loan buffer');
+    expect(buffer?.value).toBe('22% → 38%');
+    expect(buffer?.sub).toBe('health factor 1.28 → 1.60');
+    expect(r?.why).toContain('1.28');
+    expect(r?.why).toContain('1.60');
+    expect(fact(r, 'Cost')).toBeDefined();
+  });
+
+  it('a swap-repay loan card counts the network fee of each transaction', () => {
+    const loan = {
+      hasDebt: true,
+      healthFactor: (200 * 3 * 0.6) / (250 / 0.95),
+      collateralAdjUsd: 200 * 3 * 0.6,
+      debtAdjUsd: 250 / 0.95,
+    };
+    const r = portfolioRecommendations(
+      ctx({
+        loan,
+        largestDebt: { ...demoDebt, usd: 250, amount: 250, collateral: 0 },
+        swapRepay: {
+          token: 'wrap.near',
+          symbol: 'wNEAR',
+          decimals: 24,
+          usdPerToken: 3,
+          vr: 0.6,
+          deposited: 0,
+          collateral: 200,
+          wallet: 0,
+          outPerIn: 2.985,
+          slippageBps: 50,
+        },
+      }),
+    ).find((x) => x.kind === 'improve_loan_safety');
+    expect(fact(r, 'Loan buffer')?.sub).toBe('health factor 1.37 → 1.60');
+    expect(fact(r, 'Cost')?.sub).toBe('network fees, 3 transactions');
+  });
+
+  it('a DCL exit shows the value earning nothing and the fee; a withdrawal what it stops earning', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#1', poolId: 'p|q|60', pair: 'wNEAR/USDC', usd: 120, estimate: false },
+        ],
+        burrowBalances: [
+          {
+            token: USDC,
+            symbol: 'USDC',
+            deposited: 0,
+            collateral: 16.7,
+            decimals: 6,
+            usdPerToken: 1,
+            vr: 0.95,
+            aprPct: 4.2,
+          },
+        ],
+      }),
+    );
+    const dcl = r.find((x) => x.kind === 'reposition_dcl_position');
+    expect(fact(dcl, 'Value')).toMatchObject({ value: '$120.00', sub: 'earning no fees' });
+    expect(fact(dcl, 'Cost')).toBeDefined();
+    const w = r.find((x) => x.kind === 'withdraw_from_burrow');
+    expect(fact(w, 'Rate')).toMatchObject({ value: '4.2%', sub: 'it stops earning a year' });
+  });
+
+  it('a concentration swap moves the amount its text names, unrounded by the intent', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        metrics: metrics({ concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 60.0499 } }),
+        concentrationLiquidUsd: 10_000,
+      }),
+    ).find((x) => x.kind === 'reduce_concentration');
+    expect(fact(r, 'Moves')?.value).toBe('≈ $100');
+    expect(r?.why).toContain('about $100 of it');
+  });
+
+  it('every number of an earnings or savings fact is in the card text; advice without a button has none', () => {
+    const cards = portfolioRecommendations(
+      ctx({
+        idleEarn: [{ token: USDT, symbol: 'USDt', usd: 1234.5, aprPct: 0.32 }],
+        loan: { ...demoLoan },
+        largestDebt: { ...demoDebt, collateral: 0 },
+      }),
+    );
+    for (const c of cards) {
+      if (!c.intent) expect(c.facts).toBeUndefined();
+      for (const f of c.facts ?? [])
+        if (f.label === 'Earns' || f.label === 'Saves')
+          for (const n of numbersOf(f.value)) expect(c.why).toContain(n);
+    }
   });
 });

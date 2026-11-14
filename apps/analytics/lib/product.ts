@@ -22,6 +22,8 @@ export interface AccountRecommendation {
   why: string;
   intent: RecommendationIntent | null;
   carry?: { text: string; provenance: 'calculated_estimate' | 'protocol_reported' };
+  /** Validated where it is shown (`accountFacts`). */
+  facts?: unknown;
 }
 export interface Opportunity {
   id: string;

@@ -180,26 +180,45 @@ describe('withKept', () => {
 });
 
 describe('accountFacts', () => {
-  it('shows the amount the card will move', () => {
-    expect(
-      accountFacts({ action: 'supply', token: 'usdt.tether-token.near', approxUsd: 599.4 }),
-    ).toEqual([{ label: 'Amount', value: '≈ $599' }]);
+  const supply = { action: 'supply', token: 'usdt.tether-token.near', approxUsd: 599.4 } as const;
+  const earns = {
+    label: 'Earns',
+    value: '+$40.00',
+    sub: 'a year',
+    good: true,
+    provenance: 'calculated_estimate',
+  } as const;
+
+  it("shows the API's computed facts with their provenance (#284)", () => {
+    expect(accountFacts({ intent: supply, facts: [earns] })).toEqual([earns]);
   });
 
-  it('leaves a sized repay to its picker, whose amount and health factor the user changes', () => {
+  it('falls back to the amount when the API sent no facts or malformed ones', () => {
+    const amount = [{ label: 'Amount', value: '≈ $599' }];
+    expect(accountFacts({ intent: supply })).toEqual(amount);
+    expect(
+      accountFacts({ intent: supply, facts: [{ ...earns, provenance: 'trust_me' }] as never }),
+    ).toEqual(amount);
+  });
+
+  it('leaves a sized repay without API facts to its picker', () => {
     expect(
       accountFacts({
-        action: 'repay',
-        token: 'usdt.tether-token.near',
-        approxUsd: 599.4,
-        sizing: { hfNow: 1.37, targetHf: 1.5 } as never,
+        intent: {
+          action: 'repay',
+          token: 'usdt.tether-token.near',
+          approxUsd: 599.4,
+          sizing: { hfNow: 1.37, targetHf: 1.5 } as never,
+        },
       }),
     ).toEqual([]);
   });
 
   it('has no facts for an advisory card or an intent without an amount', () => {
-    expect(accountFacts(null)).toEqual([]);
-    expect(accountFacts({ action: 'reposition_dcl', lptId: '1', poolId: 'p' })).toEqual([]);
+    expect(accountFacts({ intent: null })).toEqual([]);
+    expect(accountFacts({ intent: { action: 'reposition_dcl', lptId: '1', poolId: 'p' } })).toEqual(
+      [],
+    );
   });
 });
 

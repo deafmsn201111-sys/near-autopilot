@@ -3,6 +3,7 @@ import { PROVENANCE_TIERS } from '@near-autopilot/core';
 import type { StrategyId } from '@near-autopilot/core/strategy';
 import { z } from 'zod';
 import type { AccountRecommendation } from './product';
+import { factsSchema } from './suggestions';
 
 const positive = z.number().positive();
 const sizingSchema = z.object({
@@ -176,6 +177,7 @@ const analysisSchema = z.object({
         })
         .optional()
         .catch(undefined),
+      facts: factsSchema.optional().catch(undefined),
     }),
   ),
   calledTools: z.array(z.string()).default([]),
