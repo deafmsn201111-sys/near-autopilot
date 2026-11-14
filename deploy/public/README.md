@@ -83,6 +83,8 @@ audit checkpoint key pair. Nothing secret is printed.
 - **With an IP** it turns Caddy on (`COMPOSE_PROFILES=caddy`) and sets `SITE_ADDRESS=<IP>.sslip.io`: a public DNS
   name that resolves to that IP, so Caddy can get a certificate without a domain of your own. To use your own domain,
   point it at the server and set `SITE_ADDRESS` to it.
+  HOT Kit's deposit popup works only on origins HOT allowlists (`https://near-autopilot.tech`, `localhost`); a new
+  domain needs HOT to add it (D42). List the bare host first: `www.` is redirected to it.
 - **Without an argument** there is no Caddy. Expose the dashboard with Tailscale Funnel:
 
   ```bash

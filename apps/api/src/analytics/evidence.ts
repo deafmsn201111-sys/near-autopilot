@@ -9,7 +9,7 @@ import type { EvidenceStore } from '../evidence/store';
 import { publicRoute } from '../public-text';
 import { ROOT } from '../thesis/paths';
 import { computeThesis, type ThesisData } from '../thesis/rebuild';
-import { RULES, thesisSummary } from '../thesis/report';
+import { nearCase, RULES, thesisSummary } from '../thesis/report';
 
 /**
  * READ-ONLY evidence endpoints for the analytics dashboard: policy verdicts, the attack-demo log, the audit chains,
@@ -161,6 +161,7 @@ export function registerEvidence(
         nearUsdEnd: d.nearUsdEnd,
       },
       cohorts: d.cohorts,
+      nearCase: nearCase(d),
       survivorship: d.manifest.universe.startPools
         ? {
             included: d.cohorts.find((c) => c.key === 'shrunk')?.pools.length ?? 0,

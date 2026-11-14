@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { Dumbbell } from '../../components/Dumbbell';
 import { ErrorState } from '../../components/states';
+import { Tile } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 
 const pct = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
@@ -30,6 +32,47 @@ interface Thesis {
     medianNetApr5000: number | null;
     negativeNet5000: number;
   }[];
+  nearCase?: NearCase;
+}
+
+interface NearCase {
+  lead: string;
+  summary: { label: string; value: string; text: string }[];
+  meaning: { title: string; text: string }[];
+  rows: { label: string; shown: number | null; kept: number | null }[];
+}
+
+function NearSummary({ c, days }: { c: NearCase; days: number }) {
+  return (
+    <section className="block">
+      <div className="kpis">
+        {c.summary.map((s, i) => (
+          <Tile key={s.label} hero={i === 0} label={s.label} value={s.value} sub={s.text} />
+        ))}
+      </div>
+      <div className="card" style={{ marginTop: 12 }}>
+        <Dumbbell
+          series={['Shown (end)', `Kept (${days}d)`]}
+          rows={c.rows.map((r) => ({ key: r.label, label: r.label, values: [r.shown, r.kept] }))}
+        />
+      </div>
+    </section>
+  );
+}
+
+function NearMeaning({ c }: { c: NearCase }) {
+  return (
+    <section className="block">
+      <h2>What this means for NEAR</h2>
+      <ul className="plain-list">
+        {c.meaning.map((m) => (
+          <li key={m.title}>
+            <b>{m.title}</b> {m.text}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /** The research behind the autopilot, in three findings a person can read in a minute. */
@@ -43,13 +86,17 @@ export default async function ResearchPage() {
   return (
     <>
       <div className="page-title">
-        <h1>Why the autopilot does not chase APR</h1>
+        <h1>The case for NEAR, from {days} days of mainnet data</h1>
         <p>
           We followed {e.pools} of the largest NEAR pools on Rhea and {e.burrowMarkets} Burrow
           lending markets for {days} days, block by block, and compared the yield a pool list
-          advertises with what people actually kept.
+          advertises with what people actually kept.{data.nearCase ? ` ${data.nearCase.lead}` : ''}
         </p>
       </div>
+
+      {data.nearCase && <NearSummary c={data.nearCase} days={days} />}
+
+      <h2>Why the autopilot does not chase APR</h2>
 
       <div className="findings">
         <article className="finding">
@@ -140,6 +187,8 @@ export default async function ResearchPage() {
           </div>
         </section>
       )}
+
+      {data.nearCase && <NearMeaning c={data.nearCase} />}
 
       <section className="block">
         <h2>What this means for you</h2>

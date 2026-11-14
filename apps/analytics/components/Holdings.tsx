@@ -280,6 +280,7 @@ export function HoldingsPanel({
   source,
   other,
   flashScope,
+  unverifiedUsd,
   children,
 }: {
   holdings: readonly HoldingInput[];
@@ -289,6 +290,8 @@ export function HoldingsPanel({
   other?: readonly OtherChainGroup[];
   /** Changed rows flash once after a refresh within this scope (an account); absent for a demo. */
   flashScope?: string;
+  /** Kept out of every total (#274); said next to the unverified rows. */
+  unverifiedUsd?: number | null;
   children?: ReactNode;
 }) {
   const { groups, unverified, small } = holdingGroups(holdings, positions);
@@ -348,7 +351,7 @@ export function HoldingsPanel({
       </Table>
       <div className="hold-foot">
         <FootRows
-          label={plural(unverified.length, 'unverified token', 'unverified tokens')}
+          label={`${plural(unverified.length, 'unverified token', 'unverified tokens')} · not in your total${unverifiedUsd ? ` (≈ ${money(unverifiedUsd, false)})` : ''}`}
           rows={unverified}
         />
         <FootRows

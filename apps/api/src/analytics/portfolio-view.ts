@@ -1,3 +1,4 @@
+import { DEFAULT_STRATEGY, STRATEGIES } from '@near-autopilot/core';
 import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -196,13 +197,13 @@ export function buildPortfolioView(i: {
       : undefined;
   const hf = liveHf === undefined ? wad(risk?.healthFactorWad) : liveHf;
   const drop = hf !== null && hf > 1 ? 1 - 1 / hf : null;
-  const urgentBelow = 1.1;
+  const { warningBelow: urgentBelow, healthyAt: safeFrom } = STRATEGIES[DEFAULT_STRATEGY];
   const healthLevel: Risk =
-    hf === null ? 'high' : hf >= WATCH_HF ? 'low' : hf >= urgentBelow ? 'medium' : 'high';
+    hf === null ? 'high' : hf >= safeFrom ? 'low' : hf >= urgentBelow ? 'medium' : 'high';
   const health = {
     healthFactor: hf,
     urgentBelow,
-    safeFrom: WATCH_HF,
+    safeFrom,
     level: healthLevel,
     label:
       hf === null
@@ -216,7 +217,7 @@ export function buildPortfolioView(i: {
       hf === null
         ? 'The health of the loan could not be computed from the latest data.'
         : drop !== null
-          ? `The loan stays safe unless NEAR falls ${(drop * 100).toFixed(0)}% from today's price.`
+          ? `The loan is liquidated if NEAR falls ${(drop * 100).toFixed(0)}% from today's price.`
           : 'The loan can be liquidated now.',
   };
 

@@ -40,4 +40,4 @@ export function modelTokenLabel(id: string): string {
 }
 
 /** Tokens on our own curated list (beside Burrow's): a token outside both is shown as "Unverified". */
-export const isKnownToken = (id: string): boolean => id in KNOWN;
+export const isKnownToken = (id: string): boolean => Object.hasOwn(KNOWN, id);

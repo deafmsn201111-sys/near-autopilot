@@ -42,9 +42,6 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **A failed HOT bridge swap may refund to the HOT balance.** A deposit through HOT's popup (D42) between different
   tokens that fails can be refunded to the user's HOT intents balance, which the portfolio does not read. 1:1 deposits
   arrive or refund on the origin chain. → #260.
-- **HOT's quotes come through our server's IP.** hex-api refuses our origin in the browser, so `/api/hex` forwards
-  the bridge's calls (D42). Every visitor shares our server's IP there; if hex-api rate-limits it, the popup shows
-  HOT's own error. Asking HOT to allow `https://near-autopilot.tech` would let us drop the proxy. → #260.
 
 ## Watch list (external)
 

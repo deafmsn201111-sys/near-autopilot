@@ -62,6 +62,8 @@ Every "try it" step below starts from the [Quick start](#quick-start): `./script
 - Only the policy engine can mint an approved plan, and the approval is checked again at execution. An operator
   approval is single-use and expires.
 - Every decision is appended to a hash chain in PostgreSQL, with ed25519-signed checkpoints.
+- Scam tokens: an airdropped token outside our list may copy a real symbol. It is marked **Unverified**, its
+  estimated value stays out of every total, and `prepare` refuses any swap into it (D44).
 
 **Why the agent does not sign, not even with a function-call key**
 
@@ -148,6 +150,7 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
    `validateCascade` (D42). A swap between different tokens carries HOT's fee of up to 0.4% (0.01% stable to stable, none for the same
    token), already taken off the amount the popup shows you receive; the portfolio picks up the incoming tokens by itself. Without
    a connected NEAR account the button asks you to connect first. A deposit straight from an exchange is not offered.
+   Locally, open this step on `http://localhost:3001`: HOT's API answers `localhost` but refuses `127.0.0.1`.
 6. **Withdraw to another chain.** On your own portfolio or in the wallet menu, press **Withdraw**. Pick a token your NEAR
    wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
@@ -164,11 +167,14 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 - No LP execution: pools are analysis only.
 - No Chain Signatures and no cross-chain settlement.
 
-### Thesis track: displayed APR and TVL are not the yield you keep
+### Thesis track: the case for NEAR is the asset and real credit demand, not the displayed APR
 
-[THESIS.md](THESIS.md) tests three counts on 180 days of NEAR mainnet data: Rhea v1 and Burrow, 181 daily blocks,
-from 2026-05-08 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
-counter-evidence written out. The same rules over the last 90 days alone give the same result on every count.
+Over 180 days of mainnet data NEAR went from $1.59 to $4.00, holding it beat providing liquidity in 14 of 16 of the
+largest pools, and stablecoin lenders on Burrow kept a median 6.5% a year paid by borrowers. [THESIS.md](THESIS.md)
+opens with that summary and a chart and ends with what it means for NEAR. It tests three counts on 180 days of NEAR
+mainnet data: Rhea v1 and Burrow, 181 daily blocks, from 2026-05-08 to 2026-11-04. The falsification rules were fixed
+in advance. Verdict: supported on all three, with the counter-evidence written out. The same rules over the last 90
+days alone give the same result on every count.
 
 **Try it**
 
@@ -432,8 +438,8 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
   FastNEAR's `/v1/account/{id}/full`), Burrow, Rhea v1 liquidity in any pool (pool ids from `api.ref.finance`, shares
   read on-chain), Rhea DCL positions, liquid staking and NEAR staked with validator pools (balances read on-chain).
   Tokens on our list are priced with the collector's confirmed prices; any other token is marked **Unverified**,
-  priced as an estimate from Rhea's indexer (or "no price", kept out of the totals), shown only and never used in a
-  suggestion or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
+  priced as an estimate from Rhea's indexer (or "no price"), kept out of the totals, shown only and never used in a
+  suggestion, swapped into or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
   every unpriced unverified token, sits behind "Show small balances". When an indexer is down, the page says so and
   shows the allowlisted tokens and pools only.
 

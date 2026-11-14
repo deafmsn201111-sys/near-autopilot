@@ -85,6 +85,7 @@ port="${ANALYTICS_DASHBOARD_PORT:-$(grep '^ANALYTICS_DASHBOARD_PORT=' .env | cut
 echo
 echo "Ready. Everything is bound to 127.0.0.1; the server never signs or sends anything."
 echo "  Site   http://127.0.0.1:${port:-3001}"
+echo "  Deposit popup (HOT Kit) only on http://localhost:${port:-3001}: HOT refuses 127.0.0.1"
 echo "  Admin  http://127.0.0.1:${ANALYTICS_ADMIN_PORT:-3002}/admin   (AI spend and kill switch, loopback only)"
 echo "  (the mainnet collector fills the market pages within its first cycle, ~1-2 minutes)"
 echo "  Images tagged :${IMAGE_TAG} (this checkout only)"

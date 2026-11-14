@@ -288,7 +288,8 @@ allowlisted tokens and pools and showed `npro-validator.near` (about $335k) as $
   display-only: symbol sanitised to `[A-Za-z0-9._-]{1,12}`, marked "Unverified", never in an action, a
   recommendation or the agents' observation (#19). Swapping such tokens is #90. Wallet balances of tokens outside
   Burrow's list come from FastNEAR as is (at most 30 per account, priced ones first).
-- An unlisted token's price is Rhea's indexer price, tagged "price estimate"; it counts in the totals and allocation.
+- An unlisted token's price is Rhea's indexer price, tagged "price estimate"; it counts in the totals and allocation
+  (superseded by D44: it no longer counts).
   A collector-confirmed price always wins, and actions and `prepare` only ever use confirmed prices.
   **Consequences:** A thin pool can give a meme token an inflated estimate, so the total can overstate such an
   account; the "Unverified · price estimate" label is the guard. An indexer outage shows a notice and the allowlisted
@@ -807,13 +808,12 @@ the same token) is taken off the amount the popup shows as received; no screen o
 with the exchange path).
 `GET /v1/deposit/transfer/:id`, its `retry` and the dialog's send are removed. The once-only flag
 (`transfer_issued_at`) stays: withdrawals claim it. No exchange (by-address) path: cut by the owner.
-hex-api.app, the kit's only backend, answers browsers only from HOT's own origins (CORS 403 for ours, 200 without an
-Origin), so `loadKit` points the kit's 1Click client (`oneClick.baseUrl`) and market relay at our same-origin proxy
-`app/api/hex/[...path]/route.ts`. It forwards only the bridge's paths (market prices / tokens / trending; 1Click
-tokens, status, quote, deposit/submit) to hex-api without the visitor's origin or cookies, rate-limited per visitor
-and overall, POST bodies JSON and at most 16 KB (checked on `Content-Length` before reading). The kit still verifies
-every 1Click quote signature itself, so the proxy cannot forge a quote.
-**Consequences:** no new caps; the only server code on the deposit path is that pass-through proxy; our deposit quote endpoints have no UI any more.
+hex-api.app, the kit's only backend, first answered browsers only from HOT's own origins, so a same-origin proxy
+`/api/hex` carried the bridge's calls. On 14 Nov HOT added `https://near-autopilot.tech` (and `localhost`) to its CORS
+list, so the proxy is gone (#290): the kit calls hex-api from the browser with its default endpoints. `www.` is still
+refused, so Caddy redirects any `www.` host to the bare one; 127.0.0.1 is refused too, so local bridge checks run on
+`http://localhost:3001`. The kit verifies every 1Click quote signature itself.
+**Consequences:** no new caps; no server code on the deposit path; our deposit quote endpoints have no UI any more.
 A failed non-1:1 swap may refund to the user's HOT balance, which the portfolio does not show (KNOWN_ISSUES). The kit
 popups take the page's design tokens at load (`pageTheme`).
 
@@ -835,3 +835,16 @@ server), which re-checks the signature and the hardware evidence; each reply id 
 links only the model's attestation. Quote checks (DCAP, RTMR3, MRCONFIGID, NVIDIA) stay out → KNOWN_ISSUES.
 **Consequences:** up to ~3 s more per fresh analysis (≈0.7 s measured). A gateway hiccup shows an unverified mark,
 never a false "signed".
+
+## D44 — Unverified tokens stay out of every total and are never a swap output (#274)
+
+**Context:** D18 counted an unlisted token's indexer estimate in the totals. An airdropped fake token with a real
+symbol and a thin-pool price can then inflate "what you have", the usual lure of a NEAR wallet scam. `prepare` also
+accepted any `tokenOut` for a swap; only the allowlisted pools stopped a route.
+**Decision:** an asset leg whose token is unverified (D18's definition) is left out of net worth, assets, idle cash
+and allocation (a debt always counts); its estimate is summed into `totals.unverifiedUsd` and shown beside the "Unverified tokens" section,
+whose rows read "Not counted". `POST /v1/wallet/prepare` refuses a swap into a token that is not on our list or
+Burrow's (409); when Burrow cannot be read it fails closed (502).
+**Consequences:** a real but unlisted token (a meme coin with a deep pool) no longer adds to the net worth; it is
+still listed with its estimate. An LP position with one unverified leg counts its verified leg only; its row reads
+"Unverified part not counted".

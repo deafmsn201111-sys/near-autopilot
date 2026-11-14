@@ -971,3 +971,45 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   count over 180 days and over the last 90. Both: supported on all three counts (H1 5→4 of 16 within 2 pp, ρ 0.39 /
   0.33, H3 11 of 18 both).
 - Window-specific wording ("after 90 days", "one quarter") now follows the window; the thesis page lead too.
+
+## 2026-11-14 — One suggestion card (#252)
+
+- `components/SuggestionCard.tsx`: one card for the demo's moves and a real account's recommendations — rank
+  ("#1", "#1 · AI pick" when the AI ranked it), severity chip, agent, token icons + title, facts strip (gains in
+  mint), lead-and-detail explanation, provenance tags, actions. The first card not done is the raised top card and
+  the only one with the primary button. `CheckedAndSkipped` lists every skipped move with its number and reason;
+  the demo's empty state is `NothingToDo`; the account's is the analysis panel's verdict (#251).
+- Lifecycle: `PrepareDialog` reports signing (step i of n), done (receipt with tx link; "Confirmed on NEAR" only
+  when NEAR confirmed every step) and failed (reason; partial cascades say how many steps landed, and refresh the
+  portfolio). A card whose progress sheet is open is held in place with its snapshot, so a refresh cannot remount
+  or move the sheet; a receipt stays until the agents send a changed card with the same id.
+- Demo: moves worth doing are cards, the rest are "Checked and skipped". Account cards show only facts the intent
+  carries; structured facts from the API are #284.
+
+## 2026-11-14 — HOT Kit calls hex-api directly (#290)
+
+- HOT added `https://near-autopilot.tech` and `localhost` to hex-api's CORS list, so the `/api/hex` proxy and its
+  test are removed and `loadKit` uses the kit's default endpoints (D42).
+- `www.` still gets 403 from hex-api: Caddy now redirects any `www.` host to the bare one (301, path and query kept).
+- Local bridge checks run on `http://localhost:3001` (127.0.0.1 is refused by HOT).
+
+## 2026-11-14 — Unverified tokens out of the totals, never a swap output (#274)
+
+- `accountPortfolio` leaves unverified legs out of every total and allocation; their estimate goes to
+  `totals.unverifiedUsd`. `prepare` refuses a swap into a token outside our list or Burrow's (fail closed). D44.
+- UI: unverified rows read "Not counted"; the "Unverified tokens" note shows the estimate kept out of the total.
+
+## #287 Loan gauge's urgent line follows the strategy
+
+- `loanHealth` draws the gauge's "urgent" line and the "At risk" level at the strategy's `warningBelow`
+  (Conservative 1.50, Balanced 1.30, Aggressive 1.15) instead of the agents' fixed 1.10, so the gauge, the hero chip
+  and the urgent repay card agree. The demo portfolio uses the Balanced lines.
+
+## 2026-11-14 — Strategy switch keeps focus and scroll on / (#288)
+
+- The `/` Suspense boundary from #263 is now keyed by the search params without `strategy`, and `Recommendations` by
+  the account only, so a strategy switch no longer remounts the page: the focused strategy radio keeps focus, and
+  `router.push(..., { scroll: false })` keeps the scroll position. A demo or account switch still gets a fresh
+  boundary.
+- Without the remount, `Recommendations` keeps the AI result and error per strategy, so a run that ends after a switch
+  lands under the strategy it started with; the card list stays keyed by strategy, so repay pickers start fresh.
