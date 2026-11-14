@@ -11,8 +11,8 @@ import {
 /**
  * Pure transaction builders for Burrow actions. The risk-REDUCING ones (repay, increase collateral, supply) send
  * `ft_transfer_call` to the token. The liquidity-changing ones (borrow, withdraw) must be PRICED: they go through
- * the verified oracle's `oracle_call`, which pushes fresh prices into Burrow's `oracle_on_call` so the contract
- * re-checks that collateral still covers debt before running the action (S: price_receiver.rs, actions.rs).
+ * Burrow's `execute_with_pyth`, which fetches fresh prices itself and re-checks that collateral still covers debt
+ * before running the action (S: actions_pyth.rs, actions.rs).
  *
  * Every builder demands a `VerifiedBurrowDeployment` and `VerifiedBurrowToken`. Those can only be minted by
  * `BurrowVerifier`, which has checked the chain id, the code actually deployed at each receiver, the oracle
@@ -125,26 +125,23 @@ export function buildSupply(args: Common & { readonly rawAmount: bigint }): Buil
 }
 
 /**
- * Build an `oracle_call` on the VERIFIED oracle that forwards a priced `Execute { actions }` to Burrow. `assetIds`
- * are the price feeds Burrow needs to value the account (its collateral + borrowed assets + the action token); the
- * caller resolves them on-chain. Attaches exactly one yoctoNEAR, as the oracle asserts (S: price-oracle lib.rs).
+ * Build `execute_with_pyth` on Burrow itself: Burrow works out which assets it must value for this account, fetches
+ * their prices and runs the actions only if collateral still covers debt (S: actions_pyth.rs). Attaches exactly one
+ * yoctoNEAR, as the contract asserts. Replaces `oracle_call` on priceoracle.near, which Burrow disabled (D29).
  */
-function oracleExecute(
+function pricedExecute(
   deployment: VerifiedBurrowDeployment,
   actions: readonly Record<string, unknown>[],
-  assetIds: readonly string[],
 ): BuiltBurrowTransaction {
-  if (assetIds.length === 0) throw new RangeError('assetIds must not be empty');
-  const msg = JSON.stringify({ Execute: { actions } });
   return {
     network: deployment.network,
-    receiverId: deployment.oracleId,
+    receiverId: deployment.contractId,
     actions: [
       {
         type: 'FunctionCall',
-        methodName: 'oracle_call',
-        args: { receiver_id: deployment.contractId, asset_ids: [...assetIds], msg },
-        gas: BURROW_GAS.oracleCall,
+        methodName: 'execute_with_pyth',
+        args: { actions: [...actions] },
+        gas: BURROW_GAS.executeWithPyth,
         deposit: 1n,
       },
     ],
@@ -152,48 +149,39 @@ function oracleExecute(
 }
 
 /**
- * Borrow `rawAmount` of the token and send it to the wallet. Priced through the oracle: Burrow checks collateral
+ * Borrow `rawAmount` of the token and send it to the wallet. Priced: Burrow checks collateral
  * covers the new debt at fresh prices or the call reverts. A `Borrow` only credits the account's supplied balance
  * (S: internal_borrow), so it is paired with a `Withdraw` of the same amount to move the tokens to the wallet.
- * The token must have been verified with purpose `borrow` (asset `can_borrow`). `assetIds` must cover every asset
- * Burrow values for this account (resolved on-chain by the caller).
+ * The token must have been verified with purpose `borrow` (asset `can_borrow`).
  */
-export function buildBorrow(
-  args: Common & { readonly rawAmount: bigint; readonly assetIds: readonly string[] },
-): BuiltBurrowTransaction {
+export function buildBorrow(args: Common & { readonly rawAmount: bigint }): BuiltBurrowTransaction {
   guard(args, ['borrow'], 'borrow');
   if (args.rawAmount <= 0n) throw new RangeError('amount must be positive');
   const inner = rawToInner(args.rawAmount, args.token.extraDecimals).toString();
-  return oracleExecute(
-    args.deployment,
-    [
-      { Borrow: { token_id: args.token.tokenId, amount: inner } },
-      { Withdraw: { token_id: args.token.tokenId, max_amount: inner } },
-    ],
-    args.assetIds,
-  );
+  return pricedExecute(args.deployment, [
+    { Borrow: { token_id: args.token.tokenId, amount: inner } },
+    { Withdraw: { token_id: args.token.tokenId, max_amount: inner } },
+  ]);
 }
 
 /**
  * Withdraw up to `rawAmount` of a supplied (or collateral) balance to the wallet. Burrow's `Withdraw` only draws on
  * the plain supplied balance, so `fromCollateralRaw` first moves that much collateral back to it with
- * `DecreaseCollateral` (A: withdraw.ts). Priced through the oracle so that, if the account also has debt, Burrow
+ * `DecreaseCollateral` (A: withdraw.ts). Priced so that, if the account also has debt, Burrow
  * verifies the remaining collateral still covers it or the call reverts; with no debt it simply returns the funds.
  * `max_amount` caps each action at what is there. The token must have been verified with purpose `withdraw`
- * (asset `can_withdraw`). `assetIds` must cover every asset Burrow values for this account.
+ * (asset `can_withdraw`).
  */
 export function buildWithdraw(
   args: Common & {
     readonly rawAmount: bigint;
     readonly fromCollateralRaw?: bigint;
-    readonly assetIds: readonly string[];
   },
 ): BuiltBurrowTransaction {
   guard(args, ['withdraw'], 'withdraw');
-  return oracleExecute(
+  return pricedExecute(
     args.deployment,
     withCollateralRelease(args, args.fromCollateralRaw ?? 0n, 'Withdraw'),
-    args.assetIds,
   );
 }
 
@@ -203,21 +191,19 @@ export function buildWithdraw(
  * `rawAmount` and at the debt) pays from that balance (S: actions.rs internal_repay; A: repayFromDeposits.ts). The
  * part of `rawAmount` above `fromCollateralRaw` comes from plain supply, which counts for nothing in the health
  * factor. Collateral and debt fall by the same amount while collateral covers the debt, so the health factor only
- * rises; Burrow still re-checks it at fresh oracle prices. Decreased collateral the debt did not need stays as
+ * rises; Burrow still re-checks it at fresh prices. Decreased collateral the debt did not need stays as
  * supply. The token must have been verified with purpose `repay`, `supply` or `collateral`.
  */
 export function buildRepayFromCollateral(
   args: Common & {
     readonly rawAmount: bigint;
     readonly fromCollateralRaw: bigint;
-    readonly assetIds: readonly string[];
   },
 ): BuiltBurrowTransaction {
   guard(args, ['repay', 'supply', 'collateral'], 'repay');
-  return oracleExecute(
+  return pricedExecute(
     args.deployment,
     withCollateralRelease(args, args.fromCollateralRaw, 'Repay'),
-    args.assetIds,
   );
 }
 

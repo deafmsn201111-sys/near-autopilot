@@ -221,8 +221,8 @@ describe('buildBurrowStorageDeposit', () => {
   });
 });
 
-describe('buildBorrow / buildWithdraw (priced via oracle_call)', () => {
-  it('buildBorrow calls oracle_call on the ORACLE with Borrow + Withdraw in inner units', async () => {
+describe('buildBorrow / buildWithdraw (priced via execute_with_pyth)', () => {
+  it('buildBorrow calls execute_with_pyth on Burrow with Borrow + Withdraw in inner units', async () => {
     const { deployment, w, now } = await setup();
     const usdtBorrow = await w.verifier.verifyToken(deployment, USDT, 'borrow');
     const tx = buildBorrow({
@@ -230,26 +230,21 @@ describe('buildBorrow / buildWithdraw (priced via oracle_call)', () => {
       token: usdtBorrow,
       now,
       rawAmount: 42n,
-      assetIds: [USDT, WNEAR],
     });
-    expect(tx.receiverId).toBe(ORACLE);
+    expect(tx.receiverId).toBe(BURROW);
     const a = tx.actions[0]!;
-    expect(a.methodName).toBe('oracle_call');
+    expect(a.methodName).toBe('execute_with_pyth');
     expect(a.deposit).toBe(1n);
-    expect(a.gas).toBe(BURROW_GAS.oracleCall);
-    expect(a.args['receiver_id']).toBe(BURROW);
-    expect(a.args['asset_ids']).toEqual([USDT, WNEAR]);
-    expect(JSON.parse(String(a.args['msg']))).toEqual({
-      Execute: {
-        actions: [
-          { Borrow: { token_id: USDT, amount: '42000000000000' } },
-          { Withdraw: { token_id: USDT, max_amount: '42000000000000' } },
-        ],
-      },
+    expect(a.gas).toBe(BURROW_GAS.executeWithPyth);
+    expect(a.args).toEqual({
+      actions: [
+        { Borrow: { token_id: USDT, amount: '42000000000000' } },
+        { Withdraw: { token_id: USDT, max_amount: '42000000000000' } },
+      ],
     });
   });
 
-  it('buildWithdraw calls oracle_call with a single capped Withdraw', async () => {
+  it('buildWithdraw calls execute_with_pyth with a single capped Withdraw', async () => {
     const { deployment, w, now } = await setup();
     const usdtWithdraw = await w.verifier.verifyToken(deployment, USDT, 'withdraw');
     const tx = buildWithdraw({
@@ -257,35 +252,29 @@ describe('buildBorrow / buildWithdraw (priced via oracle_call)', () => {
       token: usdtWithdraw,
       now,
       rawAmount: 7n,
-      assetIds: [USDT],
     });
-    expect(tx.receiverId).toBe(ORACLE);
-    expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
-      Execute: { actions: [{ Withdraw: { token_id: USDT, max_amount: '7000000000000' } }] },
+    expect(tx.receiverId).toBe(BURROW);
+    expect(tx.actions[0]!.args).toEqual({
+      actions: [{ Withdraw: { token_id: USDT, max_amount: '7000000000000' } }],
     });
   });
 
-  it('rejects empty assetIds and non-positive amounts', async () => {
+  it('rejects non-positive amounts', async () => {
     const { deployment, w, now } = await setup();
     const t = await w.verifier.verifyToken(deployment, USDT, 'borrow');
-    expect(() => buildBorrow({ deployment, token: t, now, rawAmount: 42n, assetIds: [] })).toThrow(
-      RangeError,
-    );
-    expect(() =>
-      buildBorrow({ deployment, token: t, now, rawAmount: 0n, assetIds: [USDT] }),
-    ).toThrow(RangeError);
+    expect(() => buildBorrow({ deployment, token: t, now, rawAmount: 0n })).toThrow(RangeError);
   });
 
   it('refuses a token verified for the wrong purpose', async () => {
     const { deployment, w, now } = await setup();
     const supplyToken = await w.verifier.verifyToken(deployment, USDT, 'supply');
-    expect(() =>
-      buildBorrow({ deployment, token: supplyToken, now, rawAmount: 1n, assetIds: [USDT] }),
-    ).toThrow(BurrowVerificationError);
+    expect(() => buildBorrow({ deployment, token: supplyToken, now, rawAmount: 1n })).toThrow(
+      BurrowVerificationError,
+    );
   });
 });
 
-describe('buildRepayFromCollateral (priced via oracle_call)', () => {
+describe('buildRepayFromCollateral (priced via execute_with_pyth)', () => {
   it('decreases collateral and repays the same token in one Execute, both capped in inner units', async () => {
     const { deployment, tokens, now } = await setup();
     const tx = buildRepayFromCollateral({
@@ -294,20 +283,16 @@ describe('buildRepayFromCollateral (priced via oracle_call)', () => {
       now,
       rawAmount: 42n,
       fromCollateralRaw: 40n,
-      assetIds: [USDT],
     });
-    expect(tx.receiverId).toBe(ORACLE);
+    expect(tx.receiverId).toBe(BURROW);
     const a = tx.actions[0]!;
-    expect(a.methodName).toBe('oracle_call');
+    expect(a.methodName).toBe('execute_with_pyth');
     expect(a.deposit).toBe(1n);
-    expect(a.args['receiver_id']).toBe(BURROW);
-    expect(JSON.parse(String(a.args['msg']))).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: '40000000000000' } },
-          { Repay: { token_id: USDT, max_amount: '42000000000000' } },
-        ],
-      },
+    expect(a.args).toEqual({
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: '40000000000000' } },
+        { Repay: { token_id: USDT, max_amount: '42000000000000' } },
+      ],
     });
   });
 
@@ -319,16 +304,15 @@ describe('buildRepayFromCollateral (priced via oracle_call)', () => {
       now,
       rawAmount: 5n,
       fromCollateralRaw: 0n,
-      assetIds: [USDT],
     });
-    expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
-      Execute: { actions: [{ Repay: { token_id: USDT, max_amount: '5000000000000' } }] },
+    expect(tx.actions[0]!.args).toEqual({
+      actions: [{ Repay: { token_id: USDT, max_amount: '5000000000000' } }],
     });
   });
 
   it('refuses a non-positive amount, more collateral than the repayment, and a borrow-only proof', async () => {
     const { deployment, tokens, w, now } = await setup();
-    const base = { deployment, token: tokens.usdtRepay, now, assetIds: [USDT] };
+    const base = { deployment, token: tokens.usdtRepay, now };
     expect(() =>
       buildRepayFromCollateral({ ...base, rawAmount: 0n, fromCollateralRaw: 0n }),
     ).toThrow(RangeError);
@@ -357,15 +341,12 @@ describe('buildWithdraw from collateral', () => {
       now,
       rawAmount: 7n,
       fromCollateralRaw: 3n,
-      assetIds: [USDT],
     });
-    expect(JSON.parse(String(tx.actions[0]!.args['msg']))).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: '3000000000000' } },
-          { Withdraw: { token_id: USDT, max_amount: '7000000000000' } },
-        ],
-      },
+    expect(tx.actions[0]!.args).toEqual({
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: '3000000000000' } },
+        { Withdraw: { token_id: USDT, max_amount: '7000000000000' } },
+      ],
     });
   });
 });

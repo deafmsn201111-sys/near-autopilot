@@ -40,13 +40,13 @@ export const BURROW_VIEW_METHODS = [
 /**
  * Burrow methods that must be exported by the deployment before ANY transaction is built.
  * `ft_on_transfer` is how `ft_transfer_call` reaches the contract (S: fungible_token.rs);
- * `execute` is the direct action entry point (S: actions.rs); `oracle_on_call` receives priced actions.
+ * `execute` is the direct action entry point (S: actions.rs); `execute_with_pyth` runs priced actions.
  */
 export const BURROW_REQUIRED_EXPORTS = [
   ...BURROW_VIEW_METHODS,
   'execute',
   'ft_on_transfer',
-  'oracle_on_call',
+  'execute_with_pyth',
 ] as const;
 
 /** Oracle methods this adapter relies on (S: price-oracle src/lib.rs). */
@@ -59,9 +59,9 @@ export const TOKEN_REQUIRED_EXPORTS = ['ft_transfer_call', 'ft_balance_of'] as c
 export const BURROW_GAS = {
   ftTransferCall: 100_000_000_000_000n,
   execute: 50_000_000_000_000n,
-  /** `oracle_call` on the price oracle: it forwards most of the prepaid gas to Burrow's oracle_on_call, which
-   *  runs the priced Borrow/Withdraw and (for a withdraw) an ft_transfer. burrow-cash attaches ~100–150 Tgas. */
-  oracleCall: 150_000_000_000_000n,
+  /** `execute_with_pyth`: Burrow fetches prices in a promise, then runs the actions (and any ft_transfer) in a
+   *  callback; 300 Tgas, as the working mainnet call and burrow-cash use. */
+  executeWithPyth: 300_000_000_000_000n,
 } as const;
 
 /** Burrow views reject a missing/zero ratio; contract asserts `volatility_ratio < 10000` (S: asset_config.rs). */

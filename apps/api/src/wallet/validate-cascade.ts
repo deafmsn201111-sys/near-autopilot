@@ -34,8 +34,8 @@ export const ALLOWED_METHODS = new Set([
   // wrap native NEAR -> wNEAR (before a swap), and unwrap wNEAR -> native NEAR.
   'near_deposit',
   'near_withdraw',
-  // priced Burrow borrow / withdraw, routed through the oracle.
-  'oracle_call',
+  // priced Burrow borrow / withdraw / repay from collateral: Burrow fetches its own prices (D29).
+  'execute_with_pyth',
 ]);
 
 export interface CascadeValidationContext {

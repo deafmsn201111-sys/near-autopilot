@@ -10,7 +10,6 @@ const WNEAR = 'wrap.near';
 const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
 const RHEA = 'v2.ref-finance.near';
 const BURROW = 'contract.main.burrow.near';
-const ORACLE = 'priceoracle.near';
 const W = 10n ** 24n; // one wNEAR
 const U = 10n ** 6n; // one USDC
 
@@ -45,11 +44,11 @@ const base: SwapRepayPrepareInput = {
   floor: SWAP_REPAY_FLOOR_HF,
   quote: async (amountIn) => ({ poolId: 4512, amountOut: (amountIn * 3n * U) / W }),
   withdrawTx: (rawAmount, fromCollateralRaw) => ({
-    receiverId: ORACLE as AccountId,
+    receiverId: BURROW as AccountId,
     actions: [
       {
         type: 'FunctionCall',
-        methodName: 'oracle_call',
+        methodName: 'execute_with_pyth',
         args: { withdraw: rawAmount.toString(), fromCollateral: fromCollateralRaw.toString() },
         gas: 100_000_000_000_000n,
         deposit: 1n,
@@ -206,7 +205,7 @@ describe('prepareSwapRepay', () => {
     ).toMatchObject({ ok: false });
   });
 
-  it('passes the cascade validation with the protocol, the oracle and the two tokens only', async () => {
+  it('passes the cascade validation with the protocols and the two tokens only', async () => {
     const r = await ok({
       ...base,
       collateral: { ...base.collateral, storageMin: 1_250_000_000_000_000_000_000n },
@@ -216,13 +215,13 @@ describe('prepareSwapRepay', () => {
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,
-        allowedReceivers: new Set([ORACLE, BURROW, RHEA, WNEAR, USDC]),
+        allowedReceivers: new Set([BURROW, RHEA, WNEAR, USDC]),
       }),
     ).toMatchObject({ ok: true, reasons: [] });
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,
-        allowedReceivers: new Set([ORACLE, BURROW, WNEAR, USDC]),
+        allowedReceivers: new Set([BURROW, WNEAR, USDC]),
       }).ok,
     ).toBe(false);
   });
