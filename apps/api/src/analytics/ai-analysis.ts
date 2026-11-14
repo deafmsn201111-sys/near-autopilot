@@ -82,7 +82,7 @@ export interface LlmCallRecord {
   readonly outcome: CallOutcome;
   /** What the model was offered: the strategy and the candidate cards the tools returned. */
   readonly input: LlmCallInput;
-  /** Its picks on success, the raw reply (capped) on invalid output, null otherwise. */
+  /** The model's own picks (before checks and restored warnings), the capped raw reply on invalid output, else null. */
   readonly output: LlmCallOutput | null;
 }
 
@@ -92,7 +92,14 @@ export interface LlmCallInput {
 }
 
 export type LlmCallOutput =
-  | { readonly picks: readonly { readonly kind: string; readonly why: string }[] }
+  | {
+      readonly picks: readonly {
+        readonly id: string;
+        /** Null for an id no tool returned (the pick was dropped). */
+        readonly kind: string | null;
+        readonly why: string;
+      }[];
+    }
   | { readonly reply: string };
 
 const STORED_REPLY_CHARS = 2000;
@@ -1064,7 +1071,14 @@ export async function analyseAccount(
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
   checks.picked = recommendations.length;
-  if (recommendations.length === 0) return failed('empty');
+  const answered: LlmCallOutput = {
+    picks: parsed.data.picks.map((p) => ({
+      id: p.id,
+      kind: found.get(p.id)?.kind ?? null,
+      why: p.why,
+    })),
+  };
+  if (recommendations.length === 0) return failed('empty', answered);
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>
@@ -1075,7 +1089,7 @@ export async function analyseAccount(
   const kept = new Set(missing.map((m) => m.id));
   checks.restored = missing.length;
   onEvent({ type: 'checked', checks });
-  await record('ok', { picks: recommendations.map(({ kind, why }) => ({ kind, why })) });
+  await record('ok', answered);
   const analysis: Analysis = {
     source: 'llm',
     fallback: null,

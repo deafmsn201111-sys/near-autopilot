@@ -565,6 +565,20 @@ describe('analyseAccount', () => {
     expect(out.recommendations).toEqual([heuristic]);
   });
 
+  it('records what the model picked when every pick is an id no tool returned', async () => {
+    const l = ledger();
+    const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'Trust me.' }])]);
+    const out = await analyseAccount(ai(llm, l), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.fallback).toBe('empty');
+    expect(l.rows[0]?.output).toEqual({
+      picks: [{ id: 'made-up', kind: null, why: 'Trust me.' }],
+    });
+  });
+
   it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
     const { llm } = fake([
       () => callAll,
@@ -1592,9 +1606,8 @@ describe('analyseAccount', () => {
         id: 'reduce-concentration',
         kind: 'reduce_concentration',
       });
-      expect(row.output && 'picks' in row.output ? row.output.picks : []).toContainEqual({
-        kind: 'reduce_concentration',
-        why: 'Diversify.',
+      expect(row.output).toEqual({
+        picks: [{ id: 'reduce-concentration', kind: 'reduce_concentration', why: 'Diversify.' }],
       });
     });
 

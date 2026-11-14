@@ -101,8 +101,8 @@ export default async function LlmQualityPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {q.last.map((r) => (
-                    <tr key={`${r.at}-${r.accountId}`}>
+                  {q.last.map((r, i) => (
+                    <tr key={i}>
                       <td>{r.at.slice(0, 19).replace('T', ' ')}</td>
                       <td>{r.accountId}</td>
                       <td>{r.outcome}</td>

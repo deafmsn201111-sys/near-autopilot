@@ -143,6 +143,7 @@ function funnelCounts(events: readonly FunnelEvent[]) {
   };
 }
 
+// ponytail: reads 7 days of rows into memory; move counts to SQL GROUP BY if the events table grows past ~100k a week.
 /** The Funnel screen: each step per UTC day for 7 days, and unique accounts per day and over the 7 days. */
 export function funnelSummary(events: readonly FunnelEvent[], now: Date) {
   const start = windowStart(now);
@@ -163,7 +164,7 @@ export function percentile(sorted: readonly number[], p: number): number | null 
   return sorted[lo]! + (sorted[hi]! - sorted[lo]!) * (rank - lo);
 }
 
-const picksShape = z.object({ picks: z.array(z.object({ kind: z.string() })) });
+const picksShape = z.object({ picks: z.array(z.object({ kind: z.string().nullable() })) });
 const LAST_RUNS = 20;
 
 /** The LLM quality screen, over runs that reached the model in the last 7 UTC days. */
@@ -179,7 +180,7 @@ export function llmQuality(rows: readonly QualityRow[], now: Date) {
   const latency = runs.map((r) => r.latencyMs).sort((a, b) => a - b);
   const kinds = runs.flatMap((r) => {
     const out = picksShape.safeParse(r.output);
-    return out.success ? out.data.picks.map((p) => p.kind) : [];
+    return out.success ? out.data.picks.flatMap((p) => (p.kind === null ? [] : [p.kind])) : [];
   });
   return {
     calls: runs.length,

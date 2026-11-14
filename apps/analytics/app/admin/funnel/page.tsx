@@ -7,7 +7,7 @@ const STEPS = [
   ['analyse', 'Analyses'],
   ['prepare', 'Cascades built'],
   ['signed', 'Signed (RPC-verified)'],
-  ['accounts', 'Unique wallets'],
+  ['accounts', 'Unique wallets (incl. client-reported)'],
 ] as const;
 
 /** Admin screen 2: does anyone go from connect to a signed transaction. */

@@ -374,7 +374,14 @@ describe('llmQuality', () => {
   });
 
   it('ignores an output that is not the picks shape', () => {
-    const q = llmQuality([call({ output: { picks: 'all' } }), call({ output: 7 })], NOW);
+    const q = llmQuality(
+      [
+        call({ output: { picks: 'all' } }),
+        call({ output: 7 }),
+        call({ output: { picks: [{ id: 'x', kind: null, why: 'w' }] } }),
+      ],
+      NOW,
+    );
     expect(q.topKinds).toEqual([]);
   });
 });
