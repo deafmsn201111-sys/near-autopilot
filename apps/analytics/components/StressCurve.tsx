@@ -37,7 +37,7 @@ export function StressCurve({
       <div className="legend">
         {series.map((s) => (
           <span key={s.name}>
-            <i style={{ background: `var(--c${s.slot})` }} />
+            <i style={{ background: `var(--series-${s.slot})` }} />
             {s.name}
             {s.liquidationAt !== null && (
               <span className="dim">
@@ -87,7 +87,7 @@ export function StressCurve({
           <g key={s.name}>
             <path
               className="series"
-              style={{ stroke: `var(--c${s.slot})` }}
+              style={{ stroke: `var(--series-${s.slot})` }}
               d={s.points
                 .map((p, i) => `${i ? 'L' : 'M'}${x(p.drop).toFixed(1)},${y(p.hf).toFixed(1)}`)
                 .join('')}
@@ -99,7 +99,7 @@ export function StressCurve({
                   cx={x(p.drop)}
                   cy={y(p.hf)}
                   r={4.5}
-                  style={{ fill: `var(--c${s.slot})` }}
+                  style={{ fill: `var(--series-${s.slot})` }}
                 />
                 {/* the hit target is larger than the mark */}
                 <circle cx={x(p.drop)} cy={y(p.hf)} r={12} fill="transparent">

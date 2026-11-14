@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Geist, Geist_Mono } from 'next/font/google';
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -6,11 +7,11 @@ import { AutoRefresh } from '../components/AutoRefresh';
 import { SubNav, TopNav } from '../components/Nav';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { WalletButton } from '../components/WalletButton';
+import { THEME_COLOR, THEME_SCRIPT } from '../lib/theme';
 import './globals.css';
 
-/** Applies the saved theme before first paint, so there is no flash of the wrong theme. Dark is the default
- *  identity (the "Signal Terminal" direction); only an explicit saved choice overrides it. */
-const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' });
 
 export const metadata: Metadata = {
   title: 'NEAR Autopilot',
@@ -24,15 +25,10 @@ export const dynamic = 'force-dynamic';
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
+        <meta name="theme-color" content={THEME_COLOR.dark} />
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
       </head>
       <body>
         <header className="topbar">

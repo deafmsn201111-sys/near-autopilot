@@ -46,7 +46,9 @@ export function Dumbbell({
       <div className="legend">
         {series.map((s, i) => (
           <span key={s}>
-            <i style={{ background: `var(--c${i + 1})`, height: 8, width: 8, borderRadius: 4 }} />
+            <i
+              style={{ background: `var(--series-${i + 1})`, height: 8, width: 8, borderRadius: 4 }}
+            />
             {s}
           </span>
         ))}
@@ -84,7 +86,7 @@ export function Dumbbell({
                       top: 0,
                       bottom: 0,
                       width: 1,
-                      background: v === 0 ? 'var(--axis)' : 'var(--grid)',
+                      background: v === 0 ? 'var(--line-strong)' : 'var(--line)',
                     }}
                   />
                 ))}
@@ -95,7 +97,7 @@ export function Dumbbell({
                       top: 11,
                       height: 2,
                       borderRadius: 2,
-                      background: 'var(--axis)',
+                      background: 'var(--line-strong)',
                       left: `${x(Math.min(...vs))}%`,
                       width: `${x(Math.max(...vs)) - x(Math.min(...vs))}%`,
                     }}
@@ -114,8 +116,8 @@ export function Dumbbell({
                         width: 14,
                         height: 14,
                         borderRadius: 7,
-                        background: `var(--c${i + 1})`,
-                        border: '2px solid var(--surface)',
+                        background: `var(--series-${i + 1})`,
+                        border: '2px solid var(--bg-surface)',
                         boxSizing: 'border-box',
                         cursor: 'default',
                       }}
@@ -137,7 +139,7 @@ export function Dumbbell({
                 transform:
                   i === 0 ? 'none' : i === t.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
                 fontSize: 11,
-                color: 'var(--muted)',
+                color: 'var(--text-3)',
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
