@@ -177,9 +177,9 @@ describe('shieldEnvSchema', () => {
   });
 
   it('takes a key and refuses anything that could break the header', () => {
-    const key = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl';
-    expect(shieldEnvSchema.parse({ SHIELD_JWT: key }).SHIELD_JWT).toBe(key);
-    for (const bad of ['short', `${key}\r\nx-evil: 1`, `${key} `])
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl';
+    expect(shieldEnvSchema.parse({ SHIELD_JWT: jwt }).SHIELD_JWT).toBe(jwt);
+    for (const bad of ['short', `${jwt}\r\nx-evil: 1`, `${jwt} `])
       expect(shieldEnvSchema.safeParse({ SHIELD_JWT: bad }).success).toBe(false);
   });
 });
