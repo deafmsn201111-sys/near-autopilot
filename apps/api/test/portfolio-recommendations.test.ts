@@ -413,6 +413,56 @@ describe('portfolioRecommendations', () => {
     expect(i?.why).toContain('$600 of USDC would earn about $12.00 a year');
   });
 
+  describe('idle money after costs (#194)', () => {
+    it('says plainly when the yearly interest is not worth the network fee, instead of a cents card', () => {
+      const advice = portfolioAdvice(
+        ctx({ idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 3, aprPct: 10 }] }),
+        STRATEGIES.balanced,
+      );
+      expect(advice.recommendations.some((x) => x.kind === 'put_idle_to_work')).toBe(false);
+      expect(advice.skipped.join(' ')).toMatch(
+        /\$3\.00 of USDC would earn about \$0\.30 a year on Burrow: not worth the network fee/,
+      );
+    });
+
+    it('repays a loan in the same token instead when the loan costs more than supplying earns', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+          largestDebt: { ...demoDebt, token: USDC, symbol: 'USDC', usd: 150, amount: 150 },
+          carry: { borrowAprPct: 13.6, loanMonthlyUsd: 1.7, depositsMonthlyUsd: 0 },
+        }),
+      );
+      const i = r.find((x) => x.kind === 'put_idle_to_work');
+      expect(i?.intent).toEqual({ action: 'repay', token: USDC, approxUsd: 150 });
+      expect(i?.why).toMatch(/13\.6%.*8\.7%/);
+    });
+
+    it('keeps supplying when the loan is in another token or costs less', () => {
+      const base = {
+        idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+        loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+      };
+      const other = portfolioRecommendations(
+        ctx({
+          ...base,
+          largestDebt: { ...demoDebt, token: 'usdt', symbol: 'USDt' },
+          carry: { borrowAprPct: 13.6, loanMonthlyUsd: 1, depositsMonthlyUsd: 0 },
+        }),
+      );
+      const cheap = portfolioRecommendations(
+        ctx({
+          ...base,
+          largestDebt: { ...demoDebt, token: USDC, symbol: 'USDC' },
+          carry: { borrowAprPct: 5, loanMonthlyUsd: 1, depositsMonthlyUsd: 0 },
+        }),
+      );
+      for (const r of [other, cheap])
+        expect(r.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+    });
+  });
+
   describe('the strategy decides where idle money goes (#132)', () => {
     const usdcMarket = (supplyApr: string, borrowApr: string, availableUsd = '1000000') => ({
       token: USDC,
@@ -471,8 +521,10 @@ describe('portfolioRecommendations', () => {
     });
 
     it('Aggressive does not promise a loop the fees eat on a small amount', () => {
-      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 5), 'aggressive');
-      expect(c?.carry?.text).toMatch(/would earn -539\.6% a year after fees .*so this supplies\.$/);
+      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 8), 'aggressive');
+      expect(c?.carry?.text).toMatch(
+        /would earn -\d+\.\d% a year after fees .*so this supplies\.$/,
+      );
     });
 
     it('Aggressive does not promise a loop Burrow has too little to lend for', () => {

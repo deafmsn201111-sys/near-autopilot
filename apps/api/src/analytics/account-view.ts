@@ -798,7 +798,28 @@ export function portfolioAdvice(
   const [idle, runnerUp] = earning
     .filter((a) => a.usd >= MIN_ACTION_USD)
     .sort((a, b) => yearly(b) - yearly(a));
-  if (idle) {
+  // A deposit stays for months: its year of interest, after the one network fee, must clear the usual hurdle.
+  const worthIt = idle && hurdle(yearly(idle) - GAS, yearly(idle), GAS).verdict === 'worth_it';
+  const debt = ctx.largestDebt;
+  const borrowPct = ctx.carry?.borrowAprPct ?? null;
+  const repayInstead =
+    idle && debt && debt.token === idle.token && borrowPct !== null && borrowPct > idle.aprPct;
+  if (idle && repayInstead) {
+    const usd = Math.min(idle.usd, debt.usd);
+    recs.push({
+      id: 'put-idle-to-work',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: `Use your idle ${idle.symbol} to repay your ${debt.symbol} loan`,
+      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${idle.symbol} on Burrow earns about ${idle.aprPct.toFixed(1)}%. Repaying ${money0(usd)} saves about ${money2((usd * borrowPct) / 100)} a year, more than the ${money2((usd * idle.aprPct) / 100)} supplying would earn.`,
+      intent: { action: 'repay', token: idle.token, approxUsd: approxUsdOf(usd) },
+    });
+  } else if (idle && !worthIt) {
+    skipped.push(
+      `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
+    );
+  } else if (idle) {
     const other = runnerUp
       ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
       : '';
