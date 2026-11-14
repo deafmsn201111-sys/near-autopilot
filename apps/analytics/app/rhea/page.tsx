@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Sparkline } from '../../components/Sparkline';
 import { Pair } from '../../components/Token';
+import { Chip } from '../../components/primitives';
 import { ApiError, PageHeader, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { int, pct, poolName, usd } from '../../lib/format';
@@ -57,13 +58,13 @@ export default async function RheaPage({ searchParams }: { searchParams: Promise
       />
       <div className="counts">
         <Link href={withCategory('')} aria-current={q.category === '' ? 'true' : undefined}>
-          <span className="chip">All {int(data.total)}</span>
+          <Chip>All {int(data.total)}</Chip>
         </Link>
         {CATEGORIES.filter((c) => data.counts[c]).map((c) => (
           <Link key={c} href={withCategory(c)} aria-current={q.category === c ? 'true' : undefined}>
-            <span className="chip">
+            <Chip>
               {c.replace(/_/g, ' ').toLowerCase()} {int(data.counts[c])}
-            </span>
+            </Chip>
           </Link>
         ))}
       </div>
@@ -138,7 +139,7 @@ export default async function RheaPage({ searchParams }: { searchParams: Promise
                     <Pair tokens={p.tokens} />
                   </td>
                   <td>
-                    <span className="chip">{p.poolType.replace(/_/g, ' ').toLowerCase()}</span>
+                    <Chip>{p.poolType.replace(/_/g, ' ').toLowerCase()}</Chip>
                   </td>
                   <td className="num">{usd(p.tvlUsd)}</td>
                   <td>

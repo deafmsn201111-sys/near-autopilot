@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { Dumbbell } from '../../components/Dumbbell';
 import { ErrorState } from '../../components/states';
-import { Tile } from '../../components/ui';
+import { FactsStrip } from '../../components/primitives';
+import {} from '../../components/ui';
 import { tryApi } from '../../lib/api';
 
 const pct = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);
@@ -45,11 +46,7 @@ interface NearCase {
 function NearSummary({ c, days }: { c: NearCase; days: number }) {
   return (
     <section className="block">
-      <div className="kpis">
-        {c.summary.map((s, i) => (
-          <Tile key={s.label} hero={i === 0} label={s.label} value={s.value} sub={s.text} />
-        ))}
-      </div>
+      <FactsStrip items={c.summary.map((s) => ({ label: s.label, value: s.value, sub: s.text }))} />
       <div className="card" style={{ marginTop: 12 }}>
         <Dumbbell
           series={['Shown (end)', `Kept (${days}d)`]}

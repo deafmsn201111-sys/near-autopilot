@@ -1,4 +1,5 @@
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { int, ts } from '../../lib/format';
 import type { SourceRun } from '../../lib/types';
@@ -38,16 +39,18 @@ export default async function CollectorPage() {
         lead="A plain Node service (no LLM): every 15 minutes it reads NEAR mainnet with view calls and public price APIs, never in parallel, and stores every cycle here, including partial and failed ones."
         meta={`Last ${data.cycles.length} cycles`}
       />
-      <div className="kpis">
-        <Tile
-          label="Last cycle"
-          value={last ? <Status code={last.status} /> : '—'}
-          sub={last ? `${ts(last.startedAt)} · ${secs(last.durationMs)}` : undefined}
-        />
-        <Tile label="Success" value={by('success')} sub="every source ok" />
-        <Tile label="Partial" value={by('partial')} sub="at least one source not ok" />
-        <Tile label="Failed" value={by('failed')} sub="cycle aborted" />
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Last cycle',
+            value: last ? <Status code={last.status} /> : '—',
+            sub: last ? `${ts(last.startedAt)} · ${secs(last.durationMs)}` : undefined,
+          },
+          { label: 'Success', value: by('success'), sub: 'every source ok' },
+          { label: 'Partial', value: by('partial'), sub: 'at least one source not ok' },
+          { label: 'Failed', value: by('failed'), sub: 'cycle aborted' },
+        ]}
+      />
       <Section title="Sources in the last finished cycle">
         <TableWrap>
           <table>

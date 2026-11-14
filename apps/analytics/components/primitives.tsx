@@ -82,15 +82,21 @@ export function Chip({
   tone,
   large,
   icon,
+  tip,
   children,
 }: {
   tone?: ChipTone;
   large?: boolean;
   icon?: ReactNode;
+  tip?: string;
   children: ReactNode;
 }) {
   return (
-    <span className={cx('ds-chip', tone && `ds-chip-${tone}`, large && 'ds-chip-lg')}>
+    <span
+      className={cx('ds-chip', tone && `ds-chip-${tone}`, large && 'ds-chip-lg')}
+      data-tip={tip}
+      tabIndex={tip ? 0 : undefined}
+    >
       {tone === 'demo' && <span className="ds-hatch" aria-hidden="true" />}
       {icon}
       {children}

@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { Env } from '../../components/Env';
 import { LineChart, type Series } from '../../components/LineChart';
 import { Pair } from '../../components/Token';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { Chip, FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { ts, usd2 } from '../../lib/format';
 
@@ -90,35 +91,32 @@ export default async function RoutesPage({ searchParams }: { searchParams: Promi
         lead="The Shadow Gateway quotes every approved swap on Rhea (the plan's own pool, get_return view) and on NEAR Intents (1Click dry quote, no deposit address) and records the best execution: net USD after each venue's fee and an upper bound on gas. Quotes only: nothing here was signed or sent."
         meta={`${all.length} records`}
       />
-      <div className="kpis">
-        <Tile
-          label="Reference probes routed"
-          value={probes.length}
-          sub="$10 and $100 wNEAR → USDC, every collector cycle"
-        />
-        <Tile label="Rhea chosen" value={wins('rhea')} sub="atomic, one transaction" />
-        <Tile
-          label="NEAR Intents chosen"
-          value={wins('near-intents-1click')}
-          sub="deposit, then a solver settles"
-        />
-        <Tile label="1Click quote failed" value={oneClickFailed} sub="excluded, never patched" />
-        {sizes.map((sz) => {
-          const r = latest(sz);
-          return (
-            <Tile
-              key={sz}
-              label={`Latest ≈$${sz}`}
-              value={r?.chosenVenue ? (r.chosenVenue === 'rhea' ? 'Rhea' : 'Intents') : '—'}
-              sub={
-                r
-                  ? `by ${r.advantageBps ?? 0} bps · ${ts(r.createdAt).slice(11, 16)} UTC`
-                  : undefined
-              }
-            />
-          );
-        })}
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Reference probes routed',
+            value: probes.length,
+            sub: '$10 and $100 wNEAR → USDC, every collector cycle',
+          },
+          { label: 'Rhea chosen', value: wins('rhea'), sub: 'atomic, one transaction' },
+          {
+            label: 'NEAR Intents chosen',
+            value: wins('near-intents-1click'),
+            sub: 'deposit, then a solver settles',
+          },
+          { label: '1Click quote failed', value: oneClickFailed, sub: 'excluded, never patched' },
+          ...sizes.map((sz) => {
+            const r = latest(sz);
+            return {
+              label: `Latest ≈$${sz}`,
+              value: r?.chosenVenue ? (r.chosenVenue === 'rhea' ? 'Rhea' : 'Intents') : '—',
+              sub: r
+                ? `by ${r.advantageBps ?? 0} bps · ${ts(r.createdAt).slice(11, 16)} UTC`
+                : undefined,
+            };
+          }),
+        ]}
+      />
 
       {series.length > 0 && (
         <Section
@@ -141,7 +139,7 @@ export default async function RoutesPage({ searchParams }: { searchParams: Promi
                 href={o ? `/routes?origin=${o}` : '/routes'}
                 aria-current={origin === o ? 'true' : undefined}
               >
-                <span className="chip">{o || 'All'}</span>
+                <Chip>{o || 'All'}</Chip>
               </Link>
             ))}
           </div>

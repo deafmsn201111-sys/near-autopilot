@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { LineChart } from '../../components/LineChart';
 import { Sparkline } from '../../components/Sparkline';
 import { Token } from '../../components/Token';
-import { ApiError, Meter, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { Chip, FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { pct, usd, usdCompact } from '../../lib/format';
 import { index, marketSeries } from '../../lib/series';
@@ -47,35 +48,37 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
         lead="Supply and borrow rates as contract.main.burrow.near reports them (simple rate at current utilisation). A market without valid data is never shown as 0% APR."
         meta={`${all.length} markets`}
       />
-      <div className="kpis">
-        <Tile
-          label="Markets with valid data"
-          value={`${ok.length} / ${all.length}`}
-          sub="priced and consistent"
-        />
-        <Tile
-          label="Highest net supply APR"
-          value={best ? pct(best.netSupplyApr) : '—'}
-          sub={best ? <Token id={best.token} /> : 'no valid market'}
-        />
-        <Tile label="Available liquidity" value={usdCompact(liquidity)} sub="valid markets, USD" />
-        <Tile
-          label="Active supply rewards"
-          value={all.filter((m) => m.activeRewardProgrammes > 0).length}
-          sub="markets with a reward programme"
-        />
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Markets with valid data',
+            value: `${ok.length} / ${all.length}`,
+            sub: 'priced and consistent',
+          },
+          {
+            label: 'Highest net supply APR',
+            value: best ? pct(best.netSupplyApr) : '—',
+            sub: best ? <Token id={best.token} /> : 'no valid market',
+          },
+          { label: 'Available liquidity', value: usdCompact(liquidity), sub: 'valid markets, USD' },
+          {
+            label: 'Active supply rewards',
+            value: all.filter((m) => m.activeRewardProgrammes > 0).length,
+            sub: 'markets with a reward programme',
+          },
+        ]}
+      />
       <div className="counts" style={{ marginTop: 20 }}>
         <Link href={href('')} aria-current={status === '' ? 'true' : undefined}>
-          <span className="chip">All {all.length}</span>
+          <Chip>All {all.length}</Chip>
         </Link>
         {statuses
           .filter((s) => all.some((m) => m.status === s))
           .map((s) => (
             <Link key={s} href={href(s)} aria-current={status === s ? 'true' : undefined}>
-              <span className="chip">
+              <Chip>
                 {s.replace(/_/g, ' ').toLowerCase()} {all.filter((m) => m.status === s).length}
-              </span>
+              </Chip>
             </Link>
           ))}
       </div>
@@ -102,7 +105,7 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
               <th className="num">Rewards</th>
               <th className="num">Net supply</th>
               <th className="num">Borrow APR</th>
-              <th>Utilisation</th>
+              <th className="num">Utilisation</th>
               <th className="num">Available</th>
               <th className="num">Collateral</th>
               <th>Data</th>
@@ -138,9 +141,7 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
                   <b>{pct(m.netSupplyApr)}</b>
                 </td>
                 <td className="num">{pct(m.borrowApr)}</td>
-                <td>
-                  <Meter value={m.utilization === null ? null : Number(m.utilization)} />
-                </td>
+                <td className="num">{pct(m.utilization, 1)}</td>
                 <td className="num">{usd(m.availableUsd)}</td>
                 <td className="num">
                   {m.canUseAsCollateral ? (

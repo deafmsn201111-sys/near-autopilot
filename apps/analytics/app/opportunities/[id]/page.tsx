@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { LineChart } from '../../../components/LineChart';
 import { Pair } from '../../../components/Token';
+import { FactsStrip } from '../../../components/primitives';
 import { EmptyState, Facts, Level, PageHeader, Section, Status } from '../../../components/ui';
 import { ErrorState } from '../../../components/states';
 import { pct, usd, usdCompact } from '../../../lib/format';
@@ -152,41 +153,38 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           </>
         }
       />
-      <div className="kpis">
-        <div className="card tile">
-          <div className="label">Yield before costs</div>
-          <div className="value">{o.grossApr === null ? '—' : pct(o.grossApr, 2)}</div>
-          <div className="sub">{o.grossBasis}</div>
-        </div>
-        <div className="card tile">
-          <div className="label">Net after costs</div>
-          <div className={`value ${o.netApr !== null && o.netApr < 0 ? 'neg' : ''}`}>
-            {o.netApr === null ? 'not simulated' : pct(o.netApr, 2)}
-          </div>
-          <div className="sub">
-            {o.netBasis ?? 'No stored cost simulation covers this opportunity.'}
-          </div>
-        </div>
-        <div className="card tile">
-          <div className="label">Liquidity</div>
-          <div className="value">{usdCompact(o.liquidityUsd)}</div>
-          <div className="sub">
-            {o.volume24hUsd === null
-              ? 'no volume figure'
-              : `${usdCompact(o.volume24hUsd)} traded in 24 h`}
-          </div>
-        </div>
-        <div className="card tile">
-          <div className="label">Autopilot view</div>
-          <div className="value" style={{ fontSize: 18, display: 'grid', gap: 6 }}>
-            <Status code={o.status} />
-            <Level level={o.risk.level} score={o.risk.score} what="risk" />
-          </div>
-          <div className="sub">
-            confidence {o.confidence.score} / 100 · data {o.fresh ? 'up to date' : 'out of date'}
-          </div>
-        </div>
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Yield before costs',
+            value: o.grossApr === null ? '—' : pct(o.grossApr, 2),
+            sub: o.grossBasis,
+          },
+          {
+            label: 'Net after costs',
+            value: o.netApr === null ? 'not simulated' : pct(o.netApr, 2),
+            sub: o.netBasis ?? 'No stored cost simulation covers this opportunity.',
+          },
+          {
+            label: 'Liquidity',
+            value: usdCompact(o.liquidityUsd),
+            sub:
+              o.volume24hUsd === null
+                ? 'no volume figure'
+                : `${usdCompact(o.volume24hUsd)} traded in 24 h`,
+          },
+          {
+            label: 'Autopilot view',
+            value: (
+              <>
+                <Status code={o.status} />{' '}
+                <Level level={o.risk.level} score={o.risk.score} what="risk" />
+              </>
+            ),
+            sub: `confidence ${o.confidence.score} / 100 · data ${o.fresh ? 'up to date' : 'out of date'}`,
+          },
+        ]}
+      />
 
       <Section title="Why it is ranked like this">
         <div className="grid-2">

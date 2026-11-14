@@ -1046,3 +1046,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   the rule-based result is shown, with Try again; an older AI ranking is dropped after a failed run.
 - "Add funds" and Connect that cannot open say so by the button; an unvalued loan gets a neutral "Unknown" chip.
 - Out: withdraw quote failure inside the sheet moved to #255.
+
+## Reviewer and secondary pages on the design system (#257)
+
+- KPI tiles on research, policy, audit, routes, collector, burrow, prices, portfolios, thesis, rhea pool and
+  opportunity pages are now one `FactsStrip` each; `Tile`, `Meter` and their `.kpis` / `.tile` / `.meter` CSS are gone.
+- `Status` and `Level` render the `Chip` primitive (risk tones, icon + word, raw code in a keyboard-reachable
+  tooltip); the old `.badge` CSS is gone. `Chip` takes an optional `tip`; chips inside a facts strip wrap on phones.
+- Filter and tag chips on the pages use `Chip`; buttons on error, not-found, opportunities and admin use `Button`.
+- Out: old `.btn` / `.chip` CSS stays until the withdraw/deposit dialogs move in #255; `.card` containers and the
+  older global CSS layers are not touched.

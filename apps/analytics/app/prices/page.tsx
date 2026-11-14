@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { LineChart } from '../../components/LineChart';
 import { Sparkline } from '../../components/Sparkline';
 import { Token } from '../../components/Token';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { ts, usd } from '../../lib/format';
 import { index, priceSeries } from '../../lib/series';
@@ -77,18 +78,20 @@ export default async function PricesPage() {
         lead="Every source is stored separately. A price needs two independent USD sources within the asset's limit (NEAR: 150 bps); a missing price is never 0, and the more favourable source is never picked."
         meta={`Snapshot #${data.snapshot?.blockHeight ?? '—'} · ${ts(data.snapshot?.takenAt)}`}
       />
-      <div className="kpis">
-        <Tile
-          label="Curated assets"
-          value={curated.length}
-          sub={`${curated.filter((a) => a.status === 'CORROBORATED').length} corroborated`}
-        />
-        <Tile
-          label="Long-tail tokens"
-          value={tail.length}
-          sub="DefiLlama only; below 0.9 confidence = discovery only"
-        />
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Curated assets',
+            value: curated.length,
+            sub: `${curated.filter((a) => a.status === 'CORROBORATED').length} corroborated`,
+          },
+          {
+            label: 'Long-tail tokens',
+            value: tail.length,
+            sub: 'DefiLlama only; below 0.9 confidence = discovery only',
+          },
+        ]}
+      />
       <Section
         title="Curated assets"
         note="Struck-through quotes were rejected (stale, invalid, unavailable): hover for the reason. Binance quotes NEAR in USDT; the price service converts it through the corroborated USDT/USD."

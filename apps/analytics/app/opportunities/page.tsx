@@ -139,7 +139,7 @@ export default async function OpportunitiesPage({
         <EmptyState
           title="No opportunity matches these filters."
           action={
-            <Link className="btn secondary" href="/opportunities">
+            <Link className="ds-btn ds-btn-secondary" href="/opportunities">
               Clear the filters
             </Link>
           }
