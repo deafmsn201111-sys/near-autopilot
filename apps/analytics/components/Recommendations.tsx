@@ -44,7 +44,6 @@ export function Recommendations({
   const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<Pipeline | null>(null);
-  const elapsedMs = useElapsed(startedAt);
   const running = startedAt !== null;
   const signature = portfolioSignature(initial, holdings);
   const analysis = ai?.signature === signature ? ai.analysis : null;
@@ -78,7 +77,13 @@ export function Recommendations({
           onClick={() => void analyse()}
           disabled={running}
         >
-          {running ? `Analysing… ${seconds(elapsedMs)}` : 'Run AI analysis'}
+          {running ? (
+            <>
+              Analysing… <Elapsed since={startedAt} />
+            </>
+          ) : (
+            'Run AI analysis'
+          )}
         </button>
       </div>
       {analysis && !running && (
@@ -101,7 +106,7 @@ export function Recommendations({
         </p>
       )}
       {live ? (
-        <AiTrace pipeline={live} elapsedMs={elapsedMs} />
+        <AiTrace pipeline={live} startedAt={startedAt} />
       ) : (
         analysis && (
           <AiTrace
@@ -201,43 +206,43 @@ export function Recommendations({
   );
 }
 
-function useElapsed(since: number | null): number {
-  const [now, setNow] = useState(() => Date.now());
+/** Ticks on its own so the list around it does not re-render ten times a second. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(since);
   useEffect(() => {
-    if (since === null) return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(id);
   }, [since]);
-  return since === null ? 0 : Math.max(0, now - since);
+  return <>{seconds(Math.max(0, now - since))}</>;
 }
 
 type StageState = 'done' | 'active' | 'pending';
 
 /**
  * The run as a pipeline: what was read, what each agent returned (key number, its provenance, what became of its
- * card), what the model did, and what code checked before the user saw it. Live (`elapsedMs` set), every stage is
+ * card), what the model did, and what code checked before the user saw it. Live (`startedAt` set), every stage is
  * shown from the first event: the one the server is on now pulses, the ones still ahead are dimmed, and each agent
  * the model asked for waits on a placeholder until its own result arrives.
  */
 function AiTrace({
   pipeline,
-  elapsedMs = null,
+  startedAt = null,
   ms = null,
   cachedAt = null,
   calledTools = [],
   why = null,
 }: {
   pipeline: Pipeline;
-  elapsedMs?: number | null;
+  startedAt?: number | null;
   ms?: number | null;
   cachedAt?: string | null;
   calledTools?: readonly string[];
   /** Why the model was not asked, built by code from the agents' lines. */
   why?: string | null;
 }) {
-  const { model, read, asked, trace, turns, checks } = pipeline;
-  const live = elapsedMs !== null;
+  const { model, read, asked, trace, turns, checks, stage } = pipeline;
+  const live = startedAt !== null;
   if (!live && trace.length === 0) {
     if (calledTools.length === 0) return null;
     return <p className="muted-note">Agents called: {calledTools.join(', ')}</p>;
@@ -282,18 +287,7 @@ function AiTrace({
       </section>
     );
   const who = model ? modelName(model) : 'The AI';
-  const waiting = asked.filter((a) => !trace.some((t) => t.tool === a.tool));
-  const current = !live
-    ? 4
-    : !read
-      ? 0
-      : asked.length === 0 || waiting.length > 0
-        ? 1
-        : turns === null
-          ? 2
-          : checks === null
-            ? 3
-            : 4;
+  const current = live ? stage : 4;
   const state = (i: number): StageState =>
     i < current ? 'done' : i === current ? 'active' : 'pending';
   const rows = [...asked, ...trace.filter((t) => !asked.some((a) => a.tool === t.tool))].map(
@@ -319,11 +313,13 @@ function AiTrace({
         <h3>How the AI got here</h3>
         <span className="muted-note ai-clock">
           {model && `${modelName(model)} · `}
-          {live
-            ? seconds(elapsedMs)
-            : cachedAt
-              ? `from a run ${ago(cachedAt)}`
-              : ms !== null && seconds(ms)}
+          {live ? (
+            <Elapsed since={startedAt} />
+          ) : cachedAt ? (
+            `from a run ${ago(cachedAt)}`
+          ) : (
+            ms !== null && seconds(ms)
+          )}
         </span>
       </header>
       {live && (

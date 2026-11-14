@@ -137,6 +137,8 @@ export type Pipeline = {
   trace: TraceStep[];
   turns: number | null;
   checks: z.infer<typeof checksSchema> | null;
+  /** 0 read, 1 agents, 2 ranking, 3 checks, 4 done: the furthest the run has reached, so it never steps back. */
+  stage: number;
 };
 
 export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
@@ -146,6 +148,7 @@ export const pipelineOf = ({ run, read, trace }: Analysis): Pipeline => ({
   trace,
   turns: run?.turns ?? null,
   checks: run?.checks ?? null,
+  stage: 4,
 });
 
 const askedSchema = z.object({ tool: z.string(), agent: z.string() });
@@ -177,7 +180,19 @@ function parseFrame(frame: string): LiveEvent | null {
   }
 }
 
+function stageOf({ read, asked, trace, turns, checks }: Pipeline): number {
+  if (!read) return 0;
+  if (asked.length === 0 || asked.some((a) => !trace.some((t) => t.tool === a.tool))) return 1;
+  if (turns === null) return 2;
+  return checks === null ? 3 : 4;
+}
+
 function apply(p: Pipeline, e: LiveEvent): Pipeline {
+  const next = applyEvent(p, e);
+  return { ...next, stage: Math.max(p.stage, stageOf(next)) };
+}
+
+function applyEvent(p: Pipeline, e: LiveEvent): Pipeline {
   if (e.type === 'read') return { ...p, model: e.model, read: { tokens: e.tokens, loan: e.loan } };
   if (e.type === 'asked')
     return {
@@ -203,6 +218,7 @@ async function readStream(
     trace: [],
     turns: null,
     checks: null,
+    stage: 0,
   };
   let buffer = '';
   try {
