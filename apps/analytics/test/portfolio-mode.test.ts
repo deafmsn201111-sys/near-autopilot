@@ -32,6 +32,13 @@ describe('portfolioMode', () => {
     expect(m.mine).toBe(false);
   });
 
+  it('points back to the connected wallet only while viewing another account (#195)', () => {
+    expect(portfolioMode({ ...base, connected: 'bob.near' }).backTo).toBe('bob.near');
+    expect(portfolioMode(base).backTo).toBeNull();
+    expect(portfolioMode({ ...base, connected: 'alice.near' }).backTo).toBeNull();
+    expect(portfolioMode({ ...base, isAccount: false, connected: 'bob.near' }).backTo).toBeNull();
+  });
+
   it('a verified account viewed without its wallet stays read-only but keeps AI analysis', () => {
     const m = portfolioMode({ ...base, connected: 'bob.near', verified: true });
     expect(m.label).toBe('Mainnet account · read-only');

@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import Link from 'next/link';
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
@@ -267,7 +268,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     return (
       <>
         <div className="hero-head">
-          <PortfolioSwitch current="account" path="/" withAccount />
+          <PortfolioSwitch current="account" path="/" withAccount account={cookieAccount} />
         </div>
         <AccountForm />
       </>
@@ -283,7 +284,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             current={isAccount ? 'account' : id}
             path="/"
             withAccount
-            account={accountParam}
+            account={cookieAccount || accountParam}
           />
         </div>
         {isAccount && <AccountForm value={accountParam} />}
@@ -367,7 +368,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           current={isAccount ? 'account' : id}
           path="/"
           withAccount
-          account={accountParam}
+          account={cookieAccount || accountParam}
         />
         <span className="sync-note">
           <span className="dot" aria-hidden="true" />
@@ -397,6 +398,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               {mode.label}
             </span>
             <span className="muted-note">{mode.note}</span>
+            {mode.backTo && (
+              <Link
+                className="btn secondary small"
+                href={`/?p=account&account=${encodeURIComponent(mode.backTo)}`}
+              >
+                ← Back to my wallet
+              </Link>
+            )}
           </div>
           <div className="hero-top">
             <div className="hero-value num">{money(t.netWorthUsd, false)}</div>
