@@ -74,8 +74,15 @@ describe('signLock', () => {
 describe('balanceChanges', () => {
   it('shows what leaves and the expected and minimum swap output', () => {
     expect(balanceChanges(swap)).toEqual([
-      { dir: 'out', human: 34543.06, symbol: 'wNEAR', usd: 115307 },
-      { dir: 'in', human: 102276, symbol: 'USDC', usd: 102276, min: 101764.47 },
+      { dir: 'out', human: 34543.06, symbol: 'wNEAR', usd: 115307, where: 'from your wallet' },
+      {
+        dir: 'in',
+        human: 102276,
+        symbol: 'USDC',
+        usd: 102276,
+        min: 101764.47,
+        where: 'to your wallet',
+      },
     ]);
   });
 
@@ -88,9 +95,73 @@ describe('balanceChanges', () => {
       freed: [{ raw: '1', human: 1.5, symbol: 'NEAR' }],
     });
     expect(balanceChanges(c)).toEqual([
-      { dir: 'out', human: 2, symbol: 'USDC' },
-      { dir: 'out', human: 3, symbol: 'USDt' },
-      { dir: 'in', human: 1.5, symbol: 'NEAR' },
+      { dir: 'out', human: 2, symbol: 'USDC', where: 'from your wallet' },
+      { dir: 'out', human: 3, symbol: 'USDt', where: 'from your wallet' },
+      { dir: 'in', human: 1.5, symbol: 'NEAR', where: 'to your wallet' },
+    ]);
+  });
+
+  it('shows a supply landing in the Burrow deposit, so it never reads as money lost', () => {
+    const c = cascade({
+      intent: { action: 'supply' },
+      amount: { raw: '1', human: 7.55, symbol: 'USDC', usd: 7.55 },
+    });
+    expect(balanceChanges(c)).toEqual([
+      { dir: 'out', human: 7.55, symbol: 'USDC', usd: 7.55, where: 'from your wallet' },
+      {
+        dir: 'in',
+        human: 7.55,
+        symbol: 'USDC',
+        usd: 7.55,
+        where: 'to your Burrow deposit, still yours',
+      },
+    ]);
+  });
+
+  it('shows a Burrow withdrawal landing in the wallet', () => {
+    const c = cascade({
+      intent: { action: 'withdraw' },
+      amount: { raw: '1', human: 5, symbol: 'USDC' },
+    });
+    expect(balanceChanges(c)).toEqual([
+      { dir: 'out', human: 5, symbol: 'USDC', where: 'from your Burrow deposit' },
+      { dir: 'in', human: 5, symbol: 'USDC', where: 'to your wallet' },
+    ]);
+  });
+
+  it('shows a repayment with collateral as the loan going down, never money leaving the wallet', () => {
+    const c = cascade({
+      intent: { action: 'repay_with_collateral' },
+      amount: { raw: '1', human: 100, symbol: 'USDC' },
+      cost: {
+        networkFeeMaxNear: 0.02,
+        swap: {
+          slippageBps: 50,
+          estReceived: { raw: '1', human: 100.2, symbol: 'USDC' },
+          minReceived: { raw: '1', human: 99.7, symbol: 'USDC' },
+          priceImpactPct: null,
+        },
+      },
+    });
+    expect(balanceChanges(c)).toEqual([
+      {
+        dir: 'debt',
+        human: 100,
+        symbol: 'USDC',
+        min: 99.7,
+        where: 'off your Burrow loan, paid by swapping your collateral',
+      },
+    ]);
+  });
+
+  it('shows a repayment as the loan going down', () => {
+    const c = cascade({
+      intent: { action: 'repay_from_collateral' },
+      amount: { raw: '1', human: 600, symbol: 'USDt' },
+    });
+    expect(balanceChanges(c)).toEqual([
+      { dir: 'out', human: 600, symbol: 'USDt', where: 'from your Burrow balance' },
+      { dir: 'debt', human: 600, symbol: 'USDt', where: 'off your Burrow loan' },
     ]);
   });
 });

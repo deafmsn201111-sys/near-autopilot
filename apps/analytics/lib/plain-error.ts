@@ -116,9 +116,21 @@ export function staleNotices({
   return out;
 }
 
+/** Wallets throw Errors, strings or plain objects: the readable text of any of them. */
+export function errorMessage(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (typeof e === 'string' && e) return e;
+  if (e && typeof e === 'object') {
+    const { message, error } = e as { message?: unknown; error?: unknown };
+    const text = [message, error].find((m) => typeof m === 'string' && m);
+    if (typeof text === 'string') return text;
+  }
+  return 'The wallet did not say why.';
+}
+
 /** "Add funds" could not open HOT's popup (D42): a plain line by the button, never a frozen modal. */
 export function bridgeOpenError(e: unknown): string {
-  const message = e instanceof Error ? e.message : String(e);
+  const message = errorMessage(e);
   if (/429|too many/i.test(message))
     return 'HOT is busy right now. Wait a minute and press Add funds again.';
   return 'HOT did not load. Check your connection and press Add funds again.';

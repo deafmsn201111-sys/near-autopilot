@@ -308,15 +308,6 @@ async function Portfolio({ sp }: { sp: Search }) {
         }
       />
 
-      {isAccount && recs && (
-        <OwnershipCheck
-          key={accountParam}
-          account={accountParam}
-          verified={recs.ownerVerified === true}
-          checkFailed={recs.ownerCheckFailed === true}
-        />
-      )}
-
       {isAccount && !recs && (
         <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
       )}
@@ -335,6 +326,14 @@ async function Portfolio({ sp }: { sp: Search }) {
             signingEnabled={signingEnabled}
             strategyNote={data.strategyNote}
             aiAllowed={recs.ownerVerified === true || recs.ownerCheckFailed === true}
+            gate={
+              <OwnershipCheck
+                key={accountParam}
+                account={accountParam}
+                verified={recs.ownerVerified === true}
+                checkFailed={recs.ownerCheckFailed === true}
+              />
+            }
             hasLoan={data.holdings.some((h) => h.where === 'borrowed')}
             loanValued={data.health.healthFactor !== null}
             hasLp={(data.positions ?? []).some((p) => p.key.startsWith('dcl-'))}

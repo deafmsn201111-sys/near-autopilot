@@ -42,6 +42,7 @@ const PATHS = {
   in: <path d="M17 7 7 17M17 17H7V7" />,
   out: <path d="M7 7h10v10M7 17 17 7" />,
   back: <path d="m15 18-6-6 6-6" />,
+  logout: <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { refreshAccount } from '../app/account-actions';
 import { refreshPortfolio } from '../lib/portfolio-refresh';
 import { prepareIntent } from '../lib/prepare-client';
@@ -29,7 +29,7 @@ import { stageAfterSign, type CardStage } from '../lib/suggestions';
 import { Sheet, useSheet } from './Sheet';
 import { SignProgress } from './SignProgress';
 import { Button, ProvenanceMark, SignButton } from './primitives';
-import { TokenIcon } from './TokenIcon';
+import { KnownTokens, TokenIcon } from './TokenIcon';
 
 const tokens = (n: number) =>
   n.toLocaleString('en-US', { maximumFractionDigits: Math.abs(n) < 1 ? 6 : 4 });
@@ -57,17 +57,28 @@ const CHECK = (
   </svg>
 );
 
+const SAYS: Record<BalanceChange['dir'], string> = {
+  out: 'You send',
+  in: 'You get',
+  debt: 'Your loan goes down by',
+};
+
 function Change({ c }: { c: BalanceChange }) {
-  const out = c.dir === 'out';
+  const { iconOf } = useContext(KnownTokens);
   return (
-    <div className="chg">
-      <span className={`sgn ${c.dir}`} aria-hidden="true">
-        {out ? '−' : '+'}
+    <div className={`chg chg-${c.dir}`}>
+      <span className={`sgn ${c.dir === 'out' ? 'out' : 'in'}`} aria-hidden="true">
+        {c.dir === 'in' ? '+' : '−'}
       </span>
-      <span className="amt num">
-        <span className="sr-only">{out ? 'You send' : 'You receive'} </span>
-        <TokenIcon icon={null} symbol={c.symbol} size={20} />
-        {c.min !== undefined ? `≥ ${tokens(c.min)}` : tokens(c.human)} {c.symbol}
+      <span className="amt">
+        <span className="sr-only">{SAYS[c.dir]} </span>
+        <TokenIcon icon={iconOf[c.symbol]} symbol={c.symbol} size={20} />
+        <span className="chg-txt">
+          <span className="num">
+            {c.min !== undefined ? `≥ ${tokens(c.min)}` : tokens(c.human)} {c.symbol}
+          </span>
+          <small>{c.where}</small>
+        </span>
       </span>
       <span className="usd num">
         {c.min !== undefined
@@ -88,6 +99,9 @@ function Review({
   onAck: (v: boolean) => void;
 }) {
   const changes = balanceChanges(cascade);
+  const { symbolOf } = useContext(KnownTokens);
+  const receiver = (id: string) =>
+    symbolOf[id] ? `the ${symbolOf[id]} token contract` : shortAccount(id);
   const swap = cascade.cost?.swap ?? null;
   const impact = swap?.priceImpactPct ?? null;
   const tier = swapImpactTier(cascade);
@@ -163,7 +177,9 @@ function Review({
               <div>
                 {line}
                 {cascade.transactions[i] && (
-                  <small>to {shortAccount(cascade.transactions[i].receiverId)}</small>
+                  <small title={cascade.transactions[i].receiverId}>
+                    to {receiver(cascade.transactions[i].receiverId)}
+                  </small>
                 )}
               </div>
             </li>

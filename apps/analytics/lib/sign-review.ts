@@ -40,29 +40,62 @@ export function signLock({
 }
 
 export interface BalanceChange {
-  readonly dir: 'out' | 'in';
+  /** `debt`: a loan going down by this much. */
+  readonly dir: 'out' | 'in' | 'debt';
   readonly human: number;
   readonly symbol: string;
   readonly usd?: number;
   /** A swap's guaranteed minimum; the transaction reverts below it. */
   readonly min?: number;
+  /** Where it leaves from or lands. */
+  readonly where: string;
 }
 
-const change = (dir: BalanceChange['dir'], a: { human: number; symbol: string; usd?: number }) => ({
+const change = (
+  dir: BalanceChange['dir'],
+  a: { human: number; symbol: string; usd?: number },
+  where: string,
+): BalanceChange => ({
   dir,
   human: a.human,
   symbol: a.symbol,
   ...(a.usd !== undefined ? { usd: a.usd } : {}),
+  where,
 });
 
-/** What leaves the wallet and what comes back, from the amounts the server sized. Nothing is estimated here. */
+/**
+ * What leaves and where it lands, from the amounts the server sized. Nothing is estimated here. A supply or a
+ * repayment shows its other side too: the money is still yours in Burrow, or your loan is smaller.
+ */
 export function balanceChanges(c: PreparedCascade): BalanceChange[] {
-  const out = (c.amounts ?? (c.amount ? [c.amount] : [])).map((a) => change('out', a));
+  const action = c.intent['action'];
+  const sized = c.amounts ?? (c.amount ? [c.amount] : []);
+  const from =
+    action === 'repay_from_collateral'
+      ? 'from your Burrow balance'
+      : action === 'withdraw'
+        ? 'from your Burrow deposit'
+        : 'from your wallet';
   const swap = c.cost?.swap;
-  const back = swap
-    ? [{ ...change('in', swap.estReceived), min: swap.minReceived.human }]
-    : (c.freed ?? []).map((a) => change('in', a));
-  return [...out, ...back];
+  // The amount is the debt repaid; the collateral is withdrawn and swapped inside the cascade, nothing leaves the wallet.
+  if (action === 'repay_with_collateral')
+    return sized.map((a) => ({
+      ...change('debt', a, 'off your Burrow loan, paid by swapping your collateral'),
+      ...(swap ? { min: swap.minReceived.human } : {}),
+    }));
+  const out = sized.map((a) => change('out', a, from));
+  if (swap)
+    return [
+      ...out,
+      { ...change('in', swap.estReceived, 'to your wallet'), min: swap.minReceived.human },
+    ];
+  if (action === 'supply' || action === 'supply_all')
+    return [...out, ...sized.map((a) => change('in', a, 'to your Burrow deposit, still yours'))];
+  if (action === 'withdraw')
+    return [...out, ...sized.map((a) => change('in', a, 'to your wallet'))];
+  if (action === 'repay' || action === 'repay_from_collateral')
+    return [...out, ...sized.map((a) => change('debt', a, 'off your Burrow loan'))];
+  return [...out, ...(c.freed ?? []).map((a) => change('in', a, 'to your wallet'))];
 }
 
 /** The USD a swap loses to the pool (impact and fee), when both sides are priced. */

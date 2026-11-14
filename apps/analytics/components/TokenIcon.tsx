@@ -1,6 +1,12 @@
 'use client';
-import { useState, type CSSProperties } from 'react';
+import { createContext, useState, type CSSProperties } from 'react';
 import { iconView } from '../lib/token-label';
+
+/** The tokens the page knows, so a sheet can draw a logo and name a token contract from a symbol or an id. */
+export const KnownTokens = createContext<{
+  readonly iconOf: Readonly<Record<string, string | null>>;
+  readonly symbolOf: Readonly<Record<string, string>>;
+}>({ iconOf: {}, symbolOf: {} });
 
 /** A token logo, only ever through <img> (an SVG there cannot run scripts); a letter placeholder when none or broken. */
 export function TokenIcon({

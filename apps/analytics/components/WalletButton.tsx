@@ -86,10 +86,20 @@ export function ConnectButton({
   );
 }
 
-const ChainMark = ({ label }: { label: string }) => (
-  <span className="app-tok" aria-hidden="true">
-    {label.slice(0, 1)}
-  </span>
+const CHAIN_ICON: Record<OriginChain, string> = {
+  evm: '/chains/eth.svg',
+  solana: '/chains/sol.svg',
+  tron: '/chains/tron.png',
+  btc: '/chains/btc.svg',
+};
+
+const ChainMark = ({ chain }: { chain: OriginChain | 'hot' }) => (
+  <img
+    className="app-tok"
+    src={chain === 'hot' ? '/chains/hot.png' : CHAIN_ICON[chain]}
+    alt=""
+    aria-hidden="true"
+  />
 );
 
 const OtherUsd = ({ usd }: { usd: number | undefined }) =>
@@ -117,15 +127,15 @@ function WalletMenu({
 }) {
   const [busy, setBusy] = useState(false);
   const missing = ORIGIN_CHAINS.filter((c) => !wallets.some((w) => w.chain === c));
-  const hot = balances.find((b) => b.chain === 'hot');
+  const hot = balances.find((b) => b.chain === 'hot' && (b.usd ?? 0) > 0);
   return (
     <>
-      <h4>Portfolio account</h4>
+      <h4>Your NEAR account</h4>
       <div className="row">
         <TokenIcon icon={portfolio?.nearIcon} symbol="NEAR" size={32} />
         <div>
           <b>{account}</b>
-          <small>NEAR · analysed, signs every action</small>
+          <small>Analysed · you sign every action</small>
         </div>
         {portfolio && portfolio.netWorthUsd !== null && (
           <span className="bal num">
@@ -136,10 +146,10 @@ function WalletMenu({
           </span>
         )}
       </div>
-      <h4>Other chains · for deposits and withdrawals</h4>
+      <h4>Other chains</h4>
       {wallets.map((w) => (
         <div key={w.chain} className="row">
-          <ChainMark label={CHAIN_LABEL[w.chain]} />
+          <ChainMark chain={w.chain} />
           <div>
             <b title={w.address}>{shortHash(w.address)}</b>
             <small>{CHAIN_LABEL[w.chain]} · not analysed</small>
@@ -149,10 +159,10 @@ function WalletMenu({
       ))}
       {hot && (
         <div className="row">
-          <ChainMark label="HOT" />
+          <ChainMark chain="hot" />
           <div>
-            <b>HOT balance</b>
-            <small>Refunds of failed HOT swaps · not analysed</small>
+            <b>HOT Bridge balance</b>
+            <small>Refunds from bridge swaps that did not go through</small>
           </div>
           <OtherUsd usd={hot.usd} />
         </div>
@@ -168,20 +178,17 @@ function WalletMenu({
             void connectOriginWallet(c).finally(() => setBusy(false));
           }}
         >
-          <ChainMark label={CHAIN_LABEL[c]} />
+          <ChainMark chain={c} />
           <div>
-            <b>Connect {CHAIN_LABEL[c]}</b>
-            <small>
-              {WITHDRAW_TO.includes(c)
-                ? 'To add funds from it or withdraw to it'
-                : 'To add funds from it'}
-            </small>
+            <b>{CHAIN_LABEL[c]}</b>
+            <small>{WITHDRAW_TO.includes(c) ? 'Add funds · Withdraw' : 'Add funds'}</small>
           </div>
+          <span className="connect-pill">Connect</span>
         </button>
       ))}
       <div className="sep" />
       <div className="acts">
-        <DepositButton account={account} className="ds-btn ds-btn-secondary ds-btn-sm" />
+        <DepositButton account={account} className="ds-btn ds-btn-primary ds-btn-sm" />
         {portfolio && (
           <WithdrawDialog
             account={account}
@@ -192,10 +199,14 @@ function WalletMenu({
           />
         )}
       </div>
-      <button type="button" className="row btnrow" onClick={onDisconnect}>
+      <div className="sep" />
+      <button type="button" className="row btnrow danger" onClick={onDisconnect}>
+        <span className="app-tok" aria-hidden="true">
+          <Icon name="logout" size={16} />
+        </span>
         <div>
-          <b>Disconnect</b>
-          <small>Signs out of NEAR and every other wallet connected here</small>
+          <b>Disconnect all</b>
+          <small>NEAR and every other wallet connected here</small>
         </div>
       </button>
     </>
@@ -276,7 +287,7 @@ export function WalletButton({ initialAccount }: { initialAccount: string | null
         <span className="stack">
           <TokenIcon icon={known?.nearIcon} symbol="NEAR" size={18} />
           {wallets.map((w) => (
-            <ChainMark key={w.chain} label={CHAIN_LABEL[w.chain]} />
+            <ChainMark key={w.chain} chain={w.chain} />
           ))}
         </span>
         <span className="who">{account}</span>

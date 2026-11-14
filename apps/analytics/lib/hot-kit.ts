@@ -136,6 +136,11 @@ export function loadKit(): Promise<Loaded> {
     };
     k.onConnect(emit);
     k.onDisconnect(emit);
+    if (typeof MutationObserver === 'function')
+      new MutationObserver(() => {
+        const next = pageTheme();
+        if (next) k.setUIOptions({ theme: next });
+      }).observe(document.documentElement, { attributeFilter: ['data-theme'] });
     return { kit: k, near };
   })().catch((e: unknown) => {
     loaded = null;
@@ -190,6 +195,7 @@ function pageTheme(): KitTheme | undefined {
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {
     colorScheme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
+    fgRgb: v('--fg-rgb'),
     fontFamily: v('--font'),
     colors: {
       textPrimary: v('--text-1'),
@@ -248,8 +254,6 @@ export async function openDepositBridge(account: string, tokenId?: string): Prom
   const k = await load();
   const kit = await import('@hot-labs/kit');
   const recipient = await kit.Recipient.fromAddress('near', account);
-  const theme = pageTheme();
-  if (theme) k.setUIOptions({ theme });
   const held = k.walletsTokens.find(
     (t) => t.token.id === tokenId && isBridgeSource(t.token.chain, kit.toOneClickChain),
   );
