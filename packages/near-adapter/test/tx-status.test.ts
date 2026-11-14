@@ -54,6 +54,12 @@ describe('NearTransactionStatusReader', () => {
     const out = await txs.status('8qw2aCaeCqfsEZQmG77vuzZPvLfhy8BV1wyUcgBFWt21', 'x');
     expect(out?.ok).toBe(false);
     expect(out?.methods).toEqual(['oracle_call']);
+    expect(out?.calls[0]).toMatchObject({
+      method: 'oracle_call',
+      gas: '150000000000000',
+      deposit: '1',
+      args: { receiver_id: 'contract.main.burrow.near' },
+    });
     const failed = out?.receipts.filter((r) => r.failure !== null);
     expect(failed).toHaveLength(1);
     expect(failed?.[0]?.executorId).toBe('contract.main.burrow.near');

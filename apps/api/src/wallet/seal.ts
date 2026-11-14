@@ -48,6 +48,12 @@ export async function sealCascade(
         intentId: t.intentId,
         receiverId: t.receiverId,
         methods: t.actions.map((a) => a.methodName),
+        calls: t.actions.map((a) => ({
+          method: a.methodName,
+          args: a.args,
+          gas: a.gas.toString(),
+          deposit: a.deposit.toString(),
+        })),
       })),
     },
   });

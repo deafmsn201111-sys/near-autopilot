@@ -75,6 +75,7 @@ describe('describeOutcome', () => {
       signerId: ACCOUNT,
       receiverId: USDC,
       methods: ['ft_transfer_call'],
+      calls: [],
       ok: false,
       receipts: [
         { executorId: USDC, logs: [transfer(ACCOUNT, 'contract.main.burrow.near')], failure: null },
@@ -99,6 +100,7 @@ describe('describeOutcome', () => {
       signerId: ACCOUNT,
       receiverId: 'wrap.near',
       methods: ['ft_transfer_call'],
+      calls: [],
       ok: false,
       receipts: [
         {

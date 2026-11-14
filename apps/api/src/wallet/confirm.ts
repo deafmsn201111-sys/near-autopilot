@@ -1,14 +1,15 @@
 import { accountIdSchema } from '@near-autopilot/core';
-import type { TxOutcome } from '@near-autopilot/near-adapter';
+import type { TxCall, TxOutcome } from '@near-autopilot/near-adapter';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { EventStore, PreparedStep } from '../analytics/events';
+import type { EventStore } from '../analytics/events';
 import { describeOutcome, type OutcomeContext } from './outcome';
 
 /**
  * The single verifier of a signed step (#32): NEAR RPC, not the browser, says whether it happened. A `signed` row is
  * written only when the transaction is final and successful, its signer is the account, and it is exactly the step of
- * the cascade this server prepared (same receiver, same methods). Anything else writes nothing.
+ * the cascade this server prepared: same receiver and, action by action, the same method, args and deposit (a wallet may adjust gas). An
+ * older transaction of the account with the same contract and method therefore does not pass (its amounts differ).
  */
 export interface ConfirmDeps {
   readonly events: EventStore;
@@ -21,11 +22,40 @@ export interface ConfirmDeps {
 const NOT_OURS = 'this transaction is not a step of the prepared cascade';
 const UNKNOWN = 'unknown cascade';
 
-const stepsOf = (detail: Record<string, unknown> | undefined): PreparedStep[] =>
-  z
-    .array(z.object({ intentId: z.string(), receiverId: z.string(), methods: z.array(z.string()) }))
-    .catch([])
-    .parse(detail?.['steps']);
+const stepSchema = z.object({
+  intentId: z.string(),
+  receiverId: z.string(),
+  calls: z.array(
+    z.object({ method: z.string(), args: z.unknown(), gas: z.string(), deposit: z.string() }),
+  ),
+});
+type Step = z.infer<typeof stepSchema>;
+
+const stepsOf = (detail: Record<string, unknown> | undefined): Step[] =>
+  z.array(stepSchema).catch([]).parse(detail?.['steps']);
+
+/** JSON with object keys sorted, so the same args compare equal whatever order the wallet serialised them in. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v !== null && typeof v === 'object')
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`;
+  return JSON.stringify(v);
+}
+
+const sameCalls = (signed: readonly TxCall[], expected: Step['calls']) =>
+  signed.length === expected.length &&
+  signed.every((c, i) => {
+    const e = expected[i];
+    return (
+      e !== undefined &&
+      c.method === e.method &&
+      c.deposit === e.deposit &&
+      canonical(c.args) === canonical(e.args)
+    );
+  });
 
 export function registerConfirm(app: FastifyInstance, deps: ConfirmDeps) {
   app.post('/v1/wallet/confirm', async (req, reply) => {
@@ -62,8 +92,7 @@ export function registerConfirm(app: FastifyInstance, deps: ConfirmDeps) {
     const sameStep =
       out.signerId === account &&
       out.receiverId === expected.receiverId &&
-      out.methods.length === expected.methods.length &&
-      out.methods.every((m, i) => m === expected.methods[i]);
+      sameCalls(out.calls, expected.calls);
     if (!sameStep) return reply.code(422).send({ error: NOT_OURS });
 
     const summary = describeOutcome(out, {
@@ -73,7 +102,7 @@ export function registerConfirm(app: FastifyInstance, deps: ConfirmDeps) {
     });
     if (!summary.ok) return { status: 'failed', ...summary };
     const lines = summary.lines.length ? summary.lines : fallback;
-    await deps.events.add({
+    const stored = await deps.events.add({
       at: deps.now(),
       kind: 'signed',
       accountId: account,
@@ -82,6 +111,8 @@ export function registerConfirm(app: FastifyInstance, deps: ConfirmDeps) {
       txHash: hash,
       detail: { step: expected.intentId, receiverId: expected.receiverId, lines },
     });
+    // The hash is already stored under another cascade: one transaction is one step of one cascade.
+    if (!stored) return reply.code(409).send({ error: NOT_OURS });
     return { status: 'confirmed', lines };
   });
 }

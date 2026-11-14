@@ -36,7 +36,34 @@ const CHAIN: Record<string, string> = {
   [MADE_UP]: 'tx-unknown',
 };
 
-async function setup(override?: (o: TxOutcome) => TxOutcome) {
+const BURROW = 'contract.main.burrow.near';
+const execute = (actions: unknown[]) => JSON.stringify({ Execute: { actions } });
+// What our builders produced for the two recorded transactions (keys in another order than the wallet sent).
+const repayCall = (amount = '5010563') => ({
+  method: 'ft_transfer_call',
+  gas: '100000000000000',
+  deposit: '1',
+  args: {
+    msg: execute([{ Repay: { token_id: USDC, max_amount: '5010563000000000000' } }]),
+    amount,
+    receiver_id: BURROW,
+  },
+});
+const withdrawCall = {
+  method: 'oracle_call',
+  gas: '150000000000000',
+  deposit: '1',
+  args: {
+    receiver_id: BURROW,
+    asset_ids: [USDC],
+    msg: execute([
+      { DecreaseCollateral: { token_id: USDC, max_amount: '12730148000000000000' } },
+      { Repay: { token_id: USDC, max_amount: '12730148000000000000' } },
+    ]),
+  },
+};
+
+async function setup(override?: (o: TxOutcome) => TxOutcome, repay = repayCall()) {
   const events = new MemoryEventStore();
   await events.add({
     at: NOW,
@@ -48,8 +75,13 @@ async function setup(override?: (o: TxOutcome) => TxOutcome) {
     verdict: 'ALLOW',
     detail: {
       steps: [
-        { intentId: 'repay', receiverId: USDC, methods: ['ft_transfer_call'] },
-        { intentId: 'withdraw', receiverId: 'priceoracle.near', methods: ['oracle_call'] },
+        { intentId: 'repay', receiverId: USDC, methods: ['ft_transfer_call'], calls: [repay] },
+        {
+          intentId: 'withdraw',
+          receiverId: 'priceoracle.near',
+          methods: ['oracle_call'],
+          calls: [withdrawCall],
+        },
       ],
       preview: ['Repay 5 USDC', 'Withdraw collateral'],
     },
@@ -74,7 +106,7 @@ async function setup(override?: (o: TxOutcome) => TxOutcome) {
       payload: { account: ACCOUNT, cascadeId: CASCADE, step, hash, ...extra },
     });
   const signedRows = () => events.rows.filter((r) => r.kind === 'signed');
-  return { confirm, signedRows };
+  return { confirm, signedRows, events };
 }
 
 describe('POST /v1/wallet/confirm', () => {
@@ -133,6 +165,26 @@ describe('POST /v1/wallet/confirm', () => {
     expect(res.statusCode).toBe(422);
     expect(res.json()).toEqual({ error: 'this transaction is not a step of the prepared cascade' });
     expect(signedRows()).toHaveLength(0);
+  });
+
+  it('an older transaction with the same contract and method but other amounts writes nothing', async () => {
+    const { confirm, signedRows } = await setup(undefined, repayCall('9000000'));
+    const res = await confirm(REPAY);
+    expect(res.statusCode).toBe(422);
+    expect(signedRows()).toHaveLength(0);
+  });
+
+  it('a hash already stored under another cascade is refused', async () => {
+    const { confirm, events } = await setup();
+    await events.add({
+      at: NOW,
+      kind: 'signed',
+      accountId: ACCOUNT,
+      source: 'rpc',
+      cascadeId: 'other',
+      txHash: REPAY,
+    });
+    expect((await confirm(REPAY)).statusCode).toBe(409);
   });
 
   it('an unknown cascade or another account gets a short error', async () => {

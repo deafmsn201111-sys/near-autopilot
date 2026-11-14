@@ -9,11 +9,20 @@ export interface TxReceipt {
   readonly failure: string | null;
 }
 
+/** One action as signed. Args are the decoded JSON (null when not JSON); gas and deposit are integer strings. */
+export interface TxCall {
+  readonly method: string;
+  readonly args: unknown;
+  readonly gas: string;
+  readonly deposit: string;
+}
+
 export interface TxOutcome {
   readonly hash: string;
   readonly signerId: string;
   readonly receiverId: string;
   readonly methods: readonly string[];
+  readonly calls: readonly TxCall[];
   /** True only when the transaction and every one of its receipts succeeded. */
   readonly ok: boolean;
   readonly receipts: readonly TxReceipt[];
@@ -59,9 +68,33 @@ function failureText(failure: unknown): string {
 const failureOf = (s: Status): string | null =>
   typeof s === 'object' && 'Failure' in s ? failureText(s.Failure) : null;
 
-const methodOf = (action: unknown): string => {
-  const call = (action as { FunctionCall?: { method_name?: unknown } } | null)?.FunctionCall;
-  return typeof call?.method_name === 'string' ? call.method_name : 'non-function-call';
+const functionCall = z.object({
+  FunctionCall: z.object({
+    method_name: z.string(),
+    args: z.string(),
+    gas: z.union([z.number().int().nonnegative(), z.string().regex(/^\d+$/)]),
+    deposit: z.string().regex(/^\d+$/),
+  }),
+});
+
+function decodeArgs(base64: string): unknown {
+  try {
+    return JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+const callOf = (action: unknown): TxCall => {
+  const parsed = functionCall.safeParse(action);
+  if (!parsed.success) return { method: 'non-function-call', args: null, gas: '0', deposit: '0' };
+  const c = parsed.data.FunctionCall;
+  return {
+    method: c.method_name,
+    args: decodeArgs(c.args),
+    gas: BigInt(c.gas).toString(),
+    deposit: c.deposit,
+  };
 };
 
 const notThereYet = (e: unknown) =>
@@ -95,11 +128,13 @@ export class NearTransactionStatusReader {
       logs: outcome.logs,
       failure: failureOf(outcome.status),
     }));
+    const calls = transaction.actions.map(callOf);
     return {
       hash: transaction.hash,
       signerId: transaction.signer_id,
       receiverId: transaction.receiver_id,
-      methods: transaction.actions.map(methodOf),
+      methods: calls.map((c) => c.method),
+      calls,
       ok: failureOf(status) === null && receipts.every((r) => r.failure === null),
       receipts,
     };

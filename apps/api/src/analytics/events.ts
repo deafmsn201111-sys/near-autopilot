@@ -54,13 +54,6 @@ export function eventRecorder(store: EventStore | undefined, log: FastifyBaseLog
   };
 }
 
-/** The steps a prepared cascade stored, so a signed transaction can be matched to one of them. */
-export interface PreparedStep {
-  readonly intentId: string;
-  readonly receiverId: string;
-  readonly methods: readonly string[];
-}
-
 export interface CascadeItem {
   readonly type: 'cascade';
   readonly at: string;
@@ -141,9 +134,21 @@ export function activityTimeline(
   return items.sort((a, b) => b.at.localeCompare(a.at));
 }
 
-/** Long implicit (hex) account ids are cut for the public policy page; named accounts stay readable. */
-export const shortAccount = (id: string) =>
-  id.length > 24 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+/** The public policy page names no account: "ali…near" for a named one, "1a2b3c…9f0e" for an implicit one. */
+export const shortAccount = (id: string) => {
+  const dot = id.lastIndexOf('.');
+  return dot > 0 ? `${id.slice(0, 3)}…${id.slice(dot + 1)}` : `${id.slice(0, 6)}…${id.slice(-4)}`;
+};
+
+/** The public policy page shows which action on which tokens, never the amounts. */
+const publicIntent = (intent: Record<string, unknown> | null | undefined) =>
+  intent
+    ? Object.fromEntries(
+        Object.entries(intent).filter(([k]) =>
+          ['action', 'token', 'tokenOut', 'poolId'].includes(k),
+        ),
+      )
+    : null;
 
 const utcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
@@ -173,11 +178,10 @@ export function registerEvents(app: FastifyInstance, store: EventStore, now: () 
         at: r.at.toISOString(),
         account: shortAccount(r.accountId),
         action: typeof r.intent?.['action'] === 'string' ? r.intent['action'] : 'unknown',
-        intent: r.intent ?? null,
+        intent: publicIntent(r.intent),
         verdict: r.verdict ?? (r.kind === 'prepare' ? 'ALLOW' : 'BLOCK'),
         checks: r.checks ?? [],
         summary: r.detail?.['summary'] ?? null,
-        preview: stringList(r.detail?.['preview']),
       })),
     };
   });

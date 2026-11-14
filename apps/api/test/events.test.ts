@@ -174,6 +174,7 @@ describe('GET /v1/analytics/policy/cascades', () => {
     expect(r.verdicts).toEqual([
       expect.objectContaining({
         account: 'aaaaaa…aaaa',
+        intent: { action: 'swap' },
         action: 'swap',
         verdict: 'BLOCK',
         checks: [{ rule: 'receivers', pass: false, messages: ['x'] }],
