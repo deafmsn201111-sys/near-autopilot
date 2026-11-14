@@ -166,10 +166,13 @@ describe('analytics evidence endpoints (read-only)', () => {
       available: boolean;
       verdict: { text: string };
       pools: unknown[];
+      nearCase: { lead: string; meaning: { title: string; text: string }[] };
     }>();
     expect(r.available).toBe(true);
     const md = readFileSync(new URL('../../../THESIS.md', import.meta.url), 'utf8');
     expect(md).toContain(`**Verdict: ${r.verdict.text}.**`);
     expect(r.pools.length).toBeGreaterThan(0);
+    expect(md).toContain(r.nearCase.lead);
+    for (const m of r.nearCase.meaning) expect(md).toContain(`**${m.title}** ${m.text}`);
   });
 });
