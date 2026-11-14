@@ -1,6 +1,6 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { parseSaved, runAnalysis, type Analysis, type Pipeline } from '../lib/analysis-client';
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
@@ -9,6 +9,7 @@ import { actionLabel, intentTokens, recommendationToPrepare } from '../lib/recom
 import { label } from '../lib/token-label';
 import { AnalysisPanel } from './AnalysisPanel';
 import { PrepareDialog } from './PrepareDialog';
+import { KnownTokens } from './TokenIcon';
 import { RepayPicker } from './RepayPicker';
 import { ProvenanceMark } from './primitives';
 import { CheckedAndSkipped, SuggestionCard } from './SuggestionCard';
@@ -41,6 +42,7 @@ export function Recommendations({
   loanValued,
   hasLp,
   signBlock,
+  gate,
 }: {
   account: string;
   strategy: StrategyId;
@@ -58,6 +60,8 @@ export function Recommendations({
   loanValued: boolean;
   hasLp: boolean;
   signBlock: string | null;
+  /** What unlocks AI analysis for this visitor (proof of ownership), shown inside the analysis panel. */
+  gate?: ReactNode;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   // Kept per strategy instead of remounting on a switch, which would drop the focus off the strategy control (#288);
@@ -122,8 +126,14 @@ export function Recommendations({
   const top = topIndex(cards.map((r) => stageOf(r.id).kind));
   const open = cards.filter((r) => stageOf(r.id).kind !== 'done').length;
 
+  const known = {
+    iconOf: Object.fromEntries(
+      holdings.flatMap((h) => (h.token ? [[h.symbol, icons[h.token] ?? null]] : [])),
+    ),
+    symbolOf: Object.fromEntries(holdings.flatMap((h) => (h.token ? [[h.token, h.symbol]] : []))),
+  };
   return (
-    <>
+    <KnownTokens.Provider value={known}>
       <AnalysisPanel
         account={account}
         strategy={strategy}
@@ -136,6 +146,7 @@ export function Recommendations({
         startedAt={startedAt}
         ranAt={analysis && (analysis.cachedAt ?? (ai?.run ? new Date(ai.run).toISOString() : null))}
         aiAllowed={aiAllowed}
+        gate={gate}
         hasLoan={hasLoan}
         loanValued={loanValued}
         hasLp={hasLp}
@@ -144,7 +155,7 @@ export function Recommendations({
         onRun={() => void analyse()}
       />
       {(cards.length > 0 || skipped.length > 0) && (
-        <div className="block-head an-recs-head">
+        <div className="block-head an-recs-head" id="moves">
           <h2>What the agents suggest</h2>
           <span className="muted-note">
             {open === 0 ? 'none right now' : `${open} worth your attention, ranked by impact`}
@@ -239,7 +250,7 @@ export function Recommendations({
         </div>
       )}
       <CheckedAndSkipped items={skipped.map((reason) => ({ reason }))} />
-    </>
+    </KnownTokens.Provider>
   );
 }
 

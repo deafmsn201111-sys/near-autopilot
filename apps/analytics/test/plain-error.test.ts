@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aiFailure,
   bridgeOpenError,
+  errorMessage,
   plainQuoteError,
   plainReadError,
   staleNotices,
@@ -169,5 +170,16 @@ describe('a withdraw quote that failed', () => {
     expect(plainQuoteError(503, 'upstream ECONNRESET')).toBe(
       '1Click is not answering right now. Nothing was sent; try again in a minute.',
     );
+  });
+});
+
+describe('the text of anything a wallet throws', () => {
+  it('reads Error, string and object throws, never [object Object]', () => {
+    expect(errorMessage(new Error('boom'))).toBe('boom');
+    expect(errorMessage('User rejected')).toBe('User rejected');
+    expect(errorMessage({ message: 'Rejected by user' })).toBe('Rejected by user');
+    expect(errorMessage({ error: 'Wallet closed' })).toBe('Wallet closed');
+    expect(errorMessage({ code: 4001 })).toBe('The wallet did not say why.');
+    expect(errorMessage(undefined)).toBe('The wallet did not say why.');
   });
 });

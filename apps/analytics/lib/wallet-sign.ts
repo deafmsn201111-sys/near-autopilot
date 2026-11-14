@@ -1,4 +1,5 @@
 'use client';
+import { errorMessage } from './plain-error';
 import { connectedWallet, currentAccount } from './wallet';
 import type { PreparedTransaction } from './prepare-types';
 import {
@@ -89,7 +90,7 @@ export async function signCascade(
     }
     return { ok: true, hashes };
   } catch (e) {
-    return { ok: false, hashes, reason: e instanceof Error ? e.message : String(e) };
+    return { ok: false, hashes, reason: errorMessage(e) };
   }
 }
 

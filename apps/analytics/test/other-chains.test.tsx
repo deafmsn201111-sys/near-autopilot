@@ -49,7 +49,7 @@ describe('other-chain slots', () => {
       expect.stringContaining('Bring to NEAR'),
       expect.stringContaining('Not bridgeable here'),
     ]);
-    expect(hot?.label).toBe('HOT balance');
+    expect(hot?.label).toBe('HOT Bridge balance');
     expect(html(hot?.items[0]?.action)).toContain('Withdraw it in HOT Wallet');
     expect(html(hot?.items[0]?.action)).not.toContain('Bring to NEAR');
   });

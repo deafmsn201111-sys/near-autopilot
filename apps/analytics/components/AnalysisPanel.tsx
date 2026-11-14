@@ -88,6 +88,7 @@ export function AnalysisPanel({
   startedAt,
   ranAt,
   aiAllowed,
+  gate,
   hasLoan,
   loanValued,
   hasLp,
@@ -107,6 +108,7 @@ export function AnalysisPanel({
   /** When the shown AI analysis was produced: its saved time, or the moment this run finished. */
   ranAt: string | null;
   aiAllowed: boolean;
+  gate?: ReactNode;
   hasLoan: boolean;
   loanValued: boolean;
   hasLp: boolean;
@@ -138,6 +140,7 @@ export function AnalysisPanel({
         ? aiFailure({ fallback: analysis.fallback })
         : null;
   const checks = !running ? analysis?.run?.checks : null;
+  const top = recommendations[0];
 
   return (
     <section className="ds-panel analysis" aria-labelledby="an-h">
@@ -148,20 +151,20 @@ export function AnalysisPanel({
           <span>4 agents</span>
         </span>
         <div className="an-run">
-          <span className="an-run-sub">
-            {running ? (
-              'Analysing…'
-            ) : ranAt ? (
-              <>
-                {!aiAllowed && "The owner's AI run · "}
-                <Updated iso={ranAt} />
-              </>
-            ) : aiAllowed ? (
-              'AI analysis not run yet.'
-            ) : (
-              `AI analysis runs only for the verified owner of ${account}.`
-            )}
-          </span>
+          {(running || ranAt || aiAllowed) && (
+            <span className="an-run-sub">
+              {running ? (
+                'Analysing…'
+              ) : ranAt ? (
+                <>
+                  {!aiAllowed && "The owner's AI run · "}
+                  <Updated iso={ranAt} />
+                </>
+              ) : (
+                'AI analysis not run yet.'
+              )}
+            </span>
+          )}
           <Button
             className={`an-run-btn${running ? ' is-busy' : ''}`}
             onClick={onRun}
@@ -181,6 +184,8 @@ export function AnalysisPanel({
           </Button>
         </div>
       </header>
+
+      {gate}
 
       {analysis?.note && analysis.fallback !== 'nothing_to_rank' && !running && !failure && (
         <p className="an-note">{analysis.note}</p>
@@ -224,12 +229,19 @@ export function AnalysisPanel({
           <p className="an-sub">
             {running ? 'Agents are reading the latest on-chain data.' : verdict.sub}
           </p>
+          {!running && top && (
+            <a className={`an-top${aiRanked ? ' ai' : ''}`} href="#moves">
+              <span className="an-top-k">{aiRanked ? '#1 · AI pick' : '#1'}</span>
+              <span className="an-top-t">{top.title}</span>
+              <span aria-hidden="true">↓</span>
+            </a>
+          )}
         </div>
       </div>
 
       <StrategyPicker account={account} current={strategy} note={strategyNote} disabled={running} />
 
-      <h3 className="an-finds-h">What the agents found</h3>
+      <h3 className="an-sec-h">What the agents found</h3>
       <ul className="an-finds">
         {findings.map((f) => (
           <li key={f.agent} className={`an-find lv-${f.level}${f.busy ? ' is-busy' : ''}`}>
@@ -245,33 +257,32 @@ export function AnalysisPanel({
         ))}
       </ul>
 
-      {checks && (
-        <div className="an-codechecks">
-          <b>
-            {ICON.shield}
-            Code checked the AI
-          </b>
-          <span className={checks.replaced ? 'warn' : undefined}>
-            {ICON.check}
-            {explained(checks.explained, checks.explained + checks.replaced)}
-            {checks.replaced > 0 && `; ${checks.replaced} replaced by the agent's own text`}
-          </span>
-          <span>
-            {ICON.check}
-            {checks.restored > 0
-              ? `${plural(checks.restored, 'warning')} the AI left out put back first`
-              : 'No warning was left out'}
-          </span>
-          <span>
-            {ICON.check}
-            {checks.dropped > 0
-              ? `${plural(checks.dropped, 'made-up or repeated action')} dropped`
-              : 'No made-up actions'}
-          </span>
-        </div>
-      )}
-
-      <DecisionPipeline analysis={analysis} live={live} running={running} aiAllowed={aiAllowed} />
+      <DecisionPipeline analysis={analysis} live={live} running={running} aiAllowed={aiAllowed}>
+        {checks && (
+          <div className="an-codechecks">
+            <b>
+              {ICON.shield}
+              Code checked the AI
+            </b>
+            <span className={checks.replaced ? 'warn' : undefined}>
+              {checks.replaced ? ICON.alert : ICON.check}
+              {explained(checks.explained, checks.replaced)}
+            </span>
+            <span className={checks.restored ? 'warn' : undefined}>
+              {checks.restored ? ICON.alert : ICON.check}
+              {checks.restored > 0
+                ? `${plural(checks.restored, 'warning')} the AI left out put back first`
+                : 'No warning was left out'}
+            </span>
+            <span className={checks.dropped ? 'warn' : undefined}>
+              {checks.dropped ? ICON.alert : ICON.check}
+              {checks.dropped > 0
+                ? `${plural(checks.dropped, 'made-up or repeated action')} dropped`
+                : 'No made-up actions'}
+            </span>
+          </div>
+        )}
+      </DecisionPipeline>
     </section>
   );
 }
@@ -291,11 +302,13 @@ function DecisionPipeline({
   live,
   running,
   aiAllowed,
+  children,
 }: {
   analysis: Analysis | null;
   live: Pipeline | null;
   running: boolean;
   aiAllowed: boolean;
+  children?: ReactNode;
 }) {
   const p = running ? live : analysis ? pipelineOf(analysis) : null;
   const model = p?.model ?? null;
@@ -358,64 +371,77 @@ function DecisionPipeline({
   const ranking = !running ? (p?.ranking ?? null) : null;
   const status = running ? steps.find((s) => s.state === 'now')?.title : null;
 
+  const input = !running ? analysis?.run?.input : undefined;
+  const replies = mark?.replies ?? [];
   return (
-    <div className="an-pipe-wrap">
-      <div className="an-pipe-head">
-        <h3>How this was decided</h3>
-        <span>{summary}</span>
-        {mark && (
-          <a href={mark.href} target="_blank" rel="noreferrer" title={mark.title}>
-            {mark.label}
-          </a>
+    <>
+      <div className="an-pipe-wrap">
+        <div className="an-pipe-head">
+          <h3 className="an-sec-h">How this was decided</h3>
+          <span>{summary}</span>
+          {mark && (
+            <a href={mark.href} target="_blank" rel="noreferrer" title={mark.title}>
+              {mark.label}
+            </a>
+          )}
+        </div>
+        {status && (
+          <p className="sr-only" aria-live="polite">
+            {status}
+          </p>
         )}
-      </div>
-      {status && (
-        <p className="sr-only" aria-live="polite">
-          {status}
-        </p>
-      )}
-      <ol className="an-pipe">
-        {steps.map((s) => (
-          <li
-            key={s.title}
-            className={`an-pn is-${s.state}`}
-            aria-current={s.state === 'now' ? 'step' : undefined}
-          >
-            <span className="an-dot">
-              {s.state === 'done' ? ICON.check : s.state === 'locked' ? ICON.lock : null}
-            </span>
-            <b>{s.title}</b>
-            <small>{s.sub}</small>
-          </li>
-        ))}
-      </ol>
-      {mark && mark.replies.length > 0 && (
-        <p className="an-replies">
-          Check each reply on NEAR AI Cloud:{' '}
-          {mark.replies.map(({ id, href }) => (
-            <code key={id}>
-              {href ? (
-                <a href={href} target="_blank" rel="noreferrer">
-                  {id}
-                </a>
-              ) : (
-                id
-              )}{' '}
-            </code>
+        <ol className="an-pipe">
+          {steps.map((s) => (
+            <li
+              key={s.title}
+              className={`an-pn is-${s.state}`}
+              aria-current={s.state === 'now' ? 'step' : undefined}
+            >
+              <span className="an-dot">
+                {s.state === 'done' ? ICON.check : s.state === 'locked' ? ICON.lock : null}
+              </span>
+              <b>{s.title}</b>
+              <small>{s.sub}</small>
+            </li>
           ))}
-          <CopyButton text={mark.replies.map((r) => r.id).join('\n')} label="Copy ids" />
-        </p>
+        </ol>
+        {ranking && (
+          <div className="an-ranking">
+            <b>Why this order</b>
+            <p>{ranking}</p>
+            <ProvenanceMark
+              kind="estimate"
+              title={PROVENANCE_TIER_INFO.calculated_estimate.describe}
+            >
+              {PROVENANCE_TIER_INFO.calculated_estimate.label}
+            </ProvenanceMark>
+          </div>
+        )}
+        {children}
+      </div>
+      {(replies.length > 0 || input) && (
+        <div className="an-evidence">
+          {mark && replies.length > 0 && (
+            <p className="an-replies">
+              Check each reply on NEAR AI Cloud:{' '}
+              {mark.replies.map(({ id, href }) => (
+                <code key={id}>
+                  {href ? (
+                    <a href={href} target="_blank" rel="noreferrer">
+                      {id}
+                    </a>
+                  ) : (
+                    id
+                  )}{' '}
+                </code>
+              ))}
+              <CopyButton text={mark.replies.map((r) => r.id).join('\n')} label="Copy ids" />
+            </p>
+          )}
+          {input && <ModelInputView input={input} />}
+        </div>
       )}
-      {!running && analysis?.run?.input && <ModelInputView input={analysis.run.input} />}
-      {ranking && (
-        <p className="an-ranking">
-          Why this order: {ranking}{' '}
-          <ProvenanceMark kind="estimate" title={PROVENANCE_TIER_INFO.calculated_estimate.describe}>
-            {PROVENANCE_TIER_INFO.calculated_estimate.label}
-          </ProvenanceMark>
-        </p>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -488,7 +514,11 @@ const readLine = (read: NonNullable<Pipeline['read']>) =>
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
-const explained = (ok: number, all: number) =>
-  `${ok} of ${all} AI ${all === 1 ? 'explanation uses' : 'explanations use'} only numbers the agents returned`;
+const explained = (ok: number, replaced: number) =>
+  replaced > 0
+    ? `${plural(replaced, 'AI explanation')} used a number no agent returned: shown in the agent's own words instead`
+    : ok === 1
+      ? 'The AI explanation uses only numbers the agents returned'
+      : `All ${ok} AI explanations use only numbers the agents returned`;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

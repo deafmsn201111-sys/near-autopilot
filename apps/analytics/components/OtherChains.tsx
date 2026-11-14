@@ -20,7 +20,9 @@ export function useOtherBalances(enabled: boolean): OtherBalance[] {
 }
 
 export const otherLabel = (b: OtherBalance) =>
-  b.chain === 'hot' ? 'HOT balance' : `${CHAIN_LABEL[b.chain]} wallet · ${shortHash(b.address)}`;
+  b.chain === 'hot'
+    ? 'HOT Bridge balance'
+    : `${CHAIN_LABEL[b.chain]} wallet · ${shortHash(b.address)}`;
 
 const largestBringable = (groups: readonly OtherBalance[]) =>
   groups

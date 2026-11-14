@@ -1,4 +1,5 @@
 'use client';
+import { errorMessage } from './plain-error';
 import { loadKit, NEAR_WALLET_TYPE, type NearSignIn } from './hot-kit';
 
 /**
@@ -44,8 +45,7 @@ function forgetCancelledSignIn() {
 // Answers that mean "no account": near-connect's own Error, and the plain string HOT sends after a cancelled sign-in. Any
 // other failure (network, a wallet frame that did not load) keeps the key, so a valid session is never dropped.
 // ponytail: wallets with another wording keep loading the kit on each page; add their answer here when seen.
-const hasNoAccount = (e: unknown) =>
-  /^(No accounts found|Connect NEAR)/.test(e instanceof Error ? e.message : String(e));
+const hasNoAccount = (e: unknown) => /^(No accounts found|Connect NEAR)/.test(errorMessage(e));
 
 let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
 function near() {

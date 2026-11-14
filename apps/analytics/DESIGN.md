@@ -51,59 +51,59 @@ colors:
   light-liq: 'oklch(.52 .19 25)'
 typography:
   hero:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
     fontSize: '56px'
     fontWeight: 500
     lineHeight: 1
     letterSpacing: '-0.035em'
     fontFeature: '"tnum", "zero", "ss01"'
   kpi:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
     fontSize: '30px'
     fontWeight: 500
     lineHeight: 1.1
     letterSpacing: '-0.025em'
     fontFeature: '"tnum", "zero"'
   headline:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '24px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '26px'
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: '-0.02em'
   title:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '19px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '20px'
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: '-0.015em'
   body-lg:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '17px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '18px'
     fontWeight: 400
     lineHeight: 1.5
   body:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '15px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '16px'
     fontWeight: 400
     lineHeight: 1.5
   secondary:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '14px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '15px'
     fontWeight: 400
     lineHeight: 1.5
   label:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '13px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '14px'
     fontWeight: 500
     lineHeight: 1.4
   meta:
-    fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif'
-    fontSize: '12px'
+    fontFamily: 'Onest, ui-sans-serif, system-ui, sans-serif'
+    fontSize: '13px'
     fontWeight: 500
     lineHeight: 1.3
   mono:
     fontFamily: 'Geist Mono, ui-monospace, SF Mono, Menlo, monospace'
-    fontSize: '12px'
+    fontSize: '13px'
     fontWeight: 400
     lineHeight: 1.4
 rounded:
@@ -123,7 +123,7 @@ spacing:
   '10': '40px'
 components:
   button-secondary:
-    backgroundColor: '{colors.bg-raised}'
+    backgroundColor: 'transparent'
     textColor: '{colors.text-1}'
     rounded: '{rounded.sm}'
     padding: '0 14px'
@@ -252,7 +252,7 @@ Token colours (USDC blue, Tether green, NEAR mint, ETH periwinkle) appear only i
 
 ## Typography
 
-**Body and display:** Geist (ui-sans-serif, system-ui fallback), loaded via `next/font`, weights 400/500/600.
+**Body and display:** Onest (ui-sans-serif, system-ui fallback), OFL, self-hosted via `next/font`, weights 400/500/600. Chosen on 14 Nov 2026 over Geist (read as a framework default), Manrope (the Web3 cliché) and Mona Sans (its tabular figures put a serif on 1).
 **Mono:** Geist Mono, only for contract ids, methods and raw call tables.
 
 **Character:** one neutral grotesque, hierarchy from size and weight, never from a second display face. All numbers use tabular, slashed-zero figures.
@@ -261,17 +261,17 @@ Token colours (USDC blue, Tether green, NEAR mint, ETH periwinkle) appear only i
 
 - **Hero** (500, 56px / 44px on phone, lh 1, −0.035em): net worth only; cents in text-3 at .6em.
 - **KPI** (500, 30px, −0.025em): monthly result; the number takes the risk colour with a sign and trend arrow.
-- **Headline** (600, 24px, lh 1.25): the analysis verdict, sheet titles, the intro h1.
-- **Title** (600, 19px): section heads, card titles, fact values.
-- **Body large** (17px): agent results, balance-change amounts, Sign label.
-- **Body** (400, 15px, lh 1.5): explanations ("why") in text-2 with the conclusion bold text-1; verdict sub-line; max 76ch.
-- **Secondary** (14px): labels, sub-lines, legends, table secondary text.
-- **Label** (500, 13px): small labels, fact keys, footers.
-- **Meta** (500, 12px): chips, provenance tags, table column heads, mono. Nothing else is 12px.
+- **Headline** (600, 26px, lh 1.25): the analysis verdict, sheet titles, the intro h1.
+- **Title** (600, 20px): section heads, card titles, fact values.
+- **Body large** (18px): agent results, balance-change amounts, Sign label.
+- **Body** (400, 16px, lh 1.5): explanations ("why") in text-2 with the conclusion bold text-1; verdict sub-line; max 76ch.
+- **Secondary** (15px): labels, sub-lines, legends, table secondary text.
+- **Label** (500, 14px): small labels, fact keys, footers.
+- **Meta** (500, 13px): chips, provenance tags, table column heads, mono. Nothing is smaller than 13px.
 
 ### Named Rules
 
-**The Uniswap Floor Rule.** The page reads at 14–15px. 12px stays under ~8% of rendered characters (v5.1: 7.6%).
+**The Uniswap Floor Rule.** The page reads at 15–16px; 13px is the floor. Every font size in CSS is a `--fs-*` token, never a literal (measured 14 Nov 2026: 34% of characters were 11–13px before this rule).
 **The No-Synthetic-Bold Rule.** `b, strong` are 600; the font is never asked for 700.
 
 ## Layout
@@ -305,7 +305,9 @@ Soft rectangles. Panels and cards 16px, sheets 20px (top corners only on phone),
 
 - **Shape:** gently rounded (8px); 36px desktop, 44px on phone; small 32/40px.
 - **Primary** (neutral solid, near-white on dark): one per screen — the #1 card's action, Connect wallet.
-- **Secondary:** raised fill with a `line-strong` border. **Ghost:** text-2, no border.
+- **Secondary:** transparent with a `line-control` border, so it never reads as the primary's twin. **Ghost:** text-2, no border.
+- **Destructive row** (Disconnect in the wallet menu): its own row under a separator, logout icon, label in `liq` at 600.
+- Every button goes through `Button` / `ds-btn-*`; the legacy `btn primary|secondary` classes are being retired.
 - **Sign:** full-width, 52px, Signing Violet, white 17px/600, lock icon when gated, pen icon when ready. Disabled state is raised + text-disabled with a reason line under it ("Tick "I understand" above to unlock signing."); clicking it while disabled nudges and scrolls to the gate.
 - **States:** press `scale(.97)` 160ms `cubic-bezier(.23,1,.32,1)`; hover only under `(hover:hover) and (pointer:fine)`, as a colour-mix toward text-1 (never opacity); focus is `outline: 2px solid accent; offset 2px`.
 
@@ -345,12 +347,16 @@ A 7px glyph before the source label in Meta type, text-3: filled dot = on-chain 
 
 ### Analysis panel (signature)
 
-Order: header (AI-ranked chip, Run button with fixed width) → **verdict** → strategy → **what the agents found** → code-checks strip → decision pipeline.
+Order: header (AI-ranked chip, Run button with fixed width) → **AI gate** (when locked) → **verdict** with the #1 move → strategy → **what the agents found** → **how this was decided** (pipeline, the AI's "why this order", code checks) → evidence footer (reply ids, what the AI saw).
 
-- **Verdict:** a 48px tile + 28px/600 sentence. Tile is violet with the number of open moves, orange ⚠ when urgent, mint ✓ when nothing to do. This is the panel's single focal point.
+- **AI gate:** the ownership check lives here, not as a page banner: it unlocks this panel. Accent-muted block, lock disc, 17px/600 title ("Unlock AI analysis"), 14px body, primary **Verify ownership**. Not the owner's wallet: same block without the button. Signature check failed: watch tone with **Check again**. Verified: one 14px line with a mint shield.
+- **#1 move:** under the verdict sub-line, a link to the first suggestion card (`#moves`); accent-muted with "#1 · AI pick" when the AI ranked it.
+- **Section heads** ("What the agents found", "How this was decided") are 17px/600 text-1.
+
+- **Verdict:** a 56px tile + 30px/600 sentence. Tile is violet with the number of open moves, orange ⚠ when urgent, mint ✓ when nothing to do. This is the panel's single focal point.
 - **Strategy:** a segmented control (native radios) followed by one line with the selected thresholds, numbers in bold text-1.
 - **Findings:** four bordered 12px cards. Risk cards are tinted (watch 6%, act 7%) with a matching border and a coloured 26px icon disc; passed cards are neutral with a mint check; not-applicable cards are dashed.
-- **Pipeline** sits last on an inset footer, in 13px: it is supporting evidence, not the headline.
+- **Pipeline** is a full section on the panel surface: 24px dots, 2px connectors, step titles 15px/600, details 14px. "Why this order" (the AI's reasoning) follows the steps on a raised block, then the code-checks strip; a check that changed something shows ⚠ in watch, never ✓. Reply ids and "What the AI saw" sit in the inset footer.
 - **Missing data is never all clear:** an agent that failed, or a loan that could not be valued, turns the tile amber (⚠) with "No move found, but a check is missing." instead of mint ✓.
 - **Rules-only findings:** without an AI run a finding is derived from the rule cards (urgent → act, other card → watch, none → passed; no loan / no concentrated-liquidity position → not applicable). Run AI analysis is locked with its reason unless the visitor proved ownership.
 
@@ -360,7 +366,7 @@ Three numbered stage cards (raised, violet number disc, 17px/600 title, 14px det
 
 ### Decision pipeline (signature)
 
-Five steps with 14–16px dots. Done = accent dot with a drawn check and an accent connector that fills left to right; running = spinning ring; locked (no AI on this view) = dashed dot with lock and dashed connector. Step names text-1 when done, details text-2, timings text-3.
+Five steps with 24px dots. Done = accent dot with a drawn check and an accent connector that fills left to right; running = spinning ring; locked (no AI on this view) = dashed dot with lock and dashed connector. Step names text-1 when done, details text-2, timings text-3.
 
 ### Review & sign sheet (signature)
 
@@ -371,6 +377,10 @@ Order is fixed: balance changes (−/+ with token, amount, USD) → tiered warni
 - **Add funds** opens HOT Kit's bridge popup directly, with no screen of ours first (D42). `pageTheme()` in `lib/hot-kit.ts` maps the tokens onto the kit at every open (so a theme toggle applies on the next open): surfaces (`bg-surface` / `bg-raised` / `bg-page` / `bg-overlay`), the text ladder, `line-strong` borders, `accent` focus, `sign` on HOT's primary button, the page font. It is the same label in the wallet menu, the summary and the empty wallet.
 - **Withdraw** is the review-and-sign sheet's shell (`components/Sheet.tsx`): head with context line, one column, sticky footer with one primary button. Order: amount field (inset well, 24px value, Max, token pill; `type=text inputMode=decimal`, inline `aria-invalid` error, no quote while invalid) → network segmented control and receive token → address (mono, shape-checked per chain, "Fill from a … wallet") → the quote as an `<output>` (You receive ≈ / at least, fee, time, refund, quote validity; updating and failed states in plain words) → **Get quote** / **Review and sign**, which opens the review-and-sign sheet.
 - **Timeline:** a 1px rail with 14px dots: done = accent dot, now = spinning accent ring, waiting = hollow; then the outcome as a `result` block (safe arrived, watch refunded / expired, liq failed). "Close and keep tracking" leaves a status chip by the Withdraw button.
+
+### Plan steps (suggestion details)
+
+"What would happen" is a vertical timeline: 26px accent-muted number discs joined by a 1px accent rail, step text 15px text-1. The numbered list is the plan, so it carries the section's weight; costs and risks sit beside it.
 
 ### Missing states
 

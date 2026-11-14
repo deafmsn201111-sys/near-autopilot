@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist_Mono, Onest } from 'next/font/google';
 import { cookies, headers } from 'next/headers';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -10,7 +10,7 @@ import { WalletButton } from '../components/WalletButton';
 import { THEME_COLOR, THEME_SCRIPT } from '../lib/theme';
 import './globals.css';
 
-const geist = Geist({ subsets: ['latin'], variable: '--font-geist' });
+const onest = Onest({ subsets: ['latin'], variable: '--font-sans' });
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' });
 
 export const metadata: Metadata = {
@@ -26,7 +26,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   const account = (await cookies()).get('np_account')?.value || null;
   return (
-    <html lang="en" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${onest.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
         <meta name="theme-color" content={THEME_COLOR.dark} suppressHydrationWarning />
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />

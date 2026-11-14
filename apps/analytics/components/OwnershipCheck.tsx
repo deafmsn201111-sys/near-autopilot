@@ -1,10 +1,12 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { saveOwnershipProof } from '../app/account-actions';
 import { refreshUntilChecked } from '../lib/ownership-refresh';
 import { watchAccount } from '../lib/wallet';
 import { signOwnership } from '../lib/wallet-sign';
+import { Icon } from './icons';
+import { Button } from './primitives';
 
 const RETRY_MS = 2000;
 const CHECK_FOR_MS = 12_000;
@@ -50,75 +52,102 @@ export function OwnershipCheck({
 
   if (verified)
     return (
-      <div className="callout" style={{ margin: '16px 0' }}>
-        <b>Ownership verified.</b> You signed the ownership message for {account}, so this account
-        can get AI analysis.
-      </div>
+      <p className="an-gate-ok">
+        <Icon name="shield" size={16} />
+        Ownership of {account} verified: AI analysis is unlocked.
+      </p>
     );
 
   if (checkFailed)
     return (
-      <div className="callout" style={{ margin: '16px 0' }}>
-        <b>Heuristic analysis for now.</b> We couldn&apos;t check your signature: the network did
-        not answer in time. You don&apos;t need to sign again.{' '}
-        <button
-          type="button"
-          className="btn secondary small"
-          disabled={checking}
-          onClick={() => startChecking(() => router.refresh())}
-        >
-          {checking ? 'Checking…' : 'Check again'}
-        </button>
-      </div>
+      <Gate
+        tone="watch"
+        title="We couldn't check your signature yet"
+        body="The network did not answer in time. You don't need to sign again: the rules-based analysis stays until it does."
+        action={
+          <Button
+            size="sm"
+            disabled={checking}
+            onClick={() => startChecking(() => router.refresh())}
+          >
+            {checking ? 'Checking…' : 'Check again'}
+          </Button>
+        }
+      />
     );
 
-  const isOwnerWallet = connected === account;
+  if (connected !== account)
+    return (
+      <Gate
+        title="AI analysis is only for the owner"
+        body={`Connect the wallet of ${account} and sign a short ownership message to unlock it. Until then the agents' rules run on their own.`}
+      />
+    );
+
+  const busy = state === 'signing' || state === 'checking';
   return (
-    <div className="callout" style={{ margin: '16px 0' }}>
-      <b>Heuristic analysis.</b>{' '}
-      {isOwnerWallet ? (
-        <>
-          Sign a short message in your wallet to prove you own {account} and unlock AI analysis. It
-          is not a transaction: nothing is sent and no gas is paid.{' '}
-          <button
-            type="button"
-            className="btn primary small"
-            disabled={state === 'signing' || state === 'checking'}
-            onClick={() => {
-              setState('signing');
-              void signOwnership(account).then(async (proof) => {
-                if (!proof) return setState('declined');
-                try {
-                  await saveOwnershipProof(proof);
-                  setState('checking');
-                } catch {
-                  setState('declined');
-                }
-              });
-            }}
-          >
-            {state === 'checking'
-              ? 'Checking your signature…'
-              : state === 'signing'
-                ? 'Waiting for the wallet…'
-                : 'Verify ownership'}
-          </button>
-          {state === 'declined' && (
-            <span className="muted-note"> Not signed: you keep the heuristic analysis.</span>
-          )}
-          {state === 'unverified' && (
-            <span className="muted-note">
-              {' '}
-              Not verified yet: you keep the heuristic analysis. Reload the page to check again.
-            </span>
-          )}
-        </>
-      ) : (
-        <>
-          AI analysis is only for the account&apos;s owner. Connect the wallet of {account} and sign
-          the ownership message to unlock it.
-        </>
-      )}
+    <Gate
+      title="Unlock AI analysis"
+      body={`Sign a short message to prove you own ${account}. It is not a transaction: nothing is sent and no gas is paid.`}
+      note={
+        state === 'declined'
+          ? 'Not signed: the rules-based analysis stays.'
+          : state === 'unverified'
+            ? 'Not verified yet: reload the page to check again.'
+            : null
+      }
+      action={
+        <Button
+          variant="primary"
+          disabled={busy}
+          onClick={() => {
+            setState('signing');
+            void signOwnership(account).then(async (proof) => {
+              if (!proof) return setState('declined');
+              try {
+                await saveOwnershipProof(proof);
+                setState('checking');
+              } catch {
+                setState('declined');
+              }
+            });
+          }}
+        >
+          {state === 'checking'
+            ? 'Checking your signature…'
+            : state === 'signing'
+              ? 'Waiting for the wallet…'
+              : 'Verify ownership'}
+        </Button>
+      }
+    />
+  );
+}
+
+function Gate({
+  tone = 'ai',
+  title,
+  body,
+  note,
+  action,
+}: {
+  tone?: 'ai' | 'watch';
+  title: string;
+  body: string;
+  note?: string | null;
+  action?: ReactNode;
+}) {
+  return (
+    <div className={`an-gate an-gate-${tone}`} role="status">
+      <span className="an-gate-ic">
+        <Icon name="lock" size={18} />
+      </span>
+      <div>
+        <p className="an-gate-t">{title}</p>
+        <p className="an-gate-b">{body}</p>
+        {note && <p className="an-gate-n">{note}</p>}
+      </div>
+      {action}
     </div>
   );
 }
