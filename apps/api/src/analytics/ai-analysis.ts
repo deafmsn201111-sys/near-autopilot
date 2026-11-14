@@ -610,13 +610,13 @@ function lpTool(
         const meta = obs.lp?.get(p.positionId);
         const view = obs.market?.lpPositions.find((v) => v.id === p.positionId);
         if (!meta || !view || meta.inRange) continue;
-        const ev = evaluateLpReposition(view, p.tickLower, p.tickUpper, obs.config);
         let range;
         try {
           range = alignRange(p.tickLower, p.tickUpper, meta.pointDelta, meta.currentPoint);
         } catch {
           continue;
         }
+        const ev = evaluateLpReposition(view, range.leftPoint, range.rightPoint, obs.config);
         if (!ev.ok) continue;
         const yIn = (point: number) =>
           sig(1 / pointToDecimalPrice(point, meta.decimalsX, meta.decimalsY));
@@ -653,8 +653,12 @@ function lpTool(
       for (const h of heuristics)
         if (h.intent?.action === 'reposition_dcl' && !moved.has(h.intent.lptId)) {
           candidates.push(h);
+          const { lptId } = h.intent;
+          const costed = obs.market?.lpPositions.some((v) => v.id === lptId);
           byCandidate.set(h.id, {
-            text: 'Out of range; a new range would not pay back in time, so exit to the wallet',
+            text: costed
+              ? 'Out of range; a new range would not pay back in time, so exit to the wallet'
+              : 'Out of range; no data to cost a new range, so exit to the wallet',
             provenance: 'on_chain_verified',
           });
         }

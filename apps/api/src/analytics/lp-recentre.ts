@@ -54,8 +54,16 @@ export interface WalletObservation extends AgentObservation {
   readonly lp?: ReadonlyMap<string, LpMeta>;
 }
 
-const usdToRaw = (usd: number, priceUsd: number, decimals: number) =>
-  BigInt(Math.floor((usd / priceUsd) * 10 ** decimals));
+/** USD in a token's base units; null when the price makes it meaningless (zero, missing, overflow). */
+const usdToRaw = (
+  usd: number | undefined,
+  priceUsd: number | undefined,
+  decimals: number | undefined,
+) => {
+  if (usd === undefined || !priceUsd || decimals === undefined) return null;
+  const raw = Math.floor((usd / priceUsd) * 10 ** decimals);
+  return Number.isFinite(raw) && raw >= 0 ? BigInt(raw) : null;
+};
 
 /** The pool's liquidity ranges as contiguous segments; gaps read as no liquidity, overlaps as bad data. */
 export function depthSegments(depth: DclMarketDepth): LiquiditySegment[] {
@@ -105,7 +113,10 @@ export function lpObservation(input: {
     if (pos.amount <= 0n || (pos.v_liquidity ?? 0n) > 0n) continue;
     const pool = input.pools.get(pos.pool_id);
     if (!input.allowedPools.has(pos.pool_id) || !pool) {
-      notes.push(`position ${pos.lpt_id}: pool is not allowlisted`);
+      const why = input.allowedPools.has(pos.pool_id)
+        ? 'pool read failed'
+        : 'pool is not allowlisted';
+      notes.push(`position ${pos.lpt_id}: ${why}`);
       continue;
     }
     const volumeUsd = input.volumesUsd?.get(pos.pool_id);
@@ -114,13 +125,22 @@ export function lpObservation(input: {
     const decY = input.decimals(pool.token_y);
     const depth = input.depths.get(pos.pool_id);
     const segments = depth ? depthSegments(depth) : [];
+    const volumeQuote = usdToRaw(volumeUsd, priceY, decY);
+    const gasQuote = usdToRaw(nearUsd && RECENTRE_GAS_NEAR * nearUsd, priceY, decY);
     const missing = [
-      volumeUsd === undefined || !Number.isFinite(volumeUsd) ? 'no 24 h volume' : null,
-      !priceY || !nearUsd || decX === undefined || decY === undefined ? 'no price' : null,
+      volumeUsd === undefined ? 'no 24 h volume' : null,
+      volumeQuote === null || gasQuote === null || decX === undefined ? 'no price' : null,
       segments.length === 0 ? 'no market depth' : null,
       pool.liquidity === undefined ? 'no active liquidity' : null,
     ].filter((m) => m !== null);
-    if (missing.length > 0 || !priceY || !nearUsd || decX === undefined || decY === undefined) {
+    if (
+      missing.length > 0 ||
+      volumeQuote === null ||
+      gasQuote === null ||
+      !priceY ||
+      decX === undefined ||
+      decY === undefined
+    ) {
       notes.push(`position ${pos.lpt_id}: ${missing.join(', ')}`);
       continue;
     }
@@ -136,10 +156,10 @@ export function lpObservation(input: {
       },
       activePoolLiquidity: dclToClmmLiquidity(pool.liquidity ?? 0n),
       activeIncludesPosition: inRange,
-      volume24hQuote: usdToRaw(volumeUsd ?? 0, priceY, decY),
+      volume24hQuote: volumeQuote,
       feePpm: pool.fee,
       segments,
-      gasQuote: usdToRaw(RECENTRE_GAS_NEAR * nearUsd, priceY, decY),
+      gasQuote,
     });
     const symbolX = input.label(pool.token_x);
     const symbolY = input.label(pool.token_y);
@@ -160,6 +180,29 @@ export function lpObservation(input: {
 }
 
 export class RecentreRefused extends Error {}
+
+const LN_POINT = Math.log(1.0001);
+
+/**
+ * Where our own swap leaves the pool, so the add's minimums allow for it. The quote's average price sits about halfway
+ * between the old and the new marginal price, so the move is about twice the quote's distance from the spot (fees
+ * count as move: the bound only gets looser). Clamped inside the new range.
+ */
+function pointAfterSwap(
+  cur: number,
+  sell: 'x' | 'y',
+  amountIn: bigint,
+  quoted: bigint,
+  leftPoint: number,
+  rightPoint: number,
+): number {
+  const yPerX =
+    sell === 'x' ? Number(quoted) / Number(amountIn) : Number(amountIn) / Number(quoted);
+  const execPoint = Math.log(yPerX) / LN_POINT;
+  const after = Math.round(cur + 2 * (execPoint - cur));
+  if (!Number.isFinite(after)) throw new RecentreRefused('the rebalancing quote is unusable');
+  return Math.min(rightPoint - 1, Math.max(leftPoint, after));
+}
 
 /**
  * The re-centre cascade, from a FRESH position and pool: remove the liquidity -> withdraw both tokens -> swap the
@@ -218,10 +261,12 @@ export async function recentreSteps(input: {
   ];
   let amountX = minX;
   let amountY = minY;
+  let afterSwapPoint = cur;
   const swap = recentreSwap({ leftPoint, rightPoint, currentPoint: cur, amountX, amountY });
   if (swap) {
     const [tokenIn, tokenOut] = swap.sell === 'x' ? [tokenX, tokenY] : [tokenY, tokenX];
-    const minOut = atLeast(await input.quote(tokenIn, tokenOut, swap.amountIn));
+    const quoted = await input.quote(tokenIn, tokenOut, swap.amountIn);
+    const minOut = atLeast(quoted);
     if (minOut <= 0n)
       throw new RecentreRefused('the pool has no liquidity for the rebalancing swap');
     steps.push({
@@ -243,6 +288,7 @@ export async function recentreSteps(input: {
       amountY -= swap.amountIn;
       amountX += minOut;
     }
+    afterSwapPoint = pointAfterSwap(cur, swap.sell, swap.amountIn, quoted, leftPoint, rightPoint);
   }
   const liquidity = computeLiquidity({
     leftPoint,
@@ -252,12 +298,18 @@ export async function recentreSteps(input: {
     amountY,
   });
   if (liquidity <= 0n) throw new RecentreRefused('the position is too small to re-centre');
-  const needed = requiredDepositForLiquidity({
-    liquidity,
-    leftPoint,
-    rightPoint,
-    currentPoint: cur,
-  });
+  const used = (point: number) =>
+    requiredDepositForLiquidity({
+      liquidity: computeLiquidity({ leftPoint, rightPoint, currentPoint: point, amountX, amountY }),
+      leftPoint,
+      rightPoint,
+      currentPoint: point,
+    });
+  const [before, after] = [used(cur), used(afterSwapPoint)];
+  const needed = {
+    x: before.x < after.x ? before.x : after.x,
+    y: before.y < after.y ? before.y : after.y,
+  };
   for (const [token, amount, symbol] of [
     [tokenX, amountX, input.symbolX],
     [tokenY, amountY, input.symbolY],

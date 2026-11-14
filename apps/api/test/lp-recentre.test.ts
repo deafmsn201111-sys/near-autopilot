@@ -87,6 +87,12 @@ describe('lpObservation', () => {
     expect(notes.join()).toMatch(/no 24 h volume/);
   });
 
+  it('leaves a position out when a price makes its amounts meaningless', () => {
+    const { views, notes } = observe({ priceUsd: (t) => (t === WNEAR ? 1e-300 : 1) });
+    expect(views).toEqual([]);
+    expect(notes.join()).toMatch(/no price/);
+  });
+
   it('leaves out positions in pools that are not allowlisted, and farm-staked positions', () => {
     expect(observe({ allowedPools: new Set() }).views).toEqual([]);
     expect(observe({ positions: [{ ...position, v_liquidity: 1n }] }).views).toEqual([]);
@@ -160,6 +166,19 @@ describe('recentreSteps', () => {
         dcl: { contract: DCL, pools: new Set([POOL_ID]) },
       }),
     ).toEqual({ ok: true });
+  });
+
+  it("loosens the add's minimums by the price move its own swap causes", async () => {
+    const atSpot = (amountIn: bigint) => BigInt(Math.floor(Number(amountIn) / 1.0001 ** CUR));
+    const minY = async (impact: number) => {
+      const r = await recentreSteps({
+        ...base,
+        quote: async (_in, _out, amountIn) =>
+          BigInt(Math.floor(Number(atSpot(amountIn)) * (1 - impact))),
+      });
+      return BigInt(String(r.steps.at(-1)!.tx.actions[0]!.args['min_amount_y']));
+    };
+    expect(await minY(0.02)).toBeLessThan(await minY(0));
   });
 
   it('refuses when the price is outside the new range', async () => {
