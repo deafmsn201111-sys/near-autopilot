@@ -1248,6 +1248,25 @@ describe('analyseAccount', () => {
       expect(l.rows).toHaveLength(1);
     });
 
+    it('a second request while the same run is in flight waits for it: one model run, one row', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((r) => (open = r));
+      const model = fake([async () => (await gate, callAll), () => final(pick)]);
+      const l = ledger();
+      const deps = ai(model.llm, l);
+      const input = { ...ctx, heuristics: [heuristic], checks: [heuristic] };
+      const first = analyseAccount(deps, input);
+      await vi.waitFor(() => expect(model.tools).toHaveLength(1));
+      const second = analyseAccount(deps, { ...input, observe: async () => later() });
+      open();
+      const [a, b] = await Promise.all([first, second]);
+      expect(a.source).toBe('llm');
+      expect(b).toEqual(a);
+      expect(model.tools).toHaveLength(1);
+      expect(l.rows).toHaveLength(1);
+      expect(deps.memo.runs).toHaveLength(1);
+    });
+
     it('runs the model again once the cached result is 10 minutes old', async () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       try {

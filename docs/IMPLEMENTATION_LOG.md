@@ -550,3 +550,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   30 min after the deadline (a late deposit can take a confirmation to show up); `INCOMPLETE_DEPOSIT` keeps
   polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
   address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.
+
+## 2026-11-14 — A broken AI stream no longer starts a second run or spends a second token (#150)
+
+- `analyseAccount`: runs still going live in `AnalysisMemo.running` by the cache key; a request with the same key
+  waits for that run and gets its result (also a fallback) instead of starting a model run of its own.
+- `/api/analysis`: a paid stream request leaves one free JSON retry for the same visitor + account + strategy
+  (10 min, `BoundedMap` of 10 000), so the client's fallback after a broken stream costs no second visitor token.
+- `runAnalysis`: an `error` frame returns its error (zod, ≤ 200 chars) instead of re-POSTing as JSON; only a stream
+  that ends without a valid `done` falls back.

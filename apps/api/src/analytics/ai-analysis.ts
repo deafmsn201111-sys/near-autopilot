@@ -107,6 +107,8 @@ const MAX_RUNS_PER_WINDOW = 60;
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
 export interface AnalysisMemo {
   readonly results: BoundedMap<string, { readonly at: number; readonly analysis: Analysis }>;
+  /** Runs still going, by the same key: removed when each settles. */
+  readonly running: Map<string, Promise<Analysis>>;
   /** Start times of the runs that reached the model in the last window. */
   readonly runs: number[];
   readonly maxRuns: number;
@@ -114,6 +116,7 @@ export interface AnalysisMemo {
 
 export const analysisMemo = (maxRuns = MAX_RUNS_PER_WINDOW): AnalysisMemo => ({
   results: new BoundedMap(CACHE_MAX),
+  running: new Map(),
   runs: [],
   maxRuns,
 });
@@ -859,226 +862,238 @@ export async function analyseAccount(
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS)
     return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
-  const read = {
-    tokens: heldTokens(obs).size,
-    loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
-  };
-  // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
-  if (ctx.heuristics.length === 0) {
-    const offered = new Map<string, PortfolioRecommendation>();
-    const checked: Steps = new Map();
-    const tools = toolsFor(offered, checked);
-    const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
-    if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
-      const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
-      const trace = traceSteps(ran, checked, [], new Set());
-      return early({
-        ...fallback('nothing_to_rank'),
-        note: trace
-          .filter((t) => t.tool !== 'market_intelligence')
-          .map((t) => t.text)
-          .join(' · '),
-        trace,
-        read,
-      });
+  // A retry while the same run is still going (a broken stream's JSON fallback) waits for it: one click, one run.
+  const running = ai.memo.running.get(key);
+  if (running) return early(await running);
+  const fresh = async (): Promise<Analysis> => {
+    const read = {
+      tokens: heldTokens(obs).size,
+      loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
+    };
+    // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
+    if (ctx.heuristics.length === 0) {
+      const offered = new Map<string, PortfolioRecommendation>();
+      const checked: Steps = new Map();
+      const tools = toolsFor(offered, checked);
+      const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
+      if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
+        const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
+        const trace = traceSteps(ran, checked, [], new Set());
+        return early({
+          ...fallback('nothing_to_rank'),
+          note: trace
+            .filter((t) => t.tool !== 'market_intelligence')
+            .map((t) => t.text)
+            .join(' · '),
+          trace,
+          read,
+        });
+      }
     }
-  }
-  if (!(await affordable(worstCall))) return early(fallback('cap'));
-  if (abort.signal.aborted) return early(fallback('deadline'));
-  if (!admit(ai.memo)) return early(fallback('busy'));
-  onEvent({ type: 'read', model: ai.model, ...read });
+    if (!(await affordable(worstCall))) return early(fallback('cap'));
+    if (abort.signal.aborted) return early(fallback('deadline'));
+    if (!admit(ai.memo)) return early(fallback('busy'));
+    onEvent({ type: 'read', model: ai.model, ...read });
 
-  // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
-  // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
-  let inFlight = 0n;
-  let ended = false;
-  /** A sent call whose usage never came back (deadline, dropped connection) may still be billed: its worst case counts. */
-  let unreported = false;
-  const hold = (micro: bigint) => {
-    if (ended) return;
-    inFlight += micro;
-    heldMicro += micro;
-  };
-  const charge = (micro: bigint) => {
-    usage.costMicroUsd += micro;
-    heldMicro += micro;
-  };
-  const release = () => {
-    heldMicro -= inFlight;
-    inFlight = 0n;
-    if (unreported) charge(worstCall);
-    ended = true;
-  };
-  const metered: ToolLlm = {
-    open: (request) => {
-      let nextInput =
-        REQUEST_OVERHEAD_TOKENS + tokenBound([request.system, request.prompt, request.tools]);
-      const chat = ai.llm.open({
-        ...request,
-        onUsage: (u) => {
-          if (ended) return;
-          unreported = false;
-          nextInput = u.inputTokens + u.outputTokens + REQUEST_OVERHEAD_TOKENS;
-          usage.inputTokens += u.inputTokens;
-          usage.outputTokens += u.outputTokens;
-          charge(costMicroUsd(ai.model, u));
-        },
+    // A run holds its spend from the moment a reply reports it until its row is written, plus one worst-case call per
+    // call in flight. It gives back the in-flight part when it ends, even if a call it made never settles.
+    let inFlight = 0n;
+    let ended = false;
+    /** A sent call whose usage never came back (deadline, dropped connection) may still be billed: its worst case counts. */
+    let unreported = false;
+    const hold = (micro: bigint) => {
+      if (ended) return;
+      inFlight += micro;
+      heldMicro += micro;
+    };
+    const charge = (micro: bigint) => {
+      usage.costMicroUsd += micro;
+      heldMicro += micro;
+    };
+    const release = () => {
+      heldMicro -= inFlight;
+      inFlight = 0n;
+      if (unreported) charge(worstCall);
+      ended = true;
+    };
+    const metered: ToolLlm = {
+      open: (request) => {
+        let nextInput =
+          REQUEST_OVERHEAD_TOKENS + tokenBound([request.system, request.prompt, request.tools]);
+        const chat = ai.llm.open({
+          ...request,
+          onUsage: (u) => {
+            if (ended) return;
+            unreported = false;
+            nextInput = u.inputTokens + u.outputTokens + REQUEST_OVERHEAD_TOKENS;
+            usage.inputTokens += u.inputTokens;
+            usage.outputTokens += u.outputTokens;
+            charge(costMicroUsd(ai.model, u));
+          },
+        });
+        return {
+          send: async (results) => {
+            if (results) nextInput += tokenBound(results);
+            if (nextInput > WORST_CASE_INPUT_TOKENS)
+              throw new ToolLoopError(
+                `next request may exceed ${WORST_CASE_INPUT_TOKENS} input tokens`,
+              );
+            // Held before the check, so two runs checking at once both see each other.
+            hold(worstCall);
+            try {
+              if (!(await affordable(0n))) throw new BudgetReached();
+              if (abort.signal.aborted) throw new Error('aborted');
+              usage.calls++;
+              unreported = true;
+              return await chat.send(results);
+            } finally {
+              hold(-worstCall);
+            }
+          },
+        };
+      },
+    };
+    const calledTools = new Set<string>();
+    const counted = (tool: LoopTool): LoopTool => ({
+      ...tool,
+      run: (input) => (calledTools.add(tool.spec.name), tool.run(input)),
+    });
+    const record = async (outcome: CallOutcome) => {
+      if (usage.calls === 0) return;
+      const cost = usage.costMicroUsd;
+      await ai.ledger
+        .record({
+          at: new Date(),
+          accountId: ctx.accountId,
+          model: ai.model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          costMicroUsd: usage.costMicroUsd,
+          latencyMs: Date.now() - startedAt.getTime(),
+          tools: [...calledTools],
+          outcome,
+        })
+        .catch((e: unknown) => {
+          const day = utcDay();
+          unrecorded = { day, micro: (unrecorded.day === day ? unrecorded.micro : 0n) + cost };
+          onError(e);
+        })
+        .finally(() => {
+          heldMicro -= cost;
+        });
+    };
+    const failed = async (code: Exclude<CallOutcome, 'ok'>) => {
+      await record(code);
+      return fallback(code);
+    };
+
+    const found = new Map<string, PortfolioRecommendation>();
+    const steps: Steps = new Map();
+    const succeeded = new Set<string>();
+    const report = ({ tool, ok }: ToolTraceEntry) => {
+      const agent = AGENTS[tool];
+      if (!agent || succeeded.has(tool)) return;
+      if (ok) succeeded.add(tool);
+      onEvent({ type: 'agent', step: { tool, agent, ...stepLine(steps, tool, ok), ...NO_PICK } });
+    };
+    const asked = (names: readonly string[]) => {
+      const agents = [...new Set(names)]
+        .filter((tool) => AGENTS[tool] && !succeeded.has(tool))
+        .map((tool) => ({ tool, agent: AGENTS[tool]! }));
+      if (agents.length > 0) onEvent({ type: 'asked', agents });
+    };
+    const run = () =>
+      runToolLoop({
+        llm: metered,
+        system: `${SYSTEM}\n${strategyLine(strategy)}`,
+        prompt: 'Analyse the connected wallet.',
+        tools: toolsFor(found, steps).map(counted),
+        maxTurns: MAX_TURNS,
+        signal: abort.signal,
+        onCalls: asked,
+        onResult: report,
       });
-      return {
-        send: async (results) => {
-          if (results) nextInput += tokenBound(results);
-          if (nextInput > WORST_CASE_INPUT_TOKENS)
-            throw new ToolLoopError(
-              `next request may exceed ${WORST_CASE_INPUT_TOKENS} input tokens`,
-            );
-          // Held before the check, so two runs checking at once both see each other.
-          hold(worstCall);
-          try {
-            if (!(await affordable(0n))) throw new BudgetReached();
-            if (abort.signal.aborted) throw new Error('aborted');
-            usage.calls++;
-            unreported = true;
-            return await chat.send(results);
-          } finally {
-            hold(-worstCall);
-          }
-        },
-      };
-    },
-  };
-  const calledTools = new Set<string>();
-  const counted = (tool: LoopTool): LoopTool => ({
-    ...tool,
-    run: (input) => (calledTools.add(tool.spec.name), tool.run(input)),
-  });
-  const record = async (outcome: CallOutcome) => {
-    if (usage.calls === 0) return;
-    const cost = usage.costMicroUsd;
-    await ai.ledger
-      .record({
-        at: new Date(),
-        accountId: ctx.accountId,
+    let reply: Awaited<ReturnType<typeof runToolLoop>>;
+    try {
+      reply = await Promise.race([run(), deadline]).finally(() => {
+        clearTimeout(timer);
+        release();
+      });
+    } catch (e) {
+      if (e instanceof BudgetReached) return failed('cap');
+      onError(e);
+      if (abort.signal.aborted) return failed('deadline');
+      return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
+    }
+    const { text, trace } = reply;
+    onEvent({ type: 'ranked', turns: usage.calls });
+    const parsed = picksSchema.safeParse(parseJson(stripFence(text)));
+    if (!parsed.success) {
+      onError(parsed.error);
+      return failed('invalid_output');
+    }
+    // A "why" may quote its own card and the tools' shared context (health factor, notes, signals), never another card.
+    const context = new Set(
+      trace.flatMap((t) =>
+        t.output && typeof t.output === 'object'
+          ? displayNumbers({ ...t.output, candidates: [] })
+          : [],
+      ),
+    );
+    const recommendations: PortfolioRecommendation[] = [];
+    const checks = { picked: 0, explained: 0, replaced: 0, restored: 0, dropped: 0 };
+    for (const pick of parsed.data.picks) {
+      const candidate = found.get(pick.id);
+      if (!candidate || recommendations.some((r) => r.id === pick.id)) {
+        checks.dropped++;
+        continue;
+      }
+      const own = new Set(displayNumbers(candidate));
+      const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
+      checks[honest ? 'explained' : 'replaced']++;
+      recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
+    }
+    checks.picked = recommendations.length;
+    if (recommendations.length === 0) return failed('empty');
+    const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
+    const missing = warnings.filter(
+      (w, i) =>
+        !recommendations.some((r) => r.kind === w.kind) &&
+        warnings.findIndex((o) => o.kind === w.kind) === i,
+    );
+    recommendations.unshift(...missing);
+    const kept = new Set(missing.map((m) => m.id));
+    checks.restored = missing.length;
+    onEvent({ type: 'checked', checks });
+    await record('ok');
+    const analysis: Analysis = {
+      source: 'llm',
+      fallback: null,
+      note: null,
+      recommendations,
+      calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
+      trace: traceSteps(trace, steps, recommendations, kept),
+      run: {
         model: ai.model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        costMicroUsd: usage.costMicroUsd,
-        latencyMs: Date.now() - startedAt.getTime(),
-        tools: [...calledTools],
-        outcome,
-      })
-      .catch((e: unknown) => {
-        const day = utcDay();
-        unrecorded = { day, micro: (unrecorded.day === day ? unrecorded.micro : 0n) + cost };
-        onError(e);
-      })
-      .finally(() => {
-        heldMicro -= cost;
-      });
-  };
-  const failed = async (code: Exclude<CallOutcome, 'ok'>) => {
-    await record(code);
-    return fallback(code);
-  };
-
-  const found = new Map<string, PortfolioRecommendation>();
-  const steps: Steps = new Map();
-  const succeeded = new Set<string>();
-  const report = ({ tool, ok }: ToolTraceEntry) => {
-    const agent = AGENTS[tool];
-    if (!agent || succeeded.has(tool)) return;
-    if (ok) succeeded.add(tool);
-    onEvent({ type: 'agent', step: { tool, agent, ...stepLine(steps, tool, ok), ...NO_PICK } });
-  };
-  const asked = (names: readonly string[]) => {
-    const agents = [...new Set(names)]
-      .filter((tool) => AGENTS[tool] && !succeeded.has(tool))
-      .map((tool) => ({ tool, agent: AGENTS[tool]! }));
-    if (agents.length > 0) onEvent({ type: 'asked', agents });
-  };
-  const run = () =>
-    runToolLoop({
-      llm: metered,
-      system: `${SYSTEM}\n${strategyLine(strategy)}`,
-      prompt: 'Analyse the connected wallet.',
-      tools: toolsFor(found, steps).map(counted),
-      maxTurns: MAX_TURNS,
-      signal: abort.signal,
-      onCalls: asked,
-      onResult: report,
-    });
-  let reply: Awaited<ReturnType<typeof runToolLoop>>;
-  try {
-    reply = await Promise.race([run(), deadline]).finally(() => {
-      clearTimeout(timer);
-      release();
-    });
-  } catch (e) {
-    if (e instanceof BudgetReached) return failed('cap');
-    onError(e);
-    if (abort.signal.aborted) return failed('deadline');
-    return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
-  }
-  const { text, trace } = reply;
-  onEvent({ type: 'ranked', turns: usage.calls });
-  const parsed = picksSchema.safeParse(parseJson(stripFence(text)));
-  if (!parsed.success) {
-    onError(parsed.error);
-    return failed('invalid_output');
-  }
-  // A "why" may quote its own card and the tools' shared context (health factor, notes, signals), never another card.
-  const context = new Set(
-    trace.flatMap((t) =>
-      t.output && typeof t.output === 'object'
-        ? displayNumbers({ ...t.output, candidates: [] })
-        : [],
-    ),
-  );
-  const recommendations: PortfolioRecommendation[] = [];
-  const checks = { picked: 0, explained: 0, replaced: 0, restored: 0, dropped: 0 };
-  for (const pick of parsed.data.picks) {
-    const candidate = found.get(pick.id);
-    if (!candidate || recommendations.some((r) => r.id === pick.id)) {
-      checks.dropped++;
-      continue;
-    }
-    const own = new Set(displayNumbers(candidate));
-    const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
-    checks[honest ? 'explained' : 'replaced']++;
-    recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
-  }
-  checks.picked = recommendations.length;
-  if (recommendations.length === 0) return failed('empty');
-  const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
-  const missing = warnings.filter(
-    (w, i) =>
-      !recommendations.some((r) => r.kind === w.kind) &&
-      warnings.findIndex((o) => o.kind === w.kind) === i,
-  );
-  recommendations.unshift(...missing);
-  const kept = new Set(missing.map((m) => m.id));
-  checks.restored = missing.length;
-  onEvent({ type: 'checked', checks });
-  await record('ok');
-  const analysis: Analysis = {
-    source: 'llm',
-    fallback: null,
-    note: null,
-    recommendations,
-    calledTools: [...new Set(trace.map((t) => t.tool))].filter((t) => t in AGENTS),
-    trace: traceSteps(trace, steps, recommendations, kept),
-    run: {
-      model: ai.model,
-      turns: usage.calls,
-      toolCalls: trace.length,
-      ms: Date.now() - startedAt.getTime(),
+        turns: usage.calls,
+        toolCalls: trace.length,
+        ms: Date.now() - startedAt.getTime(),
+        read,
+        checks,
+      },
       read,
-      checks,
-    },
-    read,
-    cachedAt: null,
+      cachedAt: null,
+    };
+    ai.memo.results.set(key, { at: Date.now(), analysis });
+    return analysis;
   };
-  ai.memo.results.set(key, { at: Date.now(), analysis });
-  return analysis;
+  const pending = fresh();
+  ai.memo.running.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    ai.memo.running.delete(key);
+  }
 }
 
 function stepLine(steps: Steps, tool: string, ok: boolean): StepLine & { ok: boolean } {

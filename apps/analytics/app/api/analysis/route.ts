@@ -1,10 +1,11 @@
-import { accountIdSchema } from '@near-autopilot/core';
+import { accountIdSchema, BoundedMap } from '@near-autopilot/core';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { strategySchema } from '@near-autopilot/core/strategy';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { apiPost, apiPostStream } from '../../../lib/api';
-import { ACCOUNT_LIMIT, consume } from '../../../lib/rate-limit';
+import { processWide } from '../../../lib/process-state';
+import { ACCOUNT_LIMIT, consume, MAX_TRACKED_KEYS, visitor } from '../../../lib/rate-limit';
 
 /**
  * Server proxy for `POST /v1/analytics/account/:id/analysis`: the API re-ranks the account's recommendations (with the
@@ -16,6 +17,11 @@ export const dynamic = 'force-dynamic';
 // like an account read, far above the AI limit so rule-based answers cannot block an owner's AI.
 const LIMIT = { ...ACCOUNT_LIMIT, perVisitor: 5 };
 const LLM_TIMEOUT_MS = 60_000;
+/** A paid stream leaves one free JSON retry for the same click, so a broken stream's fallback costs no second token. */
+const retries = processWide(
+  'analysisRetries',
+  () => new BoundedMap<string, number>(MAX_TRACKED_KEYS),
+);
 
 function isJson(req: Request): boolean {
   const type = req.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
@@ -44,7 +50,12 @@ export async function POST(req: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  if (!(await consume('analysis', LIMIT))) {
+  const streamed = req.headers.get('accept')?.includes('text/event-stream') ?? false;
+  const click = `${await visitor()}|${account.data}|${strategy.data}`;
+  const paidAt = retries.get(click);
+  retries.delete(click);
+  const retry = !streamed && paidAt !== undefined && Date.now() - paidAt < LIMIT.windowMs;
+  if (!retry && !(await consume('analysis', LIMIT))) {
     return NextResponse.json(
       { error: 'Too many requests. Wait a few minutes and try again.' },
       { status: 429, headers: { 'retry-after': String(LIMIT.windowMs / 1000) } },
@@ -54,7 +65,8 @@ export async function POST(req: Request): Promise<Response> {
   const proof = (await cookies()).get(OWNERSHIP_COOKIE)?.value;
   const path = `/v1/analytics/account/${encodeURIComponent(account.data)}/analysis`;
   const forward: Record<string, string> = proof ? { 'x-ownership-proof': proof } : {};
-  if (req.headers.get('accept')?.includes('text/event-stream')) {
+  if (streamed) {
+    retries.set(click, Date.now());
     return stream(await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward));
   }
   const { status, body: out } = await apiPost(
