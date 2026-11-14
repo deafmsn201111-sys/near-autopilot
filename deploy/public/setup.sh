@@ -7,6 +7,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ip="${1:-}"
+if [[ -n "$ip" && ! "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+  echo "✗ '$ip' is not an IPv4 address; usage: ./setup.sh [server public IP]" >&2
+  exit 1
+fi
 
 # The stack logs to journald (docker-compose.yml); without it no container would start, so stop before touching anything.
 if ! systemctl is-active --quiet systemd-journald; then
@@ -50,7 +54,10 @@ if ! grep -q '^ADMIN_API_TOKEN=.' .env; then
 fi
 mkdir -p checkpoints
 # the containers run as the unprivileged `node` user (uid 1000)
-chown 1000:1000 checkpoints 2>/dev/null || chmod 777 checkpoints
+if ! chown 1000:1000 checkpoints; then
+  echo "✗ could not give checkpoints/ to uid 1000; run ./setup.sh as root (sudo)." >&2
+  exit 1
+fi
 docker compose up -d --remove-orphans
 docker compose ps
 echo "• started. First market data appears after the first collector cycle (a few minutes)."

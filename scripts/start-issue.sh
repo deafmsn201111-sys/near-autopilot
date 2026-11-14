@@ -4,6 +4,7 @@
 set -euo pipefail
 
 issue="${1:?usage: scripts/start-issue.sh <issue-number>}"
+[[ "$issue" =~ ^[0-9]+$ ]] || { echo "issue number must be numeric, got '$issue'" >&2; exit 1; }
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 

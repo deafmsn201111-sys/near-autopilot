@@ -78,15 +78,15 @@ Every "try it" step below starts from the [Quick start](#quick-start): `./script
 
 **The security track's questions, answered**
 
-| Track topic             | Our answer                                                                                                                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spending limits         | `validateCascade`: at most 0.15 NEAR attached per action and 0.3 NEAR per cascade (wrapping your own NEAR into wNEAR excluded), 300 Tgas per action, allowlisted receivers and methods |
-| Policy engine           | 12 checks, ALLOW / WARN / BLOCK, on the demo portfolios; `validateCascade` on every cascade built for a connected wallet                                                               |
-| Sandboxed wallet        | The server holds no key and has no signer: the user's own wallet is the only place a transaction is signed                                                                             |
-| Function-call keys      | Not used, on purpose: they cannot attach the 1 yoctoNEAR every NEP-141 `ft_transfer_call` needs (below)                                                                                |
-| TEE attestation         | The AI runs in a NEAR AI Cloud TEE; every reply's signature is checked against the attested key (the hardware quote is left to NEAR AI's verifier)                                     |
-| Scam detection          | Tokens outside our list are marked **Unverified**, kept out of totals and never swapped into (D44)                                                                                     |
-| Counterparty reputation | No                                                                                                                                                                                     |
+| Track topic             | Our answer                                                                                                                                                                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spending limits         | `validateCascade`: at most 0.15 NEAR attached per action and 0.3 NEAR per cascade (wrapping your own NEAR into wNEAR excluded), 300 Tgas per action, allowlisted receivers, methods per receiver (`near_deposit` only on `wrap.near`), `ft_transfer_call` only to a protocol |
+| Policy engine           | 12 checks, ALLOW / WARN / BLOCK, on the demo portfolios; `validateCascade` on every cascade built for a connected wallet                                                                                                                                                     |
+| Sandboxed wallet        | The server holds no key and has no signer: the user's own wallet is the only place a transaction is signed                                                                                                                                                                   |
+| Function-call keys      | Not used, on purpose: they cannot attach the 1 yoctoNEAR every NEP-141 `ft_transfer_call` needs (below)                                                                                                                                                                      |
+| TEE attestation         | The AI runs in a NEAR AI Cloud TEE; every reply's signature is checked against the attested key (the hardware quote is left to NEAR AI's verifier)                                                                                                                           |
+| Scam detection          | Tokens outside our list are marked **Unverified**, kept out of totals and never swapped into (D44)                                                                                                                                                                           |
+| Counterparty reputation | No                                                                                                                                                                                                                                                                           |
 
 **Why the agent does not sign, not even with a function-call key**
 
