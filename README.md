@@ -534,7 +534,7 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
 - **Simulation is not on-chain.** `DATA_SOURCE=simulation` uses synthetic balances and fixed demo prices served by
   an in-process mock RPC; nothing it shows was read from NEAR, and nothing is ever sent.
 - **`dry-run` sends nothing.** A `dry_run` proposal is a plan that passed policy, not a transaction; it has no tx hash.
-- **No transaction has ever been submitted from this repository**, on any network. Transaction payloads (Rhea v1
+- **Transactions are signed and sent only by the user's wallet**, never by the server. Transaction payloads (Rhea v1
   `ft_transfer_call` swap message, Burrow repay/collateral messages) follow the contracts' source and are gated at
   runtime by on-chain verification (chain id, deployed-code exports, oracle identity, token listing), but their
   on-chain _effect_ is unverified. Responses are strictly Zod-validated so a mismatch fails closed. Evidence and gaps:
