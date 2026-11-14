@@ -49,6 +49,7 @@ else
   echo "• .env created with fresh secrets (not shown)"
 fi
 
+grep -q '^API_TOKEN=.' .env || { set_var API_TOKEN "$(rand 32)"; echo "• API_TOKEN added to .env (not shown)"; }
 grep -q '^ADMIN_API_TOKEN=.' .env || { set_var ADMIN_API_TOKEN "$(rand 32)"; echo "• ADMIN_API_TOKEN added to .env (not shown)"; }
 grep -q '^ANALYSIS_ENCRYPTION_KEY=.' .env || { set_var ANALYSIS_ENCRYPTION_KEY "$(rand 32)"; echo "• ANALYSIS_ENCRYPTION_KEY added to .env (not shown)"; }
 chmod 600 .env
