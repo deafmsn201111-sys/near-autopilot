@@ -1971,3 +1971,26 @@ describe('lp_optimizer tool', () => {
     expect((await lpCards(0)).map((r) => r.id)).toEqual([exit.id]);
   });
 });
+
+describe('market intelligence volatility on the wallet path', () => {
+  it('a 24 h range above 15% is a volatility_spike the trace line names', async () => {
+    const base = observation();
+    const obs = {
+      ...base,
+      market: { ...base.market!, volatility24hBps: new Map([[WNEAR, 4000]]) },
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: async () => obs,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'market_intelligence')?.text).toBe(
+      'wNEAR: 24h realised volatility 4000 bps',
+    );
+  });
+});

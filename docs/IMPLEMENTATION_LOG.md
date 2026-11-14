@@ -473,3 +473,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `ai-analysis.ts`: `lp_optimizer` tool replaces `liquidity_positions`; `account-view.ts`: `observe()` fills
   `market.lpPositions`, prepare intent `recentre_dcl`; `validate-cascade.ts`: DCL `add_liquidity` allowlist (D26).
 - `apps/analytics`: "Prepare new range" button for `recentre_dcl`; the exit card reads as an exit.
+
+## 2026-11-14 — Market Intelligence: 24 h volatility on the wallet path (#104)
+
+- `apps/api/src/analytics/series.ts`: `range24hBps` — high-low range (bps) of an asset's per-snapshot consensus
+  price; null under 12 snapshots.
+- `apps/api/src/analytics/account-view.ts`: the wallet observation fills `volatility24hBps` for each priced held
+  token from the collector's last 24 h of `price_observations`; a failed read leaves the token without a range.
+- A range above 15% is a `volatility_spike` and the Market Intelligence trace line names it (D13 updated).
