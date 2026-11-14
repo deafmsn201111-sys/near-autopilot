@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { Suspense } from 'react';
+import Loading from './loading';
 
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
@@ -252,6 +254,16 @@ function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<Search> }) {
   const sp = await searchParams;
+  // A fresh boundary per URL: under app/loading.tsx alone, a production build never commits a soft navigation to this
+  // page with other search params (strategy, demo switch) and keeps the old one on screen (#263).
+  return (
+    <Suspense key={JSON.stringify(sp)} fallback={<Loading />}>
+      <Portfolio sp={sp} />
+    </Suspense>
+  );
+}
+
+async function Portfolio({ sp }: { sp: Search }) {
   const isAccount = sp.p === 'account';
   // The account id can come from the URL (?account=) or, when navigating back to "Mainnet account" without it, from the
   // cookie the wallet set on connect — otherwise the view would read empty until the wallet is reconnected.

@@ -871,3 +871,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   switching views never animates.
 - Old layered `.hero*` / `.alloc-*` CSS removed. The gauge's "safe" label now starts at its mark so it no longer
   runs into "liquidation" on the Aggressive strategy.
+
+## 2026-11-14 — Strategy and demo switch on / commit again in production (#263)
+
+- Cause: in a production build, a soft navigation from `/` to `/` with other search params never committed while the
+  page sat directly under `app/loading.tsx`; React stayed suspended on the layout router's lazy fetch even though the
+  RSC payload arrived complete in ~20 ms. Reproduced with plain `Link`s too, so neither the `saveStrategy` server
+  action nor prefetch nor `router.refresh` polling was the cause (each ruled out by a build without it).
+- Fix: `app/page.tsx` renders its body inside a `<Suspense key={search params}>` with the same skeleton, so each URL
+  gets a fresh boundary. Measured on `next start`: skeleton at ~50 ms, the new strategy or demo at ~370 ms (React's
+  300 ms reveal throttle). `test/portfolio-page.test.ts` guards the key; vitest compiles JSX with the automatic runtime.
