@@ -891,6 +891,23 @@ export function carryLine(c: LoanCarry): NonNullable<PortfolioRecommendation['ca
   return { text: `${loan}; ${deposits}.`, provenance: 'calculated_estimate' };
 }
 
+/** The borrow rate is what Burrow charges whatever its supply side's liquidity or price looks like; only age voids it. */
+export function marketRate(
+  m: (Omit<LoopMarket, 'token'> & { reasons?: readonly { code: string }[] }) | undefined,
+  f: 'netSupplyApr' | 'borrowApr',
+): number | null {
+  const stale = m?.reasons?.some((r) => r.code === 'STALE_YIELD_DATA') ?? false;
+  const x =
+    f === 'borrowApr'
+      ? stale
+        ? null
+        : m?.borrowApr
+      : m?.status === 'OK'
+        ? (m.netSupplyApr ?? m.supplyApr)
+        : null;
+  return x === null || x === undefined ? null : Number(x);
+}
+
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
 export function keepsProfitableLoan(ctx: RecommendationContext, strategy: Strategy): boolean {
   const hf = ctx.loan?.healthFactor ?? null;
@@ -1548,12 +1565,9 @@ export function registerAccountView(
     };
     const v = valueAccount(reads, facts);
     const market = (t: string) =>
-      markets.find((m) => m.token === t)?.latest as (LoopMarket & { status?: string }) | undefined;
-    const rate = (t: string, f: 'netSupplyApr' | 'borrowApr') => {
-      const m = market(t);
-      const x = m?.status === 'OK' ? (m[f] ?? (f === 'netSupplyApr' ? m.supplyApr : null)) : null;
-      return x === null || x === undefined ? null : Number(x);
-    };
+      markets.find((m) => m.token === t)?.latest as
+        (LoopMarket & { reasons?: readonly { code: string }[] }) | undefined;
+    const rate = (t: string, f: 'netSupplyApr' | 'borrowApr') => marketRate(market(t), f);
     const sym = (t: string) => facts.get(t)?.symbol ?? t;
     const actions: PortfolioAction[] = [];
     const add = (
@@ -2961,9 +2975,10 @@ export function registerAccountView(
         const symOut = metaOf(tokenOut)?.symbol ?? tokenOut.slice(0, 10);
         const humanMinOut = (Number(minOut) / 10 ** decOut).toFixed(Math.min(6, decOut));
         // Price impact (incl. the pool fee) from the pool's reserves vs the executed rate; honest, no fabrication.
+        // Only a constant-product pool's reserve ratio is its price: a stable pool (D31) gets none rather than a wrong one.
         let priceImpactPct: number | null = null;
         const poolInfo = await poolReader.getPool(quote.poolId).catch(() => null);
-        if (poolInfo) {
+        if (poolInfo?.kind === 'SIMPLE_POOL') {
           const iIn = poolInfo.tokens.indexOf(intent.token);
           const iOut = poolInfo.tokens.indexOf(tokenOut);
           const rIn = iIn >= 0 ? Number(poolInfo.reserves[iIn]) / 10 ** decimals : 0;

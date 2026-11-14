@@ -5,6 +5,7 @@ import {
   concentratedToken,
   keepsProfitableLoan,
   loanHealth,
+  marketRate,
   portfolioAdvice,
   strategyNote,
   type PortfolioMetrics,
@@ -247,6 +248,17 @@ describe('portfolioRecommendations', () => {
       const text = r.find((x) => x.kind === 'improve_loan_safety')?.carry?.text;
       expect(text).toBe('Loan rate unavailable; deposit rate unavailable.');
       expect(text).not.toMatch(/\$0|0\.0%/);
+    });
+
+    it("keeps the borrow rate when only the market's supply side failed its checks (#191)", () => {
+      const market = { status: 'DATA_INVALID', supplyApr: '0.0416', borrowApr: '0.06' };
+      expect(marketRate(market, 'borrowApr')).toBe(0.06);
+      expect(marketRate(market, 'netSupplyApr')).toBeNull();
+      expect(marketRate({ status: 'OK', supplyApr: '0.0416' }, 'netSupplyApr')).toBe(0.0416);
+      expect(marketRate({ status: 'OK', borrowApr: null }, 'borrowApr')).toBeNull();
+      expect(marketRate(undefined, 'borrowApr')).toBeNull();
+      const stale = { ...market, reasons: [{ code: 'STALE_YIELD_DATA' }] };
+      expect(marketRate(stale, 'borrowApr')).toBeNull();
     });
 
     it('says nothing about the loan above the watch line', () => {
