@@ -3,8 +3,11 @@ import {
   exactAmount,
   resolveBalancedLpAmounts,
   resolveIntentAmount,
+  lpMinAmounts,
   toRawUnits,
 } from '../src/wallet/amounts';
+
+const WALLET_24 = 1_234_567_890_123_456_789_012_345n;
 
 describe('toRawUnits', () => {
   it('scales by decimals and floors (never rounds up)', () => {
@@ -13,6 +16,10 @@ describe('toRawUnits', () => {
     expect(toRawUnits(0.000001, 6)).toBe(1n);
     expect(toRawUnits(1.9999999, 6)).toBe(1_999_999n); // floored, not 2_000_000
     expect(toRawUnits(0, 24)).toBe(0n);
+  });
+  it('handles amounts of 1e21 and above, where toFixed switches to exponent notation', () => {
+    expect(toRawUnits(1e21, 0)).toBe(10n ** 21n);
+    expect(toRawUnits(2 ** 80, 6)).toBe(2n ** 80n * 10n ** 6n);
   });
   it('rejects bad input', () => {
     expect(() => toRawUnits(-1, 6)).toThrow();
@@ -28,9 +35,13 @@ describe('resolveIntentAmount', () => {
     expect(r.rawAmount).toBe(264n * 10n ** 24n);
   });
   it('is capped at the wallet balance so it never exceeds what the user holds', () => {
-    const r = resolveIntentAmount(1000, 1, 6, 400); // wants 1000 USDt but only 400 held
+    const r = resolveIntentAmount(1000, 1, 6, 400_000_000n); // wants 1000 USDt but only 400 held
     expect(r.humanAmount).toBe(400);
     expect(r.rawAmount).toBe(400_000_000n);
+  });
+  it('caps "max" at the exact raw balance even when the float rounds a 24-decimal balance up', () => {
+    const r = resolveIntentAmount(1e12, 1, 24, WALLET_24);
+    expect(r.rawAmount).toBe(WALLET_24);
   });
   it('requires a positive price', () => {
     expect(() => resolveIntentAmount(100, 0, 24)).toThrow();
@@ -46,8 +57,8 @@ describe('resolveBalancedLpAmounts', () => {
     price1Usd: 1,
     decimals0: 24,
     decimals1: 6,
-    wallet0Human: 1e9,
-    wallet1Human: 1e9,
+    wallet0Raw: 10n ** 33n,
+    wallet1Raw: 10n ** 15n,
   };
 
   it('splits the budget in the pool reserve ratio and sums to ~budget', () => {
@@ -68,12 +79,22 @@ describe('resolveBalancedLpAmounts', () => {
     const { side0, side1 } = resolveBalancedLpAmounts({
       ...base,
       budgetUsd: 1_000_000,
-      wallet0Human: 1,
-      wallet1Human: 1e9,
+      wallet0Raw: 10n ** 24n,
     });
     expect(side0.humanAmount).toBeLessThanOrEqual(1 + 1e-9);
     const ratio = side0.humanAmount / side1.humanAmount;
     expect(ratio).toBeCloseTo(base.reserve0Human / base.reserve1Human, 6);
+  });
+
+  it('never exceeds the exact raw wallet balance on either side', () => {
+    const { side0, side1 } = resolveBalancedLpAmounts({
+      ...base,
+      budgetUsd: 1e15,
+      wallet0Raw: WALLET_24,
+      wallet1Raw: 10n ** 15n,
+    });
+    expect(side0.rawAmount).toBeLessThanOrEqual(WALLET_24);
+    expect(side1.rawAmount).toBeLessThanOrEqual(10n ** 15n);
   });
 
   it('rejects non-positive budget, reserves or prices', () => {
@@ -100,5 +121,11 @@ describe('exactAmount', () => {
       rawAmount: 2_000_000n,
       humanAmount: 2,
     });
+  });
+});
+
+describe('lpMinAmounts', () => {
+  it('requires the pool to consume at least 99.5% of each side, floored', () => {
+    expect(lpMinAmounts([1_000_000n, 2_000_001n])).toEqual([995_000n, 1_990_000n]);
   });
 });

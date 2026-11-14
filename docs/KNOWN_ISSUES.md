@@ -44,6 +44,17 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **The last good read lives in one web process.** A stale view after a failed read (#256) comes from memory: a
   restart or a second instance has nothing to show and falls back to the plain error. A shared store if we scale out.
 
+## Accepted after the security audit (#142)
+
+Not exploitable today: the LLM only proposes, and its output goes through the same builders and `validateCascade`.
+
+- **One actor can use up the daily LLM budget.** The cap holds and fails closed, but a few new NEAR accounts with
+  rotating IPs can spend `LLM_DAILY_CAP_USD` for everyone; there is no per-account limit or account-age check.
+- **The per-kind quota in `apps/analytics/lib/rate-limit.ts` is global.** About 20 IPs can use it up for everyone.
+- **Dependencies:** `drizzle-orm` 0.38 (the advisory needs `sql.raw`, used only in tests) and `vitest` 2 (dev only)
+  are not upgraded. `pnpm audit --prod` reports 15 high, through `@hot-labs/kit` (protobufjs, toml, zod), `next`
+  (postcss, build time) and drizzle; none reaches a request path we found. Request bodies are capped by Fastify's 1 MiB default.
+
 ## Watch list (external)
 
 - Burrow/Rhea schema drift: adapters parse strictly and fail to `degraded`, never to made-up data.

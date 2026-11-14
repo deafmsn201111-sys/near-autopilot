@@ -39,7 +39,7 @@ describe('sealCascade', () => {
       ALICE,
       { action: 'unwrap' },
       unwrapCascade('near_withdraw'),
-      { signerId: ALICE, allowedReceivers: new Set([WRAP]) },
+      { signerId: ALICE, allowedReceivers: new Set([WRAP]), roles: new Map([[WRAP, 'wrap']]) },
     );
     expect(r.ok).toBe(true);
     const [row] = events.rows;
@@ -65,7 +65,7 @@ describe('sealCascade', () => {
       ALICE,
       { action: 'unwrap' },
       unwrapCascade('delete_account'),
-      { signerId: ALICE, allowedReceivers: new Set([WRAP]) },
+      { signerId: ALICE, allowedReceivers: new Set([WRAP]), roles: new Map([[WRAP, 'wrap']]) },
     );
     expect(r).toMatchObject({ ok: false });
     expect(events.rows[0]).toMatchObject({ kind: 'prepare_blocked', verdict: 'BLOCK' });
