@@ -415,3 +415,25 @@ global limit and the 45 s deadline are the same code path. The Next.js route pas
 `flush_interval -1`. SSE over a POST `fetch` stream rather than `EventSource` (GET only, no body, no custom headers).
 **Consequences:** If a stream breaks before `done`, the browser repeats the request as JSON, which may make a second
 model call (it counts against the same limits). A client that leaves keeps the server run going; its result is cached.
+
+## D25 — Real activity: one `events` table, RPC is the only judge of "signed"
+
+**Context:** #32. Activity and /policy showed only the collector's shadow decisions over the demo portfolios; nothing
+the real wallet path did reached them, and the team could not count connects, analyses, prepares and signatures.
+**Decision:** One `events` table (migration 0021; account id only, no IP; 30 days). Kinds: `connect` (browser-reported,
+`source: client`, once per account per UTC day), `verified` (ownership proof passed), `analyse` (AI / rule-based),
+`prepare` / `prepare_blocked` (with the `validateCascade` verdict, a per-rule check list and the exact steps),
+`signed`, `oneclick_quote`. `validateCascade` returns the result per rule (signer, receivers, methods, gas, deposit,
+arguments); no limit changed. `POST /v1/wallet/confirm` is the single verifier: it reads the transaction from NEAR RPC
+(`tx`, `wait_until: FINAL`) and writes `signed` only when it is final and successful, signed by the account, and
+exactly a step of the stored cascade (receiver, and per action the method, args and deposit; gas is not compared
+because a wallet may change it). One row per tx hash. The browser asks after every step; a failed or unconfirmed step
+stops the cascade. Activity is public per account for confirmed transactions only; analyses and unsigned cascades need
+the ownership proof. /policy is public: the account is cut to "ali…near", no amounts (intent amounts, preview and a
+wrapped NEAR deposit are left out, long numbers in check messages are cut). The collector's demo shadow loop keeps
+running for Home's demo portfolios; only its UI (Activity feed, demo verdicts, `/v1/analytics/agent-activity`) is
+removed. `/v1/analytics/policy/verdicts` stays as the audit-evidence API (replay), unused by the site.
+**Consequences:** A `connect` count is a claim, not proof. A signed transaction whose confirm never ran (tab closed
+before the check) is not counted; the owner can reopen nothing to fix it (no indexer, after the hackathon). A failed
+step is shown in the dialog but not stored. Old transactions stop being readable on the non-archival RPC after ~2
+days, which is far longer than the confirm window.
