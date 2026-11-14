@@ -1,4 +1,5 @@
 'use client';
+import { CONNECT_FAILED } from '../lib/plain-error';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { clearOwnershipProof, walletSummary } from '../app/account-actions';
@@ -50,25 +51,34 @@ export function ConnectButton({
   children: ReactNode;
 }) {
   const [opening, setOpening] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   return (
-    <button
-      type="button"
-      className={className}
-      disabled={opening}
-      onClick={() => {
-        const open = (id: string) => {
-          reportConnect(id);
-          rememberAccount(id);
-          setOpening(true);
-          window.location.assign(portfolioUrl(id));
-        };
-        connect(open)
-          .then((id) => id && open(id))
-          .catch(() => undefined); // the kit failed to load: stay here
-      }}
-    >
-      {opening ? 'One moment…' : children}
-    </button>
+    <span className="connect-wrap">
+      <button
+        type="button"
+        className={className}
+        disabled={opening}
+        onClick={() => {
+          setNote(null);
+          const open = (id: string) => {
+            reportConnect(id);
+            rememberAccount(id);
+            setOpening(true);
+            window.location.assign(portfolioUrl(id));
+          };
+          connect(open)
+            .then((id) => id && open(id))
+            .catch(() => setNote(CONNECT_FAILED));
+        }}
+      >
+        {opening ? 'One moment…' : children}
+      </button>
+      {note && (
+        <span className="connect-note" role="status">
+          {note}
+        </span>
+      )}
+    </span>
   );
 }
 

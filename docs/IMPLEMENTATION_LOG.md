@@ -1031,3 +1031,18 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   out of the route; the prepare response's `amount` is now the amount actually swapped (it was the pre-wrap size) with
   its USD value. No cascade limit or validator changed.
 - Server errors are shown in plain words (`plainError`); a disabled Sign does not yet nudge to the gate on click.
+
+## 2026-11-14 — Missing states: skeleton, stale data, AI failure, plain-word errors (#256)
+
+- First read shows a skeleton in the portfolio's own shape (context strip, summary grid, analysis, holdings).
+- A read that fails over an older one keeps the older one on screen under "Couldn't refresh · data from HH:MM
+  (N min ago)" with the reason in plain words and Try again; the web server holds the last good read per visitor
+  (at most 500, a day old at most). A stale view shows no Add funds / Withdraw and cannot be signed. A failed read
+  answers the rest of the same render for 5 s instead of waiting on the API again.
+- Prices older than three collector cycles get their own notice. Data ages are real, never a fixed "just now".
+- Errors name who failed (our server, NEAR, a rate limit); only a missing or malformed account asks to check the
+  name; raw API text is no longer shown on the portfolio.
+- The analysis panel has one designed failure state (busy / took too long / unreachable / failed / paused) that says
+  the rule-based result is shown, with Try again; an older AI ranking is dropped after a failed run.
+- "Add funds" and Connect that cannot open say so by the button; an unvalued loan gets a neutral "Unknown" chip.
+- Out: withdraw quote failure inside the sheet moved to #255.

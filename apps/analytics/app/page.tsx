@@ -8,7 +8,9 @@ const SMALL_IDLE_USD = 50;
 import { portfolioOf } from '../components/PortfolioSwitch';
 import { ContextStrip, SwitchView } from '../components/ContextStrip';
 import { Intro } from '../components/Intro';
-import { ErrorState } from '../components/states';
+import { ErrorState, StaleNotice } from '../components/states';
+import { plainReadError, staleNotices } from '../lib/plain-error';
+import { freshness } from '../lib/series';
 import {
   accountRecommendations,
   accountView,
@@ -153,10 +155,13 @@ async function Portfolio({ sp }: { sp: Search }) {
         <AccountForm />
       </>
     );
-  const { data, error } = isAccount
-    ? await accountView(accountParam, strategy)
-    : await portfolioView(id);
-  if (!data)
+  const [read, prices] = await Promise.all([
+    isAccount ? accountView(accountParam, strategy) : portfolioView(id),
+    freshness(),
+  ]);
+  const { data, error, status } = read;
+  if (!data) {
+    const plain = plainReadError(status, error);
     return (
       <>
         <ContextStrip
@@ -174,15 +179,22 @@ async function Portfolio({ sp }: { sp: Search }) {
         {isAccount && <AccountForm value={accountParam} />}
         <ErrorState
           what={isAccount ? `Account ${accountParam}` : 'Your portfolio'}
-          error={error}
+          error={null}
           hint={
-            isAccount
-              ? 'Check the account name (for example alice.near). Only NEAR mainnet accounts are read.'
-              : undefined
+            plain.blamesInput && isAccount
+              ? `${plain.text} Check the account name (for example alice.near). Only NEAR mainnet accounts are read.`
+              : plain.text
           }
         />
       </>
     );
+  }
+  const notices = staleNotices({
+    read: { stale: read.stale, asOf: data.asOf, status, error },
+    prices: prices.data,
+    now: prices.data?.now ?? new Date().toISOString(),
+  });
+  const age = ago(data.asOf);
   const t = data.totals;
   const demo = splitDemo(data.actions);
 
@@ -226,14 +238,17 @@ async function Portfolio({ sp }: { sp: Search }) {
         const token = curatedId(a.symbol);
         return { ...a, key: a.symbol, verified: true, icon: token ? (icons[token] ?? null) : null };
       });
-  const signingEnabled = isAccount ? walletSigningEnabled() : false;
-  const own = isAccount && !!accountParam && accountParam === cookieAccount;
+  const serverSigning = isAccount && walletSigningEnabled();
+  // An old read is for looking only: actions are built from a fresh one.
+  const stale = read.stale || recsRead?.stale === true;
+  const signingEnabled = serverSigning && !stale;
   const mode = portfolioMode({
     isAccount,
     account: accountParam,
     connected: cookieAccount,
     verified: recs && !recs.ownerCheckFailed ? recs.ownerVerified === true : null,
-    signingEnabled,
+    signingEnabled: serverSigning,
+    stale,
   });
   return (
     <>
@@ -247,6 +262,9 @@ async function Portfolio({ sp }: { sp: Search }) {
         connected={cookieAccount}
       />
       {mode.kind !== 'mine' && <Intro />}
+      {notices.map((n) => (
+        <StaleNotice key={n.title} title={n.title} detail={n.detail} />
+      ))}
 
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>
@@ -262,14 +280,17 @@ async function Portfolio({ sp }: { sp: Search }) {
         debtUsd={t.debtUsd}
         source={{
           kind: isAccount ? 'on_chain' : 'simulated',
-          age: isAccount ? 'just now' : ago(data.asOf),
+          age,
         }}
         alloc={alloc}
         monthly={{ usd: data.earnings.monthlyNetUsd, sentence: data.earnings.sentence }}
         health={data.health}
         loanBy={isAccount ? 'your collateral' : 'NEAR'}
         actions={
-          own && (
+          isAccount &&
+          accountParam &&
+          accountParam === cookieAccount &&
+          !stale && (
             <>
               <DepositButton account={accountParam} />
               <WithdrawDialog
@@ -335,11 +356,7 @@ async function Portfolio({ sp }: { sp: Search }) {
             ? r.tokens.map((x) => logo(x.token, x.symbol, r.verified !== false))
             : [logo(undefined, r.label)],
         }))}
-        provenance={
-          isAccount
-            ? { kind: 'on_chain', age: 'just now' }
-            : { kind: 'simulated', age: ago(data.asOf) }
-        }
+        provenance={{ kind: isAccount ? 'on_chain' : 'simulated', age }}
         source={
           isAccount
             ? 'Non-custodial · balances read directly from the chain'

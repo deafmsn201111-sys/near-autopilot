@@ -366,6 +366,15 @@ Five steps with 14–16px dots. Done = accent dot with a drawn check and an acce
 
 Order is fixed: balance changes (−/+ with token, amount, USD) → tiered warning with acknowledgement gate when loss > 5% → key facts inline → "What you will sign" steps → exact calls (collapsible, mono) → code-check line → sticky footer with Sign and its reason line. Price-impact tiers: under 1% a key fact, 1–5% a watch notice, above 5% an act warning with the "I understand" gate, above 15% a liquidation-red block with Sign locked. A view that cannot sign (read-only account, signing off) says why under Sign before any click. Signing progress replaces the body with numbered steps; the result appears in the footer; the portfolio updates only after the sheet closes (view transition card → receipt, count-up, row flash).
 
+### Missing states
+
+- **First read:** a skeleton in the portfolio's own shape (context strip, the summary grid, the analysis panel, holdings rows) on `.skeleton` bars; no fake numbers. Reduced motion stops the shimmer.
+- **Stale data:** when a read fails over an older one, the older one stays on screen under a watch-tinted notice: "Couldn't refresh." + its time and age + the reason in plain words + Try again. Prices older than three collector cycles get their own notice. A stale read shows no Add funds / Withdraw and cannot be signed. Ages are real ("read 6 min ago"), never a fixed "just now".
+- **Failed read with nothing to show:** plain words for who failed (our server, NEAR, a rate limit). Only a missing account asks to check the name; raw API text is never shown.
+- **AI failure / timeout / busy:** a watch-tinted line in the analysis panel ("The AI is busy right now." / "took too long" / "could not be reached" / "run failed") that says the rule-based result is shown, with Try again. An older AI ranking does not stay on screen after a failed run.
+- **HOT / wallet:** "Add funds" or Connect that cannot open says so in a plain line by the button (did not load, busy, connect the NEAR wallet first, no NEAR wallet was connected); nothing stays frozen.
+- **Unknown loan:** a neutral chip with a question icon and the sentence saying what is missing; never a risk colour.
+
 ### Motion
 
 Enter 280ms `cubic-bezier(.16,1,.3,1)`, exit 150ms ease-in; phone sheet slides from the bottom 400ms `cubic-bezier(.32,.72,0,1)` and drags to dismiss. Count-up 600ms ease-out-cubic. Row flash 1.6s safe-bg → transparent. Reduced motion keeps fades and colour changes and drops movement; spinners become a pulse.

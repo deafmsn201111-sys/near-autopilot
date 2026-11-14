@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { PortfolioView } from '../lib/product';
 import { money, signedMoney } from '../lib/format';
 import { CountUp } from './CountUp';
-import { ALERT, ALERT_CIRCLE, CHECK, TREND_DOWN, TREND_UP } from './icons';
+import { ALERT, ALERT_CIRCLE, CHECK, HELP, TREND_DOWN, TREND_UP } from './icons';
 import { Chip, LoanGauge, ProvenanceMark, type ChipTone } from './primitives';
 import { TokenIcon, TokenIcons } from './TokenIcon';
 
@@ -74,6 +74,19 @@ const TONE_ICON: Partial<Record<ChipTone, ReactNode>> = {
 };
 
 function LoanCell({ health, by, source }: { health: Health; by: string; source: ReactNode }) {
+  // A loan that could not be valued is unknown, not at risk: a neutral chip, and the sentence says what is missing.
+  if (health.healthFactor === null && health.level !== 'low')
+    return (
+      <div>
+        <span className="sum-lbl">Loan safety {source}</span>
+        <div className="sum-safe">
+          <Chip large icon={HELP}>
+            {health.label}
+          </Chip>
+        </div>
+        <span className="sum-sub">{health.sentence}</span>
+      </div>
+    );
   if (health.healthFactor === null)
     return (
       <div>
