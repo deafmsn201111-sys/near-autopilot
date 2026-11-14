@@ -3622,3 +3622,24 @@ main.page {
   background: var(--accent-wash);
   font-size: 13px;
 }
+
+.disclaimer {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px 24px 32px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--grid);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.disclaimer p {
+  margin: 0;
+  max-width: 900px;
+}
+@media (max-width: 900px) {
+  .disclaimer {
+    padding: 16px;
+  }
+}

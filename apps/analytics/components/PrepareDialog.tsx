@@ -224,7 +224,8 @@ export function PrepareDialog({
                 <span className="muted-note">
                   {cascade.transactions.length}{' '}
                   {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
-                  you. Autopilot never holds your keys or moves funds on its own.
+                  you. Autopilot never holds your keys or moves funds on its own. Review every
+                  action in your wallet: you are responsible for what you sign.
                 </span>
               </>
             ) : (
@@ -235,7 +236,8 @@ export function PrepareDialog({
                 <span className="muted-note">
                   {cascade.transactions.length}{' '}
                   {cascade.transactions.length === 1 ? 'transaction' : 'transactions'}, signed by
-                  you. Autopilot never holds your keys or moves funds on its own.
+                  you. Autopilot never holds your keys or moves funds on its own. Review every
+                  action in your wallet: you are responsible for what you sign.
                 </span>
               </>
             )}

@@ -350,7 +350,7 @@ export function buildPortfolioView(i: {
           ? {
               verdict: 'worth_it',
               sentence:
-                'Repaying is the safe move as a loan nears its limit — one click on your connected wallet.',
+                'Repaying raises the health factor as a loan nears its limit — one click on your connected wallet.',
             }
           : {
               verdict: 'not_allowed',
