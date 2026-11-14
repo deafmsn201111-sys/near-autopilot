@@ -4,6 +4,7 @@ import {
   defaultOrigin,
   describeStatus,
   formatUnits,
+  loadDepositIncidents,
   loadDepositStatus,
   searchTokens,
   STATUS_MAX_CHECKS,
@@ -184,6 +185,36 @@ describe('loadDepositStatus', () => {
       serve(bad);
       expect((await loadDepositStatus('dq_1')).ok).toBe(false);
     }
+  });
+});
+
+describe('loadDepositIncidents', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('asks for the route and returns the messages', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return new Response(JSON.stringify({ incidents: [{ message: 'ETH deposits are delayed' }] }));
+    });
+    expect(await loadDepositIncidents('nep141:eth.omft.near', 'nep141:wrap.near')).toEqual([
+      'ETH deposits are delayed',
+    ]);
+    expect(urls).toEqual([
+      '/api/deposit/incidents?origin=nep141%3Aeth.omft.near&destination=nep141%3Awrap.near',
+    ]);
+  });
+
+  it('shows nothing on a malformed answer or a failed request', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () => new Response(JSON.stringify({ incidents: [{ message: 1 }] })),
+    );
+    expect(await loadDepositIncidents('a', 'b')).toEqual([]);
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('offline');
+    });
+    expect(await loadDepositIncidents('a', 'b')).toEqual([]);
   });
 });
 

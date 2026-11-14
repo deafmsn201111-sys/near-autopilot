@@ -13,6 +13,7 @@ import {
   type DepositQuoteRequest,
   type OneClickToken,
 } from '../src/gateway/one-click-deposit';
+import type { ShieldIncident } from '../src/gateway/shield';
 
 const NOW = new Date('2026-11-13T10:00:00Z');
 const API_TOKEN = 'public-token-public-token-public-token-1';
@@ -66,7 +67,13 @@ const unused = async (): Promise<never> => {
   throw new Error('not used');
 };
 
-function setup(o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['icon'] } = {}) {
+function setup(
+  o: {
+    quote?: () => Promise<DepositQuote>;
+    icon?: DepositDeps['icon'];
+    shield?: DepositDeps['shield'];
+  } = {},
+) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
   const deposit: DepositDeps = {
@@ -88,6 +95,7 @@ function setup(o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['ico
     destinationTokens: ['wrap.near', USDC_NEAR_ID, 'usdt.tether-token.near'],
     newId: () => 'dq_1',
     ...(o.icon ? { icon: o.icon } : {}),
+    ...(o.shield ? { shield: o.shield } : {}),
   };
   const app = buildAnalyticsServer({
     apiToken: API_TOKEN,
@@ -211,6 +219,77 @@ describe('GET /v1/deposit/assets', () => {
     );
     expect(json.origins.find((o) => o.assetId === 'nep141:btc.omft.near')?.icon).toBeNull();
     expect(asked).toContain('wrap.near');
+  });
+});
+
+describe('GET /v1/deposit/incidents', () => {
+  const get = (app: ReturnType<typeof setup>['app'], origin: string) =>
+    app.inject({
+      url: `/v1/deposit/incidents?origin=${encodeURIComponent(origin)}&destination=nep141%3A${USDC_NEAR_ID}`,
+      headers: { authorization: `Bearer ${API_TOKEN}` },
+    });
+  const incident = (over: Partial<ShieldIncident>): ShieldIncident => ({
+    scopeType: 'chain',
+    scopeValue: 'eth',
+    direction: 'deposit',
+    text: null,
+    ...over,
+  });
+
+  it('shows the incidents on the chosen route, with SHIELD text or our own copy', async () => {
+    const { app } = setup({
+      shield: {
+        incidents: async () => [
+          incident({ text: 'ETH deposits are delayed' }),
+          incident({}),
+          incident({ scopeType: 'token', scopeValue: 'nep141:btc.omft.near' }),
+          incident({ scopeType: 'bridge', scopeValue: 'poa', direction: null }),
+        ],
+      },
+    });
+    const res = await get(app, 'nep141:eth.omft.near');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      incidents: [
+        { message: 'ETH deposits are delayed' },
+        {
+          message: 'Ethereum is affected, so your deposit may take longer than usual.',
+        },
+        {
+          message: 'The PoA bridge is affected, so your deposit may take longer than usual.',
+        },
+      ],
+    });
+  });
+
+  it('sends at most five warnings, so a wide outage still shows some', async () => {
+    const many = Array.from({ length: 30 }, (_, n) => incident({ text: `Incident ${n}` }));
+    const res = await get(
+      setup({ shield: { incidents: async () => many } }).app,
+      'nep141:eth.omft.near',
+    );
+    expect(res.json<{ incidents: unknown[] }>().incidents).toHaveLength(5);
+  });
+
+  it('answers with no incident when SHIELD is off, the route is unknown, or the token list fails', async () => {
+    expect((await get(setup().app, 'nep141:eth.omft.near')).json()).toEqual({ incidents: [] });
+    const shield = { incidents: async () => [incident({})] };
+    expect((await get(setup({ shield }).app, 'nep141:nope')).json()).toEqual({ incidents: [] });
+    const app = buildAnalyticsServer({
+      apiToken: API_TOKEN,
+      store: {} as CollectorStore,
+      intervalSeconds: 900,
+      now: () => NOW,
+      deposit: {
+        oneClick: { tokens: unused, quote: unused, status: unused },
+        store: {} as DepositDeps['store'],
+        destinationTokens: [USDC_NEAR_ID],
+        shield,
+      },
+    });
+    const res = await get(app, 'nep141:eth.omft.near');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ incidents: [] });
   });
 });
 

@@ -657,3 +657,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   contract only when it is a valid address of the chain (checksum, no burn) and, on EVM, the quoted assetId names it.
 - Deposit dialog: QR and **Open in wallet** use the link, **Address only** switch, copy amount. Quotes stay
   `EXACT_INPUT`.
+
+## 2026-11-14 — Deposit warning on a 1Click SHIELD incident (#129)
+
+- `apps/api/src/gateway/shield.ts`: `GET shield.chaindefuser.com/incident` with the `SHIELD_JWT` bearer, no retry,
+  5 s timeout, one shared result per minute (a failure is cached too and logged once). zod; `address` and malformed
+  incidents dropped; `publicDescription` stripped of control characters and capped at 280.
+- `incidentsFor`: `deposit` matches the sending side, `withdraw` the NEAR side, any other or no direction either side.
+  Bridges: `poa` = `*.omft.near` assets, `hot` = `nep245:v2_1.omni.hot.tg:*` (SHIELD's docs name none); others ignored.
+- `GET /v1/deposit/incidents?origin=&destination=` (always 200, `{ incidents: [{ message }] }`), Next proxy, yellow
+  banner over the form and the address screen. `SHIELD_URL` points it at a local stub. "Arrives in" reads "usually about N min".

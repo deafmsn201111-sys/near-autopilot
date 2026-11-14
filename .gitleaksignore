@@ -1,2 +1,4 @@
 # FastNEAR key committed in ed756ee and blanked in #47. Rotated instead of a history rewrite (D15, #45).
 ed756ee7d9723ac48c108cee09d6d8a81814ac0a:.env.example:generic-api-key:62
+# Fake test JWT ({"alg":"HS256"}.{"sub":"x"}."signature") in a test of the SHIELD_JWT schema, not a key (#129).
+3703b25f25039ec02319e96b3f4590d6f02c71dd:packages/config/test/env.test.ts:generic-api-key:180

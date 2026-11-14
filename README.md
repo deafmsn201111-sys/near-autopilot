@@ -144,6 +144,11 @@ from another chain (below), in a separate client.
    (cached 5 s per quote, rate-limited per visitor). What we keep: one `deposit_quotes` row per address shown (your
    NEAR account, the tokens and amounts, your refund address on the other chain, the deposit address, deadline, fee,
    1Click's id and signature, and the latest status with its time), deleted after 30 days; no IP address.
+   With `SHIELD_JWT` set (a SHIELD key from partners.near-intents.org), the dialog shows a yellow warning when 1Click's
+   SHIELD Incident API reports an incident on the chosen route: a deposit incident on the sending chain, its bridge
+   (PoA, HOT) or token, or a withdrawal incident on NEAR or the token you receive. The text is SHIELD's own, as
+   plain text and capped, or ours when SHIELD gives none. The server asks SHIELD at most once a minute for everyone;
+   no key, an error or an odd answer means no warning, never a broken dialog.
 
 **Not done**
 
