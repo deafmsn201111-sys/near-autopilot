@@ -280,6 +280,7 @@ export function HoldingsPanel({
   source,
   other,
   unverifiedUsd,
+  emptyAction,
   children,
 }: {
   holdings: readonly HoldingInput[];
@@ -289,6 +290,8 @@ export function HoldingsPanel({
   other?: readonly OtherChainGroup[];
   /** Kept out of every total (#274); said next to the unverified rows. */
   unverifiedUsd?: number | null;
+  /** "Add funds" on the owner's own empty wallet. */
+  emptyAction?: ReactNode;
   children?: ReactNode;
 }) {
   const { groups, unverified, small } = holdingGroups(holdings, positions);
@@ -310,6 +313,7 @@ export function HoldingsPanel({
             <b>This wallet holds nothing yet.</b> Once tokens arrive on NEAR they show here, grouped
             by where they sit, with what each one earns or costs.
           </p>
+          {emptyAction}
         </div>
       </section>
     );

@@ -27,6 +27,13 @@ const CHAIN_BY_TYPE: Record<number, OriginChain> = {
   333: 'tron',
   [-6]: 'btc',
 };
+export const CHAIN_LABEL: Record<OriginChain, string> = {
+  evm: 'EVM',
+  solana: 'Solana',
+  tron: 'Tron',
+  btc: 'Bitcoin',
+};
+export const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginChain[];
 export const NEAR_WALLET_TYPE = 1010;
 export type NearSignIn = EventMap['wallet:signIn'];
 

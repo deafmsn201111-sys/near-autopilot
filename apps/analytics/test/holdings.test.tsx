@@ -184,4 +184,9 @@ describe('HoldingsPanel', () => {
     expect(out).not.toContain('<table');
     expect(out).toContain('This wallet holds nothing yet');
   });
+
+  it('offers Add funds in the empty wallet state', () => {
+    const out = html({ holdings: [], positions: [], emptyAction: <button>Add funds</button> });
+    expect(out).toMatch(/holds nothing yet.*Add funds/s);
+  });
 });

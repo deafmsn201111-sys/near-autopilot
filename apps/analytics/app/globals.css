@@ -871,289 +871,6 @@ tr.detail details[open] {
   color: var(--liq);
 }
 
-/* ---------------- dialog */
-.modal {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 22px 24px;
-  max-width: 460px;
-  width: calc(100% - 32px);
-  background: var(--bg-surface);
-  color: var(--text-1);
-  box-shadow: var(--pop-shadow);
-}
-.modal::backdrop {
-  background: var(--scrim);
-}
-.modal h3 {
-  margin: 0 0 8px;
-  font-size: 17px;
-}
-.modal p {
-  margin: 0 0 14px;
-  color: var(--text-2);
-}
-.field {
-  display: grid;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-2);
-  margin-bottom: 16px;
-}
-.field input,
-.field select {
-  font: 14px var(--font);
-  padding: 8px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--bg-page);
-  color: var(--text-1);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.modal.deposit {
-  max-width: 520px;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-}
-.deposit-warn {
-  color: var(--liq) !important;
-}
-.deposit-incident {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-left: 3px solid var(--watch);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--watch) 18%, var(--bg-surface));
-  color: var(--text-1);
-}
-.deposit-address {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.deposit-address code {
-  font-size: 13px;
-  word-break: break-all;
-  text-align: center;
-}
-.deposit-qr {
-  border-radius: 8px;
-}
-.deposit-facts {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 6px 14px;
-  margin: 0 0 16px;
-  font-size: 13px;
-}
-.deposit-facts dt {
-  color: var(--text-2);
-}
-.deposit-facts dd {
-  margin: 0;
-  word-break: break-all;
-}
-.deposit-status {
-  border-left: 3px solid var(--text-3);
-  padding: 6px 0 6px 12px;
-  margin-bottom: 16px;
-  word-break: break-word;
-}
-.deposit-status.ok {
-  border-color: var(--safe);
-}
-.deposit-status.warn {
-  border-color: var(--liq);
-}
-.deposit-status p {
-  margin: 4px 0 0;
-  font-size: 13px;
-}
-.deposit-wallet-send {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  margin-bottom: 16px;
-}
-.deposit-sent {
-  border-left: 3px solid var(--safe);
-  padding: 6px 0 6px 12px;
-  margin: 0 0 16px;
-  word-break: break-word;
-}
-.deposit-token {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.origin-wallets,
-.origin-wallet {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.origin-wallets {
-  margin-bottom: 14px;
-}
-.chain-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-.chain-chip,
-.token-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px 5px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--bg-page);
-  color: var(--text-1);
-  font: 500 12.5px var(--font);
-  cursor: pointer;
-}
-.chain-chip img {
-  border-radius: 50%;
-}
-.chain-chip:hover,
-.token-chip:hover {
-  border-color: var(--text-2);
-}
-.chain-chip.is-on,
-.token-chip.is-on {
-  border-color: var(--accent);
-  background: var(--accent-muted);
-}
-.asset-box {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  margin-bottom: 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  background: var(--bg-page);
-}
-.asset-box:focus-within {
-  border-color: var(--accent);
-}
-.asset-box-label {
-  font-size: 12px;
-  color: var(--text-2);
-}
-.asset-box-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.asset-amount {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-1);
-  font: 600 26px var(--font);
-  text-align: right;
-  outline: none;
-}
-.token-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px 6px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--bg-surface);
-  color: var(--text-1);
-  font: 14px var(--font);
-  cursor: pointer;
-  flex: none;
-}
-.token-button:hover:not(:disabled) {
-  border-color: var(--text-2);
-}
-.token-button-name,
-.token-list-name {
-  display: grid;
-  text-align: left;
-  line-height: 1.2;
-}
-.token-button-name .muted-note,
-.token-list-name .muted-note {
-  font-size: 11px;
-}
-.token-button-caret {
-  color: var(--text-2);
-  font-size: 12px;
-}
-.modal.deposit .asset-box + .field {
-  margin-top: 6px;
-}
-.token-picker-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.token-picker-head h3 {
-  margin: 0;
-}
-.token-search {
-  width: 100%;
-  font: 15px var(--font);
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--bg-page);
-  color: var(--text-1);
-  margin-bottom: 12px;
-}
-.token-search:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.token-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.token-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: min(52vh, 420px);
-  overflow-y: auto;
-  border-top: 1px solid var(--line);
-}
-.token-list li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 8px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-.token-list li[aria-selected='true'] {
-  font-weight: 600;
-}
-.token-list li.is-active {
-  background: var(--accent-muted);
-}
-.token-check {
-  margin-left: auto;
-  color: var(--accent);
-}
-
 /* ---------------- empty / error / loading */
 .state {
   display: flex;
@@ -3842,7 +3559,7 @@ main.page {
   gap: 6px;
   padding: 6px 4px;
 }
-.app-pop .acts .deposit-warn {
+.app-pop .acts .bridge-err {
   grid-column: 1 / -1;
 }
 .app-tabs {
@@ -5108,6 +4825,298 @@ dialog.sheet.closing::backdrop {
 }
 .sheet .result.liq b {
   color: var(--liq);
+}
+/* ------------------------------------------------------------------ withdraw sheet: fields, quote, timeline */
+.sheet .wd-field {
+  display: grid;
+  gap: 6px;
+}
+.sheet .wd-field > label,
+.sheet .wd-label {
+  font-size: var(--fs-s);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.sheet .wd-inbox {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-s);
+  background: var(--bg-inset);
+  transition: border-color 0.15s;
+}
+.sheet .wd-inbox:focus-within {
+  border-color: var(--accent);
+}
+.sheet .wd-inbox[data-invalid] {
+  border-color: var(--liq);
+}
+.sheet .wd-inbox input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-1);
+  font: 500 24px/1.2 var(--font);
+}
+.sheet .wd-addr {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-s);
+  background: var(--bg-inset);
+  color: var(--text-1);
+  font: var(--fs-s) / 1.4 var(--mono);
+}
+.sheet .wd-addr:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.sheet .wd-addr[aria-invalid] {
+  border-color: var(--liq);
+}
+.sheet .wd-field .ds-seg {
+  justify-self: start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.sheet .wd-field .ds-seg img {
+  border-radius: 50%;
+  margin-right: 6px;
+}
+.sheet .wd-field > .ds-btn-ghost {
+  justify-self: start;
+}
+.sheet .wd-sub {
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.sheet .wd-err,
+.bridge-err {
+  font-size: var(--fs-s);
+  font-weight: 500;
+  color: var(--liq);
+}
+.sheet .wd-quote {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: color-mix(in oklch, var(--bg-overlay), var(--text-1) 3%);
+}
+.sheet .wd-quote .warn {
+  display: grid;
+  margin: calc(-1 * var(--s3)) calc(-1 * var(--s4));
+}
+.sheet .wd-recv {
+  display: grid;
+  gap: 2px;
+}
+.sheet .wd-k {
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.sheet .wd-recv b {
+  font-size: var(--fs-l);
+  font-weight: 600;
+  color: var(--safe);
+}
+.sheet .wd-min {
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.sheet .wd-skel {
+  display: grid;
+  gap: var(--s3);
+}
+.sheet .wd-skel .skeleton {
+  height: 56px;
+  border-radius: var(--r-s);
+}
+.sheet .wd-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.sheet .wd-rail {
+  position: relative;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sheet .wd-rail::before {
+  content: '';
+  position: absolute;
+  left: 11.5px;
+  top: 18px;
+  bottom: 18px;
+  width: 1px;
+  background: var(--line-strong);
+}
+.sheet .wd-tl {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: var(--s3);
+  align-items: center;
+  padding: 7px 0;
+  color: var(--text-3);
+  transition: color 0.2s;
+}
+.sheet .wd-tl i {
+  width: 14px;
+  height: 14px;
+  margin-left: 5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-control);
+  background: var(--bg-overlay);
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.sheet .wd-tl small {
+  display: block;
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.sheet .wd-tl.done {
+  color: var(--text-1);
+}
+.sheet .wd-tl.done i {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.sheet .wd-tl.now {
+  color: var(--text-1);
+  font-weight: 500;
+}
+.sheet .wd-tl.now i {
+  border-color: var(--accent);
+  border-right-color: transparent;
+  animation: sheet-spin 0.8s linear infinite;
+}
+.sheet .token-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--bg-raised);
+  color: var(--text-1);
+  font: 500 var(--fs-s) var(--font);
+  cursor: pointer;
+}
+.sheet .wd-field > .token-button {
+  justify-self: start;
+}
+.sheet .token-button-name,
+.sheet .token-list-name {
+  display: grid;
+  text-align: left;
+  line-height: 1.2;
+}
+.sheet .token-button-name .muted-note,
+.sheet .token-list-name .muted-note {
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.sheet .token-button-caret {
+  color: var(--text-2);
+}
+.sheet .token-picker {
+  display: grid;
+  gap: var(--s3);
+}
+.sheet .token-picker-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.sheet .token-picker-head h3 {
+  margin: 0;
+  font-size: var(--fs-l);
+}
+.sheet .token-search {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-input);
+  border-radius: var(--r-s);
+  background: var(--bg-inset);
+  color: var(--text-1);
+  font: var(--fs-m) var(--font);
+}
+.sheet .token-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.sheet .token-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sheet .token-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-1);
+  font: 500 var(--fs-s) var(--font);
+  cursor: pointer;
+}
+.sheet .token-chip.is-on {
+  border-color: var(--accent-line);
+  background: var(--accent-muted);
+}
+.sheet .token-list {
+  max-height: min(52vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid var(--line-subtle);
+}
+.sheet .token-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 9px 8px;
+  border-radius: var(--r-s);
+  cursor: pointer;
+}
+.sheet .token-list li.is-active {
+  background: var(--hover);
+}
+.sheet .token-check {
+  margin-left: auto;
+  color: var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sheet .token-button:hover:not(:disabled),
+  .sheet .token-chip:hover {
+    border-color: var(--line-control);
+  }
+}
+.wd-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-2);
+  font: 500 var(--fs-s) var(--font);
+  cursor: pointer;
 }
 /* A holding whose amount changed after a signed move remounts (its key carries the amount) and flashes once. */
 html[data-refreshing] .hold-t tr[data-row] {

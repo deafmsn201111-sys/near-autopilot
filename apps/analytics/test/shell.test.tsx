@@ -11,7 +11,7 @@ vi.mock('next/navigation', () => ({
 const { ContextStrip } = await import('../components/ContextStrip');
 const { Intro } = await import('../components/Intro');
 const { TabBar } = await import('../components/Nav');
-const { DepositButton } = await import('../components/DepositDialog');
+const { DepositButton } = await import('../components/DepositButton');
 const { portfolioMode } = await import('../lib/portfolio-mode');
 
 const html = (node: React.ReactNode) => renderToStaticMarkup(<>{node}</>);

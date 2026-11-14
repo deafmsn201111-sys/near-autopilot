@@ -7,7 +7,9 @@ import { reportConnect } from '../lib/events-client';
 import { shortHash } from '../lib/activity';
 import { money } from '../lib/format';
 import {
+  CHAIN_LABEL,
   connectOriginWallet,
+  ORIGIN_CHAINS,
   watchOriginWallets,
   type OriginChain,
   type OriginWallet,
@@ -17,7 +19,7 @@ import { useOtherBalances } from './OtherChains';
 import { portfolioUrl } from '../lib/portfolio-mode';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
 import type { WalletBalance } from '../lib/withdraw';
-import { CHAIN_LABEL, DepositButton, ORIGIN_CHAINS } from './DepositDialog';
+import { DepositButton } from './DepositButton';
 import { Icon } from './icons';
 import { ProvenanceMark } from './primitives';
 import { TokenIcon } from './TokenIcon';

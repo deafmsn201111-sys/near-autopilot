@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useId, useRef, useState, type PointerEvent } from 'react';
+import { useRef, useState } from 'react';
 import { refreshAccount } from '../app/account-actions';
 import { refreshPortfolio } from '../lib/portfolio-refresh';
 import { prepareIntent } from '../lib/prepare-client';
@@ -26,12 +26,10 @@ import { money, plural } from '../lib/format';
 import { withoutModal } from '../lib/modal';
 import { signCascade } from '../lib/wallet-sign';
 import { stageAfterSign, type CardStage } from '../lib/suggestions';
+import { Sheet, useSheet } from './Sheet';
 import { SignProgress } from './SignProgress';
 import { Button, ProvenanceMark, SignButton } from './primitives';
 import { TokenIcon } from './TokenIcon';
-
-const EXIT_MS = 150;
-const DISMISS_DRAG_PX = 100;
 
 const tokens = (n: number) =>
   n.toLocaleString('en-US', { maximumFractionDigits: Math.abs(n) < 1 ? 6 : 4 });
@@ -217,7 +215,9 @@ export function PrepareDialog({
   blocked = null,
   once = false,
   variant = 'primary',
+  size = 'sm',
   onStage,
+  onSpent,
   onSheetClosed,
 }: {
   request: PrepareRequest;
@@ -230,19 +230,17 @@ export function PrepareDialog({
   /** One payment (a 1Click withdrawal): after one signing attempt it is never offered to sign or build again. */
   once?: boolean;
   variant?: 'primary' | 'secondary';
+  size?: 'sm' | 'md';
   /** Where the signing stands, for the card around it. The card keeps this dialog mounted, so its sheet stays open. */
   onStage?: (stage: CardStage) => void;
+  /** A `once` payment was tried: `sent` when the wallet reported a transaction hash. */
+  onSpent?: (sent: boolean) => void;
   onSheetClosed?: () => void;
 }) {
   const router = useRouter();
-  const titleId = useId();
-  const ref = useRef<HTMLDialogElement>(null);
-  const drag = useRef<{ y: number; dy: number } | null>(null);
+  const sheet = useSheet();
   const build = useRef(0);
   const signing = useRef(false);
-  const [open, setOpen] = useState(false);
-  const [entered, setEntered] = useState(false);
-  const [closing, setClosing] = useState(false);
   const [state, setState] = useState<'idle' | 'loading' | 'signing'>('idle');
   const [cascade, setCascade] = useState<PreparedCascade | null>(null);
   const [ack, setAck] = useState(false);
@@ -261,18 +259,12 @@ export function PrepareDialog({
   });
 
   async function run() {
-    setOpen(true);
-    setEntered(false);
-    setClosing(false);
+    sheet.show();
     setState('loading');
     setError(null);
     setCascade(null);
     setAck(false);
     setProgress(null);
-    requestAnimationFrame(() => {
-      if (!ref.current?.open) ref.current?.showModal();
-      document.getElementById(titleId)?.focus({ preventScroll: true });
-    });
     const id = ++build.current;
     const r = await prepareIntent(request);
     if (id !== build.current) return;
@@ -286,17 +278,11 @@ export function PrepareDialog({
   }
 
   function close() {
-    if (busy || closing) return;
-    setClosing(true);
-    setTimeout(() => ref.current?.close(), EXIT_MS);
+    if (!busy) sheet.close();
   }
 
   function closed() {
-    // Signing drops the sheet to non-modal and back (lib/modal.ts): that close is not the user's.
-    if (ref.current?.open) return;
     build.current++;
-    setOpen(false);
-    setClosing(false);
     const signed = progress !== null;
     setProgress(null);
     onSheetClosed?.();
@@ -309,7 +295,7 @@ export function PrepareDialog({
   }
 
   async function sign() {
-    if (!cascade || !lock.ready || closing || signing.current) return;
+    if (!cascade || !lock.ready || sheet.closing || signing.current) return;
     signing.current = true;
     const { cascadeId, transactions, preview } = cascade;
     setState('signing');
@@ -320,8 +306,8 @@ export function PrepareDialog({
     let confirmed = true;
     let through = 0;
     // Inside another modal (the withdraw dialog) both step down, or the wallet's popup stays inert behind them.
-    const outer = ref.current?.parentElement?.closest('dialog') ?? null;
-    const r = await withoutModal(ref.current, () =>
+    const outer = sheet.ref.current?.parentElement?.closest('dialog') ?? null;
+    const r = await withoutModal(sheet.ref.current, () =>
       withoutModal(outer, () =>
         signCascade(transactions, request.account, signingEnabled, {
           onSigning: (i) => {
@@ -347,28 +333,12 @@ export function PrepareDialog({
       setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
     onStage?.(stageAfterSign(r, { confirmed, through, steps: transactions.length }));
     // A wallet may broadcast and still fail or return no hash: any attempt spends a one-payment cascade.
-    if (once) setSpent(r.hashes.length > 0 ? 'sent' : 'tried');
+    if (once) {
+      setSpent(r.hashes.length > 0 ? 'sent' : 'tried');
+      onSpent?.(r.hashes.length > 0);
+    }
     signing.current = false;
     setState('idle');
-  }
-
-  function grab(e: PointerEvent<HTMLDivElement>) {
-    if (busy) return;
-    drag.current = { y: e.clientY, dy: 0 };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
-  function move(e: PointerEvent<HTMLDivElement>) {
-    const d = drag.current;
-    if (!d || !ref.current) return;
-    d.dy = Math.max(0, e.clientY - d.y);
-    ref.current.style.transform = `translateY(${d.dy}px)`;
-  }
-  function release() {
-    const d = drag.current;
-    drag.current = null;
-    if (!d || !ref.current) return;
-    ref.current.style.transform = '';
-    if (d.dy > DISMISS_DRAG_PX) close();
   }
 
   return (
@@ -380,81 +350,20 @@ export function PrepareDialog({
             : 'Not sent, as far as the wallet reported. Check your wallet activity; to try again, get a new quote.'}
         </p>
       ) : (
-        <Button variant={variant} size="sm" onClick={() => void run()}>
+        <Button variant={variant} size={size} onClick={() => void run()}>
           {label}
         </Button>
       )}
 
-      {open && (
-        <dialog
-          ref={ref}
-          className={`sheet${entered ? ' entered' : ''}${closing ? ' closing' : ''}`}
-          aria-labelledby={titleId}
-          aria-busy={state !== 'idle'}
-          onAnimationEnd={(e) =>
-            e.target === e.currentTarget && !e.pseudoElement && setEntered(true)
-          }
-          onCancel={(e) => {
-            e.preventDefault();
-            close();
-          }}
-          onClose={closed}
-        >
-          <div
-            className="grab"
-            aria-hidden="true"
-            onPointerDown={grab}
-            onPointerMove={move}
-            onPointerUp={release}
-            onPointerCancel={release}
-          />
-          <header className="sh-head">
-            {context && <span className="ctxl">{context}</span>}
-            <h2 id={titleId} tabIndex={-1}>
-              {title ?? label}
-            </h2>
-            {!busy && (
-              <button type="button" className="x" aria-label="Close" onClick={close}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M6 6l12 12M18 6 6 18"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-            )}
-          </header>
-
-          <div className="sh-body">
-            {state === 'loading' && (
-              <p className="sh-loading" role="status">
-                <span className="spin" aria-hidden="true" />
-                Building the exact transaction…
-              </p>
-            )}
-            {error && (
-              <div className="warn act" role="alert">
-                <span className="wt">{ALERT}Can’t build this safely</span>
-                <p>{error.message}</p>
-                {error.reasons && error.reasons.length > 0 && (
-                  <ul>
-                    {error.reasons.map((x) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {progress ? (
-              <SignProgress preview={progress.preview} steps={progress.steps} />
-            ) : (
-              cascade && <Review cascade={cascade} ack={ack} onAck={setAck} />
-            )}
-          </div>
-
-          <footer className="sh-foot">
+      <Sheet
+        sheet={sheet}
+        title={title ?? label}
+        context={context}
+        locked={busy}
+        busy={state !== 'idle'}
+        onClosed={closed}
+        footer={
+          <>
             <div role="status" className="sh-status">
               {busy && (
                 <span className="why-off">
@@ -493,9 +402,34 @@ export function PrepareDialog({
                 Nothing is sent until you approve there.
               </span>
             )}
-          </footer>
-        </dialog>
-      )}
+          </>
+        }
+      >
+        {state === 'loading' && (
+          <p className="sh-loading" role="status">
+            <span className="spin" aria-hidden="true" />
+            Building the exact transaction…
+          </p>
+        )}
+        {error && (
+          <div className="warn act" role="alert">
+            <span className="wt">{ALERT}Can’t build this safely</span>
+            <p>{error.message}</p>
+            {error.reasons && error.reasons.length > 0 && (
+              <ul>
+                {error.reasons.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {progress ? (
+          <SignProgress preview={progress.preview} steps={progress.steps} />
+        ) : (
+          cascade && <Review cascade={cascade} ack={ack} onAck={setAck} />
+        )}
+      </Sheet>
     </div>
   );
 }
