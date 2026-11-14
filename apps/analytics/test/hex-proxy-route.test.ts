@@ -52,6 +52,13 @@ describe('/api/hex proxy to hex-api (D42)', () => {
     expect(sent.get('cookie')).toBeNull();
   });
 
+  it('forwards a token id re-encoded', async () => {
+    expect((await call('GET', 'market/v1/tokens/8453%3A0xabc?ns=key')).status).toBe(200);
+    expect(upstream.mock.calls[0]![0]).toBe(
+      'https://hex-api.app/market/v1/tokens/8453%3A0xabc?ns=key',
+    );
+  });
+
   it('forwards a 1Click quote POST with its JSON body', async () => {
     const res = await call('POST', 'market/v1/1click/v0/quote', '{"amount":"1"}');
     expect(res.status).toBe(200);
@@ -65,6 +72,10 @@ describe('/api/hex proxy to hex-api (D42)', () => {
     for (const [method, path] of [
       ['GET', 'wallet/v1/rpc/1'],
       ['GET', 'market/v1/../../mpc/sign'],
+      ['GET', 'market/v1/tokens/%2e%2e%2f%2e%2e%2fx'],
+      ['GET', 'market/v1/tokens/a%5c..%5cx'],
+      ['GET', 'market/v1/tokens/%252e%252e'],
+      ['GET', 'market/v1/tokens/%E0%A4%A'],
       ['POST', 'market/v1/prices'],
       ['GET', 'market/v1/1click/v0/quote'],
       ['POST', 'market/v1/1click/v0/auth/authenticate'],

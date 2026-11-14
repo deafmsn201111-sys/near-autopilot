@@ -9,7 +9,7 @@ import { consume, RATE_LIMITED } from '../../../../lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
 const HEX_API = 'https://hex-api.app/';
-const SEGMENT = '[A-Za-z0-9%_:-][A-Za-z0-9%_:.-]*';
+const SEGMENT = '[A-Za-z0-9_:-][A-Za-z0-9_:.-]*';
 const ROUTES = {
   GET: new RegExp(
     `^market/v1/(prices|tokens/${SEGMENT}|trending|trending/${SEGMENT}|1click/v0/tokens|1click/v0/status)$`,
@@ -23,11 +23,22 @@ const LIMITS = {
 const MAX_BODY = 16_384;
 const TIMEOUT_MS = 20_000;
 
+// Each segment decoded once and held to plain characters, so an encoded slash, backslash or ".." never reaches hex-api.
+function decoded(path: string): string[] | null {
+  try {
+    const parts = path.split('/').map(decodeURIComponent);
+    return parts.every((p) => new RegExp(`^${SEGMENT}$`).test(p)) ? parts : null;
+  } catch {
+    return null;
+  }
+}
+
 async function forward(req: Request, method: 'GET' | 'POST'): Promise<Response> {
   const url = new URL(req.url);
-  const path = url.pathname.replace(/^\/api\/hex\//, '');
-  if (!ROUTES[method].test(path))
+  const segments = decoded(url.pathname.replace(/^\/api\/hex\//, ''));
+  if (!segments || !ROUTES[method].test(segments.join('/')))
     return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  const path = segments.map(encodeURIComponent).join('/');
   if (!(await consume(`hex-${method}`, LIMITS[method])))
     return NextResponse.json(
       { error: RATE_LIMITED },
