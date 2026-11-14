@@ -31,6 +31,7 @@ import { DepositButton } from '../components/DepositDialog';
 import { WithdrawDialog } from '../components/WithdrawDialog';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
+import { signBlocked } from '../lib/sign-review';
 import { StrategyPicker } from '../components/StrategyPicker';
 import { PortfolioSummary } from '../components/PortfolioSummary';
 import { HoldingsPanel } from '../components/Holdings';
@@ -314,6 +315,11 @@ async function Portfolio({ sp }: { sp: Search }) {
             hasLoan={data.holdings.some((h) => h.where === 'borrowed')}
             loanValued={data.health.healthFactor !== null}
             hasLp={(data.positions ?? []).some((p) => p.key.startsWith('dcl-'))}
+            signBlock={signBlocked({
+              account: accountParam,
+              connected: cookieAccount,
+              signingEnabled,
+            })}
           />
         </section>
       )}
@@ -339,7 +345,6 @@ async function Portfolio({ sp }: { sp: Search }) {
             ? 'Non-custodial · balances read directly from the chain'
             : 'Simulated balances valued at live NEAR prices'
         }
-        flashScope={isAccount ? accountParam : undefined}
         unverifiedUsd={t.unverifiedUsd}
       >
         {isAccount && data.discovery?.complete === false && (

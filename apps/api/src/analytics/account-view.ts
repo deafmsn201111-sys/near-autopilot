@@ -49,6 +49,7 @@ import { sealCascade } from '../wallet/seal';
 import { buildWithdrawTransfer, withdrawValidation } from '../wallet/withdraw';
 import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
 import { prepareSwapRepay } from '../wallet/swap-repay';
+import { swapCost, usdOf, type SwapCost } from '../wallet/swap-cost';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
@@ -3569,14 +3570,8 @@ export function registerAccountView(
       const human = humanAmount.toFixed(Math.min(6, decimals));
 
       const steps: CascadeStep[] = [];
-      // Swap economics shown to the user (honest, real): slippage cap, what they get, and the price impact + fee
-      // implied by the pool's reserves. Null for non-swap intents.
-      let swapCost: {
-        readonly slippageBps: number;
-        readonly estReceived: { raw: string; human: number; symbol: string };
-        readonly minReceived: { raw: string; human: number; symbol: string };
-        readonly priceImpactPct: number | null;
-      } | null = null;
+      let swapCostView: SwapCost | null = null;
+      let sent = { raw: rawAmount, human: humanAmount };
 
       if (intent.action === 'swap') {
         const tokenOut = intent.tokenOut;
@@ -3611,41 +3606,28 @@ export function registerAccountView(
           return reply
             .code(409)
             .send({ error: `no route for ${sym} -> ${tokenOut} in the allowlisted pools` });
-        const minOut = (quote.amountOut * BigInt(10_000 - intent.maxSlippageBps)) / 10_000n;
         const decOut = metaOf(tokenOut)?.decimals ?? 24;
         const symOut = metaOf(tokenOut)?.symbol ?? tokenOut.slice(0, 10);
-        const humanMinOut = (Number(minOut) / 10 ** decOut).toFixed(Math.min(6, decOut));
-        // Price impact (incl. the pool fee) from the pool's reserves vs the executed rate; honest, no fabrication.
-        // Only a constant-product pool's reserve ratio is its price: a stable pool (D31) gets none rather than a wrong one.
-        let priceImpactPct: number | null = null;
         const poolInfo = await poolReader.getPool(quote.poolId).catch(() => null);
-        if (poolInfo?.kind === 'SIMPLE_POOL') {
-          const iIn = poolInfo.tokens.indexOf(intent.token);
-          const iOut = poolInfo.tokens.indexOf(tokenOut);
-          const rIn = iIn >= 0 ? Number(poolInfo.reserves[iIn]) / 10 ** decimals : 0;
-          const rOut = iOut >= 0 ? Number(poolInfo.reserves[iOut]) / 10 ** decOut : 0;
-          const execIn = Number(swapRawAmount) / 10 ** decimals;
-          const execOut = Number(quote.amountOut) / 10 ** decOut;
-          if (rIn > 0 && rOut > 0 && execIn > 0) {
-            const spot = rOut / rIn; // output per input at the pool mid-price
-            const exec = execOut / execIn; // what this size actually gets
-            priceImpactPct = Math.max(0, (1 - exec / spot) * 100);
-          }
-        }
-        swapCost = {
+        const iIn = poolInfo?.tokens.indexOf(intent.token) ?? -1;
+        const iOut = poolInfo?.tokens.indexOf(tokenOut) ?? -1;
+        swapCostView = swapCost({
+          amountIn: swapRawAmount,
+          decIn: decimals,
+          priceIn: price,
+          amountOut: quote.amountOut,
+          decOut,
+          symOut,
+          priceOut: prices.get(tokenOut),
           slippageBps: intent.maxSlippageBps,
-          estReceived: {
-            raw: quote.amountOut.toString(),
-            human: Number(quote.amountOut) / 10 ** decOut,
-            symbol: symOut,
-          },
-          minReceived: {
-            raw: minOut.toString(),
-            human: Number(minOut) / 10 ** decOut,
-            symbol: symOut,
-          },
-          priceImpactPct,
-        };
+          reserves:
+            poolInfo?.kind === 'SIMPLE_POOL' && iIn >= 0 && iOut >= 0
+              ? { in: poolInfo.reserves[iIn]!, out: poolInfo.reserves[iOut]! }
+              : null,
+        });
+        sent = { raw: swapRawAmount, human: swapHuman };
+        const minOut = BigInt(swapCostView.minReceived.raw);
+        const humanMinOut = (Number(minOut) / 10 ** decOut).toFixed(Math.min(6, decOut));
         // Register on the OUTPUT token first, or the swap output would be stranded on the exchange.
         if (!(await tokens.isStorageRegistered(tokenOut, account))) {
           const bounds = (await viewer.view(tokenOut, 'storage_balance_bounds', {})) as {
@@ -3747,8 +3729,13 @@ export function registerAccountView(
           allowedReceivers: allowed,
         },
         {
-          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
-          cost: { networkFeeMaxNear, swap: swapCost },
+          amount: {
+            raw: sent.raw.toString(),
+            human: sent.human,
+            symbol: sym,
+            ...usdOf(sent.human, price),
+          },
+          cost: { networkFeeMaxNear, swap: swapCostView },
         },
       );
     } catch (e) {

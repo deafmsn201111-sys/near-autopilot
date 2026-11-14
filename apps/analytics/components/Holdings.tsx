@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { money } from '../lib/format';
 import { ALERT, MINUS, TREND_DOWN, TREND_UP } from './icons';
 import { Chip, ProvenanceMark } from './primitives';
-import { RowFlash } from './RowFlash';
 import { TokenIcons } from './TokenIcon';
 
 type Logo = { icon: string | null; symbol: string };
@@ -264,7 +263,7 @@ function FootRows({ label, rows }: { label: string; rows: readonly HoldingRowVie
       <Table caption={label}>
         <tbody>
           {rows.map((r) => (
-            <Row key={r.key} r={r} status={chip(r.status)} />
+            <Row key={`${r.key}:${r.amount}`} r={r} status={chip(r.status)} />
           ))}
         </tbody>
       </Table>
@@ -279,7 +278,6 @@ export function HoldingsPanel({
   provenance,
   source,
   other,
-  flashScope,
   unverifiedUsd,
   children,
 }: {
@@ -288,8 +286,6 @@ export function HoldingsPanel({
   provenance: { kind: 'on_chain' | 'simulated'; age: string };
   source: string;
   other?: readonly OtherChainGroup[];
-  /** Changed rows flash once after a refresh within this scope (an account); absent for a demo. */
-  flashScope?: string;
   /** Kept out of every total (#274); said next to the unverified rows. */
   unverifiedUsd?: number | null;
   children?: ReactNode;
@@ -316,7 +312,6 @@ export function HoldingsPanel({
         </div>
       </section>
     );
-  const shown = [...groups.flatMap((g) => g.rows), ...unverified, ...small];
   return (
     <section className="ds-panel hold" aria-labelledby="hold-h">
       {head}
@@ -331,7 +326,7 @@ export function HoldingsPanel({
               <td className="r num">{usdText(g.totalUsd)}</td>
             </tr>
             {g.rows.map((r) => (
-              <Row key={r.key} r={r} status={chip(r.status)} />
+              <Row key={`${r.key}:${r.amount}`} r={r} status={chip(r.status)} />
             ))}
           </tbody>
         ))}
@@ -360,15 +355,6 @@ export function HoldingsPanel({
         />
         <span className="hold-src">{source}</span>
       </div>
-      {flashScope && (
-        <RowFlash
-          scope={flashScope}
-          // ponytail: rows without an amount (LP, orders) never flash; their USD moves with every price tick
-          rows={shown.flatMap((r) =>
-            r.amount === null ? [] : [[r.key, r.amount.toPrecision(4)] as const],
-          )}
-        />
-      )}
     </section>
   );
 }

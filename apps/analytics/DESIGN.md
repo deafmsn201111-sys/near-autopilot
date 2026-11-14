@@ -364,7 +364,7 @@ Five steps with 14–16px dots. Done = accent dot with a drawn check and an acce
 
 ### Review & sign sheet (signature)
 
-Order is fixed: balance changes (−/+ with token, amount, USD) → tiered warning with acknowledgement gate when loss > 5% → key facts inline → "What you will sign" steps → exact calls (collapsible, mono) → code-check line → sticky footer with Sign and its reason line. Signing progress replaces the body with numbered steps; the result appears in the footer; the portfolio updates only after the sheet closes (view transition card → receipt, count-up, row flash).
+Order is fixed: balance changes (−/+ with token, amount, USD) → tiered warning with acknowledgement gate when loss > 5% → key facts inline → "What you will sign" steps → exact calls (collapsible, mono) → code-check line → sticky footer with Sign and its reason line. Price-impact tiers: under 1% a key fact, 1–5% a watch notice, above 5% an act warning with the "I understand" gate, above 15% a liquidation-red block with Sign locked. A view that cannot sign (read-only account, signing off) says why under Sign before any click. Signing progress replaces the body with numbered steps; the result appears in the footer; the portfolio updates only after the sheet closes (view transition card → receipt, count-up, row flash).
 
 ### Motion
 

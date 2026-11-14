@@ -26,6 +26,7 @@ export interface PreparedAmount {
   readonly raw: string;
   readonly human: number;
   readonly symbol: string;
+  readonly usd?: number;
 }
 
 /** Honest swap economics for the preview — what you get, the price impact and the slippage cap. */

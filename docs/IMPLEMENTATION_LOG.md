@@ -948,7 +948,8 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Unverified tokens and balances under $1 moved into the footer as native disclosures; an empty wallet gets a sentence
   instead of an empty table. An other-chain group slot (dashed, "shown only, not analysed") renders only with data;
   #265 fills it.
-- `components/RowFlash.tsx`: rows whose amount changed flash once after a refresh, after any open sign sheet closes.
+- A row whose amount changed remounts (key carries the amount) and flashes with #254's `html[data-refreshing]` rule,
+  which runs only after the sign sheet has closed.
 - API: Burrow holdings carry `aprPct` (supply rate, or borrow rate on a loan), positions carry `kind` and DCL
   positions `inRange`, on both the account and the demo portfolio views.
 
@@ -1013,3 +1014,20 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   boundary.
 - Without the remount, `Recommendations` keeps the AI result and error per strategy, so a run that ends after a switch
   lands under the strategy it started with; the card list stays keyed by strategy, so repay pickers start fresh.
+
+## 2026-11-14 — Review-and-sign sheet (#254)
+
+- `components/PrepareDialog.tsx` is now a real sheet: a native modal `<dialog>` (page behind inert, focus trapped,
+  focus to the title on open and back to the button on close, scroll lock, Escape closes except while signing), one
+  620px column, a 92dvh bottom sheet on phones with drag to dismiss. Order as in DESIGN.md: balance changes →
+  tiered price-impact warning → key facts → "What you will sign" → exact calls → code-check line → sticky footer.
+- Price impact tiers (`lib/sign-review.ts`): under 1% a fact, up to 5% a notice, above 5% an "I understand" gate,
+  above 15% no signing. Sign always says why it is locked; read-only accounts and signing-off servers say so before
+  the user tries (`signBlocked`, computed on the page).
+- Signing progress runs in the same sheet (`SignProgress` is now its step list); the footer shows done / not signed /
+  failed on NEAR with the server's checked funds line. The portfolio refreshes only after the sheet closes; changed
+  holding rows flash once (their key carries the amount) and the summary counts up.
+- API: `src/wallet/swap-cost.ts` prices the swap's expected and minimum output in USD and moves the price-impact math
+  out of the route; the prepare response's `amount` is now the amount actually swapped (it was the pre-wrap size) with
+  its USD value. No cascade limit or validator changed.
+- Server errors are shown in plain words (`plainError`); a disabled Sign does not yet nudge to the gate on click.

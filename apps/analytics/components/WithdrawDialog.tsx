@@ -77,6 +77,8 @@ function WithdrawQuote({
         <PrepareDialog
           request={{ account, intent: { action: 'withdraw_1click', quoteId: q.id } }}
           label="Build transaction"
+          title="Send money to another chain"
+          context="Withdraw via 1Click"
           signingEnabled={signingEnabled}
           once
         />
