@@ -1047,7 +1047,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - "Add funds" and Connect that cannot open say so by the button; an unvalued loan gets a neutral "Unknown" chip.
 - Out: withdraw quote failure inside the sheet moved to #255.
 
-## Reviewer and secondary pages on the design system (#257)
+## 2026-11-14 — Reviewer and secondary pages on the design system (#257)
 
 - KPI tiles on research, policy, audit, routes, collector, burrow, prices, portfolios, thesis, rhea pool and
   opportunity pages are now one `FactsStrip` each; `Tile`, `Meter` and their `.kpis` / `.tile` / `.meter` CSS are gone.
