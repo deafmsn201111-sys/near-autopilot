@@ -520,6 +520,37 @@ describe('analyseAccount', () => {
     );
   });
 
+  it('says in code-built words why a safe loan on Aggressive leaves nothing to do', async () => {
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const safeLoan = async () => {
+      const o = observation('aggressive');
+      const snapshot = { ...o.snapshot, walletBalances: [] };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: safeLoan,
+      strategy: 'aggressive',
+      heuristics: [],
+      checks: [],
+      concentration: { token: WNEAR, pct: 60 },
+    });
+    expect(tools).toEqual([]);
+    expect(out.fallback).toBe('nothing_to_rank');
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'Health factor 1.37; safe from 1.25 on Aggressive',
+    );
+    expect(out.note).toBe(
+      [
+        'Health factor 1.37; safe from 1.25 on Aggressive',
+        'Nothing idle to put to work',
+        '60% of your portfolio is in wNEAR; no swap from the wallet suggested',
+        'No position out of range; nothing to do',
+        'Nothing on Burrow to move to the wallet',
+      ].join(' · '),
+    );
+  });
+
   it('still falls back when the model drops every real candidate', async () => {
     const { llm } = fake([() => callAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
@@ -945,7 +976,9 @@ describe('analyseAccount', () => {
     expect(tools).toEqual([]);
     expect(l.rows).toEqual([]);
     expect(out).toMatchObject({ source: 'heuristic', fallback: 'nothing_to_rank', run: null });
-    expect(out.note).toMatch(/^Nothing to rank/);
+    expect(out.note).toMatch(
+      /^Health factor 1.37 is below target; .* · Nothing on Burrow to move to the wallet$/,
+    );
     expect(out.trace.map((t) => t.tool)).toEqual([
       'liquidation_guardian',
       'capital_allocator',

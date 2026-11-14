@@ -342,9 +342,11 @@ function guardianTool(
   obs: AgentObservation,
   checks: readonly PortfolioRecommendation[],
   carry: PortfolioRecommendation['carry'],
+  strategy: StrategyId,
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
+  const { label, healthyAt } = STRATEGIES[strategy];
   const loanCards = checks.filter((c) => c.kind === 'improve_loan_safety' && c.intent !== null);
   return {
     spec: {
@@ -431,7 +433,7 @@ function guardianTool(
               : { text: 'No Burrow loan; nothing to do', provenance: null }
             : {
                 text: safe
-                  ? `Health factor ${hf}; nothing to do`
+                  ? `Health factor ${hf}; safe from ${healthyAt.toFixed(2)} on ${label}`
                   : `Health factor ${hf} is below target; ${noRepayWhy}`,
                 provenance: 'calculated_estimate',
               },
@@ -715,7 +717,7 @@ export async function analyseAccount(
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
-    guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
+    guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
     allocatorTool(obs, found, steps),
     marketTool(obs, steps),
     walletTool(
@@ -775,9 +777,14 @@ export async function analyseAccount(
     const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
     if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
       const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
+      const trace = traceSteps(ran, checked, [], new Set());
       return early({
         ...fallback('nothing_to_rank'),
-        trace: traceSteps(ran, checked, [], new Set()),
+        note: trace
+          .filter((t) => t.tool !== 'market_intelligence')
+          .map((t) => t.text)
+          .join(' · '),
+        trace,
       });
     }
   }

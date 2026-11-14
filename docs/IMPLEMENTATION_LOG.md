@@ -461,3 +461,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `nothing_to_rank` (no model call, no `llm_calls` row) and the UI badge says "Nothing for the AI to rank" instead of
   "AI unavailable". It still lists each agent's line under "What the agents checked". This replaces #130's model call
   for the same case (owner's choice, 14 Nov): a supply under 1% a year is no longer offered to the model either.
+
+## 2026-11-14 — "Nothing for the AI to rank" says why (#143)
+
+- On top of #119 (no model call when nothing to rank): `nothing_to_rank` carries `note` = the proposing agents' own
+  lines joined in order (no model text); the guardian's safe-loan line names the strategy ("Health factor 1.29; safe
+  from 1.25 on Aggressive").
+- `Recommendations.tsx`: "Why: …" with a provenance tag replaces the generic "Nothing to improve right now".
+- #143's original goal (a `source: 'llm'` result) is superseded by #119's decision not to call the model at all.
