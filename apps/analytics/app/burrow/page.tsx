@@ -141,7 +141,13 @@ export default async function BurrowPage({ searchParams }: { searchParams: Promi
                   <b>{pct(m.netSupplyApr)}</b>
                 </td>
                 <td className="num">{pct(m.borrowApr)}</td>
-                <td className="num">{pct(m.utilization, 1)}</td>
+                <td className="num">
+                  {m.utilization !== null && Number(m.utilization) >= 0.9 ? (
+                    <Chip tone="act">{pct(m.utilization, 1)}</Chip>
+                  ) : (
+                    pct(m.utilization, 1)
+                  )}
+                </td>
                 <td className="num">{usd(m.availableUsd)}</td>
                 <td className="num">
                   {m.canUseAsCollateral ? (

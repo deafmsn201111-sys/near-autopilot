@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { Dumbbell } from '../../components/Dumbbell';
 import { ErrorState } from '../../components/states';
 import { FactsStrip } from '../../components/primitives';
-import {} from '../../components/ui';
 import { tryApi } from '../../lib/api';
 
 const pct = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(1)}%`);

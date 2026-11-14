@@ -1567,7 +1567,9 @@ body {
   .opp {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .strip .s,
+  .strip .s {
+    overflow-wrap: anywhere;
+  }
   .page-head p {
     max-width: 100%;
   }
@@ -3231,6 +3233,7 @@ main.page {
   color: var(--safe);
 }
 .ds-facts dd small {
+  overflow-wrap: anywhere;
   font-size: var(--fs-s);
   font-weight: 400;
   letter-spacing: 0;

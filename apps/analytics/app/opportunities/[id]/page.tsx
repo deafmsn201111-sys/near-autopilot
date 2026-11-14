@@ -162,7 +162,12 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           },
           {
             label: 'Net after costs',
-            value: o.netApr === null ? 'not simulated' : pct(o.netApr, 2),
+            value:
+              o.netApr === null ? (
+                'not simulated'
+              ) : (
+                <span className={o.netApr < 0 ? 'neg' : undefined}>{pct(o.netApr, 2)}</span>
+              ),
             sub: o.netBasis ?? 'No stored cost simulation covers this opportunity.',
           },
           {
