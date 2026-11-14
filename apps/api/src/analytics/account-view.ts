@@ -388,13 +388,21 @@ export function limitOrderView(
   };
 }
 
-async function readLimitOrders(
+export async function readLimitOrders(
   dcl: RheaDclClient,
   accountId: AccountId,
   metaOf: (token: string) => Promise<{ symbol: string; decimals: number } | undefined>,
   prices: ReadonlyMap<string, number>,
 ): Promise<LimitOrderView[]> {
-  const orders = await dcl.listActiveOrders(accountId).catch(() => []);
+  const listed = await dcl.listActiveOrders(accountId).catch(() => []);
+  const parses = (o: DclOrder) => {
+    try {
+      return parsePoolId(o.pool_id) && true;
+    } catch {
+      return false;
+    }
+  };
+  const orders = listed.filter(parses);
   const tokens = [
     ...new Set(
       orders.flatMap((o) => {
@@ -433,7 +441,8 @@ interface PortfolioLeg {
   readonly symbol: string;
   readonly protocol: string;
   readonly usd: number;
-  readonly kind: 'asset' | 'debt';
+  /** `locked`: counted in the totals, but not a token the user can move today (a limit order), so not a concentration. */
+  readonly kind: 'asset' | 'locked' | 'debt';
 }
 
 export interface PortfolioMetrics {
@@ -451,13 +460,13 @@ export interface PortfolioMetrics {
  * and never dilutes asset concentration.
  */
 export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetrics {
-  const assets = legs.filter((l) => l.kind === 'asset' && l.usd > 0);
+  const assets = legs.filter((l) => l.kind !== 'debt' && l.usd > 0);
   const totalAssetsUsd = assets.reduce((s, l) => s + l.usd, 0);
   const totalDebtUsd = legs.filter((l) => l.kind === 'debt').reduce((s, l) => s + l.usd, 0);
   const pct = (usd: number) => (totalAssetsUsd > 0 ? (usd / totalAssetsUsd) * 100 : 0);
 
   const byTokenMap = new Map<string, { token: string; symbol: string; usd: number }>();
-  for (const l of assets) {
+  for (const l of assets.filter((x) => x.kind === 'asset')) {
     // Native NEAR and wNEAR are one price exposure; grouped under wrap.near, the token a swap intent can sell.
     const isNear = l.token === NATIVE_HOLDING || l.token === WNEAR;
     const token = isNear ? WNEAR : l.token;
@@ -533,12 +542,13 @@ export function accountPortfolio(p: AccountPositions) {
     row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
     protocol: string,
+    kind: 'asset' | 'locked' = 'asset',
   ) => {
     let usd: number | null = null;
     let estimate = false;
     for (const x of parts)
       if (x.usd !== null && x.usd !== undefined && x.usd > 0) {
-        legs.push({ token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind: 'asset' });
+        legs.push({ token: x.token, symbol: x.symbol, protocol, usd: x.usd, kind });
         usd = (usd ?? 0) + x.usd;
         estimate ||= trust(x.token).estimate;
       }
@@ -605,14 +615,18 @@ export function accountPortfolio(p: AccountPositions) {
       {
         key: `order-${o.orderId}`,
         label: `${o.sellSymbol} → ${o.buySymbol}`,
-        sub: `Rhea limit order · waiting to fill at ${sig(o.price)} ${o.buySymbol} per ${o.sellSymbol}`,
-        amount: o.remaining,
+        sub:
+          o.remaining > 0
+            ? `Rhea limit order · ${sig(o.remaining)} ${o.sellSymbol} waiting to fill at ${sig(o.price)} ${o.buySymbol} each`
+            : `Rhea limit order · filled: ${sig(o.unclaimed)} ${o.buySymbol} to claim in Rhea`,
+        amount: null,
       },
       [
         { token: o.sellToken, symbol: o.sellSymbol, usd: o.usdSell },
         { token: o.buyToken, symbol: o.buySymbol, usd: o.usdBuy },
       ],
       'Rhea limit orders',
+      'locked',
     );
   const metrics = portfolioMetrics(legs);
   const idleUsd = p.holdings

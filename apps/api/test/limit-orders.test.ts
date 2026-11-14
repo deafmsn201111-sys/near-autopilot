@@ -1,6 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { orderInfoSchema } from '@near-autopilot/rhea-dcl-adapter';
-import { accountPortfolio, limitOrderView } from '../src/analytics/account-view';
+import { accountPortfolio, limitOrderView, readLimitOrders } from '../src/analytics/account-view';
+
+describe('readLimitOrders (#222)', () => {
+  it('drops an order whose pool id it cannot read instead of failing the whole portfolio', async () => {
+    const good = orderInfoSchema.parse({
+      order_id: '7',
+      owner_id: 'alice.near',
+      pool_id: 'imeme-2.v2-launchpad.justhoot.near|wrap.near|10000',
+      point: 0,
+      sell_token: 'imeme-2.v2-launchpad.justhoot.near',
+      buy_token: 'wrap.near',
+      created_at: '0',
+      original_amount: '1',
+      remain_amount: '1',
+      cancel_amount: '0',
+      bought_amount: '0',
+    });
+    const dcl = {
+      listActiveOrders: async () => [good, { ...good, order_id: '8', pool_id: 'not-a-pool' }],
+    } as never;
+    const out = await readLimitOrders(
+      dcl,
+      'alice.near' as never,
+      async () => ({
+        symbol: 'T',
+        decimals: 18,
+      }),
+      new Map(),
+    );
+    expect(out.map((o) => o.orderId)).toEqual(['7']);
+  });
+});
 
 const MEME = 'imeme-2.v2-launchpad.justhoot.near';
 const POOL = `${MEME}|wrap.near|10000`;
@@ -88,11 +119,29 @@ describe('accountPortfolio with limit orders (#222)', () => {
       expect.objectContaining({
         key: 'order-7',
         label: 'IMEME → wNEAR',
-        sub: 'Rhea limit order · waiting to fill at 0.000001 wNEAR per IMEME',
-        amount: 1000,
+        sub: 'Rhea limit order · 1,000 IMEME waiting to fill at 0.000001 wNEAR each',
+        amount: null,
         usd: 1.4,
       }),
     ]);
     expect(p.totals.netWorthUsd).toBeCloseTo(1.4);
+    expect(p.metrics.byToken).toEqual([]);
+    expect(p.metrics.concentration).toBeNull();
+  });
+
+  it('says a filled order waits to be claimed', () => {
+    const filled = limitOrderView(
+      orderInfoSchema.parse({ ...raw, remain_amount: '0' }),
+      (t) => meta.get(t),
+      new Map(),
+    )!;
+    const p = accountPortfolio({
+      holdings: [],
+      staking: [],
+      dclPositions: [],
+      v1Positions: [],
+      limitOrders: [filled],
+    });
+    expect(p.positions[0]?.sub).toBe('Rhea limit order · filled: 0.5 wNEAR to claim in Rhea');
   });
 });
