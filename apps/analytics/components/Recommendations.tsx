@@ -287,15 +287,18 @@ function AiTrace({
       </section>
     );
   const who = model ? modelName(model) : 'The AI';
-  const current = live ? stage : 4;
+  const current = stage;
   const state = (i: number): StageState =>
     i < current ? 'done' : i === current ? 'active' : 'pending';
   const rows = [...asked, ...trace.filter((t) => !asked.some((a) => a.tool === t.tool))].map(
     ({ tool, agent }) => ({ tool, agent, step: trace.find((t) => t.tool === tool) }),
   );
+  const answered = rows.filter((r) => r.step).length;
   const agentsTitle =
     state(1) === 'done'
-      ? `${plural(trace.length, 'agent')} ran`
+      ? answered < rows.length
+        ? `${answered} of ${plural(rows.length, 'agent')} answered`
+        : `${plural(trace.length, 'agent')} ran`
       : asked.length > 0
         ? `Asking ${plural(asked.length, 'agent')}`
         : `${who} picks the agents to ask`;
