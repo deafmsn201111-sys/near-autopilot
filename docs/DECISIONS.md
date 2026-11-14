@@ -536,9 +536,11 @@ cascade) failed on-chain. The same actions succeed through `contract.main.burrow
 prices itself (`actions_pyth.rs`).
 **Decision:** The three priced builders call `execute_with_pyth { actions }` on the verified Burrow contract with
 1 yoctoNEAR and 300 Tgas; the actions keep their shape (`max_amount` caps). `validateCascade`'s method allowlist
-swaps `oracle_call` for `execute_with_pyth`; the receiver allowlist for these cascades is Burrow instead of the
+swaps `oracle_call` for `execute_with_pyth` and requires it to attach exactly 1 yocto with a non-empty `actions`
+list; the receiver allowlist for these cascades is Burrow instead of the
 oracle. No gas or deposit cap changes (300 Tgas is the existing per-action ceiling). Burrow verification requires
-`execute_with_pyth` instead of `oracle_on_call`. The oracle verification stays: its `get_price_data` still feeds
-the health-factor reads.
+`execute_with_pyth` instead of `oracle_on_call`. The oracle verification keeps only `get_price_data` (Market
+Intelligence's second price source, D13); it no longer requires `oracle_call`.
 **Consequences:** No more `asset_ids` resolution on our side. If Burrow also disables Pyth (`enable_pyth_oracle`),
-the call panics "Pyth oracle disabled" on-chain and nothing moves.
+the call panics "Pyth oracle disabled" on-chain and nothing moves but gas; not pre-checked, because that check
+would sit in deployment verification and also block supply and repay, which need no prices.

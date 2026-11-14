@@ -117,6 +117,13 @@ function checkAction(
       fail('receivers', `${where}: transfers to an unexpected receiver ${String(to)}`);
     if (typeof a.args['msg'] !== 'string') fail('arguments', `${where}: msg must be a string`);
   }
+  if (a.methodName === 'execute_with_pyth') {
+    if (a.deposit !== 1n)
+      fail('deposit', `${where}: execute_with_pyth must attach exactly 1 yoctoNEAR`);
+    const actions = a.args['actions'];
+    if (!Array.isArray(actions) || actions.length === 0)
+      fail('arguments', `${where}: actions must be a non-empty list`);
+  }
   if (a.methodName === 'add_liquidity') {
     const pool = a.args['pool_id'];
     const allowed =

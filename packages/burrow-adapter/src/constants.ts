@@ -49,8 +49,8 @@ export const BURROW_REQUIRED_EXPORTS = [
   'execute_with_pyth',
 ] as const;
 
-/** Oracle methods this adapter relies on (S: price-oracle src/lib.rs). */
-export const ORACLE_REQUIRED_EXPORTS = ['get_price_data', 'oracle_call'] as const;
+/** Oracle methods this adapter relies on: price reads only; priced actions no longer go through it (D29). */
+export const ORACLE_REQUIRED_EXPORTS = ['get_price_data'] as const;
 
 /** A fungible token must at least export this to be sent to Burrow. */
 export const TOKEN_REQUIRED_EXPORTS = ['ft_transfer_call', 'ft_balance_of'] as const;

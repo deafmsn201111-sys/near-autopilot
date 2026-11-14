@@ -39,7 +39,7 @@ const BURROW_EXPORTS = [
   'ft_on_transfer',
   'execute_with_pyth',
 ];
-const ORACLE_EXPORTS = ['get_price_data', 'oracle_call'];
+const ORACLE_EXPORTS = ['get_price_data'];
 const TOKEN_EXPORTS = [
   'ft_transfer_call',
   'ft_balance_of',

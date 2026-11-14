@@ -49,7 +49,12 @@ const base: SwapRepayPrepareInput = {
       {
         type: 'FunctionCall',
         methodName: 'execute_with_pyth',
-        args: { withdraw: rawAmount.toString(), fromCollateral: fromCollateralRaw.toString() },
+        args: {
+          actions: [
+            { DecreaseCollateral: { max_amount: fromCollateralRaw.toString() } },
+            { Withdraw: { max_amount: rawAmount.toString() } },
+          ],
+        },
         gas: 100_000_000_000_000n,
         deposit: 1n,
       },
@@ -83,8 +88,10 @@ describe('prepareSwapRepay', () => {
     expect(r.steps.map((s) => s.intentId)).toEqual(['withdraw', 'swap', 'repay']);
     const [withdraw, swap, repay] = r.steps.map((s) => s.tx);
     expect(withdraw?.actions[0]?.args).toEqual({
-      withdraw: (20n * W).toString(),
-      fromCollateral: (20n * W).toString(),
+      actions: [
+        { DecreaseCollateral: { max_amount: (20n * W).toString() } },
+        { Withdraw: { max_amount: (20n * W).toString() } },
+      ],
     });
     expect(swap?.receiverId).toBe(WNEAR);
     expect(swap?.actions[0]?.args['receiver_id']).toBe(RHEA);
@@ -148,7 +155,9 @@ describe('prepareSwapRepay', () => {
 
   it('takes plain supply before collateral: only the collateral part lowers the health factor', async () => {
     const r = await ok({ ...base, collateral: { ...base.collateral, suppliedRaw: 5n * W } });
-    expect(r.steps[0]?.tx.actions[0]?.args['fromCollateral']).toBe((15n * W).toString());
+    expect(r.steps[0]?.tx.actions[0]?.args['actions']).toContainEqual({
+      DecreaseCollateral: { max_amount: (15n * W).toString() },
+    });
     expect(r.hf.afterWithdraw).toBeCloseTo((360 - 15 * 1.8) / (250 / 0.95), 9);
   });
 
