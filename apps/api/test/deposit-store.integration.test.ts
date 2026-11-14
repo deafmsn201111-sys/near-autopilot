@@ -73,19 +73,17 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
     expect(await store.find('dq_1')).toMatchObject({ status: 'PROCESSING', statusAt: NOW });
   });
 
-  it('hands a transfer out to exactly one of two concurrent requests, and again only on a retry', async () => {
+  it('hands a transfer out to exactly one of two concurrent requests, never twice', async () => {
     const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
     await store.save(quote('dq_1', NOW));
     const both = await Promise.all([
-      store.issueTransfer('dq_1', NOW, false),
-      store.issueTransfer('dq_1', NOW, false),
+      store.issueTransfer('dq_1', NOW),
+      store.issueTransfer('dq_1', NOW),
     ]);
     expect(both.filter(Boolean)).toHaveLength(1);
-    expect(await store.issueTransfer('dq_1', NOW, false)).toBe(false);
-    const later = new Date(NOW.getTime() + 60_000);
-    expect(await store.issueTransfer('dq_1', later, true)).toBe(true);
-    expect(await store.find('dq_1')).toMatchObject({ transferIssuedAt: later });
-    expect(await store.issueTransfer('dq_2', NOW, true)).toBe(false);
+    expect(await store.issueTransfer('dq_1', NOW)).toBe(false);
+    expect(await store.find('dq_1')).toMatchObject({ transferIssuedAt: NOW });
+    expect(await store.issueTransfer('dq_2', NOW)).toBe(false);
   });
 
   it('stores a quote without a fee', async () => {

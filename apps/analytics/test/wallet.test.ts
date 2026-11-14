@@ -70,6 +70,7 @@ const fake = vi.hoisted(() => {
     }
   }
   class HotKit {
+    router = { openSelectSender: () => undefined, openDepositFlow: async () => undefined };
     constructor(options: { connectors: { id: string; create: (m: unknown) => unknown }[] }) {
       state.kits++;
       state.connectorIds = options.connectors.map((c) => c.id);
@@ -167,7 +168,7 @@ describe('NEAR wallet through HOT Kit', () => {
     m.watchAccount((id) => seen.push(id));
     await vi.waitFor(() => expect(seen).toEqual(['alice.near']));
     expect(fake.state.kits).toBe(1);
-    expect(fake.state.connectorIds).toEqual(['near', 'evm', 'solana', 'utxo']);
+    expect(fake.state.connectorIds).toEqual(['near', 'evm', 'solana', 'tron', 'utxo']);
     expect(fake.state.bases).toEqual([
       expect.objectContaining({
         network: 'mainnet',

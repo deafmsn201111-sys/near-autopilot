@@ -21,16 +21,16 @@ const fields = {
   originAsset: 'nep141:eth-0xa0b8.omft.near',
   destinationAsset: 'nep141:wrap.near',
   amount: '100',
-  refundTo: '0x2527d02599ba641c19fea793cd0f167589a0f10d',
+  recipient: '0x2527d02599ba641c19fea793cd0f167589a0f10d',
 };
 
 function request(contentType: string | null, body: string = JSON.stringify(fields)): Request {
   const headers = new Headers();
   if (contentType !== null) headers.set('content-type', contentType);
-  return new Request('http://localhost/api/deposit/quote', { method: 'POST', headers, body });
+  return new Request('http://localhost/api/withdraw/quote', { method: 'POST', headers, body });
 }
 
-describe('POST /api/deposit/quote', () => {
+describe('POST /api/withdraw/quote', () => {
   beforeEach(() => {
     vi.resetModules();
     apiPost.mockClear();
@@ -40,30 +40,30 @@ describe('POST /api/deposit/quote', () => {
   it.each([null, 'text/plain', 'application/x-www-form-urlencoded'])(
     'answers 415 to content-type %s without calling the API',
     async (contentType) => {
-      const { POST } = await import('../app/api/deposit/quote/route');
+      const { POST } = await import('../app/api/withdraw/quote/route');
       expect((await POST(request(contentType))).status).toBe(415);
       expect(apiPost).not.toHaveBeenCalled();
     },
   );
 
   it('forwards only the five form fields to the API', async () => {
-    const { POST } = await import('../app/api/deposit/quote/route');
+    const { POST } = await import('../app/api/withdraw/quote/route');
     const res = await POST(
-      request('application/json', JSON.stringify({ ...fields, recipient: 'x.near' })),
+      request('application/json', JSON.stringify({ ...fields, refundTo: 'x.near' })),
     );
     expect(res.status).toBe(200);
-    expect(apiPost).toHaveBeenCalledWith('/v1/deposit/quote', fields, 40_000);
+    expect(apiPost).toHaveBeenCalledWith('/v1/withdraw/quote', fields, 40_000);
   });
 
   it('answers 400 to a body without the string fields', async () => {
-    const { POST } = await import('../app/api/deposit/quote/route');
+    const { POST } = await import('../app/api/withdraw/quote/route');
     const res = await POST(request('application/json', JSON.stringify({ ...fields, amount: 100 })));
     expect(res.status).toBe(400);
     expect(apiPost).not.toHaveBeenCalled();
   });
 
   it('allows 5 quotes per visitor in 10 minutes, then 429; another visitor still gets through', async () => {
-    const { POST } = await import('../app/api/deposit/quote/route');
+    const { POST } = await import('../app/api/withdraw/quote/route');
     for (let i = 0; i < 5; i++) expect((await POST(request('application/json'))).status).toBe(200);
     const limited = await POST(request('application/json'));
     expect(limited.status).toBe(429);
@@ -74,7 +74,7 @@ describe('POST /api/deposit/quote', () => {
   });
 
   it('answers 429 to everyone once 100 quotes were asked in the window', async () => {
-    const { POST } = await import('../app/api/deposit/quote/route');
+    const { POST } = await import('../app/api/withdraw/quote/route');
     for (let i = 0; i < 100; i++) {
       forwardedFor = `10.0.0.${i}`;
       expect((await POST(request('application/json'))).status).toBe(200);
@@ -131,48 +131,7 @@ describe('GET /api/deposit/status/:id', () => {
     forwardedFor = '198.51.100.7';
     expect((await get('dq_1')).status).toBe(200);
     forwardedFor = '203.0.113.1';
-    const { POST } = await import('../app/api/deposit/quote/route');
+    const { POST } = await import('../app/api/withdraw/quote/route');
     expect((await POST(request('application/json'))).status).toBe(200);
-  });
-});
-
-describe('GET /api/deposit/transfer/:id', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    tryApi.mockClear();
-  });
-  const get = async (id: string, query = '') => {
-    const { GET } = await import('../app/api/deposit/transfer/[id]/route');
-    return GET(new Request(`http://localhost/api/deposit/transfer/${id}${query}`), {
-      params: Promise.resolve({ id }),
-    });
-  };
-
-  it('forwards only our quote id to the API', async () => {
-    expect((await get('dq_1')).status).toBe(200);
-    expect(tryApi).toHaveBeenCalledWith('/v1/deposit/transfer/dq_1');
-  });
-
-  it('forwards a retry after a wallet rejection, and nothing else from the query', async () => {
-    await get('dq_1', '?retry=1&x=y');
-    await get('dq_1', '?retry=yes');
-    expect(tryApi).toHaveBeenNthCalledWith(1, '/v1/deposit/transfer/dq_1?retry=1');
-    expect(tryApi).toHaveBeenNthCalledWith(2, '/v1/deposit/transfer/dq_1');
-  });
-
-  it('answers 400 to an id that is not ours without calling the API', async () => {
-    expect((await get('../admin')).status).toBe(400);
-    expect(tryApi).not.toHaveBeenCalled();
-  });
-
-  it('passes the API refusal and its status through', async () => {
-    tryApi.mockResolvedValueOnce({
-      data: null,
-      error: 'This quote has expired.',
-      status: 409,
-    } as never);
-    const res = await get('dq_1');
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: 'This quote has expired.' });
   });
 });

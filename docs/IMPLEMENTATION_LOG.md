@@ -845,3 +845,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   trace panel, the cascade facts, the "every step confirmed" receipt. `Status` / `Level` / `Meter` / `Tile` stay on
   the reviewer pages for #257.
 - `test/primitives.test.tsx` renders each variant with `react-dom/server` (vitest now compiles `.tsx`).
+
+## 2026-11-14 — Deposit through HOT Kit's bridge popup (#260)
+
+- **Deposit** opens `openDepositBridge(account)` directly: `kit.openBridge` with the NEAR account as
+  locked recipient, NEAR-only destination and `isBridgeSource` (1Click EVM chains, Solana, Tron, Bitcoin; never NEAR
+  or a HOT balance). Kit gets a Tron connector and a theme read from the page's design tokens (D42).
+- Removed: the deposit form, QR / payment links (`lib/payment-uri.ts`, `qrcode-generator`), the origin-wallet send
+  and its error parsing, the deposit quote / incidents / transfer proxies, `GET /v1/deposit/transfer/:id` and
+  `issueTransfer`'s `retry`. Withdraw keeps the status line, token picker and wallet address fill.
+- `test/signing-lock.test.ts`: no source asks an origin wallet to send; `.openBridge(` only in `lib/hot-kit.ts`.
+- hex-api.app refuses our origin (CORS 403), so the kit's 1Click and market calls go through `/api/hex/[...path]`: an
+  allowlisted, rate-limited pass-through without the visitor's origin or cookies. Checked on a local stack: prices
+  load and a quote reaches 1Click.

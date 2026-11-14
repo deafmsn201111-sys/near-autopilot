@@ -11,8 +11,8 @@ describe the older autopilot/testnet design — trust the code and `REWORK_PLAN.
 ## Non-negotiable safety rules
 
 - **No autonomy.** The server never holds a key and never signs; there is no signer in the code (D8). Signing happens
-  only in the user's wallet, gated by `MAINNET_WALLET_SIGNING`. On other chains the user's EVM / Solana wallet may be
-  asked for one thing only: the transfer of a stored 1Click deposit quote, rebuilt by the API (D34, `lib/hot-kit.ts`).
+  only in the user's wallet, gated by `MAINNET_WALLET_SIGNING`. On other chains the user's wallet signs only the deposit
+  transfer HOT Kit's bridge popup builds, recipient locked to their NEAR account, never from NEAR (D42, `lib/hot-kit.ts`).
 - Every cascade built for signing must pass `apps/api/src/wallet/validate-cascade.ts` (signer, receiver + method
   allowlists, gas and deposit caps). Never loosen these limits without an explicit decision in `docs/DECISIONS.md`.
 - Mainnet only. No testnet code paths.

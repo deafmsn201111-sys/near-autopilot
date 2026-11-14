@@ -1,27 +1,12 @@
 'use client';
-import { describeProvenance } from '@near-autopilot/core';
-import qrcode from 'qrcode-generator';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  DEPOSIT_CHAINS,
-  defaultDestination,
   describeStatus,
-  defaultOrigin,
-  explorerTxUrl,
-  formatUnits,
-  loadDepositAssets,
-  loadDepositIncidents,
   loadDepositStatus,
-  loadDepositTransfer,
-  requestDepositQuote,
   statusDelayMs,
   stopReason,
   searchTokens,
-  refundChainOf,
-  walletChainOf,
-  walletSendError,
   type DepositAsset,
-  type DepositAssets,
   type DepositQuote,
   type DepositStatus,
 } from '../lib/deposit';
@@ -29,14 +14,12 @@ import { shortHash } from '../lib/activity';
 import {
   connectOriginWallet,
   disconnectOriginWallet,
-  sendFailure,
-  sendOriginTransfer,
-  watchOriginWallets,
+  openDepositBridge,
   type OriginWallet,
 } from '../lib/hot-kit';
 import { withoutModal } from '../lib/modal';
-import { paymentUri } from '../lib/payment-uri';
 import { poll, tabHidden } from '../lib/polling';
+import { currentAccount } from '../lib/wallet';
 import { TokenIcon } from './TokenIcon';
 
 export const REFUND_HINT: Record<string, string> = {
@@ -46,52 +29,6 @@ export const REFUND_HINT: Record<string, string> = {
   sol: 'Your Solana address',
   btc: 'bc1… , 1… or 3…',
 };
-
-/** Drawn locally: no external QR service ever sees it. Black on white so it scans in dark mode. */
-function Qr({ text, label }: { text: string; label: string }) {
-  const { size, path } = useMemo(() => {
-    const qr = qrcode(0, 'M');
-    qr.addData(text);
-    qr.make();
-    const n = qr.getModuleCount();
-    let d = '';
-    for (let r = 0; r < n; r++)
-      for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + 4} ${r + 4}h1v1h-1z`;
-    return { size: n + 8, path: d };
-  }, [text]);
-  return (
-    <svg
-      className="deposit-qr"
-      viewBox={`0 0 ${size} ${size}`}
-      width={192}
-      height={192}
-      role="img"
-      aria-label={label}
-      shapeRendering="crispEdges"
-    >
-      <rect width={size} height={size} fill="#fff" />
-      <path d={path} fill="#000" />
-    </svg>
-  );
-}
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className="btn secondary small"
-      onClick={() =>
-        void navigator.clipboard
-          ?.writeText(text)
-          .then(() => setCopied(true))
-          .catch(() => undefined)
-      }
-    >
-      {copied ? 'Copied' : label}
-    </button>
-  );
-}
 
 export const remaining = (s: number) =>
   s >= 3600
@@ -177,154 +114,6 @@ export function StatusLine({ q }: { q: DepositQuote }) {
         </button>
       </p>
     </div>
-  );
-}
-
-function QuoteView({
-  q,
-  originIcon,
-  destinationIcon,
-  wallets,
-  onBack,
-}: {
-  q: DepositQuote;
-  originIcon: string | null | undefined;
-  destinationIcon: string | null | undefined;
-  wallets: readonly OriginWallet[];
-  onBack: () => void;
-}) {
-  const now = useNow();
-  // The server's seconds-left, counted from when the answer arrived: the browser clock may be off.
-  const [expiresAt] = useState(() => Date.now() + q.expiresInSeconds * 1000);
-  const [addressOnly, setAddressOnly] = useState(false);
-  const [walletSend, setWalletSend] = useState<WalletSendState>('idle');
-  const left = Math.max(0, Math.floor((expiresAt - now) / 1000));
-  const expired = left === 0;
-  const amount = formatUnits(q.amountIn, q.origin.decimals);
-  const send = `${amount} ${q.origin.symbol}`;
-  const uri = paymentUri(q);
-  const link = addressOnly ? null : uri;
-  const fee = describeProvenance(q.fee.provenance).label;
-  return (
-    <>
-      <h3>
-        Send {send} on {q.chainName}
-      </h3>
-      {expired ? (
-        <p className="deposit-warn">This address has expired. Do not send to it; get a new one.</p>
-      ) : (
-        <p>
-          Send exactly this amount from your own wallet on {q.chainName}, to this address, within{' '}
-          <b className="num">{remaining(left)}</b>. Another token or another chain can be lost.
-        </p>
-      )}
-      <StatusLine q={q} />
-      <WalletSend
-        q={q}
-        wallets={wallets}
-        send={send}
-        expiresAt={expiresAt}
-        expired={expired}
-        onState={setWalletSend}
-      />
-      {!expired && walletSend === 'idle' && walletChainOf(q.chain) && (
-        <p className="muted-note">Or send it manually from any wallet:</p>
-      )}
-      {!expired && walletSend === 'idle' && (
-        <div className="deposit-address">
-          <Qr
-            text={link ?? q.depositAddress}
-            label={
-              link
-                ? `QR code of a payment of ${send} on ${q.chainName}`
-                : 'QR code of the deposit address'
-            }
-          />
-          {link && (
-            <a className="btn primary small" href={link}>
-              Open in wallet
-            </a>
-          )}
-          {uri ? (
-            <label className="muted-note">
-              <input
-                type="checkbox"
-                checked={addressOnly}
-                onChange={(e) => setAddressOnly(e.target.checked)}
-              />{' '}
-              Address only, for wallets that do not read payment links
-            </label>
-          ) : (
-            <p className="deposit-warn">
-              Your wallet will not fill in the amount for {q.chainName}: send exactly {send}.
-            </p>
-          )}
-          <code>{q.depositAddress}</code>
-          <CopyButton text={q.depositAddress} label="Copy address" />
-          <p>
-            <b className="num">{send}</b> on {q.chainName}{' '}
-            <CopyButton text={amount} label="Copy amount" />
-          </p>
-        </div>
-      )}
-      <dl className="deposit-facts">
-        <dt>You send</dt>
-        <dd className="num deposit-token">
-          <TokenIcon icon={originIcon} symbol={q.origin.symbol} size={20} />
-          {send}
-        </dd>
-        <dt>Chain</dt>
-        <dd>{q.chainName}</dd>
-        <dt>You receive (estimate)</dt>
-        <dd className="num deposit-token">
-          <TokenIcon icon={destinationIcon} symbol={q.destination.symbol} size={20} />≈{' '}
-          {formatUnits(q.amountOut, q.destination.decimals)} {q.destination.symbol}, at least{' '}
-          {formatUnits(q.minAmountOut, q.destination.decimals)}
-          <span className="muted-note">
-            {' '}
-            · ≈ ${Number(q.amountOutUsd.value).toFixed(2)} (
-            {describeProvenance(q.amountOutUsd.provenance).label})
-          </span>
-        </dd>
-        <dt>1Click fee</dt>
-        <dd>
-          {q.fee.bps === null ? (
-            'not reported by 1Click'
-          ) : (
-            <>
-              <span className="num">{(q.fee.bps / 100).toFixed(2)}%</span>
-              <span className="muted-note"> · {fee}, already taken off what you receive</span>
-            </>
-          )}
-        </dd>
-        <dt>To NEAR account</dt>
-        <dd>{q.recipient}</dd>
-        <dt>Refund to</dt>
-        <dd>
-          <code>{q.refundTo}</code>
-        </dd>
-        <dt>Deadline</dt>
-        <dd>{new Date(q.deadline).toLocaleString()}</dd>
-        <dt>Arrives in</dt>
-        <dd>
-          usually about {Math.max(1, Math.round(q.timeEstimateSeconds / 60))} min after your deposit
-          confirms
-        </dd>
-      </dl>
-      <form method="dialog" className="modal-actions">
-        <button
-          type="button"
-          className="btn secondary"
-          disabled={walletSend === 'busy'}
-          onClick={onBack}
-        >
-          New quote
-        </button>
-        <button className="btn primary" disabled={walletSend === 'busy'}>
-          Close
-        </button>
-      </form>
-    </>
   );
 }
 
@@ -486,118 +275,6 @@ const CHAIN_LABEL: Record<OriginWallet['chain'], string> = {
 };
 const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
 
-type WalletSendState = 'idle' | 'busy' | 'sent';
-// As the API's margin: a wallet prompt can stay open, and the transfer must land before 1Click's deadline.
-const SEND_MARGIN_MS = 2 * 60_000;
-
-/** Connect, send, wait: the one-click path when the user's wallet can send on the quoted chain. */
-function WalletSend({
-  q,
-  wallets,
-  send,
-  expiresAt,
-  expired,
-  onState,
-}: {
-  q: DepositQuote;
-  wallets: readonly OriginWallet[];
-  send: string;
-  expiresAt: number;
-  expired: boolean;
-  onState: (s: WalletSendState) => void;
-}) {
-  const chain = walletChainOf(q.chain);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hash, setHash] = useState<string | null>(null);
-  const [unsure, setUnsure] = useState<string | null>(null);
-  const [rejected, setRejected] = useState(false);
-  const done = hash !== null || unsure !== null;
-  useEffect(() => onState(done ? 'sent' : busy ? 'busy' : 'idle'), [done, busy, onState]);
-  // Kept mounted past the deadline while the wallet is open or once it sent: a signed transfer is never lost.
-  if (!chain || (expired && !busy && !done)) return null;
-  const connected = wallets.find((w) => w.chain === chain);
-
-  const run = async (dialog: HTMLDialogElement | null) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await withoutModal(dialog, async () => {
-        if (!connected && !(await connectOriginWallet(chain)))
-          return setError('No wallet was connected. Connect one, or send manually below.');
-        if (expiresAt - Date.now() < SEND_MARGIN_MS)
-          return setError('This quote expires too soon to send. Get a new one.');
-        const t = await loadDepositTransfer(q, rejected);
-        if (!t.ok) return setError(t.error);
-        setHash(await sendOriginTransfer(t.data));
-      });
-    } catch (e) {
-      const why = e instanceof Error ? e.message.slice(0, 200) : '';
-      const failure = sendFailure(e);
-      if (failure === 'unknown') setUnsure(why);
-      else {
-        setRejected(true);
-        setError(walletSendError(failure, q, why));
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (unsure !== null) {
-    return (
-      <p className="deposit-warn" role="alert">
-        Your wallet reported an error{unsure ? `: ${unsure}` : ''}. The transfer may still have been
-        sent: check your wallet&apos;s activity and the status above. Do not send to this address
-        again; if nothing was sent, get a new quote.
-      </p>
-    );
-  }
-  if (hash) {
-    const url = explorerTxUrl(q.chain, hash);
-    return (
-      <p className="deposit-sent" role="status">
-        Sent from your wallet.{' '}
-        {url ? (
-          <a href={url} target="_blank" rel="noreferrer">
-            View the {q.chainName} transaction
-          </a>
-        ) : (
-          <code>{shortHash(hash)}</code>
-        )}
-        . Do not send it again; the status above follows the deposit.
-      </p>
-    );
-  }
-  return (
-    <div className="deposit-wallet-send">
-      <button
-        type="button"
-        className="btn primary"
-        disabled={busy}
-        onClick={(e) => void run(e.currentTarget.closest('dialog'))}
-      >
-        {busy
-          ? 'Confirm in your wallet…'
-          : connected
-            ? `Send ${send} with your wallet`
-            : `Connect ${CHAIN_LABEL[chain]} wallet and send ${send}`}
-      </button>
-      {connected && (
-        <span className="muted-note">
-          From <code title={connected.address}>{shortHash(connected.address)}</code>; your wallet
-          shows the transfer and you sign it there.
-        </span>
-      )}
-      {error && (
-        <p className="deposit-warn" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
 /** EVM / Solana / Bitcoin wallets through HOT Kit, as connected in the dialog. */
 export function OriginWallets({
   wallets,
@@ -649,243 +326,40 @@ export function OriginWallets({
   );
 }
 
-/**
- * Fund the connected NEAR account from another chain through 1Click. The server checks the refund address, verifies
- * the 1Click quote and only then returns a deposit address; the user sends to it from their own wallet on that chain.
- * Nothing is signed here and no NEAR transaction is built.
- */
-export function DepositDialog({ account, label = 'Deposit' }: { account: string; label?: string }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const [assets, setAssets] = useState<DepositAssets | null>(null);
-  const [chain, setChain] = useState<string>(DEPOSIT_CHAINS[0].id);
-  const [origin, setOrigin] = useState('');
-  const [destination, setDestination] = useState('');
-  const [amount, setAmount] = useState('');
-  const [refundTo, setRefundTo] = useState('');
+/** Funds the connected NEAR account from another chain in HOT's bridge popup (D42); nothing is built or signed here. */
+export function DepositButton({ account, label = 'Deposit' }: { account: string; label?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [quote, setQuote] = useState<DepositQuote | null>(null);
-  const [picking, setPicking] = useState<'send' | 'receive' | null>(null);
-  const [incidents, setIncidents] = useState<string[]>([]);
-
-  useEffect(() => {
-    setIncidents([]);
-    if (!origin || !destination) return;
-    let alive = true;
-    const load = () =>
-      void loadDepositIncidents(origin, destination).then((list) => alive && setIncidents(list));
-    load();
-    // The server asks SHIELD once a minute; a long stay on the address screen still sees a new incident.
-    const timer = setInterval(load, 60_000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [origin, destination]);
-  const [opened, setOpened] = useState(false);
-  // Subscribed only once the dialog has opened, so the kit loads only then.
-  const [wallets, setWallets] = useState<OriginWallet[]>([]);
-  useEffect(() => (opened ? watchOriginWallets(setWallets) : undefined), [opened]);
-
-  const chosen = assets?.origins.find((o) => o.assetId === origin);
-  const refundWallet =
-    wallets.find((w) => w.chain === refundChainOf(chosen?.chain ?? ''))?.address ?? '';
-  // The connected wallet of the chosen chain is the refund address, until the user types another one.
-  const autoRefund = useRef('');
-  useEffect(() => {
-    const before = autoRefund.current;
-    autoRefund.current = refundWallet;
-    setRefundTo((now) => (now === '' || now === before ? refundWallet : now));
-  }, [refundWallet]);
-  const receive = assets?.destinations.find((d) => d.assetId === destination);
-  const chains = DEPOSIT_CHAINS.filter((c) => assets?.origins.some((o) => o.chain === c.id));
-  const onChain = assets?.origins.filter((o) => o.chain === chain) ?? [];
-
-  function pickOrigin(id: string, list = assets) {
-    setOrigin(id);
-    const o = list?.origins.find((x) => x.assetId === id);
-    setDestination(defaultDestination(o, list?.destinations ?? [])?.assetId ?? '');
-  }
-
-  function pickChain(id: string, list = assets) {
-    setChain(id);
-    pickOrigin(defaultOrigin(list?.origins ?? [], id)?.assetId ?? '', list);
-  }
 
   async function open() {
-    ref.current?.showModal();
-    setOpened(true);
-    if (assets) return;
-    setError(null);
-    const r = await loadDepositAssets();
-    if (!r.ok) return setError(r.error);
-    setAssets(r.data);
-    const first = DEPOSIT_CHAINS.find((c) => r.data.origins.some((o) => o.chain === c.id));
-    if (first) pickChain(first.id, r.data);
-  }
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await requestDepositQuote({
-      account,
-      originAsset: origin,
-      destinationAsset: destination,
-      amount: amount.trim(),
-      refundTo: refundTo.trim(),
-    });
-    setBusy(false);
-    if (r.ok) setQuote(r.data);
-    else setError(r.error);
+    try {
+      if ((await currentAccount().catch(() => null)) !== account)
+        return setError('Connect your NEAR wallet first.');
+      await openDepositBridge(account);
+    } catch {
+      setError('HOT could not open. Try again.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <>
-      <button type="button" className="btn primary small" onClick={() => void open()}>
+      <button
+        type="button"
+        className="btn primary small"
+        disabled={busy}
+        onClick={() => void open()}
+      >
         {label}
       </button>
-      <dialog
-        ref={ref}
-        className="modal deposit"
-        onCancel={(e) => {
-          if (!picking) return;
-          e.preventDefault();
-          setPicking(null);
-        }}
-      >
-        {!picking &&
-          incidents.map((text) => (
-            <p key={text} className="deposit-incident" role="alert">
-              <b>1Click reports an incident:</b> {text}
-            </p>
-          ))}
-        {quote ? (
-          <QuoteView
-            q={quote}
-            originIcon={chosen?.icon}
-            destinationIcon={receive?.icon}
-            wallets={wallets}
-            onBack={() => setQuote(null)}
-          />
-        ) : picking === 'send' ? (
-          <TokenPicker
-            title={`Send from ${chosen?.chainName ?? 'another chain'}`}
-            tokens={onChain}
-            selected={origin}
-            note={(t) => `on ${t.chainName}`}
-            onPick={(id) => {
-              pickOrigin(id);
-              setPicking(null);
-            }}
-            onBack={() => setPicking(null)}
-          />
-        ) : picking === 'receive' ? (
-          <TokenPicker
-            title="Receive on NEAR"
-            tokens={assets?.destinations ?? []}
-            selected={destination}
-            note={() => 'on NEAR'}
-            onPick={(id) => {
-              setDestination(id);
-              setPicking(null);
-            }}
-            onBack={() => setPicking(null)}
-          />
-        ) : (
-          <form onSubmit={(e) => void submit(e)}>
-            <h3>Deposit from another chain</h3>
-            <p>
-              Through NEAR Intents 1Click. You get a one-time address on the chain you pick and send
-              to it from your own wallet there; it arrives in <b>{account}</b>.
-            </p>
-            {opened && <OriginWallets wallets={wallets} />}
-            <div className="chain-chips" role="radiogroup" aria-label="Network">
-              {chains.map((c) => (
-                <button
-                  type="button"
-                  key={c.id}
-                  role="radio"
-                  aria-checked={c.id === chain}
-                  className={`chain-chip${c.id === chain ? ' is-on' : ''}`}
-                  onClick={() => pickChain(c.id)}
-                >
-                  <img src={`/chains/${c.id}.svg`} alt="" width={20} height={20} />
-                  {c.name}
-                </button>
-              ))}
-            </div>
-            <div className="asset-box">
-              <span className="asset-box-label">You send</span>
-              <div className="asset-box-row">
-                <TokenButton
-                  label="Token to send"
-                  token={chosen}
-                  where={chosen ? `on ${chosen.chainName}` : ''}
-                  disabled={!assets}
-                  onClick={() => setPicking('send')}
-                />
-                <input
-                  className="asset-amount num"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="0"
-                  aria-label={`Amount${chosen ? ` of ${chosen.symbol}` : ''}`}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <div className="asset-box">
-              <span className="asset-box-label">You receive on NEAR</span>
-              <div className="asset-box-row">
-                <TokenButton
-                  label="Token to receive"
-                  token={receive}
-                  where="on NEAR"
-                  disabled={!assets}
-                  onClick={() => setPicking('receive')}
-                />
-              </div>
-            </div>
-            <label className="field">
-              Your refund address{chosen ? ` on ${chosen.chainName}` : ''}
-              <input
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={REFUND_HINT[chosen?.chain ?? ''] ?? ''}
-                value={refundTo}
-                onChange={(e) => setRefundTo(e.target.value)}
-                required
-              />
-              <span className="muted-note">
-                {refundWallet && refundTo === refundWallet
-                  ? 'Filled from your connected wallet. '
-                  : ''}
-                If the swap fails, 1Click sends your deposit back here. It must be your own address.
-              </span>
-            </label>
-            {error && (
-              <p className="deposit-warn" role="alert">
-                {error}
-              </p>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn secondary" onClick={() => ref.current?.close()}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={!assets || busy || !origin || !destination}
-              >
-                {busy ? 'Getting a quote…' : 'Get deposit address'}
-              </button>
-            </div>
-          </form>
-        )}
-      </dialog>
+      {error && (
+        <span className="deposit-warn" role="alert">
+          {error}
+        </span>
+      )}
     </>
   );
 }

@@ -39,7 +39,7 @@ everywhere in this repository:
 
 The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
 Intents 1Click gives dry quotes for route comparison, and real quotes only for moving your own money between NEAR and
-another chain: a deposit you send from your own wallet there, or a withdrawal whose NEAR transfer the server builds
+another chain: a deposit through HOT Kit's bridge popup, signed in your own wallet there, or a withdrawal whose NEAR transfer the server builds
 from the stored quote and you sign in your NEAR wallet.
 
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
@@ -129,35 +129,14 @@ from and withdrawals to another chain (below), in a separate client.
    them in your wallet or cancel.
 
 5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
-   on the portfolio. **Connect EVM wallet** / **Connect Solana wallet** links MetaMask, Phantom or another browser
-   wallet (or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build) through HOT Kit and shows its address, which then fills the refund address for that chain. Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
-   (search by symbol, popular ones first, every token with its logo; a Solana token whose mint, read from the chain, takes a fee on
-   every transfer or can block one, is not offered, since it would arrive short and be refunded), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
-   checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
-   a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
-   partner key, `ONE_CLICK_JWT`, gives the partner schedule). The QR is a payment link that fills in the address,
-   exact amount, token and network: BIP21 for Bitcoin, EIP-681 with the chain id for ETH and ERC-20 tokens on
-   Ethereum, Base and Arbitrum, Solana Pay for SOL and SPL tokens. The API names the token from the quoted 1Click asset
-   (native coin by its exact asset id; on EVM the contract the asset id names; on Solana the mint 1Click lists); when it cannot be, or the wallet does not read payment links, the QR holds the
-   address only (also an **Address only** switch). **Open in wallet** opens the same link; the address and the amount
-   each have a copy button. On Ethereum, Base, Arbitrum and Solana, **Send … with your wallet** (or **Connect … wallet
-   and send**) does it in one click: the server rebuilds the transfer from the stored quote (token, exact amount,
-   deposit address; refused once the deadline passed or a deposit was seen), the browser checks it matches the quote
-   on screen, and your MetaMask / Phantom shows that transfer for you to sign; then the dialog links the transaction
-   (D34). Otherwise send exactly that amount from your wallet on that chain;
-   1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
-   deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
-   transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;
-   it stops at a final status, or 30 min after the deadline if nothing arrived ("expired"), and keeps the last status with a
-   **Check again** button. The browser sends only our quote id; the server looks up the address, asks 1Click
-   (cached 5 s per quote, rate-limited per visitor). What we keep: one `deposit_quotes` row per address shown (your
-   NEAR account, the tokens and amounts, your refund address on the other chain, the deposit address, deadline, fee,
-   1Click's id and signature, and the latest status with its time), deleted after 30 days; no IP address.
-   With `SHIELD_JWT` set (a SHIELD key from partners.near-intents.org), the dialog shows a yellow warning when 1Click's
-   SHIELD Incident API reports an incident on the chosen route: a deposit incident on the sending chain, its bridge
-   (PoA, HOT) or token, or a withdrawal incident on NEAR or the token you receive. The text is SHIELD's own, as
-   plain text and capped, or ours when SHIELD gives none. The server asks SHIELD at most once a minute for everyone;
-   no key, an error or an odd answer means no warning, never a broken dialog.
+   on the portfolio: it opens HOT Kit's bridge popup with your
+   NEAR account locked as the recipient: you connect the wallet you send from (MetaMask, Phantom, a Tron or Bitcoin
+   wallet, or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build), see its
+   balance, pick the token and amount (or MAX) and sign the transfer HOT builds in that wallet. Sources are the EVM
+   chains 1Click serves, Solana, Tron and Bitcoin; never NEAR or a HOT balance, so no NEAR signature goes around
+   `validateCascade` (D42). A swap between different tokens carries HOT's fee of up to 0.4% (0.01% stable to stable, none for the same
+   token), already taken off the amount the popup shows you receive; the portfolio picks up the incoming tokens by itself. Without
+   a connected NEAR account the button asks you to connect first. A deposit straight from an exchange is not offered.
 6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
    wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
@@ -403,7 +382,7 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
   confirmed, or nothing left your wallet); the next step is not offered.
 
 - **Connect wallet** (HOT Kit): one list for your NEAR wallet and, in the same list, an EVM or Solana wallet for
-  deposits; no access key added. Disconnect signs out of all of them. It opens your own mainnet account with ranked
+  a withdrawal's address; no access key added. Disconnect signs out of all of them. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
 - **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from

@@ -37,14 +37,6 @@ export interface DepositQuote {
 }
 /** What a payment link may ask the wallet to send, decided by the API from the quoted asset; null: address only. */
 export type PaymentToken = { readonly native: true } | { readonly contract: string } | null;
-export interface DepositForm {
-  readonly account: string;
-  readonly originAsset: string;
-  readonly destinationAsset: string;
-  readonly amount: string;
-  readonly refundTo: string;
-}
-
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
 async function call<T>(url: string, init?: RequestInit): Promise<Result<T>> {
@@ -61,19 +53,6 @@ async function call<T>(url: string, init?: RequestInit): Promise<Result<T>> {
   }
 }
 
-const incidents = z.object({
-  incidents: z.array(z.object({ message: z.string().min(1).max(300) })).max(20),
-});
-
-/** 1Click's incident warnings on this route, as plain text. Any failure is no warning: the dialog works without it. */
-export async function loadDepositIncidents(origin: string, destination: string): Promise<string[]> {
-  const r = await call<unknown>(
-    `/api/deposit/incidents?${new URLSearchParams({ origin, destination })}`,
-  );
-  const parsed = r.ok ? incidents.safeParse(r.data) : null;
-  return parsed?.success ? parsed.data.incidents.map((i) => i.message) : [];
-}
-
 export const loadDepositAssets = () => call<DepositAssets>('/api/deposit/assets');
 
 export const requestQuote = <T>(url: string, form: object) =>
@@ -82,9 +61,6 @@ export const requestQuote = <T>(url: string, form: object) =>
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(form),
   });
-
-export const requestDepositQuote = (form: DepositForm) =>
-  requestQuote<DepositQuote>('/api/deposit/quote', form);
 
 /** 1500000 with 6 decimals -> "1.5". Exact: integer string in, decimal string out. */
 export function formatUnits(units: string, decimals: number): string {
@@ -121,18 +97,6 @@ export function searchTokens<T extends DepositAsset>(list: readonly T[], query: 
     ...hits.filter((t) => t.symbol.toLowerCase().startsWith(q)),
     ...hits.filter((t) => !t.symbol.toLowerCase().startsWith(q)),
   ];
-}
-
-/** The token to receive by default: the same symbol when we list it, else USDC, else the first. */
-export function defaultDestination(
-  origin: DepositOrigin | undefined,
-  destinations: readonly DepositAsset[],
-): DepositAsset | undefined {
-  return (
-    destinations.find((d) => d.symbol === origin?.symbol) ??
-    destinations.find((d) => d.symbol === 'USDC') ??
-    destinations[0]
-  );
 }
 
 const units = z
@@ -173,100 +137,15 @@ export async function loadDepositStatus(id: string): Promise<Result<DepositStatu
     : { ok: false, error: 'The deposit status could not be read. It is checked again shortly.' };
 }
 
-const depositTransfer = z.object({
-  quoteId: z.string(),
-  chain: z.string(),
-  receiver: z.string().min(1).max(100),
-  amount: z.string().regex(/^[1-9]\d{0,39}$/),
-  token: z.object({
-    assetId: z.string(),
-    blockchain: z.string(),
-    symbol: z.string().max(40),
-    decimals: z.number().int().min(0).max(36),
-    contractAddress: z.string().min(1).max(100).nullable(),
-  }),
-});
-/** `GET /api/deposit/transfer/:id`: what the origin wallet is asked to send, rebuilt by the API from the stored quote. */
-export type DepositTransfer = z.infer<typeof depositTransfer>;
-
-/**
- * The transfer the API built for this quote, refused unless it is exactly the quote on screen: chain, asset, decimals,
- * amount and deposit address. Only then may the user's origin wallet be asked to send it. The API hands a quote's
- * transfer out once; `retry` asks again after the wallet rejected the send.
- */
-export async function loadDepositTransfer(
-  q: DepositQuote,
-  retry = false,
-): Promise<Result<DepositTransfer>> {
-  const r = await call<unknown>(
-    `/api/deposit/transfer/${encodeURIComponent(q.id)}${retry ? '?retry=1' : ''}`,
-  );
-  if (!r.ok) return r;
-  const parsed = depositTransfer.safeParse(r.data);
-  const t = parsed.success ? parsed.data : null;
-  const same =
-    t?.quoteId === q.id &&
-    t.chain === q.chain &&
-    t.token.blockchain === q.chain &&
-    t.receiver === q.depositAddress &&
-    t.amount === q.amountIn &&
-    t.token.assetId === q.origin.assetId &&
-    t.token.decimals === q.origin.decimals;
-  return t && same
-    ? { ok: true, data: t }
-    : {
-        ok: false,
-        error: 'The transfer does not match this quote, so it was not sent. Send it manually.',
-      };
-}
-
 const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {
   eth: 'evm',
   base: 'evm',
   arb: 'evm',
   sol: 'solana',
 };
-/** Which connected wallet sends on a deposit chain; null: none (Bitcoin is sent manually). */
+/** Which connected wallet's address a withdrawal to this chain may go to; null: none. */
 export const walletChainOf = (chain: string): 'evm' | 'solana' | null =>
   WALLET_CHAIN[chain] ?? null;
-
-/** Which connected wallet's address fills the refund address of a deposit from a chain. Never enables a send (D34). */
-export const refundChainOf = (chain: string): 'evm' | 'solana' | 'btc' | null =>
-  chain === 'btc' ? 'btc' : walletChainOf(chain);
-
-/** Why an origin-wallet send threw, as `sendFailure` (lib/hot-kit.ts) reads the wallet's error. */
-export type SendFailure = 'declined' | 'no-gas' | 'no-token' | 'not-sent' | 'unknown';
-
-/** What the user is told for a send that did not go out; `why` is the wallet's own text. */
-export function walletSendError(
-  kind: Exclude<SendFailure, 'unknown'>,
-  q: DepositQuote,
-  why: string,
-): string {
-  const again = 'Top it up and press the button again.';
-  const fee = DEPOSIT_CHAINS.find((c) => c.id === q.chain)?.native ?? 'native coin';
-  const amount = `${formatUnits(q.amountIn, q.origin.decimals)} ${q.origin.symbol}`;
-  const native = q.origin.payment !== null && 'native' in q.origin.payment;
-  if (kind === 'declined') return 'You declined in your wallet. Nothing was sent.';
-  if (kind === 'not-sent') return `Nothing was sent: the network refused the transfer (${why}).`;
-  if (native)
-    return `Nothing was sent: your wallet needs ${amount} on ${q.chainName} plus a little more for the network fee. ${again}`;
-  return kind === 'no-gas'
-    ? `Nothing was sent: your wallet does not have enough ${fee} on ${q.chainName} to pay the network fee. Add a little ${fee} on ${q.chainName} (cents are enough) and press the button again.`
-    : `Nothing was sent: your wallet on ${q.chainName} has less than ${amount}. ${again}`;
-}
-
-const EXPLORERS: Record<string, { url: string; hash: RegExp }> = {
-  eth: { url: 'https://etherscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
-  base: { url: 'https://basescan.org/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
-  arb: { url: 'https://arbiscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
-  sol: { url: 'https://solscan.io/tx/', hash: /^[1-9A-HJ-NP-Za-km-z]{64,90}$/ },
-};
-/** The origin chain explorer page of a transaction the wallet returned; null for anything not shaped like its hash. */
-export function explorerTxUrl(chain: string, hash: string): string | null {
-  const e = EXPLORERS[chain];
-  return e && e.hash.test(hash) ? `${e.url}${hash}` : null;
-}
 
 export const STATUS_MAX_CHECKS = 120;
 export const statusDelayMs = (checks: number) =>

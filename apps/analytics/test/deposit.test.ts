@@ -1,15 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  defaultDestination,
   defaultOrigin,
   describeStatus,
-  explorerTxUrl,
   formatUnits,
-  loadDepositTransfer,
-  refundChainOf,
   walletChainOf,
-  walletSendError,
-  loadDepositIncidents,
   loadDepositStatus,
   searchTokens,
   STATUS_MAX_CHECKS,
@@ -27,26 +21,6 @@ describe('formatUnits', () => {
     expect(formatUnits('0', 6)).toBe('0');
     expect(formatUnits('1234567890123456789012345', 24)).toBe('1.234567890123456789012345');
     expect(formatUnits('5', 0)).toBe('5');
-  });
-});
-
-describe('defaultDestination', () => {
-  const wnear = { assetId: 'nep141:wrap.near', symbol: 'wNEAR', decimals: 24 };
-  const usdc = { assetId: 'nep141:usdc', symbol: 'USDC', decimals: 6 };
-  const usdt = { assetId: 'nep141:usdt', symbol: 'USDT', decimals: 6 };
-  const from = (symbol: string) => ({
-    assetId: symbol,
-    symbol,
-    decimals: 6,
-    chain: 'eth',
-    chainName: 'Ethereum',
-  });
-
-  it('takes the same symbol, else USDC, else the first', () => {
-    expect(defaultDestination(from('USDT'), [wnear, usdc, usdt])).toBe(usdt);
-    expect(defaultDestination(from('ETH'), [wnear, usdc, usdt])).toBe(usdc);
-    expect(defaultDestination(from('ETH'), [wnear])).toBe(wnear);
-    expect(defaultDestination(undefined, [])).toBeUndefined();
   });
 });
 
@@ -194,36 +168,6 @@ describe('loadDepositStatus', () => {
   });
 });
 
-describe('loadDepositIncidents', () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('asks for the route and returns the messages', async () => {
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      urls.push(url);
-      return new Response(JSON.stringify({ incidents: [{ message: 'ETH deposits are delayed' }] }));
-    });
-    expect(await loadDepositIncidents('nep141:eth.omft.near', 'nep141:wrap.near')).toEqual([
-      'ETH deposits are delayed',
-    ]);
-    expect(urls).toEqual([
-      '/api/deposit/incidents?origin=nep141%3Aeth.omft.near&destination=nep141%3Awrap.near',
-    ]);
-  });
-
-  it('shows nothing on a malformed answer or a failed request', async () => {
-    vi.stubGlobal(
-      'fetch',
-      async () => new Response(JSON.stringify({ incidents: [{ message: 1 }] })),
-    );
-    expect(await loadDepositIncidents('a', 'b')).toEqual([]);
-    vi.stubGlobal('fetch', async () => {
-      throw new Error('offline');
-    });
-    expect(await loadDepositIncidents('a', 'b')).toEqual([]);
-  });
-});
-
 describe('statusDelayMs', () => {
   it('starts at 5 s and backs off to 30 s', () => {
     expect([0, 1, 2, 3, 4, 5, 50].map(statusDelayMs)).toEqual([
@@ -291,65 +235,6 @@ describe('searchTokens', () => {
   });
 });
 
-describe('loadDepositTransfer', () => {
-  afterEach(() => vi.unstubAllGlobals());
-  const transfer = {
-    quoteId: 'dq_1',
-    chain: 'eth',
-    receiver: '0xdeposit',
-    amount: '50000000',
-    token: {
-      assetId: 'nep141:eth-usdc',
-      blockchain: 'eth',
-      symbol: 'USDC',
-      decimals: 6,
-      contractAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-    },
-  };
-  const serve = (body: unknown, status = 200) =>
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(body), { status }));
-
-  it('returns the server transfer when it is exactly the quote on screen', async () => {
-    serve(transfer);
-    expect(await loadDepositTransfer(quote)).toEqual({ ok: true, data: transfer });
-  });
-
-  it('refuses one that differs from the quote in chain, asset, amount or address', async () => {
-    for (const bad of [
-      { ...transfer, quoteId: 'dq_2' },
-      { ...transfer, chain: 'base', token: { ...transfer.token, blockchain: 'base' } },
-      { ...transfer, receiver: '0xattacker' },
-      { ...transfer, amount: '50000001' },
-      { ...transfer, token: { ...transfer.token, assetId: 'nep141:eth.omft.near' } },
-      { ...transfer, token: { ...transfer.token, decimals: 18 } },
-      { ...transfer, token: { ...transfer.token, blockchain: 'base' } },
-      { ...transfer, amount: '5e7' },
-    ]) {
-      serve(bad);
-      expect((await loadDepositTransfer(quote)).ok).toBe(false);
-    }
-  });
-
-  it('asks for a retry only when told to', async () => {
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      urls.push(url);
-      return new Response(JSON.stringify(transfer));
-    });
-    await loadDepositTransfer(quote);
-    await loadDepositTransfer(quote, true);
-    expect(urls).toEqual(['/api/deposit/transfer/dq_1', '/api/deposit/transfer/dq_1?retry=1']);
-  });
-
-  it('passes the server refusal through', async () => {
-    serve({ error: 'This quote has expired. Get a new one.' }, 409);
-    expect(await loadDepositTransfer(quote)).toEqual({
-      ok: false,
-      error: 'This quote has expired. Get a new one.',
-    });
-  });
-});
-
 describe('walletChainOf', () => {
   it('maps EVM chains and Solana to the wallet that sends there; Bitcoin has none', () => {
     expect(['eth', 'base', 'arb', 'sol', 'btc', 'x'].map(walletChainOf)).toEqual([
@@ -360,78 +245,5 @@ describe('walletChainOf', () => {
       null,
       null,
     ]);
-  });
-});
-
-describe('refundChainOf', () => {
-  it('maps every deposit chain to the wallet whose address can be its refund address, Bitcoin included', () => {
-    expect(['eth', 'base', 'arb', 'sol', 'btc', 'x'].map(refundChainOf)).toEqual([
-      'evm',
-      'evm',
-      'evm',
-      'solana',
-      'btc',
-      null,
-    ]);
-  });
-});
-
-describe('walletSendError', () => {
-  const usdc: DepositQuote = {
-    ...quote,
-    chain: 'base',
-    chainName: 'Base',
-    origin: { ...quote.origin, payment: { contract: '0x8335' } },
-  };
-  const eth: DepositQuote = {
-    ...usdc,
-    origin: {
-      assetId: 'nep141:base.omft.near',
-      symbol: 'ETH',
-      decimals: 18,
-      payment: { native: true },
-    },
-    amountIn: '1000000000000000',
-  };
-
-  it('names the fee coin when only the fee is missing, not the token already there', () => {
-    expect(walletSendError('no-gas', usdc, 'gas required exceeds allowance (0)')).toBe(
-      'Nothing was sent: your wallet does not have enough ETH on Base to pay the network fee. Add a little ETH on Base (cents are enough) and press the button again.',
-    );
-  });
-
-  it('names the token when the wallet holds less than the quote', () => {
-    expect(walletSendError('no-token', usdc, 'exceeds balance')).toBe(
-      'Nothing was sent: your wallet on Base has less than 50 USDC. Top it up and press the button again.',
-    );
-  });
-
-  it('for the native coin, the amount and the fee are one shortfall', () => {
-    for (const kind of ['no-gas', 'no-token'] as const)
-      expect(walletSendError(kind, eth, '')).toBe(
-        'Nothing was sent: your wallet needs 0.001 ETH on Base plus a little more for the network fee. Top it up and press the button again.',
-      );
-  });
-
-  it('says what the network answered for another refusal, and the declined case', () => {
-    expect(walletSendError('not-sent', usdc, 'execution reverted: blacklisted')).toBe(
-      'Nothing was sent: the network refused the transfer (execution reverted: blacklisted).',
-    );
-    expect(walletSendError('declined', usdc, '')).toBe(
-      'You declined in your wallet. Nothing was sent.',
-    );
-  });
-});
-
-describe('explorerTxUrl', () => {
-  it('links the origin chain explorer, only for a hash of that chain', () => {
-    const evm = `0x${'ab'.repeat(32)}`;
-    const sol = '5'.repeat(88);
-    expect(explorerTxUrl('base', evm)).toBe(`https://basescan.org/tx/${evm}`);
-    expect(explorerTxUrl('eth', evm)).toBe(`https://etherscan.io/tx/${evm}`);
-    expect(explorerTxUrl('arb', evm)).toBe(`https://arbiscan.io/tx/${evm}`);
-    expect(explorerTxUrl('sol', sol)).toBe(`https://solscan.io/tx/${sol}`);
-    expect(explorerTxUrl('sol', evm)).toBeNull();
-    expect(explorerTxUrl('base', 'javascript:alert(1)')).toBeNull();
   });
 });
