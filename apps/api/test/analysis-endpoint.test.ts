@@ -202,8 +202,13 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
 
   it('calls the model for the owner of the account', async () => {
     const llm = countingLlm();
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
     const res = await analyse(
-      server(chain, store, llm),
+      server(listed, earning, llm),
       'alice.near',
       await proofHeader('alice.near'),
     );
@@ -278,8 +283,24 @@ describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
         };
       });
 
+  it('streams one done and calls no model on a wallet with nothing to rank', async () => {
+    const llm = countingLlm();
+    const sent = frames(
+      (await stream(server(chain, store, llm), 'alice.near', await proofHeader('alice.near'))).body,
+    );
+    expect(sent).toEqual([
+      { event: 'done', data: expect.objectContaining({ fallback: 'nothing_to_rank' }) as unknown },
+    ]);
+    expect(llm.opened).toBe(0);
+  });
+
   it('sends the run as it goes and ends with the same analysis as the JSON reply', async () => {
-    const app = server(chain, store, countingLlm());
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
+    const app = server(listed, earning, countingLlm());
     const proof = await proofHeader('alice.near');
     const res = await stream(app, 'alice.near', proof);
     expect(res.statusCode).toBe(200);

@@ -454,3 +454,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   fresh quick start shows "Sign", while an existing `.env` with an empty value stays off (D9, caps unchanged).
 - README: the "no transaction has ever been submitted" bullet now says the user's wallet signs and sends; the
   nearblocks link to the first live tx follows the owner's run.
+
+## #119 — No model call when there is nothing to rank
+
+- `analyseAccount` runs the agent tools as plain code before the model; with no card offered it returns fallback
+  `nothing_to_rank` (no model call, no `llm_calls` row) and the UI badge says "Nothing for the AI to rank" instead of
+  "AI unavailable". It still lists each agent's line under "What the agents checked". This replaces #130's model call
+  for the same case (owner's choice, 14 Nov): a supply under 1% a year is no longer offered to the model either.

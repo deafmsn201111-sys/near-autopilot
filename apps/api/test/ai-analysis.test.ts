@@ -505,46 +505,19 @@ describe('analyseAccount', () => {
     return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
   };
 
-  const checkAll: LlmToolTurn = {
-    kind: 'tool_calls',
-    calls: [...callAll.calls, { id: '6', name: 'burrow_withdrawals', input: {} }],
-  };
-
-  it('labels a run with nothing to act on as an AI result, not a fallback', async () => {
-    const { llm } = fake([() => checkAll, () => final([])]);
+  it('shows what each agent checked on a wallet with nothing to act on, without a model call', async () => {
+    const { llm, tools } = fake([() => callAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
       observe: healthy,
       heuristics: [],
       checks: [],
     });
-    expect(out.source).toBe('llm');
-    expect(out.fallback).toBeNull();
-    expect(out.recommendations).toEqual([]);
-    expect(out.note).toBeNull();
-    expect(out.calledTools.length).toBeGreaterThan(0);
-  });
-
-  it('still falls back when the model calls no tool and ranks nothing', async () => {
-    const { llm } = fake([() => final([])]);
-    const out = await analyseAccount(ai(llm), {
-      ...ctx,
-      observe: healthy,
-      heuristics: [],
-      checks: [],
-    });
-    expect(out.fallback).toBe('empty');
-  });
-
-  it('still falls back when the model skipped a check', async () => {
-    const { llm } = fake([() => callAll, () => final([])]);
-    const out = await analyseAccount(ai(llm), {
-      ...ctx,
-      observe: healthy,
-      heuristics: [],
-      checks: [],
-    });
-    expect(out.fallback).toBe('empty');
+    expect(tools).toEqual([]);
+    expect(out).toMatchObject({ fallback: 'nothing_to_rank', recommendations: [], run: null });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'No Burrow loan; nothing to do',
+    );
   });
 
   it('still falls back when the model drops every real candidate', async () => {
@@ -957,30 +930,76 @@ describe('analyseAccount', () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it('does not offer agent actions worth less than $1', async () => {
+  it('with no action worth $1 calls no model, records no spend and says there is nothing to rank', async () => {
     const dust = observation();
-    const snapshot = {
-      ...dust.snapshot,
-      walletBalances: [{ token: USDT, raw: usdt(0.5) }],
-    };
-    let candidates: unknown[] = [];
-    const { llm } = fake([
-      () => callAll,
-      (results) => {
-        candidates = (results ?? []).flatMap(
-          (r) => (JSON.parse(r.content) as { candidates?: unknown[] }).candidates ?? [],
-        );
-        return final([]);
-      },
-    ]);
-    await analyseAccount(ai(llm), {
+    const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
+    const l = ledger();
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm, l), {
       accountId: ALICE,
       observe: async () => ({ ...dust, snapshot }),
       heuristics: [],
       checks: [],
       ownerVerified: true,
     });
-    expect(candidates).toEqual([]);
+    expect(tools).toEqual([]);
+    expect(l.rows).toEqual([]);
+    expect(out).toMatchObject({ source: 'heuristic', fallback: 'nothing_to_rank', run: null });
+    expect(out.note).toMatch(/^Nothing to rank/);
+    expect(out.trace.map((t) => t.tool)).toEqual([
+      'liquidation_guardian',
+      'capital_allocator',
+      'market_intelligence',
+      'portfolio_concentration',
+      'liquidity_positions',
+      'burrow_withdrawals',
+    ]);
+    expect(out.trace.every((t) => t.ok && t.pick === null)).toBe(true);
+  });
+
+  it('does not offer a supply under 1% a year, the same floor as the rule-based card', async () => {
+    const base = observation();
+    const snapshot = {
+      ...base.snapshot,
+      walletBalances: [{ token: WNEAR, raw: near(1) }],
+      lending: null,
+    };
+    const l = ledger();
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm, l), {
+      accountId: ALICE,
+      observe: async () => ({
+        ...base,
+        snapshot,
+        risk: assessRisk(snapshot, base.config),
+        market: { ...base.market!, estimatedYieldWad: new Map([[WNEAR, 3n * 10n ** 15n]]) },
+      }),
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    expect(tools).toEqual([]);
+    expect(l.rows).toEqual([]);
+    expect(out.fallback).toBe('nothing_to_rank');
+    expect(out.trace.find((s) => s.tool === 'capital_allocator')?.text).toBe(
+      'wNEAR earns about 0.30% a year on Burrow, under the 1% worth suggesting',
+    );
+  });
+
+  it('still asks the model when the page shows a card the agents did not offer', async () => {
+    const dust = observation();
+    const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
+    const warning: PortfolioRecommendation = { ...heuristic, severity: 'warning', intent: null };
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => ({ ...dust, snapshot }),
+      heuristics: [warning],
+      checks: [warning],
+      ownerVerified: true,
+    });
+    expect(tools).toHaveLength(1);
+    expect(out.fallback).not.toBe('nothing_to_rank');
   });
 
   it('falls back when the model ranks nothing', async () => {

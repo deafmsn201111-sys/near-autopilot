@@ -61,6 +61,7 @@ import {
   analyseAccount,
   type AnalysisEvent,
   MIN_ACTION_USD,
+  MIN_SUPPLY_APR_PCT,
   approxUsdOf,
   walletAgentConfig,
   type AnalysisContext,
@@ -744,7 +745,7 @@ export function portfolioAdvice(
   }
 
   // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
-  const earning = ctx.idleEarn.filter((a) => a.aprPct >= 1);
+  const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
   const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
   if (idle) {
     recs.push({
