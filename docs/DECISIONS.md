@@ -72,7 +72,8 @@ Signing).
 cascade caps in `apps/api/src/wallet/validate-cascade.ts` stay as they are: 0.15 NEAR per action, 0.3 NEAR per
 cascade, plus the signer, receiver and method allowlists and the gas cap.
 **Consequences:** A visitor can sign a validated cascade for their own account in their own wallet. The server still
-holds no key. Raising a cap needs a new entry here.
+holds no key. Raising a cap needs a new entry here. The local `docker-compose.yml` defaults to signing on too
+(`${MAINNET_WALLET_SIGNING-1}`, `.env.example` sets `1`; an empty value in `.env` keeps it off), with the same caps.
 
 ## D10 — Rate limits on the public site and the account read cache
 

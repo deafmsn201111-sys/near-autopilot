@@ -126,7 +126,8 @@ services:
       API_BASE_URL: http://analytics-api:4000
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env (>= 32 chars)}
       # 1 = the site may hand a validated, unsigned cascade to the connected wallet for the user to sign.
-      MAINNET_WALLET_SIGNING: ${MAINNET_WALLET_SIGNING:-}
+      # On when .env does not set it; an empty value in .env keeps it off.
+      MAINNET_WALLET_SIGNING: ${MAINNET_WALLET_SIGNING-1}
     ports:
       - '127.0.0.1:${ANALYTICS_DASHBOARD_PORT:-3001}:3000'
 

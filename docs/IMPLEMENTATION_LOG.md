@@ -447,3 +447,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `packages/rhea-adapter/src/planner.ts`: `buildRheaSwap`, the one instant-swap builder the planner, the prepare swap
   and the swap-repay cascade share.
 - D25 in `docs/DECISIONS.md`.
+
+## 2026-11-14 — Local runs can sign (#30)
+
+- `.env.example` sets `MAINNET_WALLET_SIGNING=1`; `docker-compose.yml` defaults to `${MAINNET_WALLET_SIGNING-1}`, so a
+  fresh quick start shows "Sign", while an existing `.env` with an empty value stays off (D9, caps unchanged).
+- README: the "no transaction has ever been submitted" bullet now says the user's wallet signs and sends; the
+  nearblocks link to the first live tx follows the owner's run.
