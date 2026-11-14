@@ -1057,40 +1057,6 @@ describe('analyseAccount', () => {
     expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
   });
 
-  it('skips an idle token under 1% a year, like the rule-based card', async () => {
-    let tools: unknown;
-    const { llm } = fake([
-      () => callAll,
-      (results) => {
-        tools = results;
-        return final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn.' }]);
-      },
-    ]);
-    const obs = observation();
-    const low: AgentObservation = {
-      ...obs,
-      snapshot: {
-        ...obs.snapshot,
-        walletBalances: [...obs.snapshot.walletBalances, { token: WNEAR, raw: near(10_000) }],
-      },
-      market: {
-        ...obs.market!,
-        estimatedYieldWad: new Map([
-          [USDT, 8n * 10n ** 16n],
-          [WNEAR, 5n * 10n ** 15n],
-        ]),
-      },
-    };
-    await analyseAccount(ai(llm), {
-      accountId: ALICE,
-      observe: async () => low,
-      heuristics: [],
-      checks: [],
-      ownerVerified: true,
-    });
-    expect(JSON.stringify(tools)).not.toContain('capital-allocator:supply:wrap.near');
-  });
-
   it('offers a supply for every idle token, most dollars a year first, with the yearly earnings', async () => {
     let tools: unknown;
     const { llm } = fake([
@@ -1296,33 +1262,55 @@ describe('analyseAccount', () => {
     expect(out.trace.every((t) => t.ok && t.pick === null)).toBe(true);
   });
 
-  it('does not offer a supply under 1% a year, the same floor as the rule-based card', async () => {
-    const base = observation();
-    const snapshot = {
-      ...base.snapshot,
-      walletBalances: [{ token: WNEAR, raw: near(1) }],
-      lending: null,
-    };
-    const l = ledger();
-    const { llm, tools } = fake([() => callAll, () => final([])]);
-    const out = await analyseAccount(ai(llm, l), {
-      accountId: ALICE,
-      observe: async () => ({
+  describe('a low supply rate is judged by what it earns, as on the rule-based card (#145)', () => {
+    const lowRate = (nearAmount: number) => async () => {
+      const base = observation();
+      const snapshot = {
+        ...base.snapshot,
+        walletBalances: [{ token: WNEAR, raw: near(nearAmount) }],
+        lending: null,
+      };
+      return {
         ...base,
         snapshot,
         risk: assessRisk(snapshot, base.config),
-        market: { ...base.market!, estimatedYieldWad: new Map([[WNEAR, 3n * 10n ** 15n]]) },
-      }),
-      heuristics: [],
-      checks: [],
-      ownerVerified: true,
+        market: { ...base.market!, estimatedYieldWad: new Map([[WNEAR, 32n * 10n ** 14n]]) },
+      };
+    };
+
+    it('offers nothing for a judge-sized wallet, and calls no model', async () => {
+      const l = ledger();
+      const { llm, tools } = fake([() => callAll, () => final([])]);
+      const out = await analyseAccount(ai(llm, l), {
+        accountId: ALICE,
+        observe: lowRate(1),
+        heuristics: [],
+        checks: [],
+        ownerVerified: true,
+      });
+      expect(tools).toEqual([]);
+      expect(l.rows).toEqual([]);
+      expect(out.fallback).toBe('nothing_to_rank');
+      expect(out.trace.find((s) => s.tool === 'capital_allocator')?.text).toMatch(
+        /^wNEAR would earn about \$0\.\d\d a year on Burrow: not worth the network fee$/,
+      );
     });
-    expect(tools).toEqual([]);
-    expect(l.rows).toEqual([]);
-    expect(out.fallback).toBe('nothing_to_rank');
-    expect(out.trace.find((s) => s.tool === 'capital_allocator')?.text).toBe(
-      'wNEAR earns about 0.30% a year on Burrow, under the 1% worth suggesting',
-    );
+
+    it('offers the supply when the amount makes even 0.32% worth the fee', async () => {
+      let seen = '';
+      const { llm } = fake([
+        () => callAll,
+        (results) => ((seen = JSON.stringify(results)), final([])),
+      ]);
+      await analyseAccount(ai(llm), {
+        accountId: ALICE,
+        observe: lowRate(2_000),
+        heuristics: [],
+        checks: [],
+        ownerVerified: true,
+      });
+      expect(seen).toContain(`capital-allocator:supply:${WNEAR}`);
+    });
   });
 
   it('still asks the model when the page shows a card the agents did not offer', async () => {

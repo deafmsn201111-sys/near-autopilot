@@ -47,8 +47,6 @@ export const MAX_TURNS = 6;
 /** Smallest rule-based card or deposit; a repay sizes from the health factor, so only dust is dropped. */
 export const MIN_ACTION_USD = 1;
 const MIN_REPAY_USD = 1;
-/** A supply rate below this is not worth a card, on either path. */
-export const MIN_SUPPLY_APR_PCT = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
 
@@ -592,13 +590,6 @@ function allocatorTool(
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const apr = Number(yieldWad / 10n ** 14n) / 100;
-        if (apr < MIN_SUPPLY_APR_PCT) {
-          lowRate ??= {
-            text: `${view.symbol} earns about ${apr.toFixed(2)}% a year on Burrow, under the ${MIN_SUPPLY_APR_PCT}% worth suggesting`,
-            provenance: 'protocol_reported',
-          };
-          continue;
-        }
         const aprPct = apr.toFixed(1);
         const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
         const yearlyUsd = (value * Number(yieldWad)) / 1e18;

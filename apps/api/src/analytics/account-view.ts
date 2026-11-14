@@ -67,7 +67,6 @@ import {
   analyseAccount,
   type AnalysisEvent,
   MIN_ACTION_USD,
-  MIN_SUPPLY_APR_PCT,
   approxUsdOf,
   walletAgentConfig,
   type AnalysisContext,
@@ -906,9 +905,8 @@ export function portfolioAdvice(
   }
 
   // 3. Put idle cash to work: repay a dearer loan in the same token first, then supply what is worth its fee.
-  const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
-  const yearly = (a: (typeof earning)[number]) => (a.usd * a.aprPct) / 100;
-  const ranked = earning
+  const yearly = (a: (typeof ctx.idleEarn)[number]) => (a.usd * a.aprPct) / 100;
+  const ranked = ctx.idleEarn
     .filter((a) => a.usd >= MIN_ACTION_USD)
     .sort((a, b) => yearly(b) - yearly(a));
   const debt = ctx.largestDebt;
@@ -1011,8 +1009,8 @@ export function portfolioAdvice(
     skipped.push(
       `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
     );
-  } else if (!repays && earning[0] && earning[0].usd >= 0.1) {
-    const small = earning[0];
+  } else if (!repays && ctx.idleEarn[0] && ctx.idleEarn[0].usd >= 0.1) {
+    const small = ctx.idleEarn[0];
     skipped.push(
       `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
     );
