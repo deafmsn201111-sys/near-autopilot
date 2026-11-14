@@ -78,7 +78,10 @@ export function Recommendations({
     setLive(null);
     const r = await runAnalysis(account, ranFor, setLive, signature);
     if (r.ok)
-      setRuns((all) => ({ ...all, [ranFor]: { analysis: r.analysis, signature, run: Date.now() } }));
+      setRuns((all) => ({
+        ...all,
+        [ranFor]: { analysis: r.analysis, signature, run: Date.now() },
+      }));
     else setErrors((e) => ({ ...e, [ranFor]: r.error }));
     setLive(null);
     setStartedAt(null);
