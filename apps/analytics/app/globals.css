@@ -4830,6 +4830,7 @@ dialog.sheet.closing::backdrop {
 .sheet .wd-field {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 .sheet .wd-field > label,
 .sheet .wd-label {
@@ -4855,6 +4856,7 @@ dialog.sheet.closing::backdrop {
 }
 .sheet .wd-inbox input {
   flex: 1;
+  width: 100%;
   min-width: 0;
   border: 0;
   outline: none;
@@ -4881,11 +4883,21 @@ dialog.sheet.closing::backdrop {
 .sheet .wd-field .ds-seg {
   justify-self: start;
   max-width: 100%;
-  overflow-x: auto;
+}
+.sheet .wd-field .ds-seg label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .sheet .wd-field .ds-seg img {
   border-radius: 50%;
-  margin-right: 6px;
+}
+@media (max-width: 640px) {
+  .sheet .wd-field .ds-seg {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, 1fr);
+    justify-self: stretch;
+  }
 }
 .sheet .wd-field > .ds-btn-ghost {
   justify-self: start;

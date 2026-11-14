@@ -53,7 +53,10 @@ const sameToken = (a: string, b: string | undefined) =>
 const CHAINS = DEPOSIT_CHAINS.filter((c) => (WITHDRAW_CHAINS as readonly string[]).includes(c.id));
 type ChainId = (typeof CHAINS)[number]['id'];
 
-const remaining = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const remaining = (s: number) =>
+  s >= 3600
+    ? `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`
+    : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const minutes = (s: number) => `about ${Math.max(1, Math.round(s / 60))} min`;
 const amountOf = (units: string, t: { decimals: number; symbol: string }) =>
   `${formatUnits(units, t.decimals)} ${t.symbol}`;
@@ -494,7 +497,7 @@ export function WithdrawDialog({
                 disabled={connecting}
                 onClick={() => void connectWallet()}
               >
-                Fill from a {CHAIN_LABEL[walletChain]} wallet
+                Fill from your {CHAIN_LABEL[walletChain]} wallet
               </Button>
             )}
           </div>
