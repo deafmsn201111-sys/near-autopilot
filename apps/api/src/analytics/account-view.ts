@@ -908,6 +908,21 @@ export function marketRate(
   return x === null || x === undefined ? null : Number(x);
 }
 
+/** Tokens beyond Burrow's list, most dollars first: priced and sized, then priced only, then the unpriced tail. */
+export function unlistedByValue<T extends { readonly token: string; readonly raw: bigint }>(
+  tokens: readonly T[],
+  usd: ReadonlyMap<string, number>,
+  decimals: ReadonlyMap<string, number>,
+): T[] {
+  const value = (t: T) => {
+    const p = usd.get(t.token);
+    const d = decimals.get(t.token);
+    if (p === undefined) return -2;
+    return d === undefined ? -1 : (Number(t.raw) / 10 ** d) * p;
+  };
+  return [...tokens].sort((x, y) => value(y) - value(x));
+}
+
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
 export function keepsProfitableLoan(ctx: RecommendationContext, strategy: Strategy): boolean {
   const hf = ctx.loan?.healthFactor ?? null;
@@ -1476,7 +1491,7 @@ export function registerAccountView(
       log.error({ err: e, account: id }, 'account read failed');
       return { status: 502, body: { error: 'could not read the account from NEAR right now' } };
     }
-    const [assets, markets, meta, prices, account, found, foundPools, estimates] =
+    const [assets, markets, meta, prices, account, found, foundPools, estimates, estimateDecimals] =
       await Promise.all([
         burrow.listAssets(),
         store.markets(),
@@ -1486,6 +1501,7 @@ export function registerAccountView(
         deps.discovery?.account(id) ?? null,
         deps.discovery?.v1PoolIds(id) ?? null,
         deps.discovery?.prices() ?? null,
+        deps.discovery?.decimals() ?? null,
       ]);
     // Wallet balances of every token Burrow lists (the tokens an action could use), read in parallel.
     const wallet = new Map<TokenId, bigint>();
@@ -1535,11 +1551,15 @@ export function registerAccountView(
       });
     }
     // Tokens the indexer found beyond Burrow's list: its balance, on-chain metadata, a confirmed or estimated price.
+    const sized = new Map(estimateDecimals ?? []);
+    for (const [t, m] of symbol) sized.set(t, m.decimals);
     await Promise.all(
-      (found?.tokens ?? [])
-        .filter((t) => !wallet.has(t.token as TokenId) && !facts.has(t.token))
-        // ponytail: priced tokens first, then a hard cap on ft_metadata reads; a spam-heavy account loses its tail
-        .sort((x, y) => Number(shown.has(y.token)) - Number(shown.has(x.token)))
+      // ponytail: a hard cap on ft_metadata reads after ranking by value; a spam-heavy account loses only its cheapest tail
+      unlistedByValue(
+        (found?.tokens ?? []).filter((t) => !wallet.has(t.token as TokenId) && !facts.has(t.token)),
+        shown,
+        sized,
+      )
         .slice(0, MAX_UNLISTED_TOKENS)
         .map(async (t) => {
           const m = await metaOf(t.token);

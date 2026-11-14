@@ -86,6 +86,24 @@ describe('httpDiscovery', () => {
     expect(calls.filter((c) => c === PRICES)).toHaveLength(2);
   });
 
+  it("reads each priced token's decimals from the same answer (#192)", async () => {
+    const { fetchImpl, calls } = fake({
+      [PRICES]: () =>
+        json({
+          'imeme-2.v2-launchpad.justhoot.near': { price: '0.000419', symbol: 'IMEME', decimal: 18 },
+          'odd.near': { price: '1', symbol: 'O', decimal: 99 },
+          'none.near': { price: '1', symbol: 'N' },
+        }),
+    });
+    const d = httpDiscovery(fetchImpl);
+    const decimals = await d.decimals();
+    expect(decimals?.get('imeme-2.v2-launchpad.justhoot.near')).toBe(18);
+    expect(decimals?.has('odd.near')).toBe(false);
+    expect(decimals?.has('none.near')).toBe(false);
+    expect((await d.prices())?.get('none.near')).toBe(1);
+    expect(calls.filter((c) => c === PRICES)).toHaveLength(1);
+  });
+
   it('reads the 24 h volume of DCL pools and drops malformed rows', async () => {
     const { fetchImpl } = fake({
       [DCL_LIST]: () =>

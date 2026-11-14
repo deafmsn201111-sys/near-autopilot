@@ -674,3 +674,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   checks (that hid USDT.e's 6% as "Loan rate unavailable").
 - `config/market.json`: pool 4179 (RATED_SWAP USDt/USDC/USDT.e/USDC.e) as USDC↔USDt, USDC↔USDT.e, USDt↔USDT.e (D31),
   so the existing swap → repay cascade finds a route for a stablecoin loan repaid from another stablecoin.
+
+## 2026-11-14 — Coin list ranks unlisted tokens by value before the cap (#192)
+
+- `unlistedByValue()`: tokens beyond Burrow's list are ranked by balance × indexer price (decimals from the same
+  indexer answer, `AccountDiscovery.decimals()`), then capped at 30 `ft_metadata` reads. A $92 iMEME no longer loses
+  its place to 40 priced dust tokens that FastNEAR happened to list first.
