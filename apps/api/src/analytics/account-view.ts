@@ -787,6 +787,8 @@ export interface RecommendationContext {
         readonly deposited: number;
         readonly collateral: number;
         readonly wallet: number;
+        /** Its Burrow supply rate, a percentage; null when unknown. */
+        readonly aprPct?: number | null;
         readonly outPerIn: number;
         readonly slippageBps: number;
       })
@@ -937,7 +939,20 @@ export function portfolioAdvice(
       },
     });
   }
-  const supplyable = ranked.filter((a) => a !== repays);
+  const swapped =
+    !repays &&
+    ctx.loan &&
+    debt &&
+    borrowPct !== null &&
+    ctx.swapRepay &&
+    hf !== null &&
+    hf >= strategy.healthyAt
+      ? idleSwapRepay(ctx.loan, debt, borrowPct, ctx.swapRepay)
+      : null;
+  if (swapped && 'skip' in swapped) skipped.push(swapped.skip);
+  else if (swapped) recs.push(swapped);
+  const spent = swapped && !('skip' in swapped) ? ctx.swapRepay?.token : undefined;
+  const supplyable = ranked.filter((a) => a !== repays && a.token !== spent);
   const worthy = supplyable.filter((a) => yearWorthTheFee(yearly(a)));
   const batch = worthy.slice(0, MAX_SUPPLY_ALL);
   if (batch.length >= 2) {
@@ -1305,6 +1320,65 @@ function loanSafety(
   };
 }
 
+/**
+ * A safe loan that costs more than idle money in another token earns: swap that money (wallet first, then its plain
+ * Burrow deposit, never collateral) into the debt token and repay (#227). Savings count after the swap loss.
+ */
+function idleSwapRepay(
+  loan: NonNullable<RecommendationContext['loan']>,
+  debt: NonNullable<RecommendationContext['largestDebt']>,
+  borrowPct: number,
+  swap: NonNullable<RecommendationContext['swapRepay']>,
+): PortfolioRecommendation | { skip: string } | null {
+  const supplyPct = swap.aprPct ?? null;
+  if (supplyPct === null || supplyPct >= borrowPct) return null;
+  const plan = swapRepayPlan({
+    model: { collateralAdjUsd: loan.collateralAdjUsd, debtAdjUsd: loan.debtAdjUsd },
+    collateral: { ...swap, collateral: 0 },
+    debt: { usdPerToken: debt.usdPerToken, vr: debt.vr, amount: debt.amount, wallet: 0 },
+    outPerIn: swap.outPerIn,
+    target: Infinity,
+    floor: SWAP_REPAY_FLOOR_HF,
+  });
+  if (!plan.ok) return null;
+  const repayUsd = plan.repay * debt.usdPerToken;
+  const lossUsd = Math.max(0, plan.swapIn * swap.usdPerToken - repayUsd);
+  const saves = (repayUsd * (borrowPct - supplyPct)) / 100 - lossUsd;
+  const swapRaw = rawOf(plan.swapIn, swap.decimals, false);
+  if (!swapRaw || repayUsd < MIN_ACTION_USD || saves <= 0) return null;
+  const rates = `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while your ${swap.symbol} earns about ${supplyPct.toFixed(1)}%`;
+  if (!yearWorthTheFee(saves))
+    return {
+      skip: `${rates}. Repaying the ${debt.symbol} loan with your ${swap.symbol} would save about ${money2(saves)} a year after the swap: not worth the network fees.`,
+    };
+  const withdrawRaw = plan.withdraw > 0 ? rawOf(plan.withdraw, swap.decimals, false) : null;
+  const hfAfter = plan.hfAfterRepay;
+  return {
+    id: 'repay-with-idle',
+    kind: 'put_idle_to_work',
+    agent: 'Capital Allocator',
+    severity: 'info',
+    title: `Use your ${swap.symbol} to repay your ${debt.symbol} loan`,
+    why: `${rates}. ${withdrawRaw ? `Withdrawing ${tokenText(plan.withdraw)} ${swap.symbol} of your Burrow deposit (not collateral), swapping` : 'Swapping'} ${tokenText(plan.swapIn)} ${swap.symbol} for at least ${tokenText(plan.minOut)} ${debt.symbol} on Rhea and repaying it saves about ${money2(saves)} a year after the swap loss of ${money2(lossUsd)}.`,
+    intent: {
+      action: 'repay_with_collateral',
+      token: debt.token,
+      collateralToken: swap.token,
+      approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
+      amount: swapRaw.toString(),
+      ...(withdrawRaw && { withdraw: withdrawRaw.toString() }),
+      maxSlippageBps: swap.slippageBps,
+      plan: {
+        hfNow: loan.healthFactor ?? 0,
+        hfAfterWithdraw: plan.hfAfterWithdraw ?? loan.healthFactor ?? 0,
+        hfAfterRepay: hfAfter,
+        floorHf: SWAP_REPAY_FLOOR_HF,
+        transactions: withdrawRaw ? 3 : 2,
+      },
+    },
+  };
+}
+
 const ORDINAL = ['', 'one', 'two', 'three'] as const;
 
 /** The withdraw -> swap -> repay card (#69); its `why` continues the caller's first sentence. */
@@ -1620,43 +1694,42 @@ export function registerAccountView(
     tokens: readonly (BurrowTokenFacts & {
       readonly deposited: number;
       readonly collateral: number;
+      readonly aprPct: number | null;
     })[],
     walletOf: (token: string) => number,
   ): Promise<RecommendationContext['swapRepay']> => {
     const strictest = STRATEGY_IDS.map((id) => STRATEGIES[id]);
     const safeAt = Math.max(...strictest.map((st) => st.healthyAt));
     const target = Math.max(...strictest.map((st) => st.targetHealthFactor));
-    if (
-      !debt ||
-      debt.token === WNEAR ||
-      loan.healthFactor === null ||
-      loan.healthFactor >= safeAt ||
-      debt.collateral > 0
-    )
+    if (!debt || debt.token === WNEAR || loan.healthFactor === null || debt.collateral > 0)
       return null;
+    // A safe loan is repaid only from idle money that earns less than the loan costs, never from collateral (#227).
+    const safe = loan.healthFactor >= safeAt;
+    const borrowPct = debt.borrowAprPct ?? null;
     const walletNeed = repayToReach(
       { ...loan, vr: debt.vr, usdPerToken: debt.usdPerToken },
       target,
       'wallet',
     );
-    if (debt.wallet >= walletNeed) return null;
+    if (safe ? borrowPct === null : debt.wallet >= walletNeed) return null;
     const routed = (t: string) =>
       deps.pools.some(
         (p) =>
           (p.tokenA === t && p.tokenB === debt.token) ||
           (p.tokenB === t && p.tokenA === debt.token),
       );
+    const cheaper = (b: { aprPct?: number | null }) =>
+      !safe || (borrowPct !== null && (b.aprPct ?? Infinity) < borrowPct);
+    const usable = (b: { collateral: number; deposited: number; wallet: number }) =>
+      (safe ? 0 : b.collateral) + b.deposited + b.wallet;
     const best = tokens
-      .filter((b) => b.token !== debt.token && routed(b.token) && b.usdPerToken > 0)
+      .filter((b) => b.token !== debt.token && routed(b.token) && b.usdPerToken > 0 && cheaper(b))
       .map((b) => ({ ...b, wallet: walletOf(b.token) }))
-      .map((b) => ({ b, usd: (b.collateral + b.deposited + b.wallet) * b.usdPerToken }))
+      .map((b) => ({ b, usd: usable(b) * b.usdPerToken }))
       .filter((x) => x.usd >= MIN_ACTION_USD)
       .sort((x, y) => y.usd - x.usd)[0]?.b;
     if (!best) return null;
-    const tokensIn = Math.min(
-      best.collateral + best.deposited + best.wallet,
-      debt.usd / best.usdPerToken,
-    );
+    const tokensIn = Math.min(usable(best), debt.usd / best.usdPerToken);
     const amountIn = rawOf(tokensIn, best.decimals, false);
     const tokenIn = accountIdSchema.safeParse(best.token);
     const tokenOut = accountIdSchema.safeParse(debt.token);
@@ -2101,7 +2174,10 @@ export function registerAccountView(
       .filter((t) => !burrowBalances.some((b) => b.token === t))
       .flatMap((t) => {
         const f = burrowFacts(t);
-        return f ? [{ ...f, deposited: 0, collateral: 0 }] : [];
+        const apr = rate(t, 'netSupplyApr');
+        return f
+          ? [{ ...f, deposited: 0, collateral: 0, aprPct: apr === null ? null : apr * 100 }]
+          : [];
       });
     const swapRepay = await swapRepayCandidate(
       loan,
