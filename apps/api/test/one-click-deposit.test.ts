@@ -5,6 +5,7 @@ import {
   OneClickDepositClient,
   type DepositQuoteRequest,
 } from '../src/gateway/one-click-deposit';
+import { MarketHttpError } from '../src/market-data/http';
 
 const NOW = new Date('2026-11-13T10:00:00Z');
 const USDC_ETH = 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near';
@@ -304,6 +305,29 @@ describe('OneClickDepositClient.status', () => {
       depositedAmount: null,
       refundReason: 'PARTIAL_DEPOSIT',
     });
+  });
+
+  it('keeps a valid NEAR tx hash next to malformed entries', async () => {
+    const { http } = stub(
+      reply({}, { destinationChainTxHashes: [{ hash: null }, 'junk', { hash: NEAR_TX }] }),
+    );
+    expect((await new OneClickDepositClient({ http }).status(DEPOSIT)).nearTxHash).toBe(NEAR_TX);
+  });
+
+  it('reads a 404 for our own address as nothing deposited yet, and throws other errors', async () => {
+    const failing = (e: Error) => ({
+      getJson: async () => Promise.reject(e),
+      postJson: async () => Promise.reject(e),
+    });
+    const notFound = failing(new MarketHttpError('not_found', 'HTTP 404', false));
+    expect(await new OneClickDepositClient({ http: notFound }).status(DEPOSIT)).toMatchObject({
+      status: 'PENDING_DEPOSIT',
+      depositedAmount: null,
+    });
+    const down = failing(new MarketHttpError('unavailable', 'HTTP 500', true));
+    await expect(new OneClickDepositClient({ http: down }).status(DEPOSIT)).rejects.toThrow(
+      'HTTP 500',
+    );
   });
 
   it('refuses an answer without a status', async () => {

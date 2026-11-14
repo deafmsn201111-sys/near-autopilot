@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultDestination,
   describeStatus,
   formatUnits,
+  loadDepositStatus,
   STATUS_MAX_CHECKS,
   statusDelayMs,
   stopReason,
@@ -83,7 +84,7 @@ describe('describeStatus', () => {
     });
     expect(describeStatus(st('PENDING_DEPOSIT', { deadlinePassed: true }), quote)).toMatchObject({
       tone: 'warn',
-      title: 'Expired: no deposit arrived before the deadline',
+      title: 'Expired: no deposit seen by the deadline',
     });
   });
 
@@ -156,6 +157,31 @@ describe('describeStatus', () => {
       tone: 'wait',
       title: 'Unknown status from 1Click',
     });
+  });
+});
+
+describe('loadDepositStatus', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const serve = (body: unknown) =>
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(body), { status: 200 }));
+
+  it('accepts a well-formed status', async () => {
+    serve(st('PROCESSING', { depositedAmount: '50000000' }));
+    expect(await loadDepositStatus('dq_1')).toEqual({
+      ok: true,
+      data: st('PROCESSING', { depositedAmount: '50000000' }),
+    });
+  });
+
+  it('refuses a malformed one instead of rendering it', async () => {
+    for (const bad of [
+      st('PROCESSING', { depositedAmount: '1.5' }),
+      { ...st('SUCCESS'), nearTxHash: 'javascript:alert(1)' },
+      { ...st('SUCCESS'), status: 'DONE' },
+    ]) {
+      serve(bad);
+      expect((await loadDepositStatus('dq_1')).ok).toBe(false);
+    }
   });
 });
 

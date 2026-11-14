@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HttpJsonClient } from '../market-data/http';
+import { MarketHttpError, type HttpJsonClient } from '../market-data/http';
 
 /**
  * NEAR Intents 1Click API, REAL quotes for an inbound deposit (`dry: false`). Separate from the dry-quote client in
@@ -133,6 +133,10 @@ export interface SwapStatusReport {
 
 const amount = u128.transform(BigInt).nullable().catch(null);
 const NEAR_TX_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
+const txHash = (t: unknown): string | null => {
+  const hash = (t as { hash?: unknown } | null)?.hash;
+  return typeof hash === 'string' && NEAR_TX_HASH.test(hash) ? hash : null;
+};
 const statusResponse = z.object({
   status: z.string().transform((s): SwapStatus => SWAP_STATUSES.find((k) => k === s) ?? 'UNKNOWN'),
   swapDetails: z.preprocess(
@@ -146,7 +150,7 @@ const statusResponse = z.object({
         .regex(/^[A-Z_]{1,40}$/)
         .nullable()
         .catch(null),
-      destinationChainTxHashes: z.array(z.object({ hash: z.string() }).passthrough()).catch([]),
+      destinationChainTxHashes: z.array(z.unknown()).catch([]),
     }),
   ),
 });
@@ -190,14 +194,23 @@ export class OneClickDepositClient {
     });
   }
 
-  /** `/v0/status` by deposit address (we never ask for a memo). Throws on HTTP errors, 404 included. */
+  /**
+   * `/v0/status` by deposit address (we never ask for a memo). A 404 for an address of our own verified quote means
+   * 1Click has seen nothing yet: reported as PENDING_DEPOSIT. Other HTTP errors throw.
+   */
   async status(depositAddress: string): Promise<SwapStatusReport> {
-    const parsed = statusResponse.safeParse(
-      await this.o.http.getJson(
+    let raw: unknown;
+    try {
+      raw = await this.o.http.getJson(
         `${ONE_CLICK_BASE_URL}/v0/status?depositAddress=${encodeURIComponent(depositAddress)}`,
         this.headers(),
-      ),
-    );
+      );
+    } catch (err) {
+      if (err instanceof MarketHttpError && err.kind === 'not_found')
+        raw = { status: 'PENDING_DEPOSIT' };
+      else throw err;
+    }
+    const parsed = statusResponse.safeParse(raw);
     if (!parsed.success) throw new DepositQuoteRefused('unexpected 1Click status answer');
     const { status, swapDetails: d } = parsed.data;
     return {
@@ -206,7 +219,7 @@ export class OneClickDepositClient {
       amountOut: d.amountOut,
       refundedAmount: d.refundedAmount,
       refundReason: d.refundReason,
-      nearTxHash: d.destinationChainTxHashes.find((t) => NEAR_TX_HASH.test(t.hash))?.hash ?? null,
+      nearTxHash: d.destinationChainTxHashes.map(txHash).find((h) => h !== null) ?? null,
     };
   }
 

@@ -440,6 +440,8 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `BoundedMap` (1000 quotes), concurrent callers share one call; `deadlinePassed` from the server clock. The latest
   status and its time go to `deposit_quotes.status` / `status_at` (migration 0021) when it changes.
 - `apps/analytics`: `/api/deposit/status/[id]` proxy with its own `consume('deposit-status')` limit (60 per visitor,
-  1200 overall per 10 min); `poll()` takes a schedule (`everyMs` as a function of ticks done); the deposit dialog
+  10 000 overall per 10 min); `poll()` takes a schedule (`everyMs` as a function of ticks done); the deposit dialog
   polls 5 s → ×1.5 → 30 s, at most 120 checks, stops at `SUCCESS`/`REFUNDED`/`FAILED` or, while `PENDING_DEPOSIT`,
-  at the deadline; `INCOMPLETE_DEPOSIT` keeps polling so the refund shows up. "Check again" asks once.
+  30 min after the deadline (a late deposit can take a confirmation to show up); `INCOMPLETE_DEPOSIT` keeps
+  polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
+  address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.

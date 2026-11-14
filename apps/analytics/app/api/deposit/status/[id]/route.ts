@@ -9,7 +9,8 @@ import { consume } from '../../../../../lib/rate-limit';
 export const dynamic = 'force-dynamic';
 
 // A tab backing off to 30 s checks about 25 times in 10 minutes; this leaves room for two tabs and "check again".
-const STATUS_LIMIT = { perVisitor: 60, overall: 1_200, windowMs: 10 * 60_000 };
+// The overall cap is loose: the API serves each quote from a 5 s cache, so 1Click sees one call per quote at most.
+const STATUS_LIMIT = { perVisitor: 60, overall: 10_000, windowMs: 10 * 60_000 };
 
 export async function GET(
   _req: Request,

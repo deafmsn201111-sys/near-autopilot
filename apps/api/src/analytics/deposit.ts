@@ -33,7 +33,7 @@ export interface StoredDepositQuote {
 
 export interface DepositQuoteStore {
   save(q: StoredDepositQuote): Promise<void>;
-  find(id: string): Promise<StoredDepositQuote | null>;
+  find(id: string): Promise<(StoredDepositQuote & { readonly status: string | null }) | null>;
   /** The latest 1Click status and when we saw it. */
   saveStatus(id: string, status: SwapStatus, at: Date): Promise<void>;
   /** Deletes quotes older than 30 days. */
@@ -66,6 +66,8 @@ const STATUS_UNAVAILABLE =
 // Many tabs on one quote cost one 1Click call per this long; the map holds at most this many quotes.
 export const STATUS_CACHE_MS = 5_000;
 export const STATUS_CACHE_SIZE = 1_000;
+// A deposit sent just before the deadline can take a confirmation to show up: an unpaid quote expires this much later.
+export const EXPIRY_GRACE_MS = 30 * 60_000;
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
 
 /** "1.5" with 6 decimals -> 1500000n. Null unless a positive plain decimal with at most `decimals` places. */
@@ -110,7 +112,7 @@ export interface DepositStatusView {
   readonly refundedAmount: string | null;
   readonly refundReason: string | null;
   readonly nearTxHash: string | null;
-  /** From the server clock, so a wrong browser clock cannot end the wait early. */
+  /** Deadline plus the grace, from the server clock, so a wrong browser clock cannot end the wait early. */
   readonly deadlinePassed: boolean;
 }
 
@@ -148,20 +150,19 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     }
   });
 
-  const statuses = new BoundedMap<
-    string,
-    { at: number; view: Promise<DepositStatusView>; saved?: SwapStatus }
-  >(STATUS_CACHE_SIZE);
+  const statuses = new BoundedMap<string, { at: number; view: Promise<DepositStatusView> }>(
+    STATUS_CACHE_SIZE,
+  );
 
   const fetchStatus = async (id: string, at: Date): Promise<DepositStatusView> => {
     const q = await deps.store.find(id);
     if (!q) throw new NotFound();
     const r = await deps.oneClick.status(q.depositAddress);
-    const entry = statuses.get(id);
-    if (entry && entry.saved !== r.status) {
-      await deps.store.saveStatus(id, r.status, at);
-      entry.saved = r.status;
-    }
+    // Best effort: a failed write must not hide a status 1Click did answer.
+    if (q.status !== r.status)
+      await deps.store
+        .saveStatus(id, r.status, at)
+        .catch((err: unknown) => app.log.warn({ err }, 'deposit status not stored'));
     const units = (v: bigint | null) => (v === null ? null : v.toString());
     return {
       status: r.status,
@@ -170,7 +171,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       refundedAmount: units(r.refundedAmount),
       refundReason: r.refundReason,
       nearTxHash: r.nearTxHash,
-      deadlinePassed: at.getTime() >= q.deadline.getTime(),
+      deadlinePassed: at.getTime() >= q.deadline.getTime() + EXPIRY_GRACE_MS,
     };
   };
 
@@ -180,7 +181,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     const at = now();
     let entry = statuses.get(id.data);
     if (!entry || at.getTime() - entry.at >= STATUS_CACHE_MS) {
-      entry = { at: at.getTime(), view: fetchStatus(id.data, at), saved: entry?.saved };
+      entry = { at: at.getTime(), view: fetchStatus(id.data, at) };
       statuses.set(id.data, entry);
     }
     try {

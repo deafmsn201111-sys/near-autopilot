@@ -15,7 +15,7 @@ export class DrizzleDepositQuoteStore implements DepositQuoteStore {
     await this.db.insert(depositQuotes).values(q);
   }
 
-  async find(id: string): Promise<StoredDepositQuote | null> {
+  async find(id: string): Promise<(StoredDepositQuote & { status: string | null }) | null> {
     const [row] = await this.db.select().from(depositQuotes).where(eq(depositQuotes.id, id));
     return row ?? null;
   }

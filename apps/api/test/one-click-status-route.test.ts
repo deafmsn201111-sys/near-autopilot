@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EXPIRY_GRACE_MS,
   STATUS_CACHE_MS,
   STATUS_CACHE_SIZE,
   type DepositDeps,
@@ -40,7 +41,10 @@ const report = (status: SwapStatus, over: Partial<SwapStatusReport> = {}): SwapS
   ...over,
 });
 
-function setup(answer: () => Promise<SwapStatusReport> = async () => report('PENDING_DEPOSIT')) {
+function setup(
+  answer: () => Promise<SwapStatusReport> = async () => report('PENDING_DEPOSIT'),
+  o: { failSave?: boolean } = {},
+) {
   let clock = new Date('2026-11-13T10:01:00Z');
   const asked: string[] = [];
   const statuses: { id: string; status: string; at: Date }[] = [];
@@ -58,8 +62,14 @@ function setup(answer: () => Promise<SwapStatusReport> = async () => report('PEN
     store: {
       save: async () => undefined,
       purge: async () => undefined,
-      find: async (id) => (id.startsWith('dq_') ? stored(id) : null),
-      saveStatus: async (id, status, at) => void statuses.push({ id, status, at }),
+      find: async (id) =>
+        id.startsWith('dq_')
+          ? { ...stored(id), status: statuses.findLast((x) => x.id === id)?.status ?? null }
+          : null,
+      saveStatus: async (id, status, at) => {
+        if (o.failSave) throw new Error('db down');
+        statuses.push({ id, status, at });
+      },
     },
     destinationTokens: [],
   };
@@ -140,6 +150,13 @@ describe('GET /v1/deposit/status/:id', () => {
     ]);
   });
 
+  it('still answers the status when storing it fails', async () => {
+    const { get } = setup(async () => report('SUCCESS'), { failSave: true });
+    const res = await get('dq_1');
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ status: string }>().status).toBe('SUCCESS');
+  });
+
   it('answers 502 with our own words when 1Click fails, and asks again next time', async () => {
     let fail = true;
     const { get, asked } = setup(async () => {
@@ -154,9 +171,11 @@ describe('GET /v1/deposit/status/:id', () => {
     expect(asked).toHaveLength(2);
   });
 
-  it('says from the server clock when the deadline has passed', async () => {
+  it('says from the server clock when the deadline and its grace have passed', async () => {
     const { get, advance } = setup();
-    advance(24 * 60 * 60_000);
+    advance(24 * 60 * 60_000 - 60_000 + EXPIRY_GRACE_MS - 1);
+    expect((await get('dq_1')).json<{ deadlinePassed: boolean }>().deadlinePassed).toBe(false);
+    advance(STATUS_CACHE_MS);
     expect((await get('dq_1')).json<{ deadlinePassed: boolean }>().deadlinePassed).toBe(true);
   });
 

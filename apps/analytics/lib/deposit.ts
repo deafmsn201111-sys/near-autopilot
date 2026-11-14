@@ -1,4 +1,5 @@
 import type { ProvenanceTier } from '@near-autopilot/core';
+import { z } from 'zod';
 
 export interface DepositAsset {
   readonly assetId: string;
@@ -84,29 +85,43 @@ export function defaultDestination(
   );
 }
 
-export type SwapStatus =
-  | 'PENDING_DEPOSIT'
-  | 'KNOWN_DEPOSIT_TX'
-  | 'PROCESSING'
-  | 'INCOMPLETE_DEPOSIT'
-  | 'SUCCESS'
-  | 'REFUNDED'
-  | 'FAILED'
-  | 'UNKNOWN';
-
+const units = z
+  .string()
+  .regex(/^\d{1,40}$/)
+  .nullable();
+const depositStatus = z.object({
+  status: z.enum([
+    'PENDING_DEPOSIT',
+    'KNOWN_DEPOSIT_TX',
+    'PROCESSING',
+    'INCOMPLETE_DEPOSIT',
+    'SUCCESS',
+    'REFUNDED',
+    'FAILED',
+    'UNKNOWN',
+  ]),
+  depositedAmount: units,
+  amountOut: units,
+  refundedAmount: units,
+  refundReason: z.string().max(40).nullable(),
+  nearTxHash: z
+    .string()
+    .regex(/^[1-9A-HJ-NP-Za-km-z]{43,44}$/)
+    .nullable(),
+  deadlinePassed: z.boolean(),
+});
 /** `GET /api/deposit/status/:id`: 1Click's status, checked by the API. Amounts are base-unit strings. */
-export interface DepositStatus {
-  readonly status: SwapStatus;
-  readonly depositedAmount: string | null;
-  readonly amountOut: string | null;
-  readonly refundedAmount: string | null;
-  readonly refundReason: string | null;
-  readonly nearTxHash: string | null;
-  readonly deadlinePassed: boolean;
-}
+export type DepositStatus = z.infer<typeof depositStatus>;
+type SwapStatus = DepositStatus['status'];
 
-export const loadDepositStatus = (id: string) =>
-  call<DepositStatus>(`/api/deposit/status/${encodeURIComponent(id)}`);
+export async function loadDepositStatus(id: string): Promise<Result<DepositStatus>> {
+  const r = await call<unknown>(`/api/deposit/status/${encodeURIComponent(id)}`);
+  if (!r.ok) return r;
+  const parsed = depositStatus.safeParse(r.data);
+  return parsed.success
+    ? { ok: true, data: parsed.data }
+    : { ok: false, error: 'The deposit status could not be read. It is checked again shortly.' };
+}
 
 export const STATUS_MAX_CHECKS = 120;
 export const statusDelayMs = (checks: number) =>
@@ -149,7 +164,7 @@ export function describeStatus(s: DepositStatus | null, q: DepositQuote): Status
       return s.deadlinePassed
         ? {
             tone: 'warn',
-            title: 'Expired: no deposit arrived before the deadline',
+            title: 'Expired: no deposit seen by the deadline',
             detail: 'Do not send to this address; get a new one.',
           }
         : { tone: 'wait', title: 'Waiting for your deposit' };
@@ -199,7 +214,7 @@ export function describeStatus(s: DepositStatus | null, q: DepositQuote): Status
         title: 'The swap failed',
         detail: `1Click refunds a deposit to ${q.refundTo}.`,
       };
-    case 'UNKNOWN':
+    default:
       return {
         tone: 'wait',
         title: 'Unknown status from 1Click',

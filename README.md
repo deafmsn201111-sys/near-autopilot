@@ -133,7 +133,7 @@ from another chain (below), in a separate client.
    1Click delivers to your NEAR account, or refunds to your address if the swap fails. The dialog follows the
    deposit like a payment terminal: waiting, "received 40 of 50 USDC", swapping, then done (with the NEAR
    transaction), refunded (amount and reason) or failed. It checks every 5 s, backing off to 30 s, at most 120 times;
-   it stops at a final status, or at the deadline if nothing arrived ("expired"), and keeps the last status with a
+   it stops at a final status, or 30 min after the deadline if nothing arrived ("expired"), and keeps the last status with a
    **Check again** button. The browser sends only our quote id; the server looks up the address, asks 1Click
    (cached 5 s per quote, rate-limited per visitor). What we keep: one `deposit_quotes` row per address shown (your
    NEAR account, the tokens and amounts, your refund address on the other chain, the deposit address, deadline, fee,
