@@ -53,7 +53,7 @@ export function headline(item: TimelineItem): string {
     case 'oneclick_quote': {
       const from = typeof item.detail['from'] === 'string' ? item.detail['from'] : '?';
       const to = typeof item.detail['to'] === 'string' ? item.detail['to'] : '?';
-      return `Got a 1Click deposit quote (${from} → ${to})`;
+      return `Got a 1Click quote (${from} → ${to})`;
     }
   }
 }

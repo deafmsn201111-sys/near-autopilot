@@ -14,7 +14,7 @@ const LABEL: Record<DepositState, string> = {
 
 const fee = (bps: number | null) => (bps === null ? '—' : `${bps / 100}%`);
 
-/** Admin screen 4: 1Click deposit quotes and the latest status the user's deposit screen saw. */
+/** Admin screen 4: 1Click quotes and the latest status 1Click reported. */
 export default async function OneClickAdminPage() {
   let data: AdminDeposits;
   try {

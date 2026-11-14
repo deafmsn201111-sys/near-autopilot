@@ -100,8 +100,8 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 ### DeFi track: protect the position, refuse value-losing actions
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
-route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
-from and withdrawals to another chain (below), in a separate client.
+route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for withdrawals
+to another chain (below), in a separate client; deposits are quoted by HOT Kit's bridge popup.
 
 **What works**
 
@@ -307,7 +307,7 @@ days are deleted (on start, then hourly). One `events` row per wallet connect (r
 client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
 cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
 written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
-prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
+prepared) and 1Click withdrawal quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
 there is. Fonts are served by the site itself; the only third-party requests are the wallet connector you choose.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site

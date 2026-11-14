@@ -29,7 +29,7 @@ const quote: DepositQuote = {
   chain: 'eth',
   chainName: 'Ethereum',
   to: { chain: 'near', chainName: 'NEAR' },
-  origin: { assetId: 'nep141:eth-usdc', symbol: 'USDC', decimals: 6, payment: null },
+  origin: { assetId: 'nep141:eth-usdc', symbol: 'USDC', decimals: 6 },
   destination: { assetId: 'nep141:wrap.near', symbol: 'wNEAR', decimals: 24 },
   amountIn: '50000000',
   amountOut: '20000000000000000000000000',

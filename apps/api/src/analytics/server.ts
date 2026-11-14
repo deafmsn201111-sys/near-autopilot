@@ -41,7 +41,7 @@ export interface AnalyticsDeps {
   readonly mainnet?: MainnetReadDeps;
   /** Spend and LLM controls under /v1/admin/*, behind their own token. Absent: every admin URL answers 401. */
   readonly admin?: AdminDeps;
-  /** Real 1Click quotes for deposits from other chains (D19). Absent: /v1/deposit/* is not served. */
+  /** Real 1Click quotes for withdrawals to other chains (D19, D42). Absent: /v1/deposit/* is not served. */
   readonly deposit?: DepositDeps;
   /** What real users did (#32). Absent: nothing is recorded and /v1/events, /v1/wallet/confirm are not served. */
   readonly events?: EventStore;

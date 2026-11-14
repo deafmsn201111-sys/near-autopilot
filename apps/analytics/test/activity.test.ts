@@ -23,7 +23,7 @@ describe('activity timeline wording', () => {
     expect(headline({ type: 'verified', at: '' })).toBe('Proved ownership');
     expect(
       headline({ type: 'oneclick_quote', at: '', detail: { from: 'USDC', to: 'wNEAR' } }),
-    ).toBe('Got a 1Click deposit quote (USDC → wNEAR)');
+    ).toBe('Got a 1Click quote (USDC → wNEAR)');
   });
 
   it('shows the lines the server stored for each signed step', () => {

@@ -919,3 +919,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   "not valued", never "safe".
 - Run AI analysis is locked with its reason for a visitor who has not proved ownership (the API already refused).
 - Out: the suggestion cards themselves and an "all moves done" verdict belong to #252.
+
+## 2026-11-14 — Deposit quote and incidents API removed (#261)
+
+- After D42 nothing calls `POST /v1/deposit/quote` or `GET /v1/deposit/incidents`; both are gone, with the SHIELD
+  client (`gateway/shield.ts`), `SHIELD_JWT` / `SHIELD_URL`, and `paymentToken` (the deposit QR's payment link). A
+  `SHIELD_JWT` left in a server `.env` is ignored.
+- Withdraw keeps `GET /v1/deposit/assets`, `GET /v1/deposit/status/:id`, `mint` and `deposit_quotes`. The quote
+  tests that guarded `mint` (no fee, refused quote, store failure, 1Click failure, Solana fee tokens) now run
+  against `POST /v1/withdraw/quote`.
