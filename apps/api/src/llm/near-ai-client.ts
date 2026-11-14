@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { LlmEnv } from '@near-autopilot/config';
 import type { LlmToolTurn, ToolChat, ToolLlm } from '@near-autopilot/orchestrator';
 import { z } from 'zod';
@@ -87,12 +88,18 @@ export class NearAiToolLlm implements ToolLlm {
           },
           request.signal,
         );
-        const { usage } = usageSchema.parse(raw);
+        const { usage } = usageSchema.parse(raw.json);
         request.onUsage?.({
           inputTokens: usage.prompt_tokens,
           outputTokens: usage.completion_tokens,
         });
-        const { finish_reason, message } = completionSchema.parse(raw).choices[0]!;
+        const completion = completionSchema.parse(raw.json);
+        request.onReply?.({
+          chatId: completion.id,
+          requestSha256: raw.requestSha256,
+          responseSha256: raw.responseSha256,
+        });
+        const { finish_reason, message } = completion.choices[0]!;
         // Some vLLM tool parsers finish a tool request on `stop`; the tool calls decide, not the finish reason.
         if (
           (finish_reason === 'tool_calls' || finish_reason === 'stop') &&
@@ -121,6 +128,7 @@ export class NearAiToolLlm implements ToolLlm {
 
   /** No retry: a retried request is billed, but only the last reply's usage would be seen. */
   private async post(body: unknown, signal: AbortSignal | undefined) {
+    const requestBody = JSON.stringify(body);
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
     const res = await this.fetch(`${NEAR_AI_URL}/chat/completions`, {
       method: 'POST',
@@ -129,15 +137,22 @@ export class NearAiToolLlm implements ToolLlm {
         'content-type': 'application/json',
         'x-no-aliasing': 'true',
       },
-      body: JSON.stringify(body),
+      body: requestBody,
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
-    const text = await res.text();
+    // Hashed as received: the signature covers the raw bytes, which `text()` could alter (a BOM, invalid UTF-8).
+    const bytes = new Uint8Array(await res.arrayBuffer());
     // The body is never echoed: it may carry account details and ends up in logs.
     if (!res.ok) throw new Error(`NEAR AI Cloud answered HTTP ${res.status}`);
-    return parseJson(text, 'reply');
+    return {
+      json: parseJson(new TextDecoder().decode(bytes), 'reply'),
+      requestSha256: sha256(requestBody),
+      responseSha256: sha256(bytes),
+    };
   }
 }
+
+const sha256 = (text: string | Uint8Array) => createHash('sha256').update(text).digest('hex');
 
 /** A fixed message on failure: a SyntaxError quotes the start of the text, which may carry account details. */
 function parseJson(text: string, what: string): unknown {

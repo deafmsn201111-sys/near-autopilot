@@ -29,12 +29,14 @@ import {
   type LoopTool,
   type OrchestratorConfig,
   type ProposalAgent,
+  type SignedReply,
   type ToolLlm,
   type ToolTraceEntry,
 } from '@near-autopilot/orchestrator';
 import { alignRange, pointToDecimalPrice } from '@near-autopilot/rhea-dcl-adapter';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
+import type { PrivacyCheck } from '../llm/tee-verifier';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
 import { ratePct, yearWorthTheFee } from './portfolio-view';
@@ -84,6 +86,8 @@ export interface LlmCallRecord {
   readonly input: LlmCallInput;
   /** The model's own picks (before checks and restored warnings), the capped raw reply on invalid output, else null. */
   readonly output: LlmCallOutput | null;
+  /** The TEE signature check of a run that answered; null when not checked. */
+  readonly privacy: PrivacyCheck | null;
 }
 
 export interface LlmCallInput {
@@ -121,6 +125,8 @@ export interface ToolLlmDeps {
   readonly memo: AnalysisMemo;
   /** The last result per account and strategy, kept across restarts (#190). */
   readonly store?: AnalysisStore;
+  /** Checks the provider's signature on every reply of a run that answered; absent: not checked. */
+  readonly verifier?: { verify(replies: readonly SignedReply[]): Promise<PrivacyCheck> };
 }
 
 export interface SavedAnalysis {
@@ -286,6 +292,8 @@ export interface RunSummary {
   };
   /** The model's one sentence on why the cards are in this order; null when absent or quoting a number no shown card or tool context has. */
   readonly ranking: string | null;
+  /** Whether every reply was signed in the attested TEE; null when not checked. */
+  readonly privacy: PrivacyCheck | null;
 }
 
 /** A called agent's key number as a short line built on the server: raw tool output never reaches the browser. */
@@ -1094,6 +1102,7 @@ async function runModel(
         REQUEST_OVERHEAD_TOKENS + tokenBound([request.system, request.prompt, request.tools]);
       const chat = ai.llm.open({
         ...request,
+        onReply: (r) => replies.push(r),
         onUsage: (u) => {
           if (ended) return;
           unreported = false;
@@ -1125,6 +1134,7 @@ async function runModel(
       };
     },
   };
+  const replies: SignedReply[] = [];
   const calledTools = new Set<string>();
   const counted = (tool: LoopTool): LoopTool => ({
     ...tool,
@@ -1132,7 +1142,11 @@ async function runModel(
   });
   const found = new Map<string, PortfolioRecommendation>();
   const steps: Steps = new Map();
-  const record = async (outcome: CallOutcome, output: LlmCallOutput | null = null) => {
+  const record = async (
+    outcome: CallOutcome,
+    output: LlmCallOutput | null = null,
+    privacy: PrivacyCheck | null = null,
+  ) => {
     if (usage.calls === 0) return;
     const cost = usage.costMicroUsd;
     await ai.ledger
@@ -1148,6 +1162,7 @@ async function runModel(
         outcome,
         input: { strategy, candidates: [...found.values()].map(({ id, kind }) => ({ id, kind })) },
         output,
+        privacy,
       })
       .catch((e: unknown) => {
         const day = utcDay();
@@ -1254,7 +1269,8 @@ async function runModel(
     missing.length,
   );
   onEvent({ type: 'checked', checks });
-  await record('ok', answered);
+  const privacy = (await ai.verifier?.verify(replies)) ?? null;
+  await record('ok', answered, privacy);
   const analysis: Analysis = {
     source: 'llm',
     fallback: null,
@@ -1270,6 +1286,7 @@ async function runModel(
       read,
       checks,
       ranking: honestRanking,
+      privacy,
     },
     read,
     cachedAt: null,

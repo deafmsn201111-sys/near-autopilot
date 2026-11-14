@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { NEAR_AI_URL, NearAiToolLlm, nearAiToolLlmFromEnv } from '../src/llm/near-ai-client';
 
@@ -206,6 +207,23 @@ describe('NearAiToolLlm', () => {
       { inputTokens: 1200, outputTokens: 80 },
       { inputTokens: 1500, outputTokens: 4096 },
     ]);
+  });
+
+  it('hands over the chat id and the sha256 of the exact request and response bytes', async () => {
+    const body = JSON.stringify(reply('stop', { role: 'assistant', content: 'x' })) + '\n';
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    fetch.mockResolvedValueOnce(new Response(body, { status: 200 }));
+    const onReply = vi.fn();
+    await new NearAiToolLlm(fetch, config)
+      .open({ system: 's', prompt: 'p', tools: [], onReply })
+      .send(null);
+
+    const sha = (t: string) => createHash('sha256').update(t).digest('hex');
+    expect(onReply).toHaveBeenCalledWith({
+      chatId: 'chat-1',
+      requestSha256: sha(fetch.mock.calls[0]![1]!.body as string),
+      responseSha256: sha(body),
+    });
   });
 
   it('aborts on the caller signal', async () => {

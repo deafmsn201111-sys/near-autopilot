@@ -12,6 +12,7 @@ import {
   type AgentObservation,
   type LlmToolTurn,
   type ToolLlm,
+  type SignedReply,
   type ToolResult,
 } from '@near-autopilot/orchestrator';
 import { describe, expect, it, vi } from 'vitest';
@@ -122,6 +123,7 @@ function fake(
           const step = script[i++];
           if (!step) throw new Error('script exhausted');
           req.onUsage?.({ inputTokens: 1000, outputTokens: 100 });
+          req.onReply?.({ chatId: `chat-${i}`, requestSha256: 'req', responseSha256: 'res' });
           return step(results);
         },
       };
@@ -621,6 +623,46 @@ describe('analyseAccount', () => {
     expect(out.run?.checks).toMatchObject({ picked: 0, restored: 1 });
   });
 
+  it('checks the TEE signature of every reply and keeps the result with the run and its row', async () => {
+    const l = ledger();
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const verify = vi.fn(async (replies: readonly SignedReply[]) => ({
+      verified: true,
+      reason: null,
+      chatIds: replies.map((r) => r.chatId),
+    }));
+    const out = await analyseAccount(
+      { ...ai(llm, l), verifier: { verify } },
+      { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+    );
+    const privacy = { verified: true, reason: null, chatIds: ['chat-1', 'chat-2'] };
+    expect(verify).toHaveBeenCalledWith([
+      { chatId: 'chat-1', requestSha256: 'req', responseSha256: 'res' },
+      { chatId: 'chat-2', requestSha256: 'req', responseSha256: 'res' },
+    ]);
+    expect(out.run?.privacy).toEqual(privacy);
+    expect(l.rows[0]?.privacy).toEqual(privacy);
+  });
+
+  it('shows the answer of a reply that fails the check, marked unverified', async () => {
+    const l = ledger();
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const unverified = { verified: false, reason: 'no signature', chatIds: ['chat-1', 'chat-2'] };
+    const out = await analyseAccount(
+      { ...ai(llm, l), verifier: { verify: async () => unverified } },
+      { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+    );
+    expect(out.source).toBe('llm');
+    expect(out.run?.privacy).toEqual(unverified);
+    expect(l.rows[0]?.privacy).toEqual(unverified);
+  });
+
   it('records what the model picked when every pick is an id no tool returned', async () => {
     const l = ledger();
     const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'Trust me.' }])]);
@@ -738,6 +780,7 @@ describe('analyseAccount', () => {
       read: { tokens: 2, loan: true },
       checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
       ranking: null,
+      privacy: null,
     });
     const off = await analyseAccount(null, {
       ...ctx,
@@ -1929,6 +1972,7 @@ describe('analyseAccount', () => {
           'tools',
           'input',
           'output',
+          'privacy',
         ].sort(),
       );
       expect(row.input).toMatchObject({ strategy: 'balanced' });

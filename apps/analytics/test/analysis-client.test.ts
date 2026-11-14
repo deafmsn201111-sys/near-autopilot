@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseSaved, pipelineOf, runAnalysis, type Pipeline } from '../lib/analysis-client';
+import {
+  parseSaved,
+  pipelineOf,
+  privacyMark,
+  runAnalysis,
+  type Pipeline,
+} from '../lib/analysis-client';
 
 const reply = (body: unknown) =>
   vi.stubGlobal(
@@ -70,6 +76,7 @@ describe('runAnalysis', () => {
       read: { tokens: 7, loan: true },
       checks: { picked: 2, explained: 2, replaced: 0, restored: 1, dropped: 0 },
       ranking: 'The loan comes first: its health factor is 1.37.',
+      privacy: { verified: true, reason: null, chatIds: ['c1', 'c2'] },
     };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
     const r = await runAnalysis('alice.near', 'balanced');
@@ -85,6 +92,23 @@ describe('runAnalysis', () => {
       },
     });
     expect(r.ok && pipelineOf(r.analysis).ranking).toBe(run.ranking);
+    expect(r.ok && pipelineOf(r.analysis).privacy).toEqual(run.privacy);
+  });
+
+  it('reads a run saved before the TEE check as not checked', async () => {
+    const { privacy: _, ...old } = {
+      model: 'z-ai/glm-5.3-flash',
+      turns: 1,
+      toolCalls: 1,
+      ms: 1,
+      read: { tokens: 1, loan: false },
+      checks: { picked: 1, explained: 1, replaced: 0, restored: 0, dropped: 0 },
+      ranking: null,
+      privacy: null,
+    };
+    reply({ ...base, run: old });
+    const r = await runAnalysis('alice.near', 'balanced');
+    expect(r.ok && r.analysis.run?.privacy).toBeNull();
   });
 
   it('reads a run without a ranking sentence, or with one over 300 characters, as no sentence', async () => {
@@ -210,11 +234,47 @@ describe('runAnalysis as a stream', () => {
     const read = { model: 'z-ai/glm-5.3-flash', read: { tokens: 7, loan: true } };
     const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
-      { ...read, asked: [], trace: [], turns: null, checks: null, ranking: null, stage: 1 },
-      { ...read, asked, trace: [], turns: null, checks: null, ranking: null, stage: 1 },
-      { ...read, asked, trace: [step], turns: null, checks: null, ranking: null, stage: 2 },
-      { ...read, asked, trace: [step], turns: 2, checks: null, ranking: null, stage: 3 },
-      { ...read, asked, trace: [step], turns: 2, checks, ranking: null, stage: 4 },
+      {
+        ...read,
+        asked: [],
+        trace: [],
+        turns: null,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 1,
+      },
+      {
+        ...read,
+        asked,
+        trace: [],
+        turns: null,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 1,
+      },
+      {
+        ...read,
+        asked,
+        trace: [step],
+        turns: null,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 2,
+      },
+      {
+        ...read,
+        asked,
+        trace: [step],
+        turns: 2,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 3,
+      },
+      { ...read, asked, trace: [step], turns: 2, checks, ranking: null, privacy: null, stage: 4 },
     ]);
   });
 
@@ -289,5 +349,25 @@ describe('parseSaved', () => {
     expect(parseSaved({ analysis: null, signature: null })).toBeNull();
     expect(parseSaved({ analysis: { source: 'nope' }, signature: 's' })).toBeNull();
     expect(parseSaved({ analysis: base, signature: null })).toBeNull();
+  });
+});
+
+describe('privacyMark', () => {
+  const model = 'z-ai/glm-5.3-flash';
+  it('says signed in TEE only for a verified run, linking to the model attestation', () => {
+    expect(privacyMark({ verified: true, reason: null, chatIds: ['c1'] }, model)).toEqual({
+      label: 'Private AI · signed in TEE',
+      href: 'https://cloud.near.ai/verify?model=z-ai%2Fglm-5.3-flash',
+      title: expect.stringContaining('signed inside') as string,
+      chatIds: ['c1'],
+    });
+  });
+  it('never claims a signature for an unverified run, and says why', () => {
+    const mark = privacyMark({ verified: false, reason: 'no signature', chatIds: ['c1'] }, model);
+    expect(mark?.label).toBe('Private AI');
+    expect(mark?.title).toContain('no signature');
+  });
+  it('shows no mark for a run that was not checked', () => {
+    expect(privacyMark(null, model)).toBeNull();
   });
 });
