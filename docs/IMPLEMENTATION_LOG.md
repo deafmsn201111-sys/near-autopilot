@@ -808,3 +808,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `Connect NEAR`. Only those answers and `No accounts found` drop the key; any other failure (network, a frame that
   did not load) keeps it, so a valid session is never dropped. Other wallets' wordings are added when seen. A NEAR sign-in that lands after the kit list was closed goes
   to `connect(onLateSignIn)`; `WalletButton` reports it and opens the portfolio. The next click drops that listener.
+
+## 2026-11-14 — Incoming token transfers refresh the account page (#204)
+
+- `lib/account-signal.ts` `readTokens`: one keyless FastNEAR `/v1/account/{id}/ft` call per watcher tick (zod-checked),
+  turned into a sorted `contract:balance` fingerprint. `watchStep` also fires when it changes; a failed token read
+  keeps the baseline. #117 covered native NEAR only; a USDC/USDT transfer or a 1Click deposit now shows within a tick.

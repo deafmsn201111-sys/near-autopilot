@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
 import { refreshAccount } from '../app/account-actions';
-import { readAccount, watchStep, type Reading } from '../lib/account-signal';
+import { readAccount, readTokens, watchStep, type Reading } from '../lib/account-signal';
 import { poll, POLL_FOR_MS, tabHidden } from '../lib/polling';
 import {
   recentlyRefreshed,
@@ -13,7 +13,7 @@ import {
 
 /**
  * The on-chain watcher: for the connected account it polls NEAR mainnet and, the moment something lands on it (its native
- * balance moves: an incoming NEAR transfer or a transaction from this wallet), re-reads the real portfolio past every cache and
+ * balance or any token balance moves: an incoming NEAR or token transfer, or a transaction from this wallet), re-reads the real portfolio past every cache and
  * re-renders the page (router.refresh, no reload), retrying for a few seconds until the new state shows. It watches
  * while the tab is visible and for 30 minutes after the user last came back to it, and says so on the page while it
  * updates.
@@ -30,9 +30,9 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
     let alive = true;
     let last: Reading | null = null;
     const tick = () =>
-      void readAccount(account).then((reading) => {
+      void Promise.all([readAccount(account), readTokens(account)]).then(([native, tokens]) => {
         if (!alive) return;
-        const step = watchStep(last, reading, recentlyRefreshed(account));
+        const step = watchStep(last, native && { ...native, tokens }, recentlyRefreshed(account));
         last = step.last;
         if (step.fire) void refreshPortfolio(account, refreshAccount, () => router.refresh());
       });
