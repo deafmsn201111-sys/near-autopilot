@@ -414,7 +414,7 @@ describe('portfolioRecommendations', () => {
   });
 
   describe('all idle money in one cascade (#196)', () => {
-    it('puts every idle token worth its fee to work with one card and one signature', () => {
+    it('puts every idle token worth its fee to work with one card', () => {
       const r = portfolioRecommendations(
         ctx({
           idleEarn: [
@@ -436,6 +436,8 @@ describe('portfolioRecommendations', () => {
       });
       expect(idle[0]?.title).toBe('$1,100 of USDC and USDt is sitting idle');
       expect(idle[0]?.why).toContain('about $100.00 a year');
+      expect(idle[0]?.why).toContain('your wallet asks you to approve each one');
+      expect(idle[0]?.why).not.toContain('One signature');
     });
 
     it('repays a dearer loan with its token and supplies the rest, never supplying the token it repays with', () => {
