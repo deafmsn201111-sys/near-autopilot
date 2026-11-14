@@ -42,6 +42,9 @@ import {
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
+import { CheckedAndSkipped, NothingToDo, SuggestionCard } from '../components/SuggestionCard';
+import { ProvenanceMark } from '../components/primitives';
+import { demoFacts, splitDemo } from '../lib/suggestions';
 import { intentTokens } from '../lib/recommendation-intent';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
@@ -172,84 +175,62 @@ const allocBySymbol = (assets: readonly Row[], total: number) => {
     .sort((a, b) => b.pct - a.pct);
 };
 
-const VERDICT = {
-  worth_it: { cls: 'good', icon: '✓' },
-  not_worth_it: { cls: 'warning', icon: '–' },
-  not_allowed: { cls: 'neutral', icon: 'i' },
-  no_data: { cls: 'neutral', icon: '?' },
-} as const;
+const DEMO_AGENT: Record<PortfolioAction['kind'], string> = {
+  keep: 'Liquidation Guardian',
+  lend: 'Capital Allocator',
+  liquidity: 'Capital Allocator',
+  loop: 'Capital Allocator',
+};
 
-function ActionCard({ a, best }: { a: PortfolioAction; best: boolean }) {
-  const v = VERDICT[a.autopilot.verdict];
-  const net = a.netUsd;
+function DemoPlan({ a }: { a: PortfolioAction }) {
   return (
-    <article className={`action${best ? ' best' : ''}`}>
-      <div className="action-main">
+    <details className="plan">
+      <summary>See the plan, the costs and the risks</summary>
+      <div className="plan-grid">
         <div>
-          {best && <span className="tag">Highest net after costs</span>}
-          <h3>{a.title}</h3>
-          <p>{a.summary}</p>
+          <h4>What would happen</h4>
+          <ol>
+            {a.steps.map((s) => (
+              <li key={s}>{s}</li>
+            ))}
+          </ol>
         </div>
-        <div className="action-result-num">
-          <span className={`big ${net !== null && net < 0 ? 'neg' : 'pos'}`}>
-            {net === null ? '—' : `${net >= 0 ? '+' : ''}${money(net, true)}`}
-          </span>
-          <span className="small">
-            per {a.horizonDays} days after costs
-            {a.netAprOnCapital !== null && ` · ${(a.netAprOnCapital * 100).toFixed(1)}% a year`}
-          </span>
+        <div>
+          <h4>
+            The numbers, {a.horizonDays} days on {money(a.capitalUsd)}
+          </h4>
+          <table className="mini">
+            <tbody>
+              <tr>
+                <td>Earned</td>
+                <td className="num">{money(a.grossUsd, true)}</td>
+              </tr>
+              {a.costs.map((c) => (
+                <tr key={c.label}>
+                  <td>{c.label}</td>
+                  <td className="num">−{money(c.usd, true)}</td>
+                </tr>
+              ))}
+              <tr className="total">
+                <td>You keep</td>
+                <td className="num">{money(a.netUsd, true)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h4>Risks</h4>
+          <ul>
+            {a.risks.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
         </div>
       </div>
-      <p className={`verdict ${v.cls}`}>
-        <i aria-hidden="true">{v.icon}</i>
-        {a.autopilot.sentence}
+      <p className="fine">
+        {a.autopilot.sentence} {a.basis}
       </p>
-      <details className="plan">
-        <summary>See the plan, the costs and the risks</summary>
-        <div className="plan-grid">
-          <div>
-            <h4>What would happen</h4>
-            <ol>
-              {a.steps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-          </div>
-          <div>
-            <h4>
-              The numbers, {a.horizonDays} days on {money(a.capitalUsd)}
-            </h4>
-            <table className="mini">
-              <tbody>
-                <tr>
-                  <td>Earned</td>
-                  <td className="num">{money(a.grossUsd, true)}</td>
-                </tr>
-                {a.costs.map((c) => (
-                  <tr key={c.label}>
-                    <td>{c.label}</td>
-                    <td className="num">−{money(c.usd, true)}</td>
-                  </tr>
-                ))}
-                <tr className="total">
-                  <td>You keep</td>
-                  <td className="num">{money(a.netUsd, true)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div>
-            <h4>Risks</h4>
-            <ul>
-              {a.risks.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-        <p className="fine">{a.basis}</p>
-      </details>
-    </article>
+    </details>
   );
 }
 
@@ -319,7 +300,7 @@ async function Portfolio({ sp }: { sp: Search }) {
       </>
     );
   const t = data.totals;
-  const best = data.actions.find((a) => (a.netUsd ?? -1) > 0);
+  const demo = splitDemo(data.actions);
 
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
@@ -531,20 +512,47 @@ async function Portfolio({ sp }: { sp: Search }) {
         <section className="block">
           <div className="block-head">
             <h2>What you could do with the idle {money(t.idleUsd, false)}</h2>
+            <span className="muted-note">
+              {demo.cards.length === 0
+                ? 'none right now'
+                : `${demo.cards.length} worth doing, ranked by what you keep`}
+            </span>
           </div>
-          {data.actions.length === 0 ? (
-            <p className="muted-note">
-              {t.idleUsd < SMALL_IDLE_USD
-                ? `${money(t.idleUsd, false)} is too small to put to work: the network fees of any move would cost more than it can earn in a month. Doing nothing is the right call here.`
-                : 'No option could be computed from the latest data.'}
-            </p>
-          ) : (
-            <div className="actions-list">
-              {data.actions.map((a) => (
-                <ActionCard key={a.id} a={a} best={a === best} />
+          {demo.cards.length === 0 && (
+            <NothingToDo
+              why={
+                t.idleUsd < SMALL_IDLE_USD
+                  ? `${money(t.idleUsd, false)} is too small to put to work: the network fees of any move would cost more than it can earn in a month.`
+                  : data.actions.length === 0
+                    ? 'No option could be computed from the latest data.'
+                    : 'None of the options clears its costs at current rates.'
+              }
+            />
+          )}
+          {demo.cards.length > 0 && (
+            <div className="sg-list">
+              {demo.cards.map((a, i) => (
+                <SuggestionCard
+                  key={a.id}
+                  top={i === 0}
+                  agent={DEMO_AGENT[a.kind]}
+                  logos={[]}
+                  title={a.title}
+                  facts={demoFacts(a)}
+                  why={a.summary}
+                  extra={<DemoPlan a={a} />}
+                  tags={
+                    <>
+                      <ProvenanceMark kind="simulated">Simulated balances</ProvenanceMark>
+                      <ProvenanceMark kind="estimate">Net after costs</ProvenanceMark>
+                    </>
+                  }
+                  stage={{ kind: 'open' }}
+                />
               ))}
             </div>
           )}
+          <CheckedAndSkipped items={demo.skipped} />
         </section>
       )}
     </>

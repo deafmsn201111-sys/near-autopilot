@@ -3450,6 +3450,198 @@ main.page {
   background: var(--safe-bg);
   border: 1px solid var(--safe-line);
 }
+.ds-receipt b {
+  color: var(--safe);
+  font-weight: 600;
+}
+
+/* ---- suggestion card ---- */
+.sg-list {
+  display: grid;
+  gap: var(--s4);
+  transition:
+    opacity 0.3s ease,
+    filter 0.3s ease;
+}
+.sg-list.is-stale {
+  opacity: 0.45;
+  filter: saturate(0.5);
+}
+.sg.sg-working {
+  border-color: var(--accent-line);
+}
+.sg-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: center;
+}
+.sg-rank {
+  font-size: var(--fs-s);
+  font-weight: 600;
+  color: var(--accent);
+}
+.sg-agent {
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+.sg-life {
+  margin-left: auto;
+}
+.sg-life:empty {
+  display: none;
+}
+.sg-title {
+  margin: 0;
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  font-size: var(--fs-h);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  color: var(--text-1);
+}
+.sg-body {
+  display: grid;
+  gap: var(--s4);
+}
+.sg-why {
+  margin: 0;
+  max-width: 76ch;
+  color: var(--text-2);
+}
+.sg-why b,
+.sg-empty b {
+  color: var(--text-1);
+  font-weight: 600;
+}
+.sg-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+  align-items: center;
+}
+.sg-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-right: auto;
+}
+/* A signed card keeps its sign flow mounted so the open progress sheet survives; only the sheet stays visible. */
+.sg-hold :not(dialog, dialog *, :has(dialog)) {
+  display: none;
+}
+.sg-hold:not(:has(dialog[open])) {
+  display: none;
+}
+.sg-foot .prepare,
+.sg-foot .repay-picker {
+  flex: 1 1 100%;
+}
+.sg-sub {
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+.sg-sub a {
+  color: inherit;
+}
+.sg-progress {
+  margin: 0;
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  color: var(--accent);
+  font-weight: 500;
+}
+.sg-spin {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: sg-spin 0.8s linear infinite;
+}
+@keyframes sg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sg-failed {
+  margin: 0;
+  color: var(--text-2);
+}
+.sg-empty {
+  margin: 0;
+  color: var(--text-2);
+}
+.ds-panel.sg-skipped {
+  padding: 0;
+  margin-top: var(--s4);
+}
+.sg-skipped summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s3);
+  align-items: center;
+  min-height: 52px;
+  padding: var(--s4) var(--s6);
+  cursor: pointer;
+  font-weight: 500;
+  list-style: none;
+}
+.sg-skipped summary::-webkit-details-marker {
+  display: none;
+}
+.sg-skipped summary span {
+  color: var(--text-2);
+  font-weight: 400;
+}
+.sg-chev {
+  display: inline-block;
+  transition: transform 0.2s var(--ease);
+}
+.sg-skipped[open] .sg-chev {
+  transform: rotate(90deg);
+}
+.sg-sk-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px var(--s4);
+  padding: var(--s3) var(--s6);
+  border-top: 1px solid var(--line-subtle);
+}
+.sg-sk-t {
+  font-weight: 500;
+}
+.sg-sk-n {
+  text-align: right;
+  color: var(--text-1);
+}
+.sg-sk-row p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-s);
+}
+@media (max-width: 640px) {
+  .sg-skipped summary,
+  .sg-sk-row {
+    padding-left: var(--s4);
+    padding-right: var(--s4);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sg-chev {
+    transition: none;
+  }
+  .sg-spin {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+}
 
 .ds-facts {
   display: grid;

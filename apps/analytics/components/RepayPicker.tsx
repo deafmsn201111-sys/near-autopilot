@@ -3,6 +3,7 @@ import type { RepaySizing } from '@near-autopilot/core/loan-math';
 import { useState } from 'react';
 import { recommendationToPrepare, type RecommendationIntent } from '../lib/recommendation-intent';
 import { amountText, pickRepay } from '../lib/repay-picker';
+import type { CardStage } from '../lib/suggestions';
 import { PrepareDialog } from './PrepareDialog';
 
 const SLIDER_STEPS = 200;
@@ -18,12 +19,18 @@ export function RepayPicker({
   account,
   label,
   signingEnabled,
+  variant,
+  onStage,
+  onSheetClosed,
 }: {
   intent: RecommendationIntent & { action: 'repay' | 'repay_from_collateral' };
   sizing: RepaySizing;
   account: string;
   label: string;
   signingEnabled: boolean;
+  variant?: 'primary' | 'secondary';
+  onStage?: (stage: CardStage) => void;
+  onSheetClosed?: () => void;
 }) {
   const from = intent.action === 'repay' ? 'wallet' : 'collateral';
   const safeText = amountText(sizing.safeTokens, sizing.decimals);
@@ -88,6 +95,9 @@ export function RepayPicker({
           request={request}
           label={label}
           signingEnabled={signingEnabled}
+          variant={variant}
+          onStage={onStage}
+          onSheetClosed={onSheetClosed}
         />
       )}
     </div>

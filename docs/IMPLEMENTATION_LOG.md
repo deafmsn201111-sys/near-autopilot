@@ -958,3 +958,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   count over 180 days and over the last 90. Both: supported on all three counts (H1 5→4 of 16 within 2 pp, ρ 0.39 /
   0.33, H3 11 of 18 both).
 - Window-specific wording ("after 90 days", "one quarter") now follows the window; the thesis page lead too.
+
+## 2026-11-14 — One suggestion card (#252)
+
+- `components/SuggestionCard.tsx`: one card for the demo's moves and a real account's recommendations — rank
+  ("#1", "#1 · AI pick" when the AI ranked it), severity chip, agent, token icons + title, facts strip (gains in
+  mint), lead-and-detail explanation, provenance tags, actions. The first card not done is the raised top card and
+  the only one with the primary button. `CheckedAndSkipped` lists every skipped move with its number and reason;
+  the demo's empty state is `NothingToDo`; the account's is the analysis panel's verdict (#251).
+- Lifecycle: `PrepareDialog` reports signing (step i of n), done (receipt with tx link; "Confirmed on NEAR" only
+  when NEAR confirmed every step) and failed (reason; partial cascades say how many steps landed, and refresh the
+  portfolio). A card whose progress sheet is open is held in place with its snapshot, so a refresh cannot remount
+  or move the sheet; a receipt stays until the agents send a changed card with the same id.
+- Demo: moves worth doing are cards, the rest are "Checked and skipped". Account cards show only facts the intent
+  carries; structured facts from the API are #284.
