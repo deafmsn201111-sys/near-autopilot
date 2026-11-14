@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { toBaseUnits, type DepositDeps, type StoredDepositQuote } from '../src/analytics/deposit';
+import {
+  paymentContract,
+  toBaseUnits,
+  type DepositDeps,
+  type StoredDepositQuote,
+} from '../src/analytics/deposit';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
 import {
@@ -133,6 +138,35 @@ describe('toBaseUnits', () => {
   });
 });
 
+describe('paymentContract', () => {
+  const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const t = (blockchain: string, assetId: string, contractAddress?: string): OneClickToken => ({
+    assetId,
+    blockchain,
+    contractAddress,
+    decimals: 6,
+    symbol: 'USDC',
+  });
+
+  it('returns the token contract when it is an address of the chain named in the quoted asset', () => {
+    expect(paymentContract(t('base', `nep141:base-${BASE_USDC}.omft.near`, BASE_USDC))).toBe(
+      BASE_USDC,
+    );
+    expect(paymentContract(t('base', `1cs_v1:base:erc20:${BASE_USDC}`, BASE_USDC))).toBe(BASE_USDC);
+    expect(paymentContract(t('sol', 'nep141:sol-5ce3bf3a.omft.near', SOL_USDC))).toBe(SOL_USDC);
+  });
+
+  it('refuses a contract the quoted asset does not name, or one of another chain', () => {
+    const other = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+    expect(paymentContract(t('base', `nep141:base-${BASE_USDC}.omft.near`, other))).toBeNull();
+    expect(paymentContract(t('eth', 'nep141:eth-x.omft.near', SOL_USDC))).toBeNull();
+    expect(paymentContract(t('sol', 'nep141:sol-x.omft.near', BASE_USDC))).toBeNull();
+    expect(paymentContract(t('btc', 'nep141:btc.omft.near', 'bc1q'))).toBeNull();
+    expect(paymentContract(t('eth', 'nep141:eth.omft.near'))).toBeNull();
+  });
+});
+
 describe('GET /v1/deposit/assets', () => {
   it('lists origins on the allowed chains only, popular first, and destinations from our own list', async () => {
     const res = await setup().app.inject({
@@ -183,7 +217,12 @@ describe('POST /v1/deposit/quote', () => {
       id: 'dq_1',
       chain: 'eth',
       chainName: 'Ethereum',
-      origin: { assetId: 'nep141:eth-0xa0b8.omft.near', symbol: 'USDC', decimals: 6 },
+      origin: {
+        assetId: 'nep141:eth-0xa0b8.omft.near',
+        symbol: 'USDC',
+        decimals: 6,
+        contract: null,
+      },
       destination: { assetId: `nep141:${USDC_NEAR_ID}`, symbol: 'USDC', decimals: 6 },
       amountIn: '100000000',
       amountOut: '99750000',

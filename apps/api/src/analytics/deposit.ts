@@ -125,6 +125,21 @@ const asset = (t: OneClickToken) => ({
   decimals: t.decimals,
 });
 
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const SOL_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/**
+ * The origin token's contract for a payment link (EIP-681, Solana Pay), or null: then the QR holds the address only.
+ * On EVM chains the quoted assetId names the contract itself, so a contract it does not name is refused.
+ */
+export function paymentContract(t: OneClickToken): string | null {
+  const c = t.contractAddress;
+  if (!c) return null;
+  if (t.blockchain === 'sol') return SOL_MINT.test(c) ? c : null;
+  if (!['eth', 'base', 'arb'].includes(t.blockchain) || !EVM_ADDRESS.test(c)) return null;
+  return t.assetId.toLowerCase().includes(c.toLowerCase()) ? c : null;
+}
+
 const quoteBody = z
   .object({
     account: accountIdSchema,
@@ -367,7 +382,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       id,
       chain: origin.blockchain,
       chainName: CHAIN_NAMES[origin.blockchain],
-      origin: asset(origin),
+      origin: { ...asset(origin), contract: paymentContract(origin) },
       destination: asset(destination),
       amountIn: q.amountIn.toString(),
       amountOut: q.amountOut.toString(),

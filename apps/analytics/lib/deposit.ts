@@ -19,7 +19,8 @@ export interface DepositQuote {
   readonly id: string;
   readonly chain: string;
   readonly chainName: string;
-  readonly origin: DepositAsset;
+  /** `contract`: the token contract for a payment link, checked by the API against the quoted asset; null for a native coin. */
+  readonly origin: DepositAsset & { readonly contract: string | null };
   readonly destination: DepositAsset;
   readonly amountIn: string;
   readonly amountOut: string;
