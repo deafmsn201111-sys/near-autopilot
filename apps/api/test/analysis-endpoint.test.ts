@@ -704,6 +704,7 @@ describe('wallet observation for Market Intelligence', () => {
   const log = { warn: (...args: unknown[]) => warned.push(args), info: () => {}, error: () => {} };
   const snapshot = (i: number, usd: string) => ({
     snapshotId: `s${i}`,
+    asset: USDT,
     observedAt: new Date(Date.now() - i * 2 * 60 * 60 * 1000),
     source: 'pyth',
     priceUsd: usd,
@@ -711,16 +712,28 @@ describe('wallet observation for Market Intelligence', () => {
     status: 'valid',
   });
 
-  it("carries each held token's 24 h range from the collector's stored prices", async () => {
-    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i === 5 ? '1.2' : '1'));
-    const history = { ...store, priceHistory: async () => day } as unknown as CollectorStore;
+  it("carries each held token's 24 h range from one slim read of the collector's stored prices", async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i < 6 ? '1.2' : '1'));
+    const calls: unknown[][] = [];
+    const history = {
+      ...store,
+      priceSeries: async (...args: unknown[]) => (calls.push(args), day),
+    } as unknown as CollectorStore;
     expect(await observed(history)).toEqual(new Map([[USDT, 2000]]));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toEqual([USDT]);
+  });
+
+  it('one bad print in a flat day is no volatility', async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i === 5 ? '1.2' : '1'));
+    const history = { ...store, priceSeries: async () => day } as unknown as CollectorStore;
+    expect(await observed(history)).toEqual(new Map([[USDT, 0]]));
   });
 
   it('has no range, and logs it, when the price history cannot be read', async () => {
     const failing = {
       ...store,
-      priceHistory: async () => Promise.reject(new Error('db down')),
+      priceSeries: async () => Promise.reject(new Error('db down')),
     } as unknown as CollectorStore;
     expect(await observed(failing)).toEqual(new Map());
     expect(warned).toHaveLength(1);

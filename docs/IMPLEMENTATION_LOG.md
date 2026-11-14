@@ -593,3 +593,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   dropped. `BURROW_REQUIRED_EXPORTS` checks `execute_with_pyth`.
 - `apps/api/src/wallet/validate-cascade.ts`: allowlist `execute_with_pyth`, drop `oracle_call` (D29);
   `account-view.ts` prepare intents allow Burrow as the receiver instead of the oracle.
+
+## #159 — 24 h range: outlier filter and one slim query
+
+- `range24hBps` takes the high-low range over a rolling median of five snapshots: one or two bad prints in a row no
+  longer raise a `volatility_spike`; a move that holds three snapshots (45 min) still does.
+- `snapshotPrices` groups price rows into per-snapshot consensus prices per asset; used by `range24hBps`,
+  `latestPrices` and `GET /v1/analytics/series/prices`.
+- The wallet observation reads the held tokens' history with one `priceSeries(since, assets)` query (slim columns,
+  asset filter) instead of one wide `priceHistory` query per token.

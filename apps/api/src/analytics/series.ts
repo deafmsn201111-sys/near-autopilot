@@ -33,6 +33,12 @@ interface Quote {
   readonly status: string;
 }
 
+const median = (xs: readonly number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? (s[mid] ?? 0) : ((s[mid - 1] ?? 0) + (s[mid] ?? 0)) / 2;
+};
+
 /** The USD-quoted, valid quotes of one asset in one snapshot: their median and the widest pairwise spread (bps). */
 export function consensus(quotes: readonly Quote[]): {
   price: number | null;
@@ -45,10 +51,7 @@ export function consensus(quotes: readonly Quote[]): {
     return d && d.mantissa > 0n ? [{ d, n: Number(q.priceUsd) }] : [];
   });
   if (valid.length === 0) return { price: null, spreadBps: null, sources: 0 };
-  const sorted = valid.map((v) => v.n).sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  const price =
-    sorted.length % 2 ? (sorted[mid] ?? null) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+  const price = median(valid.map((v) => v.n));
   let spread: number | null = null;
   for (const a of valid)
     for (const b of valid) {
@@ -58,34 +61,63 @@ export function consensus(quotes: readonly Quote[]): {
   return { price, spreadBps: valid.length > 1 ? spread : null, sources: valid.length };
 }
 
+export interface SnapshotPrice {
+  readonly t: number;
+  readonly price: number | null;
+  readonly spreadBps: number | null;
+  readonly sources: number;
+}
+
+/** Per asset, the consensus price of each snapshot (oldest first), timed at the snapshot's earliest observation. */
+export function snapshotPrices(
+  rows: readonly (Quote & { asset: string; snapshotId: string; observedAt: Date })[],
+): Map<string, SnapshotPrice[]> {
+  const groups = new Map<string, Map<string, { t: number; quotes: Quote[] }>>();
+  for (const r of rows) {
+    const byAsset = groups.get(r.asset) ?? new Map<string, { t: number; quotes: Quote[] }>();
+    groups.set(r.asset, byAsset);
+    const snap = byAsset.get(r.snapshotId) ?? { t: r.observedAt.getTime(), quotes: [] };
+    snap.t = Math.min(snap.t, r.observedAt.getTime());
+    snap.quotes.push(r);
+    byAsset.set(r.snapshotId, snap);
+  }
+  return new Map(
+    [...groups].map(([asset, snaps]) => [
+      asset,
+      [...snaps.values()]
+        .sort((a, b) => a.t - b.t)
+        .map((s) => ({ t: s.t, ...consensus(s.quotes) })),
+    ]),
+  );
+}
+
 /** Same floors as the DefiLlama hourly range: under half a day of points is not a 24 h range. */
 const MIN_RANGE_SNAPSHOTS = 12;
 const MIN_RANGE_SPAN_MS = 12 * 60 * 60 * 1000;
+/** Each price is replaced by the median of this many consecutive priced snapshots around it. */
+const RANGE_MEDIAN_WINDOW = 5;
 
 /**
- * High-low range (bps of the low) of one asset's per-snapshot consensus price over the rows given (the caller picks
- * the 24 h window). Null under 12 priced snapshots or when they span less than 12 h.
- * ponytail: one bad print can widen the range; that only raises a caution signal, add an outlier filter if it misfires.
+ * High-low range (bps of the low) of one asset's per-snapshot consensus prices (the caller picks the 24 h window),
+ * taken over a rolling median of five snapshots: one or two bad prints in a row drop out, a move that holds for three
+ * snapshots (45 min at the collector's 15 min interval) counts. Counted in snapshots, not minutes, so collector gaps
+ * stretch it. ponytail: a crash in only the newest one or two snapshots waits for the third to show (up to 30 min).
+ * Null under 12 priced snapshots or a span under 12 h.
  */
-export function range24hBps(
-  rows: readonly (Quote & { snapshotId: string; observedAt: Date })[],
-): number | null {
-  const bySnapshot = new Map<string, { at: number; quotes: Quote[] }>();
-  for (const r of rows) {
-    const s = bySnapshot.get(r.snapshotId);
-    if (s) s.quotes.push(r);
-    else bySnapshot.set(r.snapshotId, { at: r.observedAt.getTime(), quotes: [r] });
-  }
-  const priced = [...bySnapshot.values()].flatMap((s) => {
-    const price = consensus(s.quotes).price;
-    return price === null ? [] : [{ at: s.at, price }];
-  });
+export function range24hBps(points: readonly Pick<SnapshotPrice, 't' | 'price'>[]): number | null {
+  const priced = points.flatMap((p) => (p.price === null ? [] : [{ t: p.t, price: p.price }]));
   if (priced.length < MIN_RANGE_SNAPSHOTS) return null;
-  const times = priced.map((p) => p.at);
+  const times = priced.map((p) => p.t);
   if (Math.max(...times) - Math.min(...times) < MIN_RANGE_SPAN_MS) return null;
   const prices = priced.map((p) => p.price);
-  const lo = Math.min(...prices);
-  return Math.round(((Math.max(...prices) - lo) * 10_000) / lo);
+  const half = Math.floor(RANGE_MEDIAN_WINDOW / 2);
+  const smooth = prices.map((_, i) => {
+    // The window slides inward at the ends so it always holds five points: two bad prints at an edge still drop out.
+    const start = Math.min(Math.max(0, i - half), prices.length - RANGE_MEDIAN_WINDOW);
+    return median(prices.slice(start, start + RANGE_MEDIAN_WINDOW));
+  });
+  const lo = Math.min(...smooth);
+  return Math.round(((Math.max(...smooth) - lo) * 10_000) / lo);
 }
 
 /** HF bands the orchestrator classifies risk with (config.orchestrator.risk; its defaults when not overridden). */
@@ -123,19 +155,10 @@ export function registerSeries(
 
   app.get('/v1/analytics/series/prices', async (req) => {
     const { hours } = hoursQuery(48).parse(req.query);
-    const rows = await store.priceSeries(since(hours));
-    const groups = new Map<string, Map<string, { t: number; quotes: Quote[] }>>();
-    for (const r of rows) {
-      const byAsset = groups.get(r.asset) ?? new Map<string, { t: number; quotes: Quote[] }>();
-      groups.set(r.asset, byAsset);
-      const snap = byAsset.get(r.snapshotId) ?? { t: r.observedAt.getTime(), quotes: [] };
-      snap.t = Math.min(snap.t, r.observedAt.getTime());
-      snap.quotes.push(r);
-      byAsset.set(r.snapshotId, snap);
-    }
+    const groups = snapshotPrices(await store.priceSeries(since(hours)));
     return {
       hours,
-      assets: [...groups].map(([asset, snaps]) => {
+      assets: [...groups].map(([asset, points]) => {
         const ref = MAINNET_ASSETS.find((a) => a.token === asset);
         return {
           asset,
@@ -143,9 +166,7 @@ export function registerSeries(
           maxDeviationBps: ref?.maxDeviationBps ?? null,
           // The multi-source price needs its sources within this (NEAR: 150 bps); else the asset's own limit.
           limitBps: ref?.quorum?.maxDeviationBps ?? ref?.maxDeviationBps ?? null,
-          points: [...snaps.values()]
-            .sort((a, b) => a.t - b.t)
-            .map((s) => ({ t: s.t, ...consensus(s.quotes) })),
+          points,
         };
       }),
     };

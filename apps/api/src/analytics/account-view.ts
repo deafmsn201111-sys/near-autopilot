@@ -102,7 +102,7 @@ import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
-import { consensus, range24hBps } from './series';
+import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
@@ -1271,14 +1271,9 @@ export function registerAccountView(
   const latestPrices = async () => {
     const snap = await store.latestSnapshot();
     if (!snap) return new Map<string, number>();
-    const obs = await store.pricesForSnapshot(snap.id);
-    const by = new Map<string, typeof obs>();
-    for (const o of obs) by.set(o.asset, [...(by.get(o.asset) ?? []), o]);
     const out = new Map<string, number>();
-    for (const [asset, list] of by) {
-      const c = consensus(list);
-      if (c.price !== null) out.set(asset, c.price);
-    }
+    for (const [asset, [point]] of snapshotPrices(await store.pricesForSnapshot(snap.id)))
+      if (typeof point?.price === 'number') out.set(asset, point.price);
     const summary = (snap.summary ?? {}) as {
       prices?: { token: string; usd: string; quality: string }[];
     };
@@ -2009,19 +2004,21 @@ export function registerAccountView(
     const [reference, lp, ranges] = await Promise.all([
       burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
       readLp(id, prices, decimalsOf),
-      Promise.all(
-        priced.map(async (t) => {
-          try {
-            return [t, range24hBps(await store.priceHistory(t, since))] as const;
-          } catch (err) {
-            log.warn({ err, token: t }, 'price history read failed: no 24 h range');
-            return [t, null] as const;
-          }
-        }),
-      ),
+      (async () => {
+        if (priced.length === 0) return new Map<string, SnapshotPrice[]>();
+        try {
+          return snapshotPrices(await store.priceSeries(since, priced));
+        } catch (err) {
+          log.warn({ err }, 'price history read failed: no 24 h range');
+          return new Map<string, SnapshotPrice[]>();
+        }
+      })(),
     ]);
     const volatility24hBps = new Map<TokenId, number>();
-    for (const [t, bps] of ranges) if (bps !== null) volatility24hBps.set(t, bps);
+    for (const t of priced) {
+      const bps = range24hBps(ranges.get(t) ?? []);
+      if (bps !== null) volatility24hBps.set(t, bps);
+    }
     return {
       now: clock.now(),
       accountId: id,
