@@ -430,3 +430,20 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   they complete), placeholders for the agents the model asked for (`asked` event, `onCalls` in the tool loop), a
   running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
   `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.
+
+## 2026-11-13 — Repay a loan with another collateral token (#69)
+
+- `packages/core/src/loan-math.ts`: `swapRepayPlan` sizes withdraw → swap → repay (wallet tokens first, then plain
+  Burrow supply, then collateral) to the preset's target HF without the HF after the withdraw going under
+  `SWAP_REPAY_FLOOR_HF` (1.15); reasons `floor`, `no_gain`, `nothing` when it cannot.
+- `apps/api/src/analytics/account-view.ts`: the account read picks the largest collateral token with an allowlisted
+  pool to the largest debt and quotes it once (only for a loan under the strictest safe line with no same-token
+  collateral); the loan card becomes `repay_with_collateral` with the HF after each step in its text and `plan`.
+- `apps/api/src/wallet/swap-repay.ts` + `POST /v1/wallet/prepare`: re-reads, re-quotes, refuses a withdrawal under the
+  floor, builds register? → withdraw → register? → swap → repay, "Transaction k of n" previews with the HF after each
+  step; `validateCascade` with the oracle, Burrow, Rhea and the two tokens.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns that card on the AI path, with the HF steps in
+  the trace. `apps/analytics`: the new intent in the zod schema, the prepare mapping and the button label.
+- `packages/rhea-adapter/src/planner.ts`: `buildRheaSwap`, the one instant-swap builder the planner, the prepare swap
+  and the swap-repay cascade share.
+- D25 in `docs/DECISIONS.md`.
