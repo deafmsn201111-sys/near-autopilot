@@ -482,6 +482,7 @@ export class CollectorStore {
 
   /** Price observations since `since` (of `assets` when given), slim columns only (charts, sparklines, ranges). */
   async priceSeries(since: Date, assets?: readonly string[]) {
+    if (assets?.length === 0) return [];
     return this.db
       .select({
         snapshotId: priceObservations.snapshotId,

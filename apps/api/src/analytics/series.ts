@@ -94,13 +94,15 @@ export function snapshotPrices(
 /** Same floors as the DefiLlama hourly range: under half a day of points is not a 24 h range. */
 const MIN_RANGE_SNAPSHOTS = 12;
 const MIN_RANGE_SPAN_MS = 12 * 60 * 60 * 1000;
-/** Each price is replaced by the median of itself and this many priced neighbours on each side. */
-const RANGE_MEDIAN_RADIUS = 2;
+/** Each price is replaced by the median of this many consecutive priced snapshots around it. */
+const RANGE_MEDIAN_WINDOW = 5;
 
 /**
  * High-low range (bps of the low) of one asset's per-snapshot consensus prices (the caller picks the 24 h window),
  * taken over a rolling median of five snapshots: one or two bad prints in a row drop out, a move that holds for three
- * snapshots (45 min at the collector's 15 min interval) counts. Null under 12 priced snapshots or a span under 12 h.
+ * snapshots (45 min at the collector's 15 min interval) counts. Counted in snapshots, not minutes, so collector gaps
+ * stretch it. ponytail: a crash in only the newest one or two snapshots waits for the third to show (up to 30 min).
+ * Null under 12 priced snapshots or a span under 12 h.
  */
 export function range24hBps(points: readonly Pick<SnapshotPrice, 't' | 'price'>[]): number | null {
   const priced = points.flatMap((p) => (p.price === null ? [] : [{ t: p.t, price: p.price }]));
@@ -108,9 +110,12 @@ export function range24hBps(points: readonly Pick<SnapshotPrice, 't' | 'price'>[
   const times = priced.map((p) => p.t);
   if (Math.max(...times) - Math.min(...times) < MIN_RANGE_SPAN_MS) return null;
   const prices = priced.map((p) => p.price);
-  const smooth = prices.map((_, i) =>
-    median(prices.slice(Math.max(0, i - RANGE_MEDIAN_RADIUS), i + RANGE_MEDIAN_RADIUS + 1)),
-  );
+  const half = Math.floor(RANGE_MEDIAN_WINDOW / 2);
+  const smooth = prices.map((_, i) => {
+    // The window slides inward at the ends so it always holds five points: two bad prints at an edge still drop out.
+    const start = Math.min(Math.max(0, i - half), prices.length - RANGE_MEDIAN_WINDOW);
+    return median(prices.slice(start, start + RANGE_MEDIAN_WINDOW));
+  });
   const lo = Math.min(...smooth);
   return Math.round(((Math.max(...smooth) - lo) * 10_000) / lo);
 }

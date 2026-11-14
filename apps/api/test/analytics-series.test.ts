@@ -72,6 +72,8 @@ describe('24h range from the collector prices', () => {
     expect(range24hBps(points([1, 1, 1, 1, 1, 9, 1, 1, 1, 1, 1, 1]))).toBe(0);
     expect(range24hBps(points([1, 1, 1, 1, 0.1, 0.1, 1, 1, 1, 1, 1, 1]))).toBe(0);
     expect(range24hBps(points([5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 5]))).toBe(0);
+    expect(range24hBps(points([9, 9, ...Array<number>(10).fill(1)]))).toBe(0);
+    expect(range24hBps(points([...Array<number>(10).fill(1), 9, 9]))).toBe(0);
   });
   it('still counts a sustained move of three snapshots, even at the end of the day', () => {
     expect(range24hBps(points([...Array<number>(9).fill(1), 1.3, 1.3, 1.3]))).toBe(3000);
