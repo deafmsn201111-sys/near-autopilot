@@ -188,8 +188,10 @@ export function holdingGroups(
         : rows.reduce((s, r) => s + (r.usd ?? 0), 0);
       return { key, label, rows, totalUsd };
     }).filter((g) => g.rows.length > 0),
-    unverified: all.filter((r) => !r.verified && !r.small),
-    small: all.filter((r) => r.small),
+    unverified: all
+      .filter((r) => !r.verified && !r.small)
+      .map((r) => ({ ...r, status: { label: 'Shown only' } })),
+    small: all.filter((r) => r.small).map((r) => ({ ...r, status: { label: 'Too small' } })),
   };
 }
 

@@ -76,7 +76,10 @@ describe('holdingGroups', () => {
     const symbols = groups.flatMap((g) => g.rows.map((r) => r.symbol));
     expect(symbols).not.toContain('SPAM');
     expect(symbols).not.toContain('DUST');
-    expect(unverified.map((r) => r.symbol)).toEqual(['SPAM']);
+    expect(unverified.map((r) => [r.symbol, r.status])).toEqual([
+      ['SPAM', { label: 'Shown only' }],
+    ]);
+    expect(small.map((r) => r.status)).toEqual([{ label: 'Too small' }]);
     expect(small.map((r) => r.symbol)).toEqual(['DUST']);
   });
 
