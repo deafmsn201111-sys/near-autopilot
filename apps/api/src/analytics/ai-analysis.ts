@@ -126,17 +126,55 @@ const CACHE_MAX = 200;
 const CACHE_TTL_MS = 10 * 60_000;
 const RUN_WINDOW_MS = 10 * 60_000;
 const MAX_RUNS_PER_WINDOW = 60;
+/** Covers a broken stream's JSON retry reaching the API (its wallet read included) to join the run. */
+const LEAVE_GRACE_MS = 5_000;
+
+type Watch = (signal?: AbortSignal) => void;
+
+/** A shared run stops once every caller has left and none joined within the grace; a caller with no signal never leaves. */
+function callersGone(graceMs: number) {
+  const stop = new AbortController();
+  const left: (() => void)[] = [];
+  let watching = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const watch: Watch = (signal) => {
+    clearTimeout(timer);
+    if (!signal) return void (watching = Infinity);
+    watching++;
+    const leave = () => {
+      if (--watching > 0) return;
+      if (graceMs > 0) timer = setTimeout(() => stop.abort(), graceMs);
+      else stop.abort();
+    };
+    left.push(() => signal.removeEventListener('abort', leave));
+    if (signal.aborted) leave();
+    else signal.addEventListener('abort', leave, { once: true });
+  };
+  const done = () => {
+    clearTimeout(timer);
+    left.forEach((off) => off());
+  };
+  return { signal: stop.signal, watch, done };
+}
 
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
 export interface AnalysisMemo {
   readonly results: BoundedMap<string, { readonly at: number; readonly analysis: Analysis }>;
+  readonly running: Map<string, { readonly result: Promise<Analysis>; readonly watch: Watch }>;
+  /** How long a run whose callers all left waits for a retry to join before it stops. */
+  readonly leaveGraceMs: number;
   /** Start times of the runs that reached the model in the last window. */
   readonly runs: number[];
   readonly maxRuns: number;
 }
 
-export const analysisMemo = (maxRuns = MAX_RUNS_PER_WINDOW): AnalysisMemo => ({
+export const analysisMemo = (
+  maxRuns = MAX_RUNS_PER_WINDOW,
+  leaveGraceMs = LEAVE_GRACE_MS,
+): AnalysisMemo => ({
   results: new BoundedMap(CACHE_MAX),
+  running: new Map(),
+  leaveGraceMs,
   runs: [],
   maxRuns,
 });
@@ -809,7 +847,44 @@ export async function analyseAccount(
   // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
   const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
   if (!enabled) return fallback('kill_switch');
+  // A retry while this account's run is still going (a broken stream's JSON fallback) waits for it: one click, one run.
+  const key = `${ctx.accountId}|${strategy}`;
+  const running = ai.memo.running.get(key);
+  if (running) {
+    running.watch(signal);
+    return running.result;
+  }
+  const callers = callersGone(ai.memo.leaveGraceMs);
+  callers.watch(signal);
+  const result = runModel(
+    ai,
+    ctx,
+    strategy,
+    fallback,
+    onError,
+    deadlineMs,
+    onEvent,
+    callers.signal,
+  );
+  ai.memo.running.set(key, { result, watch: callers.watch });
+  try {
+    return await result;
+  } finally {
+    ai.memo.running.delete(key);
+    callers.done();
+  }
+}
 
+async function runModel(
+  ai: ToolLlmDeps,
+  ctx: AnalysisContext,
+  strategy: StrategyId,
+  fallback: (code: FallbackCode) => Analysis,
+  onError: (e: unknown) => void,
+  deadlineMs: number,
+  onEvent: (e: AnalysisEvent) => void,
+  signal: AbortSignal,
+): Promise<Analysis> {
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };
   const worstCall = costMicroUsd(ai.model, {
@@ -838,14 +913,14 @@ export async function analyseAccount(
     };
     timer = setTimeout(() => stop('deadline', `no answer within ${deadlineMs} ms`), deadlineMs);
     leave = () => stop('cancelled', 'stopped by the caller');
-    if (signal?.aborted) leave();
-    signal?.addEventListener('abort', leave, { once: true });
+    if (signal.aborted) leave();
+    signal.addEventListener('abort', leave, { once: true });
   });
   deadline.catch(() => {});
   const stopped = () => abort.signal.reason as 'cancelled' | 'deadline';
   const settle = () => {
     clearTimeout(timer);
-    signal?.removeEventListener('abort', leave);
+    signal.removeEventListener('abort', leave);
   };
   const early = (out: Analysis) => (settle(), out);
 

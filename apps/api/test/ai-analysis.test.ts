@@ -1262,6 +1262,25 @@ describe('analyseAccount', () => {
       expect(l.rows).toHaveLength(1);
     });
 
+    it('a second request while the same run is in flight waits for it: one model run, one row', async () => {
+      let open!: () => void;
+      const gate = new Promise<void>((r) => (open = r));
+      const model = fake([async () => (await gate, callAll), () => final(pick)]);
+      const l = ledger();
+      const deps = ai(model.llm, l);
+      const input = { ...ctx, heuristics: [heuristic], checks: [heuristic] };
+      const first = analyseAccount(deps, input);
+      await vi.waitFor(() => expect(model.tools).toHaveLength(1));
+      const second = analyseAccount(deps, { ...input, observe: async () => later() });
+      open();
+      const [a, b] = await Promise.all([first, second]);
+      expect(a.source).toBe('llm');
+      expect(b).toEqual(a);
+      expect(model.tools).toHaveLength(1);
+      expect(l.rows).toHaveLength(1);
+      expect(deps.memo.runs).toHaveLength(1);
+    });
+
     it('runs the model again once the cached result is 10 minutes old', async () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       try {
@@ -1687,7 +1706,7 @@ describe('analyseAccount', () => {
         },
       };
       const out = await analyseAccount(
-        ai(llm, l),
+        { ...ai(llm, l), memo: analysisMemo(undefined, 0) },
         { ...ctx, heuristics: [heuristic], checks: [heuristic] },
         () => {},
         undefined,
@@ -1699,11 +1718,41 @@ describe('analyseAccount', () => {
       expect(l.rows).toMatchObject([{ outcome: 'cancelled' }]);
     });
 
+    it('keeps a run going when its caller leaves and a retry joins within the grace', async () => {
+      const first = new AbortController();
+      let answer!: (turn: LlmToolTurn) => void;
+      let inFlight: AbortSignal | undefined;
+      const llm: ToolLlm = {
+        open: (req) => {
+          inFlight = req.signal;
+          return { send: () => new Promise<LlmToolTurn>((resolve) => (answer = resolve)) };
+        },
+      };
+      const deps = { ...ai(llm), memo: analysisMemo(undefined, 50) };
+      const input = { ...ctx, heuristics: [heuristic], checks: [heuristic] };
+      const one = analyseAccount(deps, input, () => {}, undefined, undefined, first.signal);
+      await vi.waitFor(() => expect(inFlight).toBeDefined());
+      first.abort();
+      const two = analyseAccount(
+        deps,
+        input,
+        () => {},
+        undefined,
+        undefined,
+        new AbortController().signal,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(inFlight?.aborted).toBe(false);
+      answer(final([]));
+      expect((await two).fallback).toBe((await one).fallback);
+      expect((await two).fallback).not.toBe('cancelled');
+    });
+
     it('calls no model for a run aborted before it starts', async () => {
       const l = ledger();
       const model = fake([() => final([])]);
       const out = await analyseAccount(
-        ai(model.llm, l),
+        { ...ai(model.llm, l), memo: analysisMemo(undefined, 0) },
         { ...ctx, heuristics: [heuristic], checks: [heuristic] },
         () => {},
         undefined,

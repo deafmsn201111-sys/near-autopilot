@@ -222,13 +222,25 @@ describe('runAnalysis as a stream', () => {
 
   it('asks for the plain JSON reply when the stream breaks before done', async () => {
     const fetch = serve(
-      stream(
-        frame('read', { model: 'm', tokens: 1, loan: false }) + frame('error', { error: 'x' }),
-      ),
+      stream(frame('read', { model: 'm', tokens: 1, loan: false })),
       new Response(JSON.stringify(done), { status: 200 }),
     );
     const r = await runAnalysis('alice.near', 'balanced');
     expect(r).toMatchObject({ ok: true, analysis: { source: 'llm' } });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an error frame instead of running the same failing pipeline again', async () => {
+    const fetch = serve(
+      stream(
+        frame('read', { model: 'm', tokens: 1, loan: false }) +
+          frame('error', { error: 'analysis failed' }),
+      ),
+    );
+    const seen: unknown[] = [];
+    const r = await runAnalysis('alice.near', 'balanced', (p) => seen.push(p));
+    expect(r).toEqual({ ok: false, error: 'analysis failed' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(seen.at(-1)).toBeNull();
   });
 });

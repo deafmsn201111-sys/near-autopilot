@@ -22,8 +22,8 @@ A powerful **real-time DeFi analyzer** with an **AI agent layer** that reads the
 | Concentrated liquidity (add / append / remove, limit orders) | Rhea DCL          | ✅ built (`rhea-dcl-adapter/messages.ts`)                         |
 | Storage registration                                         | ft / Burrow / DCL | ✅ built (`storage_deposit`, `buildDclStorageDeposit`)            |
 | Wrap NEAR                                                    | wrap.near         | ✅ built (`near_deposit`)                                         |
-| **Borrow**                                                   | Burrow            | ✅ built (`buildBorrow`, priced `oracle_call`) — live-verified    |
-| **Withdraw**                                                 | Burrow            | ✅ built (`buildWithdraw`, priced `oracle_call`) — live-verified  |
+| **Borrow**                                                   | Burrow            | ✅ built (`buildBorrow`, priced `execute_with_pyth`, D29)         |
+| **Withdraw**                                                 | Burrow            | ✅ built (`buildWithdraw`, priced `execute_with_pyth`, D29)       |
 | **v1 pool add liquidity** (50/50)                            | Rhea v1           | ✅ built (`buildV1AddLiquidity` + `resolveBalancedLpAmounts`)     |
 | **Unwrap NEAR** (`near_withdraw`)                            | wrap.near         | ✅ built (`buildUnwrapNear`)                                      |
 | **DCL reposition** (exit out-of-range → wallet)              | Rhea DCL          | ✅ built (`buildRemoveLiquidity` + `buildWithdrawAssets`)         |
@@ -47,7 +47,7 @@ So most assembly already exists; the engine's job is to (a) unify builders behin
 **Phase 4 — Transaction engine (one-click, user-signed) — core, max safety.** _(backend done; see "Phase 4 status" above)_
 
 - ✅ All builders behind the `prepare` endpoint's `Intent → PlannedTransaction[]` assembler.
-- ✅ Gaps filled: Burrow **borrow** + **withdraw** (oracle_call priced flow), Rhea **v1 add liquidity** (50/50, floored, ratio-matched), **unwrap**, **reposition_dcl** (safe exit).
+- ✅ Gaps filled: Burrow **borrow** + **withdraw** (priced via `execute_with_pyth`, D29), Rhea **v1 add liquidity** (50/50, floored, ratio-matched), **unwrap**, **reposition_dcl** (safe exit).
 - ✅ Independent `validateCascade` safety gate on every assembled cascade; every builder covered by tests; each intent live-verified on mainnet. No server key, no autonomy.
 - ⬜ Client: one click → wallet signs the cascade (HOT Connector); a **clear pre-sign preview** of exactly what will be signed; on-chain verification after. _(lands with Phase 5 UI.)_
 

@@ -2186,7 +2186,7 @@ export function registerAccountView(
           }),
           // unwrap: wNEAR -> native NEAR.
           z.object({ action: z.literal('unwrap'), approxUsd: usd }),
-          // Burrow borrow / withdraw / repay from collateral — priced through the oracle.
+          // Burrow borrow / withdraw / repay from collateral — priced by Burrow (execute_with_pyth).
           z.object({ action: z.literal('borrow'), token: accountIdSchema, approxUsd: usd }),
           z.object({
             action: z.literal('withdraw'),
@@ -2635,14 +2635,6 @@ export function registerAccountView(
           storageMin(intent.collateralToken),
           storageMin(intent.token),
         ]);
-        const assetIds = [
-          ...new Set<string>([
-            intent.collateralToken,
-            intent.token,
-            ...acct.collateral.map((b) => b.tokenId),
-            ...acct.borrowed.map((b) => b.tokenId),
-          ]),
-        ];
         const now = clock.now();
         const prepared = await prepareSwapRepay({
           account,
@@ -2684,7 +2676,6 @@ export function registerAccountView(
               now,
               rawAmount,
               fromCollateralRaw,
-              assetIds,
             }),
           repayTx: (rawAmount) => buildRepay({ deployment, token: vDebt, now, rawAmount }),
         });
@@ -2708,7 +2699,6 @@ export function registerAccountView(
           {
             signerId: account,
             allowedReceivers: new Set<string>([
-              deployment.oracleId,
               deps.burrowId,
               deps.rheaId,
               intent.collateralToken,
@@ -2735,8 +2725,8 @@ export function registerAccountView(
       }
     }
 
-    // borrow / withdraw / repay from collateral — priced Burrow actions routed through the verified oracle
-    // (oracle_call). No wallet balance is needed (you borrow what you do not hold; you withdraw or repay from what
+    // borrow / withdraw / repay from collateral — priced Burrow actions (execute_with_pyth: Burrow fetches its own
+    // prices). No wallet balance is needed (you borrow what you do not hold; you withdraw or repay from what
     // Burrow holds). Burrow re-checks, at fresh prices, that collateral still covers debt, or the call reverts on-chain.
     if (
       intent.action === 'borrow' ||
@@ -2759,14 +2749,6 @@ export function registerAccountView(
         if (!acct) return reply.code(409).send({ error: `${account} has no Burrow account` });
         if (intent.action === 'borrow' && acct.collateral.length === 0)
           return reply.code(409).send({ error: 'you have no Burrow collateral to borrow against' });
-        // The oracle must price every asset Burrow values for this account, plus the action token.
-        const assetIds = [
-          ...new Set<string>([
-            intent.token,
-            ...acct.collateral.map((b) => b.tokenId),
-            ...acct.borrowed.map((b) => b.tokenId),
-          ]),
-        ];
         if (
           intent.action === 'repay_from_collateral' &&
           !acct.borrowed.some((b) => b.tokenId === intent.token)
@@ -2802,7 +2784,7 @@ export function registerAccountView(
         const humanAmount = Number(rawAmount) / 10 ** decimals;
         const human = humanAmount.toFixed(Math.min(6, decimals));
 
-        const common = { deployment, token: verifiedToken, now: clock.now(), rawAmount, assetIds };
+        const common = { deployment, token: verifiedToken, now: clock.now(), rawAmount };
         const steps: CascadeStep[] =
           intent.action === 'borrow'
             ? [
@@ -2836,7 +2818,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
-            allowedReceivers: new Set<string>([deployment.oracleId]),
+            allowedReceivers: new Set<string>([deps.burrowId]),
           },
           {
             amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },

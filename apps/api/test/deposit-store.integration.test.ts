@@ -86,6 +86,21 @@ describe.skipIf(!adminUrl)('DrizzleDepositQuoteStore (PostgreSQL)', () => {
     await expect(store.save({ ...quote('dq_2', NOW), amountIn: '1.5' })).rejects.toThrow();
   });
 
+  it('reads quotes since a time, newest first, with the latest status', async () => {
+    const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
+    await store.save(quote('before', new Date(NOW.getTime() - 7 * DAY)));
+    await store.save(quote('older', new Date(NOW.getTime() - DAY)));
+    await store.save(quote('newer', NOW));
+    await store.saveStatus('newer', 'SUCCESS', NOW);
+    const rows = await store.recent(new Date(NOW.getTime() - 2 * DAY));
+    expect(rows.map((r) => r.id)).toEqual(['newer', 'older']);
+    expect(rows[0]).toMatchObject({
+      status: 'SUCCESS',
+      statusAt: NOW,
+      refundTo: quote('x', NOW).refundTo,
+    });
+  });
+
   it('purges quotes older than 30 days only', async () => {
     const store = new DrizzleDepositQuoteStore(handle.db, () => NOW);
     await store.save(quote('old', new Date(NOW.getTime() - 30 * DAY - 1)));

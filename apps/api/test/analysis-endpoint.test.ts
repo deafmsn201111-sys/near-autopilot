@@ -156,7 +156,7 @@ function server(
           remainingTodayMicro: async () => 10n ** 9n,
           record: async () => {},
         },
-        memo: analysisMemo(),
+        memo: analysisMemo(undefined, 0),
       },
     } as never,
   });
@@ -666,17 +666,16 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
       readonly receiverId: string;
       readonly actions: readonly {
         readonly methodName: string;
-        readonly args: { readonly receiver_id?: string; readonly msg?: string };
+        readonly args: { readonly actions?: unknown };
       }[];
     }[];
   }
   const executed = (body: Prepared) => {
     expect(body.transactions).toHaveLength(1);
     const tx = body.transactions[0]!;
-    expect(tx.receiverId).toBe(ORACLE);
-    expect(tx.actions[0]?.methodName).toBe('oracle_call');
-    expect(tx.actions[0]?.args.receiver_id).toBe(BURROW);
-    return JSON.parse(tx.actions[0]?.args.msg ?? '{}') as unknown;
+    expect(tx.receiverId).toBe(BURROW);
+    expect(tx.actions[0]?.methodName).toBe('execute_with_pyth');
+    return tx.actions[0]?.args;
   };
 
   it('repays from collateral with an empty wallet: plain supply first, the rest released from collateral', async () => {
@@ -690,12 +689,10 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     const body = res.json<Prepared>();
     expect(body.amount.raw).toBe('17170000');
     expect(executed(body)).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
-          { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
-        ],
-      },
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: inner(15_170_000n) } },
+        { Repay: { token_id: USDT, max_amount: inner(17_170_000n) } },
+      ],
     });
   });
 
@@ -731,12 +728,10 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
     const body = res.json<Prepared>();
     expect(body.amount.raw).toBe('55870000');
     expect(executed(body)).toEqual({
-      Execute: {
-        actions: [
-          { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
-          { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
-        ],
-      },
+      actions: [
+        { DecreaseCollateral: { token_id: USDT, max_amount: inner(53_870_000n) } },
+        { Withdraw: { token_id: USDT, max_amount: inner(55_870_000n) } },
+      ],
     });
   });
 });

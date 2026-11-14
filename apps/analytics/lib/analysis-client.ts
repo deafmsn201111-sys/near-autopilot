@@ -160,7 +160,7 @@ const eventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('agent'), step: traceStepSchema }),
   z.object({ type: z.literal('ranked'), turns: z.number() }),
   z.object({ type: z.literal('checked'), checks: checksSchema }),
-  z.object({ type: z.literal('error') }),
+  z.object({ type: z.literal('error'), error: z.string().max(200).catch('analysis failed') }),
   analysisSchema.extend({ type: z.literal('done') }),
 ]);
 type LiveEvent = z.infer<typeof eventSchema>;
@@ -209,7 +209,7 @@ function applyEvent(p: Pipeline, e: LiveEvent): Pipeline {
 async function readStream(
   res: Response,
   onProgress: (p: Pipeline | null) => void,
-): Promise<Analysis | null> {
+): Promise<Analysis | { error: string } | null> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let live: Pipeline = {
     model: null,
@@ -230,7 +230,7 @@ async function readStream(
       for (const frame of frames) {
         const event = parseFrame(frame);
         if (!event) continue;
-        if (event.type === 'error') return null;
+        if (event.type === 'error') return { error: event.error };
         if (event.type === 'done') {
           const { type: _, ...analysis } = event;
           return analysis;
@@ -246,7 +246,10 @@ async function readStream(
   }
 }
 
-/** Streams the run when it can; a stream that breaks falls back to the plain JSON reply. */
+/**
+ * Streams the run when it can; a stream that breaks falls back to the plain JSON reply, which the API answers from the
+ * same run. An `error` frame is the run's answer, so it is shown, not retried.
+ */
 export async function runAnalysis(
   account: string,
   strategy: StrategyId,
@@ -262,9 +265,10 @@ export async function runAnalysis(
   try {
     res = await post('text/event-stream');
     if (res.ok && res.body && res.headers.get('content-type')?.startsWith('text/event-stream')) {
-      const analysis = await readStream(res, onProgress);
-      if (analysis) return { ok: true, analysis };
+      const out = await readStream(res, onProgress);
+      if (out && !('error' in out)) return { ok: true, analysis: out };
       onProgress(null);
+      if (out) return { ok: false, error: out.error };
       res = await post('application/json');
     }
   } catch {
