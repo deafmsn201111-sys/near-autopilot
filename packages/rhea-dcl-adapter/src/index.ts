@@ -5,3 +5,4 @@ export * from './client';
 export * from './messages';
 export * from './positions';
 export * from './wasm-exports';
+export * from './recentre';

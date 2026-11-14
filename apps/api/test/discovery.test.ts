@@ -19,6 +19,7 @@ const fake = (routes: Record<string, () => Response>) => {
 const FULL = 'https://api.fastnear.com/v1/account/npro-validator.near/full';
 const POOLS = 'https://api.ref.finance/liquidity-pools/npro-validator.near';
 const PRICES = 'https://indexer.ref.finance/list-token-price';
+const DCL_LIST = 'https://indexer.ref.finance/list-pools?type=dcl&sort=tvl&limit=100&offset=0';
 
 describe('httpDiscovery', () => {
   it('reads tokens and staking pools of the account from FastNEAR', async () => {
@@ -83,6 +84,35 @@ describe('httpDiscovery', () => {
     now = 6 * 60_000;
     await d.prices();
     expect(calls.filter((c) => c === PRICES)).toHaveLength(2);
+  });
+
+  it('reads the 24 h volume of DCL pools and drops malformed rows', async () => {
+    const { fetchImpl } = fake({
+      [DCL_LIST]: () =>
+        json({
+          code: 0,
+          data: {
+            list: [
+              { id: 'usdc.near|wrap.near|100', volume_24h: '1670037.32', tvl: '634121' },
+              { id: 'a.near|wrap.near|2000', volume_24h: '0' },
+              { id: 'bad.near|wrap.near|100', volume_24h: '-5' },
+              { id: 'huge.near|wrap.near|100', volume_24h: '1e99' },
+            ],
+          },
+        }),
+    });
+    const volumes = await httpDiscovery(fetchImpl).dclVolumes24hUsd();
+    expect(volumes).toEqual(
+      new Map([
+        ['usdc.near|wrap.near|100', 1670037.32],
+        ['a.near|wrap.near|2000', 0],
+      ]),
+    );
+  });
+
+  it('answers null when the indexer reports an error', async () => {
+    const { fetchImpl } = fake({ [DCL_LIST]: () => json({ code: -400, message: 'bad' }) });
+    expect(await httpDiscovery(fetchImpl).dclVolumes24hUsd()).toBeNull();
   });
 });
 

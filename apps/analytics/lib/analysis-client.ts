@@ -50,6 +50,13 @@ const intentSchema = z.discriminatedUnion('action', [
       transactions: z.number().int(),
     }),
   }),
+  z.object({
+    action: z.literal('recentre_dcl'),
+    lptId: z.string(),
+    poolId: z.string(),
+    leftPoint: z.number().int(),
+    rightPoint: z.number().int(),
+  }),
 ]);
 
 const traceStepSchema = z.object({

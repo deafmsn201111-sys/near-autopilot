@@ -15,6 +15,8 @@ export interface AccountDiscovery {
   v1PoolIds(id: string): Promise<number[] | null>;
   /** USD per whole token, an estimate from Rhea's pools; never used to size or allow an action. */
   prices(): Promise<ReadonlyMap<string, number> | null>;
+  /** USD traded in the last 24 h per DCL pool id, Rhea's indexer; an estimate the LP Optimizer may size advice with. */
+  dclVolumes24hUsd(): Promise<ReadonlyMap<string, number> | null>;
 }
 
 export const MAX_DISCOVERED = { tokens: 200, stakingPools: 5, v1Pools: 20 } as const;
@@ -31,6 +33,16 @@ const tokenSchema = z.object({ contract_id: accountIdSchema, balance: u128 });
 const stakingSchema = z.object({ pool_id: accountIdSchema });
 const v1PoolSchema = z.object({ id: z.string().regex(/^\d{1,9}$/) });
 const priceSchema = z.object({ price: z.string().regex(/^\d{1,20}(\.\d+)?$/) });
+const dclListSchema = z.object({
+  code: z.literal(0),
+  data: z.object({ list: z.array(z.unknown()) }),
+});
+const dclVolumeSchema = z.object({
+  id: z.string().min(1).max(200),
+  volume_24h: z.string().regex(/^\d{1,15}(\.\d+)?$/),
+});
+/** The busiest DCL pools by TVL; an allowlisted pool outside them reads as "no volume data". */
+const DCL_LIST_URL = 'https://indexer.ref.finance/list-pools?type=dcl&sort=tvl&limit=100&offset=0';
 
 const valid = <T>(schema: z.ZodType<T>, items: readonly unknown[]) =>
   items.flatMap((x) => {
@@ -49,7 +61,18 @@ export function httpDiscovery(fetchImpl: typeof fetch = fetch, now = Date.now): 
       return null;
     }
   };
-  let priceCache: { at: number; value: Promise<ReadonlyMap<string, number> | null> } | null = null;
+  type Cache = { at: number; value: Promise<ReadonlyMap<string, number> | null> } | null;
+  const cached = (slot: { c: Cache }, load: () => Promise<ReadonlyMap<string, number> | null>) => {
+    if (slot.c && now() - slot.c.at < PRICES_TTL_MS) return slot.c.value;
+    const value = load();
+    slot.c = { at: now(), value };
+    void value.then((v) => {
+      if (v === null && slot.c?.value === value) slot.c = null;
+    });
+    return value;
+  };
+  const priceSlot = { c: null as Cache };
+  const volumeSlot = { c: null as Cache };
 
   return {
     async account(id) {
@@ -77,24 +100,31 @@ export function httpDiscovery(fetchImpl: typeof fetch = fetch, now = Date.now): 
         .slice(0, MAX_DISCOVERED.v1Pools);
     },
     prices() {
-      if (priceCache && now() - priceCache.at < PRICES_TTL_MS) return priceCache.value;
-      const value = get('https://indexer.ref.finance/list-token-price').then((raw) => {
-        const body = z.record(z.unknown()).safeParse(raw);
-        if (!body.success) return null;
-        const out = new Map<string, number>();
-        for (const [token, entry] of Object.entries(body.data)) {
-          const p = priceSchema.safeParse(entry);
-          const usd = p.success ? Number(p.data.price) : 0;
-          if (accountIdSchema.safeParse(token).success && Number.isFinite(usd) && usd > 0)
-            out.set(token, usd);
-        }
-        return out;
-      });
-      priceCache = { at: now(), value };
-      void value.then((v) => {
-        if (v === null && priceCache?.value === value) priceCache = null;
-      });
-      return value;
+      return cached(priceSlot, () =>
+        get('https://indexer.ref.finance/list-token-price').then((raw) => {
+          const body = z.record(z.unknown()).safeParse(raw);
+          if (!body.success) return null;
+          const out = new Map<string, number>();
+          for (const [token, entry] of Object.entries(body.data)) {
+            const p = priceSchema.safeParse(entry);
+            const usd = p.success ? Number(p.data.price) : 0;
+            if (accountIdSchema.safeParse(token).success && Number.isFinite(usd) && usd > 0)
+              out.set(token, usd);
+          }
+          return out;
+        }),
+      );
+    },
+    dclVolumes24hUsd() {
+      return cached(volumeSlot, () =>
+        get(DCL_LIST_URL).then((raw) => {
+          const body = dclListSchema.safeParse(raw);
+          if (!body.success) return null;
+          return new Map(
+            valid(dclVolumeSchema, body.data.data.list).map((p) => [p.id, Number(p.volume_24h)]),
+          );
+        }),
+      );
     },
   };
 }

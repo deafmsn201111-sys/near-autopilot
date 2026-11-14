@@ -48,11 +48,7 @@ import {
   NearTokenReader,
   type NearRpcClient,
 } from '@near-autopilot/near-adapter';
-import {
-  assessRisk,
-  orchestratorConfigSchema,
-  type AgentObservation,
-} from '@near-autopilot/orchestrator';
+import { assessRisk, orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
@@ -82,9 +78,16 @@ import {
   buildRemoveLiquidity,
   buildWithdrawAssets,
   parsePoolId,
+  type DclMarketDepth,
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
+import {
+  RecentreRefused,
+  lpObservation,
+  recentreSteps,
+  type WalletObservation,
+} from './lp-recentre';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
@@ -108,6 +111,8 @@ export interface MainnetReadDeps {
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
   /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
   readonly dclId?: AccountId | null;
+  /** Reviewed DCL pools (config `rhea.dclPools`): the only pools a re-centre may add liquidity to. */
+  readonly dclPools?: readonly string[];
   /** Indexers that find what the account holds outside the allowlists. Null or absent: only the allowlists are read. */
   readonly discovery?: AccountDiscovery | null;
   /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
@@ -537,7 +542,14 @@ export type RecommendationIntent =
       readonly sizing?: RepaySizing;
     }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
-  | SwapRepayIntent;
+  | SwapRepayIntent
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly poolId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
+    };
 
 /**
  * Repay a debt with another collateral token: withdraw it from Burrow (only what the wallet lacks), swap it on Rhea,
@@ -772,8 +784,8 @@ export function portfolioAdvice(
       kind: 'reposition_dcl_position',
       agent: 'Liquidity Optimizer',
       severity: 'info',
-      title: `Your ${oor.pair} liquidity is out of range`,
-      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. Repositioning it around the current price puts it back to work.`,
+      title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
@@ -1831,11 +1843,52 @@ export function registerAccountView(
    * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
    * recent price). The context is as old as the collector snapshot it was priced from.
    */
+  const dclAllowed = new Set(deps.dclPools ?? []);
+  /** The wallet's DCL positions as the LP Optimizer sees them; empty when DCL or the allowlist is off. */
+  const readLp = async (
+    id: AccountId,
+    prices: ReadonlyMap<string, number>,
+    decimals: (t: string) => number | undefined,
+  ) => {
+    if (!dcl || dclAllowed.size === 0) return null;
+    const positions = await dcl.listPositions(id).catch(() => []);
+    const poolIds = [...new Set(positions.map((p) => p.pool_id))].filter((p) => dclAllowed.has(p));
+    if (poolIds.length === 0) return null;
+    const [volumesUsd, reads] = await Promise.all([
+      deps.discovery?.dclVolumes24hUsd() ?? null,
+      Promise.all(
+        poolIds.map(async (pid) => {
+          const [pool, depth] = await Promise.all([
+            dcl.getPool(pid).catch(() => null),
+            dcl.getMarketDepth(pid).catch(() => null),
+          ]);
+          return { pid, pool, depth };
+        }),
+      ),
+    ]);
+    const pools = new Map<string, DclPool>();
+    const depths = new Map<string, DclMarketDepth>();
+    for (const r of reads) {
+      if (r.pool) pools.set(r.pid, r.pool);
+      if (r.depth) depths.set(r.pid, r.depth);
+    }
+    return lpObservation({
+      positions,
+      pools,
+      depths,
+      allowedPools: dclAllowed,
+      volumesUsd,
+      priceUsd: (t) => prices.get(t),
+      decimals,
+      label: modelTokenLabel,
+    });
+  };
+
   const observe = async (
     id: AccountId,
     held: readonly TokenId[],
     strategy: StrategyId,
-  ): Promise<AgentObservation> => {
+  ): Promise<WalletObservation> => {
     const [markets, meta, prices, collected] = await Promise.all([
       store.markets(),
       store.tokenMetadata(),
@@ -1883,9 +1936,10 @@ export function registerAccountView(
       const apr = m?.status === 'OK' ? parseDecimal(m.netSupplyApr ?? m.supplyApr ?? '') : null;
       if (apr && apr.mantissa > 0n) estimatedYieldWad.set(token, toWad(apr));
     }
-    const reference = await burrowOracle
-      .getPrices(priced)
-      .catch(() => ({ prices: new Map<TokenId, UnitPrice>() }));
+    const [reference, lp] = await Promise.all([
+      burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
+      readLp(id, prices, decimalsOf),
+    ]);
     return {
       now: clock.now(),
       accountId: id,
@@ -1895,10 +1949,12 @@ export function registerAccountView(
         estimatedYieldWad,
         referencePrices: reference.prices,
         volatility24hBps: new Map(),
-        lpPositions: [],
+        lpPositions: lp?.views ?? [],
+        ...(lp && lp.notes.length > 0 && { notes: { lp: lp.notes.join('; ') } }),
       },
       risk: assessRisk(snapshot, config),
       config,
+      ...(lp && { lp: lp.meta }),
     };
   };
 
@@ -2005,6 +2061,14 @@ export function registerAccountView(
           z.object({
             action: z.literal('reposition_dcl'),
             lptId: z.string().min(1),
+            maxSlippageBps: slip,
+          }),
+          // recentre_dcl: move a DCL position to a new range around the price (remove -> swap? -> add).
+          z.object({
+            action: z.literal('recentre_dcl'),
+            lptId: z.string().min(1).max(300),
+            leftPoint: z.number().int(),
+            rightPoint: z.number().int(),
             maxSlippageBps: slip,
           }),
           // unwrap: wNEAR -> native NEAR.
@@ -2268,6 +2332,87 @@ export function registerAccountView(
           note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
         };
       } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
+
+    // recentre_dcl — the LP Optimizer found a range around the current price whose extra fees repay the move. The
+    // position and pool are read fresh; the range must still hold the price, and the pool must be allowlisted.
+    if (intent.action === 'recentre_dcl') {
+      const dclId = deps.dclId;
+      if (!dcl || !dclId) return reply.code(409).send({ error: 'DCL is not configured' });
+      try {
+        const pos = (await dcl.listPositions(account)).find((p) => p.lpt_id === intent.lptId);
+        if (!pos)
+          return reply
+            .code(409)
+            .send({ error: `${account} does not own DCL position ${intent.lptId}` });
+        if (!dclAllowed.has(pos.pool_id))
+          return reply.code(409).send({ error: `pool ${pos.pool_id} is not allowlisted` });
+        if ((pos.v_liquidity ?? 0n) > 0n)
+          return reply.code(409).send({
+            error: `position ${intent.lptId} is staked in a farm; unstake it there before re-centring`,
+          });
+        if (pos.amount <= 0n)
+          return reply.code(409).send({ error: `position ${intent.lptId} is already empty` });
+        const pool = await dcl.getPool(pos.pool_id);
+        if (!pool) return reply.code(409).send({ error: `pool ${pos.pool_id} not found` });
+        const tokenX = accountIdSchema.parse(pool.token_x);
+        const tokenY = accountIdSchema.parse(pool.token_y);
+        // The withdraw and the swap pay out to the wallet: an unregistered token would stop the cascade halfway.
+        const registered = await Promise.all(
+          [tokenX, tokenY].map((t) => tokens.isStorageRegistered(t, account)),
+        );
+        if (registered.includes(false))
+          return reply.code(409).send({
+            error: `register ${account} with both pool tokens before re-centring`,
+          });
+        const built = await recentreSteps({
+          dcl: dclId,
+          position: pos,
+          pool,
+          leftPoint: intent.leftPoint,
+          rightPoint: intent.rightPoint,
+          maxSlippageBps: intent.maxSlippageBps,
+          tokenX,
+          tokenY,
+          symbolX: modelTokenLabel(tokenX),
+          symbolY: modelTokenLabel(tokenY),
+          quote: async (inputToken, outputToken, inputAmount) =>
+            (await dcl.quote({ poolIds: [pos.pool_id], inputToken, outputToken, inputAmount }))
+              .amount,
+        });
+        const cascade = assembleCascade(account, built.steps);
+        const check = validateCascade(cascade.transactions, {
+          signerId: account,
+          allowedReceivers: new Set<string>([dclId, tokenX, tokenY]),
+          dcl: { contract: dclId, pools: dclAllowed },
+        });
+        if (!check.ok)
+          return reply
+            .code(422)
+            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
+        return {
+          account,
+          intent,
+          position: { lptId: pos.lpt_id, poolId: pos.pool_id },
+          range: { leftPoint: intent.leftPoint, rightPoint: intent.rightPoint },
+          transactions: cascade.transactions.map((t) => ({
+            intentId: t.intentId,
+            receiverId: t.receiverId,
+            actions: t.actions.map((a) => ({
+              methodName: a.methodName,
+              args: a.args,
+              gas: a.gas.toString(),
+              deposit: a.deposit.toString(),
+            })),
+          })),
+          preview: cascade.preview,
+          signed: false,
+          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+        };
+      } catch (e) {
+        if (e instanceof RecentreRefused) return reply.code(409).send({ error: e.message });
         return prepareFailure(req, reply, e);
       }
     }
