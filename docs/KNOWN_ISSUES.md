@@ -35,6 +35,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
 - **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
   usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.
+- **SHIELD scope names are inferred.** Chain ids are assumed to be 1Click's `blockchain` codes (`eth`, `sol`, …) and
+  bridges `poa`/`hot`; SHIELD's docs name neither. Unknown values show no warning. Check against a real incident. → #129.
 
 ## Watch list (external)
 

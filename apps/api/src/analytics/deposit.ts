@@ -71,7 +71,8 @@ const CHAIN_NAMES: Record<DepositChain, string> = {
   sol: 'Solana',
   btc: 'Bitcoin',
 };
-const BRIDGE_NAMES: Record<string, string> = { poa: 'the PoA bridge', hot: 'the HOT bridge' };
+const BRIDGE_NAMES: Record<string, string> = { poa: 'The PoA bridge', hot: 'The HOT bridge' };
+const MAX_INCIDENTS = 5;
 const POPULAR = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
 const SLIPPAGE_BPS = 100;
 const NOT_VERIFIED =
@@ -200,18 +201,16 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     destination: z.string().min(1).max(200),
   });
 
-  const ownCopy = (i: ShieldIncident, tokens: readonly OneClickToken[]) => {
+  const ownCopy = (i: ShieldIncident, route: readonly OneClickToken[]) => {
     const what =
       i.scopeType === 'chain'
         ? i.scopeValue === 'near'
           ? 'NEAR'
-          : isDepositChain(i.scopeValue)
-            ? CHAIN_NAMES[i.scopeValue]
-            : 'a network on this route'
+          : (CHAIN_NAMES[i.scopeValue as DepositChain] ?? i.scopeValue)
         : i.scopeType === 'bridge'
-          ? (BRIDGE_NAMES[i.scopeValue] ?? 'a bridge on this route')
-          : (tokens.find((t) => t.assetId === i.scopeValue)?.symbol ?? 'a token on this route');
-    return `1Click reports a problem with ${what}. Your deposit may take longer than usual.`;
+          ? (BRIDGE_NAMES[i.scopeValue] ?? i.scopeValue)
+          : (route.find((t) => t.assetId.toLowerCase() === i.scopeValue)?.symbol ?? i.scopeValue);
+    return `${what} is affected, so your deposit may take longer than usual.`;
   };
 
   // Display only: anything that goes wrong here means no warning, never a broken dialog.
@@ -227,9 +226,11 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       const destination = tokens.find((t) => t.assetId === q.data.destination);
       if (!origin || !destination) return { incidents: [] };
       const messages = incidentsFor(incidents, { origin, destination }).map(
-        (i) => i.text ?? ownCopy(i, tokens),
+        (i) => i.text ?? ownCopy(i, [origin, destination]),
       );
-      return { incidents: [...new Set(messages)].map((message) => ({ message })) };
+      return {
+        incidents: [...new Set(messages)].slice(0, MAX_INCIDENTS).map((message) => ({ message })),
+      };
     } catch (err) {
       req.log.warn({ err }, 'deposit incidents unavailable');
       return { incidents: [] };

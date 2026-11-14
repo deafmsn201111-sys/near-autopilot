@@ -253,15 +253,22 @@ describe('GET /v1/deposit/incidents', () => {
       incidents: [
         { message: 'ETH deposits are delayed' },
         {
-          message:
-            '1Click reports a problem with Ethereum. Your deposit may take longer than usual.',
+          message: 'Ethereum is affected, so your deposit may take longer than usual.',
         },
         {
-          message:
-            '1Click reports a problem with the PoA bridge. Your deposit may take longer than usual.',
+          message: 'The PoA bridge is affected, so your deposit may take longer than usual.',
         },
       ],
     });
+  });
+
+  it('sends at most five warnings, so a wide outage still shows some', async () => {
+    const many = Array.from({ length: 30 }, (_, n) => incident({ text: `Incident ${n}` }));
+    const res = await get(
+      setup({ shield: { incidents: async () => many } }).app,
+      'nep141:eth.omft.near',
+    );
+    expect(res.json<{ incidents: unknown[] }>().incidents).toHaveLength(5);
   });
 
   it('answers with no incident when SHIELD is off, the route is unknown, or the token list fails', async () => {

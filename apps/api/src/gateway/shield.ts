@@ -21,7 +21,8 @@ export interface ShieldIncident {
 const plainText = (s: string) => {
   // eslint-disable-next-line no-control-regex
   const t = s.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, ' ').trim();
-  return t.length > MAX_TEXT ? `${t.slice(0, MAX_TEXT - 1)}…` : t || null;
+  const chars = Array.from(t);
+  return chars.length > MAX_TEXT ? `${chars.slice(0, MAX_TEXT - 1).join('')}…` : t || null;
 };
 
 const incident = z.object({
@@ -74,7 +75,7 @@ export class ShieldClient {
       return [
         {
           scopeType,
-          scopeValue: scopeType === 'token' ? scopeValue : scopeValue.toLowerCase(),
+          scopeValue: scopeValue.toLowerCase(),
           direction: direction?.toLowerCase() || null,
           text: plainText(publicDescription ?? ''),
         },
@@ -100,7 +101,7 @@ const touches = (i: ShieldIncident, t: RouteAsset) =>
   i.scopeType === 'chain'
     ? i.scopeValue === t.blockchain
     : i.scopeType === 'token'
-      ? i.scopeValue === t.assetId
+      ? i.scopeValue === t.assetId.toLowerCase()
       : i.scopeValue === bridgeOf(t.assetId);
 
 /** The incidents on this route: deposits into 1Click on the sending side, withdrawals to NEAR on the receiving side. */

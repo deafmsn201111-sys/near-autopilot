@@ -54,7 +54,7 @@ describe('ShieldClient', () => {
       feed(
         { scopeType: 'chain', scopeValue: 'eth', direction: 'deposit', publicDescription: 'Slow' },
         { scopeType: 'bridge', scopeValue: 'POA', direction: 'deposit' },
-        { scopeType: 'token', scopeValue: SOL, publicDescription: '' },
+        { scopeType: 'token', scopeValue: 'NEP141:SOL.OMFT.NEAR', publicDescription: '' },
         { scopeType: 'address', scopeValue: '0xabc', direction: 'deposit' },
         { scopeType: 'chain', scopeValue: 42 },
         'nonsense',
@@ -79,6 +79,14 @@ describe('ShieldClient', () => {
     expect(i?.text?.startsWith('<b>ETH</b> deposits delayed xxx')).toBe(true);
     expect(i?.text?.length).toBeLessThanOrEqual(280);
     expect(i?.text?.endsWith('…')).toBe(true);
+  });
+
+  it('never cuts a character in half', async () => {
+    const { shield } = client(
+      feed({ scopeType: 'chain', scopeValue: 'eth', publicDescription: '😀'.repeat(300) }),
+    );
+    const [i] = await shield.incidents();
+    expect(i?.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 
   it('calls SHIELD at most once a minute, however many callers', async () => {
@@ -163,5 +171,8 @@ describe('incidentsFor', () => {
     expect(incidentsFor([token(USDC_ETH, 'deposit')], route(USDC_ETH, 'eth'))).toHaveLength(1);
     expect(incidentsFor([token(USDC_NEAR, 'withdraw')], route(USDC_ETH, 'eth'))).toHaveLength(1);
     expect(incidentsFor([token(SOL, 'deposit')], route(USDC_ETH, 'eth'))).toEqual([]);
+    expect(
+      incidentsFor([token(SOL, 'deposit')], route('nep141:SOL.omft.near', 'sol')),
+    ).toHaveLength(1);
   });
 });

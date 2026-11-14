@@ -466,9 +466,14 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
     setIncidents([]);
     if (!origin || !destination) return;
     let alive = true;
-    void loadDepositIncidents(origin, destination).then((list) => alive && setIncidents(list));
+    const load = () =>
+      void loadDepositIncidents(origin, destination).then((list) => alive && setIncidents(list));
+    load();
+    // The server asks SHIELD once a minute; a long stay on the address screen still sees a new incident.
+    const timer = setInterval(load, 60_000);
     return () => {
       alive = false;
+      clearInterval(timer);
     };
   }, [origin, destination]);
 
