@@ -40,6 +40,7 @@ export function Recommendations({
   hasLoan,
   loanValued,
   hasLp,
+  signBlock,
 }: {
   account: string;
   strategy: StrategyId;
@@ -56,6 +57,7 @@ export function Recommendations({
   hasLoan: boolean;
   loanValued: boolean;
   hasLp: boolean;
+  signBlock: string | null;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   // Kept per strategy instead of remounting on a switch, which would drop the focus off the strategy control (#288);
@@ -161,7 +163,10 @@ export function Recommendations({
             const actionProps = {
               label:
                 stage.kind === 'failed' ? 'Review again' : r.intent ? actionLabel(r.intent) : '',
+              title: r.title,
+              context: r.agent,
               signingEnabled,
+              blocked: signBlock,
               variant: isTop ? ('primary' as const) : ('secondary' as const),
               onStage: (next: CardStage) => track(r, i, next),
               onSheetClosed: () => closeSheet(r.id),

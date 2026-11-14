@@ -215,3 +215,5 @@ export const signedMoney = (v: number | null): { text: string; tone: '' | 'pos' 
   if (cents === 0) return { text: '$0.00', tone: '' };
   return { text: `${cents > 0 ? '+' : ''}${money(v, true)}`, tone: cents > 0 ? 'pos' : 'neg' };
 };
+
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

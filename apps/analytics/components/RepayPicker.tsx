@@ -18,19 +18,25 @@ export function RepayPicker({
   sizing,
   account,
   label,
+  title,
+  context,
   signingEnabled,
   variant,
   onStage,
   onSheetClosed,
+  blocked,
 }: {
   intent: RecommendationIntent & { action: 'repay' | 'repay_from_collateral' };
   sizing: RepaySizing;
   account: string;
   label: string;
+  title: string;
+  context: string;
   signingEnabled: boolean;
   variant?: 'primary' | 'secondary';
   onStage?: (stage: CardStage) => void;
   onSheetClosed?: () => void;
+  blocked: string | null;
 }) {
   const from = intent.action === 'repay' ? 'wallet' : 'collateral';
   const safeText = amountText(sizing.safeTokens, sizing.decimals);
@@ -94,10 +100,13 @@ export function RepayPicker({
           key={request.intent.action + pick.raw}
           request={request}
           label={label}
+          title={title}
+          context={context}
           signingEnabled={signingEnabled}
           variant={variant}
           onStage={onStage}
           onSheetClosed={onSheetClosed}
+          blocked={blocked}
         />
       )}
     </div>

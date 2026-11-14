@@ -42,11 +42,16 @@ const PEN = (
 export function SignButton({
   ready,
   reason,
+  gate,
   className,
   children,
   disabled,
   ...rest
-}: Omit<ButtonProps, 'variant' | 'size'> & { ready: boolean; reason?: ReactNode }) {
+}: Omit<ButtonProps, 'variant' | 'size'> & {
+  ready: boolean;
+  reason?: ReactNode;
+  gate?: boolean;
+}) {
   const reasonId = useId();
   const showReason = !ready && reason;
   return (
@@ -62,7 +67,7 @@ export function SignButton({
         {children}
       </button>
       {showReason && (
-        <p id={reasonId} className="ds-sign-reason">
+        <p id={reasonId} className={cx('ds-sign-reason', gate && 'gate')}>
           {reason}
         </p>
       )}
