@@ -609,5 +609,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   and `count(distinct account_id)`; the API only pads the 7 UTC days.
 - `DrizzleLlmLedger.quality(from, to)`: counts by outcome, `percentile_cont(0.5 / 0.95)` latency, pick kinds via
   `jsonb_array_elements(output->'picks')` (string kinds only), and the 20 newest rows with input/output
-  (`ORDER BY at DESC, id DESC LIMIT 20`). Responses unchanged; the fixed-row tests moved to the Postgres
-  integration tests.
+  (`ORDER BY at DESC, id DESC LIMIT 20`), in one read-only repeatable-read transaction. Responses unchanged, except a
+  partly malformed `picks` array now counts its valid string kinds (before: the whole output was skipped). The
+  fixed-row tests moved to the Postgres integration tests.
