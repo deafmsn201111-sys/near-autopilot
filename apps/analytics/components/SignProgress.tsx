@@ -95,11 +95,13 @@ export function SignProgress({
           </li>
         ))}
       </ol>
-      {!busy && steps.every((s) => s.kind === 'done') ? (
-        <Receipt>{footer}</Receipt>
-      ) : (
-        <p role="status">{footer}</p>
-      )}
+      <div role="status">
+        {!busy && steps.length > 0 && steps.every((s) => s.kind === 'done') ? (
+          <Receipt>{footer}</Receipt>
+        ) : (
+          <p>{footer}</p>
+        )}
+      </div>
       <div className="modal-actions">
         <Button size="sm" disabled={busy} onClick={() => ref.current?.close()}>
           Close

@@ -108,7 +108,7 @@ describe('Panel, Card, Receipt', () => {
       ),
     ).toContain('ds-card ds-card-top ds-card-act');
     expect(html(<Card urgent>a</Card>)).toContain('ds-card ds-card-act');
-    expect(html(<Receipt>Done</Receipt>)).toBe('<div class="ds-receipt" role="status">Done</div>');
+    expect(html(<Receipt>Done</Receipt>)).toBe('<div class="ds-receipt">Done</div>');
   });
 });
 

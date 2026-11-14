@@ -104,14 +104,16 @@ const PROVENANCE_LABEL = {
 export function ProvenanceMark({
   kind,
   age,
+  title,
   children,
 }: {
   kind: keyof typeof PROVENANCE_LABEL;
   age?: string;
+  title?: string;
   children?: ReactNode;
 }) {
   return (
-    <span className={`ds-prov ds-prov-${kind}`}>
+    <span className={`ds-prov ds-prov-${kind}`} title={title}>
       {children ?? PROVENANCE_LABEL[kind]}
       {age && ` · ${age}`}
     </span>
@@ -161,13 +163,9 @@ export function Card({
   );
 }
 
-/** Replaces a card's body after a confirmed transaction. */
+/** Replaces a card's body after a confirmed transaction. Put it inside a live region that is already mounted. */
 export function Receipt({ children }: { children: ReactNode }) {
-  return (
-    <div className="ds-receipt" role="status">
-      {children}
-    </div>
-  );
+  return <div className="ds-receipt">{children}</div>;
 }
 
 export interface Fact {

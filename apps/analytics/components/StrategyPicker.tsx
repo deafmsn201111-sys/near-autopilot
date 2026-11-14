@@ -34,7 +34,6 @@ export function StrategyPicker({
         value={current}
         options={STRATEGY_IDS.map((id) => ({ value: id, label: STRATEGIES[id].label }))}
         onChange={choose}
-        disabled={pending}
       />
       <span className="muted-note">
         Safe loan from health factor <b>{s.healthyAt.toFixed(2)}</b>, one token up to{' '}

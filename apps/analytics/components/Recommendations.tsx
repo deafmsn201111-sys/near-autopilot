@@ -97,7 +97,15 @@ export function Recommendations({
       </div>
       {analysis && !running && (
         <p className="muted-note">
-          <Chip tone={analysis.source === 'llm' ? 'ai' : undefined}>
+          <Chip
+            tone={
+              analysis.source === 'llm'
+                ? 'ai'
+                : analysis.fallback === 'nothing_to_rank'
+                  ? undefined
+                  : 'watch'
+            }
+          >
             {analysis.source === 'llm'
               ? 'AI-ranked'
               : analysis.fallback === 'nothing_to_rank'
@@ -172,7 +180,10 @@ export function Recommendations({
                 {r.carry && (
                   <p className="muted-note">
                     {r.carry.text}{' '}
-                    <ProvenanceMark kind="estimate">
+                    <ProvenanceMark
+                      kind={r.carry.provenance === 'protocol_reported' ? 'on_chain' : 'estimate'}
+                      title={PROVENANCE_TIER_INFO[r.carry.provenance].describe}
+                    >
                       {PROVENANCE_TIER_INFO[r.carry.provenance].label}
                     </ProvenanceMark>
                   </p>

@@ -36,6 +36,7 @@ import {
   money,
   portfolioView,
   savedAnalysis,
+  type Level,
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
@@ -51,7 +52,7 @@ import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
-import { Chip, LoanGauge } from '../components/primitives';
+import { Chip, LoanGauge, ProvenanceMark } from '../components/primitives';
 import {
   STRATEGIES,
   savedStrategy,
@@ -62,7 +63,17 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const HEALTH_TONE = { low: 'safe', medium: 'watch', high: 'liq' } as const;
+const HEALTH_TONE = { low: 'safe', medium: 'watch', high: 'act' } as const;
+
+/** "Unknown" (no health factor, not low) stays neutral; a loan at or below 1 is liquidation red. */
+const healthTone = ({ healthFactor, level }: { healthFactor: number | null; level: Level }) =>
+  healthFactor === null
+    ? level === 'low'
+      ? 'safe'
+      : undefined
+    : healthFactor <= 1
+      ? 'liq'
+      : HEALTH_TONE[level];
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -459,9 +470,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             <span className="muted-note">{data.earnings.sentence}</span>
           </div>
           <div className="hero-stat">
-            <span className="eyebrow">Loan safety</span>
+            <span className="eyebrow">
+              Loan safety <ProvenanceMark kind={isAccount ? 'on_chain' : 'simulated'} />
+            </span>
             <div className="hero-safe">
-              <Chip tone={HEALTH_TONE[data.health.level]} large>
+              <Chip tone={healthTone(data.health)} large>
                 {data.health.label}
               </Chip>
               {data.health.healthFactor !== null && (
