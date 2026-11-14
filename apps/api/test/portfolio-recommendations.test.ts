@@ -3,6 +3,7 @@ import { STRATEGIES } from '@near-autopilot/core';
 import { modelTokenLabel } from '../src/thesis/labels';
 import {
   concentratedToken,
+  exitableOutOfRange,
   keepsProfitableLoan,
   loanHealth,
   marketRate,
@@ -504,6 +505,65 @@ describe('portfolioRecommendations', () => {
     const d = r.find((x) => x.kind === 'reposition_dcl_position');
     expect(d?.agent).toBe('Liquidity Optimizer');
     expect(d?.intent).toEqual({ action: 'reposition_dcl', lptId: 'lpt#1', poolId: 'p|q|60' });
+  });
+
+  it('says the value of a meme-pool position is an estimate (#193)', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        dclOutOfRange: [
+          { lptId: 'lpt#2', poolId: 'm|w|10000', pair: 'IMEME/wNEAR', usd: 40, estimate: true },
+        ],
+      }),
+    );
+    const d = r.find((x) => x.kind === 'reposition_dcl_position');
+    expect(d?.intent).toEqual({ action: 'reposition_dcl', lptId: 'lpt#2', poolId: 'm|w|10000' });
+    expect(d?.why).toMatch(/estimate/i);
+  });
+
+  describe('exitableOutOfRange (#193)', () => {
+    const MEME = 'imeme-2.v2-launchpad.justhoot.near';
+    const pos = (over: Partial<Parameters<typeof exitableOutOfRange>[0][number]>) => ({
+      lptId: 'lpt#1',
+      poolId: `${MEME}|wrap.near|10000`,
+      tokenX: MEME,
+      tokenY: 'wrap.near',
+      symbolX: 'IMEME',
+      symbolY: 'wNEAR',
+      inRange: false,
+      usd: 40,
+      ...over,
+    });
+    const confirmed = new Set(['wrap.near']);
+    const priced = new Set(['wrap.near', MEME]);
+
+    it('offers the exit for an out-of-range position whose tokens have any price, flagged as an estimate', () => {
+      expect(exitableOutOfRange([pos({})], priced, confirmed)).toEqual([
+        {
+          lptId: 'lpt#1',
+          poolId: `${MEME}|wrap.near|10000`,
+          pair: 'IMEME/wNEAR',
+          usd: 40,
+          estimate: true,
+        },
+      ]);
+    });
+
+    it('skips a position in range or with an unpriced token, and puts the largest first', () => {
+      const out = exitableOutOfRange(
+        [
+          pos({ lptId: 'in', inRange: true }),
+          pos({ lptId: 'unpriced', tokenX: 'x.near' }),
+          pos({ lptId: 'small', usd: 5 }),
+          pos({ lptId: 'big', tokenX: 'wrap.near', usd: 90 }),
+        ],
+        priced,
+        confirmed,
+      );
+      expect(out.map((d) => [d.lptId, d.estimate])).toEqual([
+        ['big', false],
+        ['small', true],
+      ]);
+    });
   });
 
   it('says nothing for a healthy, diversified, fully-deployed portfolio', () => {

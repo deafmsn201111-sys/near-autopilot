@@ -589,6 +589,61 @@ describe('GET /v1/analytics/account/:id ownership', () => {
   });
 });
 
+describe('prepare the exit of a meme-pool DCL position (#193)', () => {
+  const DCL = 'dclv2.ref-labs.near';
+  const MEME = 'imeme-2.v2-launchpad.justhoot.near';
+  const POOL = `wrap.near|${MEME}|10000`;
+  const LPT = `${POOL}#9`;
+  const node = rpc(
+    {
+      [`${DCL}#list_liquidities`]: () => [
+        { lpt_id: LPT, pool_id: POOL, left_point: -800, right_point: -400, amount: '1000000000' },
+      ],
+      [`${DCL}#get_pool`]: () => ({
+        pool_id: POOL,
+        token_x: 'wrap.near',
+        token_y: MEME,
+        fee: 10000,
+        point_delta: 200,
+        current_point: 48311,
+        state: 'Running',
+      }),
+      [`${MEME}#ft_metadata`]: () => ({
+        spec: 'ft-1.0.0',
+        name: 'iMEME',
+        symbol: 'IMEME',
+        decimals: 18,
+      }),
+    },
+    { [DCL]: [] },
+  );
+
+  it('removes and withdraws to the wallet, sized with the on-chain decimals of a token we do not list', async () => {
+    const res = await server(node, store, null, DCL).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: {
+        account: 'alice.near',
+        intent: { action: 'reposition_dcl', lptId: LPT, poolId: POOL },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      transactions: { receiverId: string; actions: { methodName: string }[] }[];
+      freed: { raw: string; human: number; symbol: string }[];
+    }>();
+    expect(body.transactions.flatMap((t) => t.actions.map((a) => a.methodName))).toEqual([
+      'remove_liquidity',
+      'withdraw_asset',
+      'withdraw_asset',
+    ]);
+    expect(new Set(body.transactions.map((t) => t.receiverId))).toEqual(new Set([DCL]));
+    const meme = body.freed.find((f) => f.symbol === 'IMEME');
+    expect(meme && meme.human).toBeCloseTo(Number(meme?.raw) / 1e18);
+  });
+});
+
 describe('prepare exact amount', () => {
   const app = server(chain, store);
   const prepare = (intent: Record<string, unknown>) =>
