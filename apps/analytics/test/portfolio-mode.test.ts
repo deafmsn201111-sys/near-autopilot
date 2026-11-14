@@ -13,7 +13,7 @@ describe('portfolioMode', () => {
   it('demo portfolio is simulated', () => {
     const m = portfolioMode({ ...base, isAccount: false, account: '' });
     expect(m.label).toBe('Demo portfolio · simulated');
-    expect(m.mine).toBe(false);
+    expect(m.kind).not.toBe('mine');
   });
 
   it('a typed account without a wallet is read-only, prepare only', () => {
@@ -21,15 +21,21 @@ describe('portfolioMode', () => {
     expect(m.label).toBe('Mainnet account · read-only');
     expect(m.note).toMatch(/prepare/i);
     expect(m.note).not.toMatch(/AI analysis available/);
-    expect(m.mine).toBe(false);
+    expect(m.kind).not.toBe('mine');
   });
 
-  it('a typed account that is not the connected wallet says so and never says "Your wallet"', () => {
+  it('a typed account that is not the connected wallet is read-only and never says "Your wallet"', () => {
     const m = portfolioMode({ ...base, connected: 'bob.near' });
     expect(m.label).toBe('Mainnet account · read-only');
-    expect(m.note).toMatch(/not your connected wallet \(bob\.near\)/);
+    expect(m.kind).toBe('readonly');
     expect(m.label).not.toMatch(/Your wallet/);
-    expect(m.mine).toBe(false);
+    expect(m.kind).not.toBe('mine');
+  });
+
+  it('names the context the strip shows: demo, read-only or your wallet', () => {
+    expect(portfolioMode({ ...base, isAccount: false, account: '' }).kind).toBe('demo');
+    expect(portfolioMode(base).kind).toBe('readonly');
+    expect(portfolioMode({ ...base, connected: 'alice.near' }).kind).toBe('mine');
   });
 
   it('points back to the connected wallet only while viewing another account (#195)', () => {
@@ -56,7 +62,7 @@ describe('portfolioMode', () => {
     expect(m.label).toBe('Your wallet');
     expect(m.note).toMatch(/prepare and sign/i);
     expect(m.note).toMatch(/verify ownership/i);
-    expect(m.mine).toBe(true);
+    expect(m.kind).toBe('mine');
   });
 
   it('the connected wallet does not point to a verify step when the ownership state is unknown', () => {
@@ -76,6 +82,6 @@ describe('portfolioMode', () => {
     const m = portfolioMode({ ...base, connected: 'alice.near', verified: true });
     expect(m.label).toBe('Your wallet · ownership verified');
     expect(m.note).toMatch(/AI analysis available/);
-    expect(m.mine).toBe(true);
+    expect(m.kind).toBe('mine');
   });
 });

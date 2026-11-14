@@ -871,3 +871,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   switching views never animates.
 - Old layered `.hero*` / `.alloc-*` CSS removed. The gauge's "safe" label now starts at its mark so it no longer
   runs into "liquidation" on the Aggressive strategy.
+
+## 2026-11-14 — App shell: top bar, wallet menu, phone tabs, context strip, intro (#249)
+
+- Top bar (`layout.tsx`, `Nav.tsx`) per DESIGN.md: sticky 60px, three sections plus "For reviewers"; at ≤640px a fixed
+  three-tab bar (`TabBar`, `aria-current`) and "For reviewers" in the footer.
+- `WalletButton`: token stack + account + rotating chevron; its menu separates the portfolio account (NEAR: analysed,
+  signs, net worth) from the other HOT Kit wallets (EVM / Solana / Tron / Bitcoin: deposits and withdrawals, not
+  analysed), with Add funds, Withdraw and a Disconnect that names every wallet. Escape and outside clicks close it,
+  Escape returns focus. The menu stays mounted while closed, so a HOT popup or the Withdraw dialog (now portalled
+  into `body`) keeps its state. Net worth and Withdraw balances come from the `walletSummary` server action when the
+  menu opens (the same cached read and strategy as the page), not on every page render. `ConnectButton` is the shared connect flow.
+- `ContextStrip` replaces the portfolio switch, the compact lookup form and the hero's mode line; `Intro` (three
+  stages + "Why you can trust it") shows on demo and read-only; the owner view gets a visually hidden `h1`.
+- `lib/hot-kit.ts` maps Tron wallets (`WalletType.Tron` = 333). "Deposit" / "Fund from another chain" → "Add funds".
