@@ -39,6 +39,7 @@ export interface WithdrawSource extends DepositAsset {
 }
 
 const WNEAR = 'wrap.near';
+// ponytail: copy of the API's NEAR_RESERVE; serve it from the API if it ever changes.
 /** Native NEAR left in the wallet for fees, as the API keeps when it wraps NEAR for a withdrawal. */
 const NEAR_FEE_RESERVE = 1;
 

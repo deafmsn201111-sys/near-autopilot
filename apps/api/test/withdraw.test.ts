@@ -487,6 +487,19 @@ describe('prepare withdraw_1click', () => {
       expect(methods(res).map((a) => a.methodName)).toEqual(['storage_deposit', 'ft_transfer']);
     });
 
+    it('lets Max (all but 1 NEAR) through for a wallet not yet on wrap.near', async () => {
+      const max = { ...wnear, amountIn: (4n * NEAR).toString() };
+      const d = deps();
+      const res = await prepare(
+        near('0', false),
+        {},
+        { ...d, store: { ...d.store, find: async () => max } },
+        5n * NEAR,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(methods(res)[0]!.deposit).toBe((4n * NEAR + REG).toString());
+    });
+
     it('keeps 1 NEAR in the wallet for fees', async () => {
       const res = await prepare(near('0'), {}, deps(), 2n * NEAR - 1n);
       expect(res.statusCode).toBe(409);

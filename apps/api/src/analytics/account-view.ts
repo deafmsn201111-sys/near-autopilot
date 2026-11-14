@@ -2698,15 +2698,17 @@ export function registerAccountView(
         // A wNEAR quote spends the wallet's wNEAR first and wraps the native NEAR it lacks (#237); wrap.near takes
         // its registration out of an unregistered wallet's first near_deposit, so that is wrapped on top.
         let wrap = 0n;
+        let registration = 0n;
         if (balance < w.amount && token === WRAP_NEAR_ID) {
           const [nativeYocto, selfRegistered] = await Promise.all([
             native.getNativeBalance(account),
             tokens.isStorageRegistered(token, account),
           ]);
-          const registration = selfRegistered ? 0n : await storageMin();
+          registration = selfRegistered ? 0n : await storageMin();
           if (registration > MAX_REGISTRATION_YOCTO) return oddStorage();
           wrap = w.amount - balance + registration;
-          if (nativeYocto < wrap + BigInt(NEAR_RESERVE) * 10n ** 24n)
+          // The reserve pays the fees (registrations, gas), so only the NEAR sent counts against it, as in the UI.
+          if (nativeYocto < w.amount - balance + BigInt(NEAR_RESERVE) * 10n ** 24n)
             return reply.code(409).send({
               error: `your wallet holds less NEAR than this quote sends, keeping ${NEAR_RESERVE} NEAR for fees`,
             });
@@ -2717,7 +2719,9 @@ export function registerAccountView(
         const storageDeposit = registered ? 0n : await storageMin();
         if (storageDeposit > MAX_REGISTRATION_YOCTO) return oddStorage();
         const register =
-          (wrap > 0n ? `wrap ${formatNear(wrap)} NEAR into wNEAR, ` : '') +
+          (wrap > 0n
+            ? `wrap ${formatNear(wrap - registration)} NEAR into wNEAR${registration > 0n ? ` (plus ${formatNear(registration)} NEAR to register your wallet on wNEAR, one-time)` : ''}, `
+            : '') +
           (storageDeposit > 0n
             ? `register the 1Click deposit address (${formatNear(storageDeposit)} NEAR, one-time) and `
             : '');
