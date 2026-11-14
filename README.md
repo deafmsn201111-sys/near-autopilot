@@ -163,7 +163,7 @@ from and withdrawals to another chain (below), in a separate client.
    account as the refund address, verifies it and stores it. **Build transaction** then assembles one NEAR transaction
    on the token contract from that stored quote, never from the browser: `storage_deposit` for the 1Click deposit
    address (a NEAR implicit account) when it holds no storage, then `ft_transfer` of the quoted amount to it. It passes
-   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D35). You sign it in your NEAR
+   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D36). You sign it in your NEAR
    wallet; the dialog follows the withdrawal with the same 1Click status as a deposit.
 
 **Not done**
@@ -394,7 +394,8 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
   NEAR RPC for its final status. A failed step names the contract, its error and what happened to your funds (refund
   confirmed, or nothing left your wallet); the next step is not offered.
 
-- **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
+- **Connect wallet** (HOT Kit): one list for your NEAR wallet and, in the same list, an EVM or Solana wallet for
+  deposits; no access key added. Disconnect signs out of all of them. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
 - **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from
@@ -462,7 +463,7 @@ costs), or why the autopilot would not do it.
 | Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)                                                                        |
 | Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                                                                                         |
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
-| Wallet connection and signing                                                       | HOT Connector; unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)                          |
+| Wallet connection and signing                                                       | HOT Kit (NEAR, EVM, Solana); unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)            |
 | Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
 | AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and three wallet checks as tools (architecture C above); rule-based fallback, labelled  |
 

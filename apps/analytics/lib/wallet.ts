@@ -1,10 +1,11 @@
 'use client';
-import { NearConnector } from '@hot-labs/near-connect';
+import { loadKit, NEAR_WALLET_TYPE, type NearSignIn } from './hot-kit';
 
 /**
- * WALLET CONNECTION through HOT Connector (@hot-labs/near-connect): HOT, Meteor, Intear, MyNearWallet, Nightly,
- * NEAR Mobile, OKX and more, each wallet's code running in its own sandboxed iframe. Connecting adds NO access key
- * to the account (`signInWithoutAddKey`): no key ever reaches the server or this dashboard.
+ * WALLET CONNECTION through the one HOT Kit (lib/hot-kit.ts): its picker connects the NEAR account (HOT, Meteor,
+ * Intear, MyNearWallet, Nightly, NEAR Mobile, OKX and more, each in its own sandboxed iframe) and, in the same list,
+ * EVM and Solana wallets for the deposit dialog. Connecting adds NO access key to the account (`signInWithoutAddKey`):
+ * no key ever reaches the server or this dashboard.
  *
  * ONE-CLICK SIGNING IS OWNER-WALLET-ONLY:
  *  - the ONLY place that asks a wallet to sign is `lib/wallet-sign.ts`; a test (test/signing-lock.test.ts) fails if
@@ -14,30 +15,38 @@ import { NearConnector } from '@hot-labs/near-connect';
  */
 export const MAINNET_SIGNING = 'owner-wallet-only' as const;
 
-let connector: NearConnector | null = null;
 const listeners = new Set<(accountId: string | null) => void>();
 const emit = (id: string | null) => {
   for (const l of listeners) l(id);
 };
 
-function get(): NearConnector {
-  if (!connector) {
-    connector = new NearConnector({
-      network: 'mainnet',
-      autoConnect: true,
-      features: { signInWithoutAddKey: true },
-      cspNonce: document.querySelector<HTMLScriptElement>('script[nonce]')?.nonce || undefined,
-    });
-    connector.on('wallet:signIn', (t) => emit(t.accounts[0]?.accountId ?? null));
-    connector.on('wallet:signOut', () => emit(null));
+// near-connect's session key: without it there is nothing to restore, so the kit is not loaded on page load.
+function hasSession(): boolean {
+  try {
+    return localStorage.getItem('selected-wallet') !== null;
+  } catch {
+    return false;
   }
-  return connector;
+}
+
+let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
+function near() {
+  subscribed ??= loadKit().then((loaded) => {
+    loaded.near.on('wallet:signIn', (t) => emit(t.accounts[0]?.accountId ?? null));
+    loaded.near.on('wallet:signOut', () => emit(null));
+    return loaded;
+  });
+  return subscribed.catch((e: unknown) => {
+    subscribed = null;
+    throw e;
+  });
 }
 
 /** The account of the connected wallet, read from the wallet itself; null when none is connected. */
 export async function currentAccount(): Promise<string | null> {
+  if (!subscribed && !hasSession()) return null;
   try {
-    const { accounts } = await get().getConnectedWallet();
+    const { accounts } = await (await near()).near.getConnectedWallet();
     return accounts[0]?.accountId ?? null;
   } catch {
     return null; // nothing connected
@@ -47,30 +56,54 @@ export async function currentAccount(): Promise<string | null> {
 /** Calls `onChange` now and on every sign-in / sign-out. Returns an unsubscribe function. */
 export function watchAccount(onChange: (accountId: string | null) => void): () => void {
   listeners.add(onChange);
-  void currentAccount().then(onChange);
+  void currentAccount().then((id) => listeners.has(onChange) && onChange(id));
   return () => {
     listeners.delete(onChange);
   };
 }
 
 /**
- * Opens the wallet list and signs in. Resolves with the signed-in account id, read from the wallet the user picked
- * (not from an event, so it is the same on the first and on every later connection); null if closed or failed.
+ * Opens the kit's wallet list (NEAR, EVM, Solana). Resolves with the NEAR account signed in there; null when the list
+ * was closed or only another chain's wallet was connected. A NEAR sign-in also settles it: in kit 2.0.0 the list may
+ * never settle after its nested chain list is closed, so a later click opens it again; only the latest click gets the
+ * account.
  */
+let attempt = 0;
 export async function connect(): Promise<string | null> {
-  const wallet = await get().connect();
-  const accounts = await wallet.getAccounts();
-  return accounts[0]?.accountId ?? null;
+  const mine = ++attempt;
+  const { kit, near: connector } = await near();
+  let onSignIn: (t: NearSignIn) => void = () => undefined;
+  const signedIn = new Promise<string | null>((resolve) => {
+    onSignIn = (t) => resolve(t.accounts[0]?.accountId ?? null);
+    connector.on('wallet:signIn', onSignIn);
+  });
+  const picked = kit.connect().then(
+    (w) => (Number(w.type) === NEAR_WALLET_TYPE ? w.address : null),
+    () => null,
+  );
+  const id = await Promise.race([signedIn, picked]);
+  connector.off('wallet:signIn', onSignIn);
+  return mine === attempt ? id : null;
 }
 
 /** The wallet the user connected (for lib/wallet-sign.ts only); throws when none is connected. */
 export async function connectedWallet() {
-  return (await get().getConnectedWallet()).wallet;
+  return (await (await near()).near.getConnectedWallet()).wallet;
 }
 
+/** Signs out of every connected wallet: NEAR and the EVM / Solana ones. */
 export async function disconnect(): Promise<void> {
   try {
-    await get().disconnect();
+    if (!subscribed && !hasSession()) return;
+    const { kit, near: connector } = await near();
+    await kit.requestConnectors();
+    // The NEAR sign-out goes to near-connect itself: the kit's NEAR connector does not await it.
+    await Promise.allSettled([
+      connector.disconnect(),
+      ...kit.wallets
+        .filter((w) => Number(w.type) !== NEAR_WALLET_TYPE)
+        .map((w) => kit.disconnect(w)),
+    ]);
   } finally {
     emit(null);
   }

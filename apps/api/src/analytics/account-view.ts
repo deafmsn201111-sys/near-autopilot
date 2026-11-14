@@ -793,10 +793,14 @@ export interface RecommendationContext {
         readonly deposited: number;
         readonly collateral: number;
         readonly wallet: number;
+        /** Its Burrow supply rate, a percentage; null when unknown. */
+        readonly aprPct?: number | null;
         readonly outPerIn: number;
         readonly slippageBps: number;
       })
     | null;
+  /** The same for a safe loan: idle money (wallet, plain deposit) earning less than the loan costs (#227). */
+  readonly idleSwapRepay?: RecommendationContext['swapRepay'];
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
     lptId: string;
@@ -943,7 +947,25 @@ export function portfolioAdvice(
       },
     });
   }
-  const supplyable = ranked.filter((a) => a !== repays);
+  const idle = ctx.idleSwapRepay;
+  const swapped =
+    !repays &&
+    ctx.loan &&
+    debt &&
+    borrowPct !== null &&
+    idle &&
+    hf !== null &&
+    hf >= strategy.healthyAt
+      ? idleSwapRepay(ctx.loan, debt, borrowPct, idle)
+      : null;
+  if (swapped && 'skip' in swapped) skipped.push(swapped.skip);
+  else if (swapped) recs.push(swapped.card);
+  // What the swap takes from the wallet is no longer idle; the rest of that token can still be supplied.
+  const spentUsd = swapped && 'card' in swapped ? swapped.fromWalletUsd : 0;
+  const supplyable = ranked
+    .filter((a) => a !== repays)
+    .map((a) => (spentUsd > 0 && a.token === idle?.token ? { ...a, usd: a.usd - spentUsd } : a))
+    .filter((a) => a.usd >= MIN_ACTION_USD);
   const worthy = supplyable.filter((a) => yearWorthTheFee(yearly(a)));
   const batch = worthy.slice(0, MAX_SUPPLY_ALL);
   if (batch.length >= 2) {
@@ -1311,6 +1333,68 @@ function loanSafety(
   };
 }
 
+/**
+ * A safe loan that costs more than idle money in another token earns: swap that money (wallet first, then its plain
+ * Burrow deposit, never collateral) into the debt token and repay (#227). Savings count after the swap loss.
+ */
+function idleSwapRepay(
+  loan: NonNullable<RecommendationContext['loan']>,
+  debt: NonNullable<RecommendationContext['largestDebt']>,
+  borrowPct: number,
+  swap: NonNullable<RecommendationContext['swapRepay']>,
+): { card: PortfolioRecommendation; fromWalletUsd: number } | { skip: string } | null {
+  const supplyPct = swap.aprPct ?? null;
+  if (supplyPct === null || supplyPct >= borrowPct) return null;
+  const plan = swapRepayPlan({
+    model: { collateralAdjUsd: loan.collateralAdjUsd, debtAdjUsd: loan.debtAdjUsd },
+    collateral: { ...swap, collateral: 0 },
+    debt: { usdPerToken: debt.usdPerToken, vr: debt.vr, amount: debt.amount, wallet: 0 },
+    outPerIn: swap.outPerIn,
+    target: Infinity,
+    floor: SWAP_REPAY_FLOOR_HF,
+  });
+  if (!plan.ok) return null;
+  const repayUsd = plan.repay * debt.usdPerToken;
+  const swapUsd = plan.swapIn * swap.usdPerToken;
+  const lossUsd = Math.max(0, swapUsd - repayUsd);
+  // A year of interest no longer paid, less what the swapped money would earn supplied, less the one-off swap loss.
+  const saves = (repayUsd * borrowPct - swapUsd * supplyPct) / 100 - lossUsd;
+  const swapRaw = rawOf(plan.swapIn, swap.decimals, false);
+  if (!swapRaw || repayUsd < MIN_ACTION_USD || saves <= 0) return null;
+  const rates = `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${swap.symbol} on Burrow earns about ${supplyPct.toFixed(1)}%`;
+  if (!yearWorthTheFee(saves))
+    return {
+      skip: `${rates}. Repaying the ${debt.symbol} loan with your ${swap.symbol} would save about ${money2(saves)} a year after the swap: not worth the network fees.`,
+    };
+  const withdrawRaw = plan.withdraw > 0 ? rawOf(plan.withdraw, swap.decimals, false) : null;
+  const hfAfter = plan.hfAfterRepay;
+  const card: PortfolioRecommendation = {
+    id: 'repay-with-idle',
+    kind: 'put_idle_to_work',
+    agent: 'Capital Allocator',
+    severity: 'info',
+    title: `Use your ${swap.symbol} to repay your ${debt.symbol} loan`,
+    why: `${rates}. ${withdrawRaw ? `Withdrawing ${tokenText(plan.withdraw)} ${swap.symbol} of your Burrow deposit (not collateral), swapping` : 'Swapping'} ${tokenText(plan.swapIn)} ${swap.symbol} for at least ${tokenText(plan.minOut)} ${debt.symbol} on Rhea and repaying it saves about ${money2(saves)} a year after the swap loss of ${money2(lossUsd)}.`,
+    intent: {
+      action: 'repay_with_collateral',
+      token: debt.token,
+      collateralToken: swap.token,
+      approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
+      amount: swapRaw.toString(),
+      ...(withdrawRaw && { withdraw: withdrawRaw.toString() }),
+      maxSlippageBps: swap.slippageBps,
+      plan: {
+        hfNow: loan.healthFactor ?? 0,
+        hfAfterWithdraw: plan.hfAfterWithdraw ?? loan.healthFactor ?? 0,
+        hfAfterRepay: hfAfter,
+        floorHf: SWAP_REPAY_FLOOR_HF,
+        transactions: withdrawRaw ? 3 : 2,
+      },
+    },
+  };
+  return { card, fromWalletUsd: plan.fromWallet * swap.usdPerToken };
+}
+
 const ORDINAL = ['', 'one', 'two', 'three'] as const;
 
 /** The withdraw -> swap -> repay card (#69); its `why` continues the caller's first sentence. */
@@ -1626,43 +1710,53 @@ export function registerAccountView(
     tokens: readonly (BurrowTokenFacts & {
       readonly deposited: number;
       readonly collateral: number;
+      readonly aprPct: number | null;
     })[],
     walletOf: (token: string) => number,
+    idle: boolean,
   ): Promise<RecommendationContext['swapRepay']> => {
     const strictest = STRATEGY_IDS.map((id) => STRATEGIES[id]);
     const safeAt = Math.max(...strictest.map((st) => st.healthyAt));
+    const loosest = Math.min(...strictest.map((st) => st.healthyAt));
     const target = Math.max(...strictest.map((st) => st.targetHealthFactor));
-    if (
-      !debt ||
-      debt.token === WNEAR ||
-      loan.healthFactor === null ||
-      loan.healthFactor >= safeAt ||
-      debt.collateral > 0
-    )
+    if (!debt || debt.token === WNEAR || loan.healthFactor === null || debt.collateral > 0)
       return null;
-    const walletNeed = repayToReach(
-      { ...loan, vr: debt.vr, usdPerToken: debt.usdPerToken },
-      target,
-      'wallet',
-    );
-    if (debt.wallet >= walletNeed) return null;
+    // idle: a loan safe under some strategy, repaid only from idle money that earns less than it costs (#227).
+    const borrowPct = debt.borrowAprPct ?? null;
+    if (idle) {
+      if (loan.healthFactor < loosest || borrowPct === null) return null;
+    } else {
+      if (loan.healthFactor >= safeAt) return null;
+      const walletNeed = repayToReach(
+        { ...loan, vr: debt.vr, usdPerToken: debt.usdPerToken },
+        target,
+        'wallet',
+      );
+      if (debt.wallet >= walletNeed) return null;
+    }
     const routed = (t: string) =>
       deps.pools.some(
         (p) =>
           (p.tokenA === t && p.tokenB === debt.token) ||
           (p.tokenB === t && p.tokenA === debt.token),
       );
+    const gapPct = (b: { aprPct: number | null }) =>
+      borrowPct === null || b.aprPct === null ? 0 : borrowPct - b.aprPct;
+    const usable = (b: { collateral: number; deposited: number; wallet: number }) =>
+      (idle ? 0 : b.collateral) + b.deposited + b.wallet;
+    // An idle repay ranks by the yearly saving; a safety repay by the money it can reach.
+    const worth = (
+      b: Parameters<typeof usable>[0] & BurrowTokenFacts & { aprPct: number | null },
+    ) =>
+      idle ? Math.min(usable(b) * b.usdPerToken, debt.usd) * gapPct(b) : usable(b) * b.usdPerToken;
     const best = tokens
       .filter((b) => b.token !== debt.token && routed(b.token) && b.usdPerToken > 0)
+      .filter((b) => !idle || gapPct(b) > 0)
       .map((b) => ({ ...b, wallet: walletOf(b.token) }))
-      .map((b) => ({ b, usd: (b.collateral + b.deposited + b.wallet) * b.usdPerToken }))
-      .filter((x) => x.usd >= MIN_ACTION_USD)
-      .sort((x, y) => y.usd - x.usd)[0]?.b;
+      .filter((b) => usable(b) * b.usdPerToken >= MIN_ACTION_USD)
+      .sort((x, y) => worth(y) - worth(x))[0];
     if (!best) return null;
-    const tokensIn = Math.min(
-      best.collateral + best.deposited + best.wallet,
-      debt.usd / best.usdPerToken,
-    );
+    const tokensIn = Math.min(usable(best), debt.usd / best.usdPerToken);
     const amountIn = rawOf(tokensIn, best.decimals, false);
     const tokenIn = accountIdSchema.safeParse(best.token);
     const tokenOut = accountIdSchema.safeParse(debt.token);
@@ -2107,14 +2201,20 @@ export function registerAccountView(
       .filter((t) => !burrowBalances.some((b) => b.token === t))
       .flatMap((t) => {
         const f = burrowFacts(t);
-        return f ? [{ ...f, deposited: 0, collateral: 0 }] : [];
+        const apr = rate(t, 'netSupplyApr');
+        return f
+          ? [{ ...f, deposited: 0, collateral: 0, aprPct: apr === null ? null : apr * 100 }]
+          : [];
       });
-    const swapRepay = await swapRepayCandidate(
-      loan,
-      largestDebt,
-      [...burrowBalances, ...walletOnly],
-      (t) => held('wallet', t),
-    );
+    const candidate = (idle: boolean) =>
+      swapRepayCandidate(
+        loan,
+        largestDebt,
+        [...burrowBalances, ...walletOnly],
+        (t) => held('wallet', t),
+        idle,
+      );
+    const [swapRepay, idleSwapRepay] = await Promise.all([candidate(false), candidate(true)]);
     // A NEAR swap wraps native NEAR first, so NEAR and wNEAR in the wallet are one liquid amount.
     const nearLike = new Set<string>([NATIVE_HOLDING, WNEAR]);
     const sameAsset = (t: string) =>
@@ -2131,6 +2231,7 @@ export function registerAccountView(
       burrowBalances,
       carry,
       swapRepay,
+      idleSwapRepay,
       // An unverified token's ft_metadata symbol could read "USDC": it is named by its contract instead.
       dclOutOfRange: outOfRange(
         (d) =>
@@ -2158,6 +2259,7 @@ export function registerAccountView(
       burrowBalances: burrowBalances.map(labelled),
       carry,
       swapRepay: swapRepay && labelled(swapRepay),
+      idleSwapRepay: idleSwapRepay && labelled(idleSwapRepay),
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     };
 

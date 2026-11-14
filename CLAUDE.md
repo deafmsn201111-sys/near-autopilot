@@ -41,8 +41,8 @@ Live-network tests (`*.live.test.ts`) are skipped unless their env keys are set.
 - `apps/api` — collector (`src/collector`, market allowlists in `config/market.json`), analytics API, wallet portfolio,
   recommendations, tx engine
   (`src/wallet/*`, `POST /v1/wallet/prepare` in `src/analytics/account-view.ts`). Wiring: `src/wiring.ts`.
-- `apps/analytics` — Next.js 15 App Router UI (the product UI, port 3001). Wallet: `lib/wallet.ts` (HOT Connector
-  `@hot-labs/near-connect`). Speaks HTTP to the API only.
+- `apps/analytics` — Next.js 15 App Router UI (the product UI, port 3001). Wallet: `lib/wallet.ts` (NEAR) over one HOT Kit
+  in `lib/hot-kit.ts` (its NEAR connector runs on our `@hot-labs/near-connect` 0.12, D35). Speaks HTTP to the API only.
 - `packages/core` — domain types, ports, provenance. `config` — zod env schema. `db` — Drizzle schema + migrations.
 - `packages/*-adapter` — NEAR RPC, Burrow, Rhea v1, Rhea DCL: readers + transaction builders.
 - `packages/financial-engine` — valuation, lending/health factor, swap, IL/yield math.

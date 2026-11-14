@@ -583,6 +583,7 @@ function allocatorTool(
         candidates.push(c);
         byCandidate.set(c.id, { text: c.title, provenance: 'calculated_estimate' });
         if (c.intent?.action === 'repay') covered.add(c.intent.token);
+        if (c.intent?.action === 'repay_with_collateral') covered.add(c.intent.collateralToken);
         if (c.intent?.action === 'supply_all') c.intent.tokens.forEach((t) => covered.add(t.token));
       }
       for (const p of proposals) {

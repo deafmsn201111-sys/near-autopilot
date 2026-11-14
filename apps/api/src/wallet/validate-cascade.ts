@@ -36,7 +36,7 @@ export const ALLOWED_METHODS = new Set([
   'near_withdraw',
   // priced Burrow borrow / withdraw / repay from collateral: Burrow fetches its own prices (D29).
   'execute_with_pyth',
-  // a 1Click withdrawal, only to the stored quote's deposit address (`transferTo`, D35).
+  // a 1Click withdrawal, only to the stored quote's deposit address (`transferTo`, D36).
   'ft_transfer',
 ]);
 

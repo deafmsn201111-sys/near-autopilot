@@ -1,12 +1,16 @@
 'use client';
 import type { HotKit } from '@hot-labs/kit';
 import type { OmniWallet } from '@hot-labs/kit/core';
+import type { EventMap, NearConnector } from '@hot-labs/near-connect';
 import { walletChainOf, type DepositTransfer, type SendFailure } from './deposit';
 
 /**
- * ORIGIN-CHAIN WALLETS through HOT Kit (@hot-labs/kit): EVM and Solana only, for the deposit dialog. The NEAR wallet
- * stays in lib/wallet.ts; the kit's NEAR connector is left out because it shares near-connect's localStorage session.
- * The kit (and every chain SDK it pulls in) is imported on first use, never on page load. Nothing here signs or sends.
+ * EVERY WALLET THROUGH ONE HOT KIT (@hot-labs/kit): NEAR (lib/wallet.ts reads it), EVM and Solana (the deposit dialog).
+ * The kit's NEAR connector runs on our own near-connect 0.12 instance, not the kit's bundled 0.8.2: only 0.12 passes the
+ * CSP nonce to the wallet iframes (D11), and it connects without adding an access key. It keeps near-connect's
+ * `selected-wallet` session, so a NEAR wallet connected before stays connected.
+ * The kit (and every chain SDK it pulls in) is imported on first use, never on page load. Nothing here signs NEAR
+ * transactions (lib/wallet-sign.ts does); the only send is the deposit transfer below (D34).
  */
 export type OriginChain = 'evm' | 'solana';
 export interface OriginWallet {
@@ -14,20 +18,51 @@ export interface OriginWallet {
   address: string;
 }
 
-// WalletType.EVM / WalletType.SOLANA, inlined so this module stays free of a runtime kit import.
+// WalletType.EVM / SOLANA / NEAR, inlined so this module stays free of a runtime kit import.
 const TYPE_BY_CHAIN: Record<OriginChain, number> = { evm: 1, solana: 1001 };
 const CHAIN_BY_TYPE: Record<number, OriginChain> = { 1: 'evm', 1001: 'solana' };
+export const NEAR_WALLET_TYPE = 1010;
+export type NearSignIn = EventMap['wallet:signIn'];
 
-let kit: Promise<HotKit> | null = null;
+interface Loaded {
+  kit: HotKit;
+  near: NearConnector;
+}
+
+let loaded: Promise<Loaded> | null = null;
 const listeners = new Set<(wallets: OriginWallet[]) => void>();
 
-function load(): Promise<HotKit> {
-  kit ??= (async () => {
-    const [{ HotKit }, { lazyConnector }, { walletConnectProjectIdSchema }] = await Promise.all([
-      import('@hot-labs/kit'),
-      import('@hot-labs/kit/defaults'),
-      import('@near-autopilot/config'),
-    ]);
+function nearConnector(Base: typeof NearConnector): NearConnector {
+  const near = new Base({
+    network: 'mainnet',
+    autoConnect: true,
+    features: { signInWithoutAddKey: true },
+    cspNonce:
+      globalThis.document?.querySelector<HTMLScriptElement>('script[nonce]')?.nonce || undefined,
+  });
+  // kit 2.0.0 calls connect(walletId), near-connect 0.8's form; 0.12 takes { walletId } and would open its own picker.
+  // The kit lists every manifest wallet, so the `features` filter is applied here.
+  const connect = near.connect.bind(near);
+  near.connect = (input) => {
+    if (typeof input !== 'string') return connect(input);
+    if (!near.availableWallets.some((w) => w.manifest.id === input))
+      return Promise.reject(new Error('This wallet cannot connect without adding a key.'));
+    return connect({ walletId: input });
+  };
+  return near;
+}
+
+/** The kit and its NEAR connector, created once on first use. */
+export function loadKit(): Promise<Loaded> {
+  loaded ??= (async () => {
+    const [{ HotKit }, { lazyConnector }, nearConnect, { walletConnectProjectIdSchema }] =
+      await Promise.all([
+        import('@hot-labs/kit'),
+        import('@hot-labs/kit/defaults'),
+        import('@hot-labs/near-connect'),
+        import('@near-autopilot/config'),
+      ]);
+    const near = nearConnector(nearConnect.NearConnector);
     const projectId = walletConnectProjectIdSchema.safeParse(
       process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     ).data;
@@ -44,6 +79,13 @@ function load(): Promise<HotKit> {
         },
       }),
       connectors: [
+        lazyConnector(
+          'near',
+          () => import('@hot-labs/kit/near'),
+          // ponytail: the kit types its base as near-connect 0.8.2; 0.12 has the same wallet API the kit calls
+          (m) => m.default(near as unknown as Parameters<typeof m.default>[0]),
+          { eager: true },
+        ),
         lazyConnector(
           'evm',
           () => import('@hot-labs/kit/evm'),
@@ -62,13 +104,15 @@ function load(): Promise<HotKit> {
     };
     k.onConnect(emit);
     k.onDisconnect(emit);
-    return k;
+    return { kit: k, near };
   })().catch((e: unknown) => {
-    kit = null;
+    loaded = null;
     throw e;
   });
-  return kit;
+  return loaded;
 }
+
+const load = async () => (await loadKit()).kit;
 
 function originWallets(wallets: OmniWallet[]): OriginWallet[] {
   return wallets.flatMap((w) => {
