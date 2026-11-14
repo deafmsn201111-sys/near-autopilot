@@ -557,8 +557,15 @@ function allocatorTool(
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
       let lowRate: StepLine | null = null;
+      const covered = new Set<string>();
+      for (const c of checks) {
+        if (c.id !== 'repay-with-idle') continue;
+        candidates.push(c);
+        byCandidate.set(c.id, { text: c.title, provenance: 'calculated_estimate' });
+        if (c.intent?.action === 'repay_with_collateral') covered.add(c.intent.collateralToken);
+      }
       for (const p of proposals) {
-        if (p.kind !== 'lending.supply') continue;
+        if (p.kind !== 'lending.supply' || covered.has(p.token)) continue;
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
