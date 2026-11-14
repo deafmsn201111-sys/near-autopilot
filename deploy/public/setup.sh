@@ -8,6 +8,13 @@ cd "$(dirname "$0")"
 
 ip="${1:-}"
 
+# The stack logs to journald (docker-compose.yml); without it no container would start, so stop before touching anything.
+if ! systemctl is-active --quiet systemd-journald; then
+  echo "✗ systemd-journald is not running on this host; the running stack was not changed." >&2
+  exit 1
+fi
+[[ -d /var/log/journal ]] || echo "• note: /var/log/journal is missing, so logs survive a deploy but not a reboot"
+
 for f in images/*.tar.gz; do
   echo "• loading $f"
   gunzip -c "$f" | docker load >/dev/null
