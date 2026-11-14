@@ -132,6 +132,42 @@ describe('POST /api/analysis', () => {
     expect(apiPost).toHaveBeenCalledTimes(5);
   });
 
+  it('charges one token for a stream and its JSON retry, and only one retry per stream', async () => {
+    ip = '192.0.2.10';
+    const { POST } = await import('../app/api/analysis/route');
+    const click = { account: 'a.near' };
+    for (let i = 0; i < 5; i++) {
+      expect((await POST(request(click, undefined, 'text/event-stream'))).status).toBe(200);
+      expect((await POST(request(click))).status).toBe(200);
+    }
+    expect((await POST(request(click))).status).toBe(429);
+    expect(apiPost).toHaveBeenCalledTimes(5);
+  });
+
+  it('charges a JSON retry that comes after the stream could still be running', async () => {
+    ip = '192.0.2.12';
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const { POST } = await import('../app/api/analysis/route');
+      const click = { account: 'a.near' };
+      await POST(request(click, undefined, 'text/event-stream'));
+      vi.setSystemTime(Date.now() + 120_000);
+      for (let i = 0; i < 4; i++) expect((await POST(request(click))).status).toBe(200);
+      expect((await POST(request(click))).status).toBe(429);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives no free retry for another account or strategy', async () => {
+    ip = '192.0.2.11';
+    const { POST } = await import('../app/api/analysis/route');
+    await POST(request({ account: 'a.near' }, undefined, 'text/event-stream'));
+    for (let i = 0; i < 4; i++)
+      expect((await POST(request({ account: 'b.near', strategy: 'aggressive' }))).status).toBe(200);
+    expect((await POST(request({ account: 'a.near', strategy: 'aggressive' }))).status).toBe(429);
+  });
+
   it('leaves the global AI limit to the API: many visitors are never limited here', async () => {
     const { POST } = await import('../app/api/analysis/route');
     for (let i = 1; i <= 70; i++) {

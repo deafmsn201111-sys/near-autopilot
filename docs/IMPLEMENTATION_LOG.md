@@ -565,3 +565,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `events`. `GET /v1/admin/llm`: fallback rate by code, validation-error rate (`invalid_output`), p50/p95 latency
   (percentile_cont, in TS), top recommendation kinds the model picked, last 20 runs. Both behind `ADMIN_API_TOKEN`.
 - `/admin/funnel` and `/admin/llm` in the loopback admin container, with an admin nav; "no data yet" when empty.
+
+## 2026-11-14 — A broken AI stream no longer starts a second run or spends a second token (#150)
+
+- `analyseAccount`: runs still going live in `AnalysisMemo.running` by account + strategy, checked before the wallet
+  read; a request for the same pair waits for that run and gets its result (also a fallback) instead of starting a
+  model run of its own. The model part moved into `runModel` unchanged.
+- `/api/analysis`: a paid stream request leaves one free JSON retry for the same visitor + account + strategy
+  (within 2 min of the stream, `BoundedMap` of 10 000; the pass is dropped only when used), so the client's fallback after a broken stream costs no second visitor token.
+- `runAnalysis`: an `error` frame returns its error (zod, ≤ 200 chars) instead of re-POSTing as JSON; only a stream
+  that ends without a valid `done` falls back.
