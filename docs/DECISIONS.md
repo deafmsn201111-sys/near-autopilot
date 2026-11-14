@@ -827,7 +827,7 @@ about a second.
 kind `provider_tee`, both hashes match our exact bytes, the recovered signer is an attested address (distinct
 addresses: several reports with one key are one key). Reports cached 1 h, refetched once on a signer mismatch. The
 check waits at most ~3 s (a 404 is retried); any failure is "unverified" with a fixed reason and the answer is still
-shown, labelled "Private AI" instead of "Private AI · signed in TEE". The result goes into `Analysis.run.privacy` and
+shown, labelled "Private AI · signature not verified" instead of "Private AI · signed in TEE". The result goes into `Analysis.run.privacy` and
 `llm_calls.privacy` (migration 0027). Users no longer see the model name (`modelName()` is gone); the mark links to
 `cloud.near.ai/verify?model=<id>` because that page cannot open one reply, and the panel lists the reply ids with a
 copy button. Quote checks (DCAP, RTMR3, MRCONFIGID, NVIDIA) stay out → KNOWN_ISSUES.

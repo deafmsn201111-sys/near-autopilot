@@ -88,7 +88,7 @@ const checksSchema = z.object({
 const privacySchema = z.object({
   verified: z.boolean(),
   reason: z.string().max(80).nullable(),
-  chatIds: z.array(z.string().max(100)).max(20),
+  chatIds: z.array(z.string().max(200)).max(20),
 });
 export type Privacy = z.infer<typeof privacySchema>;
 
@@ -324,10 +324,10 @@ const VERIFY_URL = 'https://cloud.near.ai/verify';
 export function privacyMark(privacy: Privacy | null, model: string) {
   if (!privacy) return null;
   return {
-    label: privacy.verified ? 'Private AI · signed in TEE' : 'Private AI',
+    label: privacy.verified ? 'Private AI · signed in TEE' : 'Private AI · signature not verified',
     href: `${VERIFY_URL}?model=${encodeURIComponent(model)}`,
     title: privacy.verified
-      ? 'Every reply was signed inside the model’s TEE, by the key its attestation (Intel TDX + NVIDIA) vouches for. Open the attestation on NEAR AI Cloud.'
+      ? 'Every reply was signed by the key NEAR AI Cloud’s attestation names for this model’s TEE. We check the signatures; the hardware quote is checked by NEAR AI’s verifier. Open the attestation.'
       : `The TEE signature could not be verified: ${privacy.reason ?? 'unknown'}. Open the attestation on NEAR AI Cloud.`,
     chatIds: privacy.chatIds,
   };

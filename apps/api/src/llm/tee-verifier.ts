@@ -65,8 +65,11 @@ export class TeeVerifier {
     const signal = AbortSignal.timeout(this.config.waitMs ?? 3000);
     try {
       if (replies.length === 0) throw new Unverified('no reply');
+      // Fetched side by side; the reports are awaited first, so their failure is the reason given.
+      const signing = Promise.all(replies.map((r) => this.signer(r, signal)));
+      signing.catch(() => undefined);
       let keys = await this.attestedKeys(signal, false);
-      const signed = await Promise.all(replies.map((r) => this.signer(r, signal)));
+      const signed = await signing;
       if (signed.some((s) => !keys.has(s))) keys = await this.attestedKeys(signal, true);
       if (signed.some((s) => !keys.has(s))) throw new Unverified('signer is not the attested key');
       return { verified: true, reason: null, chatIds };
@@ -113,7 +116,7 @@ export class TeeVerifier {
     return recoverEip191(sig.text, sig.signature);
   }
 
-  /** A signature may be recorded a moment after the reply: a 404 or an `error_code` answer is retried until the deadline. */
+  /** A signature may be recorded a moment after the reply: any non-signature answer is retried until the deadline. */
   private async signature(chatId: string, signal: AbortSignal) {
     const url = new URL(`${NEAR_AI_URL}/signature/${encodeURIComponent(chatId)}`);
     url.searchParams.set('signing_algo', 'ecdsa');
@@ -128,12 +131,12 @@ export class TeeVerifier {
     }
   }
 
-  /** `notFound`: a 404 reads as an empty answer (retried by the caller) instead of a failure. */
+  /** `retryable`: an HTTP error or a body that is not JSON reads as an empty answer instead of a failure. */
   private async get(
     url: URL,
     signal: AbortSignal,
     headers: Record<string, string>,
-    notFound = false,
+    retryable = false,
   ): Promise<unknown> {
     const res = await this.fetch(url, {
       headers: {
@@ -143,9 +146,9 @@ export class TeeVerifier {
       },
       signal,
     });
-    if (notFound && res.status === 404) return null;
+    if (retryable && !res.ok) return null;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    return retryable ? await res.json().catch(() => null) : await res.json();
   }
 }
 

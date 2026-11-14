@@ -358,13 +358,13 @@ describe('privacyMark', () => {
     expect(privacyMark({ verified: true, reason: null, chatIds: ['c1'] }, model)).toEqual({
       label: 'Private AI · signed in TEE',
       href: 'https://cloud.near.ai/verify?model=z-ai%2Fglm-5.3-flash',
-      title: expect.stringContaining('signed inside') as string,
+      title: expect.stringContaining('signed by the key') as string,
       chatIds: ['c1'],
     });
   });
   it('never claims a signature for an unverified run, and says why', () => {
     const mark = privacyMark({ verified: false, reason: 'no signature', chatIds: ['c1'] }, model);
-    expect(mark?.label).toBe('Private AI');
+    expect(mark?.label).toBe('Private AI · signature not verified');
     expect(mark?.title).toContain('no signature');
   });
   it('shows no mark for a run that was not checked', () => {
