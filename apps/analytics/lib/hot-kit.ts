@@ -47,9 +47,9 @@ function load(): Promise<HotKit> {
     k.onConnect(emit);
     k.onDisconnect(emit);
     return k;
-  })();
-  kit.catch(() => {
+  })().catch((e: unknown) => {
     kit = null;
+    throw e;
   });
   return kit;
 }
@@ -78,8 +78,8 @@ export function watchOriginWallets(onChange: (wallets: OriginWallet[]) => void):
  * in kit 2.0.0 the all-chains picker never settles when its nested chain picker is closed.
  */
 export async function connectOriginWallet(chain: OriginChain): Promise<OriginWallet | null> {
-  const k = await load();
   try {
+    const k = await load();
     return originWallets([await k.connect(TYPE_BY_CHAIN[chain])])[0] ?? null;
   } catch {
     return null;

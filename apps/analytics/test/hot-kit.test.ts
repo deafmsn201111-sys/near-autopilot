@@ -1,3 +1,4 @@
+import type * as KitCore from '@hot-labs/kit/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Handler = () => void;
@@ -119,5 +120,33 @@ describe('HOT Kit origin wallets', () => {
     await m.connectOriginWallet('evm');
     await flush();
     expect(seen).toEqual([]);
+  });
+});
+
+describe('kit wallet type numbers', () => {
+  it('match the WalletType enum of the installed kit', async () => {
+    const { WalletType } = await vi.importActual<typeof KitCore>('@hot-labs/kit/core');
+    const m = await fresh();
+    fake.state.pick = { type: WalletType.EVM, address: EVM.address };
+    expect(await m.connectOriginWallet('evm')).toEqual({ chain: 'evm', address: EVM.address });
+    fake.state.pick = { type: WalletType.SOLANA, address: SOL.address };
+    expect(await m.connectOriginWallet('solana')).toEqual({
+      chain: 'solana',
+      address: SOL.address,
+    });
+  });
+});
+
+describe('kit load failure', () => {
+  it('connect resolves null and the next call retries the load', async () => {
+    const m = await fresh();
+    vi.doMock('@hot-labs/kit', () => {
+      throw new Error('chunk failed');
+    });
+    expect(await m.connectOriginWallet('evm')).toBeNull();
+    vi.doUnmock('@hot-labs/kit');
+    vi.doMock('@hot-labs/kit', () => ({ HotKit: fake.HotKit }));
+    fake.state.pick = EVM;
+    expect(await m.connectOriginWallet('evm')).toEqual({ chain: 'evm', address: EVM.address });
   });
 });

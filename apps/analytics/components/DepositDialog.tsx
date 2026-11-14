@@ -20,6 +20,7 @@ import {
   type DepositQuote,
   type DepositStatus,
 } from '../lib/deposit';
+import { shortHash } from '../lib/activity';
 import {
   connectOriginWallet,
   disconnectOriginWallet,
@@ -466,8 +467,10 @@ function OriginWallets() {
     try {
       await connectOriginWallet(chain);
     } finally {
-      dialog?.close();
-      dialog?.showModal();
+      if (dialog?.open && dialog.isConnected) {
+        dialog.close();
+        dialog.showModal();
+      }
       setBusy(false);
     }
   }
@@ -477,13 +480,11 @@ function OriginWallets() {
       {wallets.map((w) => (
         <span key={w.chain} className="origin-wallet">
           <span className="muted-note">{CHAIN_LABEL[w.chain]}</span>{' '}
-          <code title={w.address}>
-            {w.address.slice(0, 6)}…{w.address.slice(-4)}
-          </code>{' '}
+          <code title={w.address}>{shortHash(w.address)}</code>{' '}
           <button
             type="button"
             className="btn secondary small"
-            onClick={() => void disconnectOriginWallet(w)}
+            onClick={() => void disconnectOriginWallet(w).catch(() => undefined)}
           >
             Disconnect
           </button>
