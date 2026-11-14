@@ -28,25 +28,27 @@ const largestBringable = (groups: readonly OtherBalance[]) =>
     .filter((i) => i.bringable)
     .sort((a, b) => b.usd - a.usd)[0];
 
-function BringToNear({ account, groups }: { account: string; groups: readonly OtherBalance[] }) {
-  const top = largestBringable(groups);
-  return top ? (
-    <DepositButton
-      account={account}
-      tokenId={top.tokenId}
-      label="Bring to NEAR"
-      className={BRING_CLASS}
-    />
-  ) : null;
-}
+const bring = (account: string, tokenId: string) => (
+  <DepositButton
+    account={account}
+    tokenId={tokenId}
+    label="Bring to NEAR"
+    className={BRING_CLASS}
+  />
+);
+
+const HERO_ICONS = 5;
 
 /** The hero line's data: the total outside NEAR and Bring to NEAR for the largest bridgeable token. */
 export function otherSummary(account: string | null, groups: readonly OtherBalance[]) {
   if (!account || groups.length === 0) return null;
+  const top = largestBringable(groups);
   return {
     usd: groups.reduce((s, g) => s + g.usd, 0),
-    tokens: groups.flatMap((g) => g.items).map((i) => ({ icon: i.icon, symbol: i.symbol })),
-    action: <BringToNear account={account} groups={groups} />,
+    tokens: [...new Map(groups.flatMap((g) => g.items).map((i) => [i.symbol, i])).values()]
+      .slice(0, HERO_ICONS)
+      .map((i) => ({ icon: i.icon, symbol: i.symbol })),
+    action: top ? bring(account, top.tokenId) : null,
   };
 }
 
@@ -67,12 +69,7 @@ export function otherGroups(
       usd: i.usd,
       logos: [{ icon: i.icon, symbol: i.symbol }],
       action: i.bringable ? (
-        <DepositButton
-          account={account}
-          tokenId={i.tokenId}
-          label="Bring to NEAR"
-          className={BRING_CLASS}
-        />
+        bring(account, i.tokenId)
       ) : (
         <Chip>{g.chain === 'hot' ? 'Withdraw it in HOT Wallet' : 'Not bridgeable here'}</Chip>
       ),

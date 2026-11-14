@@ -54,6 +54,15 @@ describe('other-chain slots', () => {
     expect(html(hot?.items[0]?.action)).not.toContain('Bring to NEAR');
   });
 
+  it('show each token once in the hero line, at most five icons', () => {
+    const many: OtherBalance = {
+      ...EVM,
+      items: ['A', 'B', 'C', 'D', 'E', 'F', 'USDC'].map((x) => item(x, 1, true)),
+    };
+    const tokens = otherSummary('alice.near', [EVM, many])?.tokens.map((t) => t.symbol);
+    expect(tokens).toEqual(['USDC', 'AURORA', 'A', 'B', 'C']);
+  });
+
   it('give no hero action when only the HOT balance is held', () => {
     expect(html(otherSummary('alice.near', [HOT])?.action)).toBe('');
   });

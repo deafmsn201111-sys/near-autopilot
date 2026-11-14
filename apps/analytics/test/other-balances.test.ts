@@ -1,4 +1,5 @@
 import type { ChainId } from '@hot-labs/kit';
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { otherBalances, type KitBalance } from '../lib/hot-kit';
 
@@ -74,5 +75,14 @@ describe('otherBalances', () => {
 
   it('is empty without balances', () => {
     expect(otherBalances([], oneClick)).toEqual([]);
+  });
+});
+
+describe('mobx', () => {
+  it("is the kit's own version, so our reaction sees the kit's observables", () => {
+    const require = createRequire(import.meta.url);
+    const kit = require('@hot-labs/kit/package.json') as { dependencies: Record<string, string> };
+    const ours = require('../package.json') as { dependencies: Record<string, string> };
+    expect(ours.dependencies.mobx).toBe(kit.dependencies.mobx);
   });
 });

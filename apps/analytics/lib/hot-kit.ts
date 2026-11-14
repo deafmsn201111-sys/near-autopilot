@@ -246,11 +246,13 @@ export async function openDepositBridge(account: string, tokenId?: string): Prom
   const held = k.walletsTokens.find(
     (t) => t.token.id === tokenId && isBridgeSource(t.token.chain, kit.toOneClickChain),
   );
+  // The kit applies a preset `from` / `to` without its token filters: both are checked here.
+  const twin =
+    held && k.tokens.find((t) => t.chain === 'near' && !t.isOmni && t.symbol === held.token.symbol);
   const setup = bridgeSetup(recipient, kit.toOneClickChain);
+  const preset = held && { from: held.token, sender: held.wallet, ...(twin && { to: twin }) };
   // Settles with the swap, whose result and errors HOT's popup shows itself.
-  void k
-    .openBridge({ setup: held ? { ...setup, from: held.token, sender: held.wallet } : setup })
-    .catch(() => undefined);
+  void k.openBridge({ setup: { ...setup, ...preset } }).catch(() => undefined);
 }
 
 export interface KitBalance {

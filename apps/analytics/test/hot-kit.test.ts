@@ -16,6 +16,7 @@ const fake = vi.hoisted(() => {
     senderProps: undefined as unknown,
     tokens: undefined as unknown as IObservableValue<unknown[]>,
     bridge: undefined as unknown,
+    listed: [] as unknown[],
   };
   class HotKit {
     router = {
@@ -32,6 +33,9 @@ const fake = vi.hoisted(() => {
     }
     get walletsTokens() {
       return state.tokens.get();
+    }
+    get tokens() {
+      return state.listed;
     }
     setUIOptions() {}
     async openBridge(options: unknown) {
@@ -96,6 +100,7 @@ async function fresh() {
     failLoad: false,
     tokens: mobx.observable.box([], { deep: false }),
     bridge: undefined,
+    listed: [],
   });
   return import('../lib/hot-kit');
 }
@@ -258,6 +263,12 @@ describe('other-chain balances', () => {
   it('Bring to NEAR preselects the token and its wallet, recipient still locked', async () => {
     const m = await fresh();
     const entry = usdc(EVM, 20);
+    const nearUsdc = { id: 'near:usdc', symbol: 'USDC', chain: 'near', isOmni: false };
+    fake.state.listed = [
+      { id: 'hot:usdc', symbol: 'USDC', chain: 'hot', isOmni: true },
+      { id: 'sol:usdc', symbol: 'USDC', chain: 'sol', isOmni: false },
+      nearUsdc,
+    ];
     mobx.runInAction(() => fake.state.tokens.set([entry]));
     await m.openDepositBridge('alice.near', '8453:usdc');
     await flush();
@@ -267,8 +278,20 @@ describe('other-chain balances', () => {
         lockRecipient: true,
         from: entry.token,
         sender: EVM,
+        to: nearUsdc,
       },
     });
+  });
+
+  it('leaves the NEAR side to the filter when the token has no NEAR twin', async () => {
+    const m = await fresh();
+    fake.state.listed = [{ id: 'sol:usdc', symbol: 'USDC', chain: 'sol', isOmni: false }];
+    mobx.runInAction(() => fake.state.tokens.set([usdc(EVM, 20)]));
+    await m.openDepositBridge('alice.near', '8453:usdc');
+    await flush();
+    const setup = (fake.state.bridge as { setup: Record<string, unknown> }).setup;
+    expect(setup.to).toBeUndefined();
+    expect(setup.from).toBeDefined();
   });
 
   it('opens without a preselected token when it is unknown or not a bridge source', async () => {
