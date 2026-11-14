@@ -7,6 +7,7 @@ import { SHADOW_BANNER } from '../collector/model';
 import type { CollectorStore } from '../collector/store';
 import type { EvidenceStore } from '../evidence/store';
 import { registerAdmin, type AdminDeps } from './admin';
+import { registerAdminDeposits } from './admin-deposits';
 import { registerDeposit, type DepositDeps } from './deposit';
 import { registerTokenIcons, type TokenIcons } from './token-icons';
 import { registerEvidence } from './evidence';
@@ -101,7 +102,10 @@ export function buildAnalyticsServer(
   registerActivity(app, deps.store, deps.store.db, deps.intervalSeconds, now);
   registerPortfolioView(app, deps.store);
   if (deps.mainnet) registerAccountView(app, deps.store, deps.mainnet, deps.events);
-  if (deps.admin?.token) registerAdmin(app, deps.admin, now);
+  if (deps.admin?.token) {
+    registerAdmin(app, deps.admin, now);
+    if (deps.admin.deposits) registerAdminDeposits(app, deps.admin.deposits, now);
+  }
   if (deps.deposit)
     registerDeposit(
       app,
