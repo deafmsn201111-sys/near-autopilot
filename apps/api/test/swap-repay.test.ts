@@ -10,7 +10,6 @@ const WNEAR = 'wrap.near';
 const USDC = '17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
 const RHEA = 'v2.ref-finance.near';
 const BURROW = 'contract.main.burrow.near';
-const ORACLE = 'priceoracle.near';
 const W = 10n ** 24n; // one wNEAR
 const U = 10n ** 6n; // one USDC
 
@@ -45,12 +44,17 @@ const base: SwapRepayPrepareInput = {
   floor: SWAP_REPAY_FLOOR_HF,
   quote: async (amountIn) => ({ poolId: 4512, amountOut: (amountIn * 3n * U) / W }),
   withdrawTx: (rawAmount, fromCollateralRaw) => ({
-    receiverId: ORACLE as AccountId,
+    receiverId: BURROW as AccountId,
     actions: [
       {
         type: 'FunctionCall',
-        methodName: 'oracle_call',
-        args: { withdraw: rawAmount.toString(), fromCollateral: fromCollateralRaw.toString() },
+        methodName: 'execute_with_pyth',
+        args: {
+          actions: [
+            { DecreaseCollateral: { max_amount: fromCollateralRaw.toString() } },
+            { Withdraw: { max_amount: rawAmount.toString() } },
+          ],
+        },
         gas: 100_000_000_000_000n,
         deposit: 1n,
       },
@@ -84,8 +88,10 @@ describe('prepareSwapRepay', () => {
     expect(r.steps.map((s) => s.intentId)).toEqual(['withdraw', 'swap', 'repay']);
     const [withdraw, swap, repay] = r.steps.map((s) => s.tx);
     expect(withdraw?.actions[0]?.args).toEqual({
-      withdraw: (20n * W).toString(),
-      fromCollateral: (20n * W).toString(),
+      actions: [
+        { DecreaseCollateral: { max_amount: (20n * W).toString() } },
+        { Withdraw: { max_amount: (20n * W).toString() } },
+      ],
     });
     expect(swap?.receiverId).toBe(WNEAR);
     expect(swap?.actions[0]?.args['receiver_id']).toBe(RHEA);
@@ -149,7 +155,9 @@ describe('prepareSwapRepay', () => {
 
   it('takes plain supply before collateral: only the collateral part lowers the health factor', async () => {
     const r = await ok({ ...base, collateral: { ...base.collateral, suppliedRaw: 5n * W } });
-    expect(r.steps[0]?.tx.actions[0]?.args['fromCollateral']).toBe((15n * W).toString());
+    expect(r.steps[0]?.tx.actions[0]?.args['actions']).toContainEqual({
+      DecreaseCollateral: { max_amount: (15n * W).toString() },
+    });
     expect(r.hf.afterWithdraw).toBeCloseTo((360 - 15 * 1.8) / (250 / 0.95), 9);
   });
 
@@ -206,7 +214,7 @@ describe('prepareSwapRepay', () => {
     ).toMatchObject({ ok: false });
   });
 
-  it('passes the cascade validation with the protocol, the oracle and the two tokens only', async () => {
+  it('passes the cascade validation with the protocols and the two tokens only', async () => {
     const r = await ok({
       ...base,
       collateral: { ...base.collateral, storageMin: 1_250_000_000_000_000_000_000n },
@@ -216,13 +224,13 @@ describe('prepareSwapRepay', () => {
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,
-        allowedReceivers: new Set([ORACLE, BURROW, RHEA, WNEAR, USDC]),
+        allowedReceivers: new Set([BURROW, RHEA, WNEAR, USDC]),
       }),
     ).toMatchObject({ ok: true, reasons: [] });
     expect(
       validateCascade(cascade.transactions, {
         signerId: ACCOUNT,
-        allowedReceivers: new Set([ORACLE, BURROW, WNEAR, USDC]),
+        allowedReceivers: new Set([BURROW, WNEAR, USDC]),
       }).ok,
     ).toBe(false);
   });

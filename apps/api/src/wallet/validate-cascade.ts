@@ -34,8 +34,8 @@ export const ALLOWED_METHODS = new Set([
   // wrap native NEAR -> wNEAR (before a swap), and unwrap wNEAR -> native NEAR.
   'near_deposit',
   'near_withdraw',
-  // priced Burrow borrow / withdraw, routed through the oracle.
-  'oracle_call',
+  // priced Burrow borrow / withdraw / repay from collateral: Burrow fetches its own prices (D29).
+  'execute_with_pyth',
 ]);
 
 export interface CascadeValidationContext {
@@ -116,6 +116,13 @@ function checkAction(
     if (typeof to !== 'string' || !ctx.allowedReceivers.has(to))
       fail('receivers', `${where}: transfers to an unexpected receiver ${String(to)}`);
     if (typeof a.args['msg'] !== 'string') fail('arguments', `${where}: msg must be a string`);
+  }
+  if (a.methodName === 'execute_with_pyth') {
+    if (a.deposit !== 1n)
+      fail('deposit', `${where}: execute_with_pyth must attach exactly 1 yoctoNEAR`);
+    const actions = a.args['actions'];
+    if (!Array.isArray(actions) || actions.length === 0)
+      fail('arguments', `${where}: actions must be a non-empty list`);
   }
   if (a.methodName === 'add_liquidity') {
     const pool = a.args['pool_id'];

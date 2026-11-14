@@ -586,6 +586,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `/admin/1click` page and an admin nav (Spend · 1Click). Statuses are what the user's deposit screen last saw;
   server-side refresh is a separate issue.
 
+## 2026-11-14 — Priced Burrow actions via `execute_with_pyth` (#166)
+
+- `packages/burrow-adapter/src/builders.ts`: borrow, withdraw and repay from collateral build `execute_with_pyth`
+  on Burrow (300 Tgas, 1 yocto) instead of `oracle_call` on `priceoracle.near`, which Burrow disabled; `assetIds`
+  dropped. `BURROW_REQUIRED_EXPORTS` checks `execute_with_pyth`.
+- `apps/api/src/wallet/validate-cascade.ts`: allowlist `execute_with_pyth`, drop `oracle_call` (D29);
+  `account-view.ts` prepare intents allow Burrow as the receiver instead of the oracle.
+
 ## #159 — 24 h range: outlier filter and one slim query
 
 - `range24hBps` takes the high-low range over a rolling median of five snapshots: one or two bad prints in a row no

@@ -527,3 +527,21 @@ removed. `/v1/analytics/policy/verdicts` stays as the audit-evidence API (replay
 before the check) is not counted; the owner can reopen nothing to fix it (no indexer, after the hackathon). A failed
 step is shown in the dialog but not stored. Old transactions stop being readable on the non-archival RPC after ~2
 days, which is far longer than the confirm window.
+
+## D29 — Priced Burrow actions go through `execute_with_pyth`, not the oracle's `oracle_call` (#166)
+
+**Context:** #166. On 13 Nov Burrow mainnet rejected every `priceoracle.near` → `oracle_call` with "Price oracle
+disabled" (`price_receiver.rs`), so borrow, withdraw and repay from collateral (and the withdraw → swap → repay
+cascade) failed on-chain. The same actions succeed through `contract.main.burrow.near` → `execute_with_pyth`
+(tx `9jmdbLjUwjgUtDfsgTniP6Fw6gho8bFrZnKgT3a2Xznt`): Burrow works out the assets it must value and fetches their
+prices itself (`actions_pyth.rs`).
+**Decision:** The three priced builders call `execute_with_pyth { actions }` on the verified Burrow contract with
+1 yoctoNEAR and 300 Tgas; the actions keep their shape (`max_amount` caps). `validateCascade`'s method allowlist
+swaps `oracle_call` for `execute_with_pyth` and requires it to attach exactly 1 yocto with a non-empty `actions`
+list; the receiver allowlist for these cascades is Burrow instead of the
+oracle. No gas or deposit cap changes (300 Tgas is the existing per-action ceiling). Burrow verification requires
+`execute_with_pyth` instead of `oracle_on_call`. The oracle verification keeps only `get_price_data` (Market
+Intelligence's second price source, D13); it no longer requires `oracle_call`.
+**Consequences:** No more `asset_ids` resolution on our side. If Burrow also disables Pyth (`enable_pyth_oracle`),
+the call panics "Pyth oracle disabled" on-chain and nothing moves but gas; not pre-checked, because that check
+would sit in deployment verification and also block supply and repay, which need no prices.

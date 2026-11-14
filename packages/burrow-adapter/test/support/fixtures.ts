@@ -56,7 +56,7 @@ export const BURROW_FUNCTIONS = [
   'storage_balance_of',
   'execute',
   'ft_on_transfer',
-  'oracle_on_call',
+  'execute_with_pyth',
   'new',
 ];
 export const ORACLE_FUNCTIONS = ['get_price_data', 'oracle_call', 'report_prices'];
