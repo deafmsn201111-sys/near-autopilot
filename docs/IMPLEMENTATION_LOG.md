@@ -493,6 +493,15 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
   Enter, Esc back).
 
+## 2026-11-14 — Both paths rank idle tokens by dollars a year (#139)
+
+- `packages/orchestrator/src/agents/capital-allocator.ts`: `proposeSupplies` proposes a supply for every idle
+  allocation asset, the most dollars a year (value × Burrow rate) first; the decision engine still ranks by net benefit.
+- `apps/api/src/analytics/ai-analysis.ts`: one supply candidate per idle token with its yearly earnings; the prompt
+  says a pick that skips the top earner explains why in its "why".
+- `apps/api/src/analytics/account-view.ts`: the rule-based idle card offers the top earner in dollars a year (not the
+  largest balance) and names the runner-up's yearly earnings.
+
 ## 2026-11-14 — Real activity on an events table (#32)
 
 - `packages/db`: migration 0021 `events` (unique tx hash, 30-day purge in `analytics/main.ts`).

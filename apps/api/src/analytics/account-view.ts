@@ -772,17 +772,23 @@ export function portfolioAdvice(
     }
   }
 
-  // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
+  // 3. Put idle cash to work: the wallet asset that earns the most dollars a year at its supply rate.
   const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
-  const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
+  const yearly = (a: (typeof earning)[number]) => (a.usd * a.aprPct) / 100;
+  const [idle, runnerUp] = earning
+    .filter((a) => a.usd >= MIN_ACTION_USD)
+    .sort((a, b) => yearly(b) - yearly(a));
   if (idle) {
+    const other = runnerUp
+      ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
+      : '';
     recs.push({
       id: 'put-idle-to-work',
       kind: 'put_idle_to_work',
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
-      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
+      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
     });
   } else if (earning[0] && earning[0].usd >= 0.1) {
