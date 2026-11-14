@@ -86,7 +86,9 @@ import {
   buildRemoveLiquidity,
   buildWithdrawAssets,
   parsePoolId,
+  pointToDecimalPrice,
   type DclMarketDepth,
+  type DclOrder,
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
@@ -343,6 +345,68 @@ async function readDclPositions(
   return out;
 }
 
+/** An open Rhea DCL limit order: tokens frozen until the price reaches `price` (buy token per sell token). */
+export interface LimitOrderView {
+  readonly orderId: string;
+  readonly sellToken: string;
+  readonly buyToken: string;
+  readonly sellSymbol: string;
+  readonly buySymbol: string;
+  /** Sell token still on the order. */
+  readonly remaining: number;
+  /** Buy token the order already got but has not paid out. */
+  readonly unclaimed: number;
+  readonly price: number;
+  readonly usdSell: number | null;
+  readonly usdBuy: number | null;
+}
+
+export function limitOrderView(
+  o: DclOrder,
+  metaOf: (token: string) => { symbol: string; decimals: number } | undefined,
+  prices: ReadonlyMap<string, number>,
+): LimitOrderView | null {
+  const { tokenX, tokenY } = parsePoolId(o.pool_id);
+  const [mX, mY, mSell, mBuy] = [tokenX, tokenY, o.sell_token, o.buy_token].map(metaOf);
+  if (!mX || !mY || !mSell || !mBuy) return null;
+  const yPerX = pointToDecimalPrice(o.point, mX.decimals, mY.decimals);
+  const remaining = Number(o.remain_amount) / 10 ** mSell.decimals;
+  const unclaimed = Number(o.unclaimed_amount ?? 0n) / 10 ** mBuy.decimals;
+  const pSell = prices.get(o.sell_token);
+  const pBuy = prices.get(o.buy_token);
+  return {
+    orderId: o.order_id,
+    sellToken: o.sell_token,
+    buyToken: o.buy_token,
+    sellSymbol: mSell.symbol,
+    buySymbol: mBuy.symbol,
+    remaining,
+    unclaimed,
+    price: o.sell_token === tokenX ? yPerX : 1 / yPerX,
+    usdSell: pSell === undefined ? null : remaining * pSell,
+    usdBuy: pBuy === undefined ? null : unclaimed * pBuy,
+  };
+}
+
+async function readLimitOrders(
+  dcl: RheaDclClient,
+  accountId: AccountId,
+  metaOf: (token: string) => Promise<{ symbol: string; decimals: number } | undefined>,
+  prices: ReadonlyMap<string, number>,
+): Promise<LimitOrderView[]> {
+  const orders = await dcl.listActiveOrders(accountId).catch(() => []);
+  const tokens = [
+    ...new Set(
+      orders.flatMap((o) => {
+        const { tokenX, tokenY } = parsePoolId(o.pool_id);
+        return [tokenX, tokenY];
+      }),
+    ),
+  ];
+  const metas = new Map(await Promise.all(tokens.map(async (t) => [t, await metaOf(t)] as const)));
+  return orders.flatMap((o) => limitOrderView(o, (t) => metas.get(t), prices) ?? []);
+}
+
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
@@ -434,6 +498,7 @@ export interface AccountPositions {
     'poolId' | 'tokens' | 'symbols' | 'usdPerToken'
   >[];
   readonly nativeStaking?: readonly NativeStakeView[];
+  readonly limitOrders?: readonly LimitOrderView[];
   /** Whether a token is on our list and whether its price is an estimate. Absent: every token is listed and confirmed. */
   readonly trust?: (token: string) => { verified: boolean; estimate: boolean };
 }
@@ -534,6 +599,20 @@ export function accountPortfolio(p: AccountPositions) {
       },
       [{ token: NATIVE_HOLDING, symbol: 'NEAR', usd: s.usd }],
       'Staking',
+    );
+  for (const o of p.limitOrders ?? [])
+    position(
+      {
+        key: `order-${o.orderId}`,
+        label: `${o.sellSymbol} → ${o.buySymbol}`,
+        sub: `Rhea limit order · waiting to fill at ${sig(o.price)} ${o.buySymbol} per ${o.sellSymbol}`,
+        amount: o.remaining,
+      },
+      [
+        { token: o.sellToken, symbol: o.sellSymbol, usd: o.usdSell },
+        { token: o.buyToken, symbol: o.buySymbol, usd: o.usdBuy },
+      ],
+      'Rhea limit orders',
     );
   const metrics = portfolioMetrics(legs);
   const idleUsd = p.holdings
@@ -728,6 +807,7 @@ export function earningsSentence(
 }
 
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
+const sig = (n: number) => n.toLocaleString('en-US', { maximumSignificantDigits: 4 });
 const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -1897,11 +1977,12 @@ export function registerAccountView(
     const monthly = depositsMonthly - loanMonthly;
     const hasPosition = v.holdings.some((h) => h.where !== 'wallet');
     const v1PoolIds = [...new Set([...deps.pools.map((p) => p.poolId), ...(foundPools ?? [])])];
-    const [dclPositions, v1Positions, staking, nativeStaking] = await Promise.all([
+    const [dclPositions, v1Positions, staking, nativeStaking, limitOrders] = await Promise.all([
       dcl ? readDclPositions(dcl, id, metaOf, shown) : Promise.resolve([]),
       readV1Positions(poolReader, v1PoolIds, id, metaOf, shown),
       readStaking(tokens, id, symbol, prices),
       readNativeStaking(viewer, found?.stakingPools ?? [], id, prices.get(WNEAR) ?? null),
+      dcl ? readLimitOrders(dcl, id, metaOf, shown) : Promise.resolve([]),
     ]);
 
     const { metrics, totals, positions } = accountPortfolio({
@@ -1910,6 +1991,7 @@ export function registerAccountView(
       dclPositions,
       v1Positions,
       nativeStaking,
+      limitOrders,
       trust,
     });
     // Recommendations only ever name a confirmed-price token on our list (#19); swapping an unlisted token is #90.

@@ -743,3 +743,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   "Checking your signature…" until a later `AutoRefresh` render happened to commit (12 s to over a minute).
 - `OwnershipCheck` keeps its own `checking` state and re-renders every 2 s (`lib/ownership-refresh.ts`) until the page
   shows verified or the check failed; after 12 s it says it is not verified yet. Verified showed in ~2 s.
+
+## 2026-11-14 — Open Rhea limit orders in the portfolio (#222)
+
+- `list_active_orders` on the DCL contract (view call): each open order is a holdings row "SELL → BUY", "Rhea limit
+  order · waiting to fill at P BUY per SELL", valued as what is still on the order plus what it bought but has not paid
+  out; counted in net worth. Display only: no card, no analysis, no transaction (cancel stays in the backlog).
