@@ -351,7 +351,7 @@ to the plain JSON request.
 
 **The last analysis survives a reload.** The API saves the last AI analysis per account and strategy in Postgres
 (`account_analyses`, kept 30 days, encrypted with AES-256-GCM under `ANALYSIS_ENCRYPTION_KEY`, D47) with the page's portfolio signature, and serves it back only to the proven owner
-(`GET /v1/analytics/account/:id/analysis`). The page shows it on open: "✓ Up to date" while the portfolio is unchanged and the
+(`GET /v1/analytics/account/:id/analysis`), and for the one public demo account (`PUBLIC_ANALYSIS_ACCOUNT`, D46) to anyone, without "What the AI saw". The page shows it on open: "✓ Up to date" while the portfolio is unchanged and the
 run is under an hour old, a note that prices and rates may have moved once it is older, and "Your portfolio changed —
 run the AI analysis again" once the portfolio itself changed. A repeat run on the same wallet state within 10
 minutes reuses the saved result, also across an API restart, with no model call.
@@ -396,15 +396,15 @@ saved analysis (#190, 30 days), never in `llm_calls` or the logs.
 
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
-page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
+page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`, `busy`,
 `cap`, `model_error`, `invalid_output`, `empty`, `nothing_to_rank`, `deadline`, `cancelled`, `loop_limit`). **What we log:** one `llm_calls` row per
 analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
-called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
+called and the outcome code. No IP address, no visitor key, no prompt or tool text; only the model's picks with their short "why" (or up to 2,000 characters of a reply that failed to parse) and the TEE signature check. Rows older than 7
 days are deleted (on start, then hourly). One `events` row per wallet connect (reported by the browser, marked
 client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
 cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
 written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
-prepared) and 1Click withdrawal quote. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
+prepared), 1Click withdrawal quote and that withdrawal's final status. Account id only, no IP address; rows older than 30 days are deleted. The site loads no analytics SDK or tracker and sets no analytics cookie: these two tables are all the usage data
 there is. Fonts are served by the site itself; the only third-party requests are the wallet connector you choose.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
@@ -511,8 +511,8 @@ portfolios ($500 and $5,000) on Portfolio are simulated and labelled as such.
   read on-chain), Rhea DCL positions, liquid staking and NEAR staked with validator pools (balances read on-chain).
   Tokens on our list are priced with the collector's confirmed prices; any other token is marked **Unverified**,
   priced as an estimate from Rhea's indexer (or "no price"), kept out of the totals, shown only and never used in a
-  suggestion, swapped into or sent to the model. The largest 7 rows show first ("Show all" for the rest); anything under $1, and
-  every unpriced unverified token, sits behind "Show small balances". When an indexer is down, the page says so and
+  suggestion, swapped into or sent to the model. Every verified row of $1 or more is shown; unverified tokens sit in a collapsed "N unverified tokens · not in
+  your total", and balances under $1 in a collapsed "N balances under $1". When an indexer is down, the page says so and
   shows the allowlisted tokens and pools only.
 
 - **Strategy** (on "Your account"): Conservative, Balanced or Aggressive. It changes when a loan or a position gets a
@@ -666,7 +666,7 @@ pnpm --filter @near-autopilot/rhea-dcl-adapter test:live   # RHEA_DCL_LIVE=1
 
 ### Environment
 
-All environment variables are validated at startup by `packages/config` (errors name the variable and
+All environment variables are validated at startup with Zod (`packages/config`, plus each entry point's own schema; errors name the variable and
 reason, never the value). See `.env.example` for the full list. `NEAR_NETWORK` accepts only `mainnet`;
 mainnet contract defaults are built in.
 
@@ -699,8 +699,11 @@ mainnet contract defaults are built in.
 
 The analytics API (`apps/api/src/analytics`). All `/v1/*` routes require `Authorization: Bearer <API_TOKEN>`; the site
 calls them from its server, so the token never reaches the browser. Every route is read-only (`GET /v1/analytics/*`)
-except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it with `validateCascade`, and
-`POST /v1/analytics/account/:id/analysis`, which runs the LLM analysis (reads only; it builds no transaction).
+except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it with `validateCascade`;
+`POST /v1/analytics/account/:id/analysis`, which runs the LLM analysis (reads only; it builds no transaction);
+`POST /v1/wallet/confirm`, which records a signed transaction after checking it on chain; `POST /v1/withdraw/quote`,
+which stores a real 1Click withdrawal quote; `POST /v1/events`, the browser's connect event; and the admin-only
+`POST /v1/admin/settings`.
 
 ## Honest limitations
 
@@ -746,7 +749,8 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
 
 - One wallet prompt per cascade step: a three-step cascade asks you to sign three times.
 - Rhea limit orders are shown in the portfolio, with no cancel button.
-- The AI analysis needs a connected wallet with verified ownership; visitors without one see the rule-based demo.
+- Running a new AI analysis needs a connected wallet with verified ownership; without one you see the rule-based
+  demo, or the owner's last saved AI run on `autopilot-test.near`.
 
 ## Disclaimer
 

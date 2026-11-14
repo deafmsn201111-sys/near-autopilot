@@ -19,7 +19,7 @@ NEAR Autopilot reads a connected wallet's real mainnet portfolio, ranks what cou
  lib/wallet-sign.ts ─► user's wallet signs and sends (only if MAINNET_WALLET_SIGNING=1)
 ```
 
-1. **Connect.** `apps/analytics/lib/wallet.ts` uses HOT Connector (`@hot-labs/near-connect`) with
+1. **Connect.** `apps/analytics/lib/wallet.ts` uses HOT Kit (`lib/hot-kit.ts`, its NEAR connector is `@hot-labs/near-connect`) with
    `signInWithoutAddKey`: connecting adds no access key, and only the account id leaves the wallet.
 2. **Read.** `GET /v1/analytics/account/:id` (`apps/api/src/analytics/account-view.ts`) reads the account with view
    calls only: NEAR and token balances, the Burrow position and health factor, Rhea v1 LP shares on allowlisted pools,
@@ -35,7 +35,7 @@ NEAR Autopilot reads a connected wallet's real mainnet portfolio, ranks what cou
    (`src/wallet/wrap.ts`), builds the transactions with the adapter builders and orders them (`src/wallet/cascade.ts`).
 5. **Validate.** Every cascade passes `validateCascade` (`apps/api/src/wallet/validate-cascade.ts`) before it is
    returned: every transaction's signer must be the connected account, receivers and `ft_transfer_call` targets must be
-   on the per-cascade allowlist, methods on a fixed allowlist, gas at most 300 Tgas per action, deposits at most
+   on the per-cascade allowlist, methods allowlisted per receiver role (`ft_transfer_call` only to a protocol), gas at most 300 Tgas per action, deposits at most
    0.15 NEAR per action and 0.3 NEAR per cascade (wrapping NEAR is exempt, it is the user's own value). A failure
    refuses the whole cascade.
 6. **Sign.** `components/PrepareDialog.tsx` shows the preview. `apps/analytics/lib/wallet-sign.ts` is the only file

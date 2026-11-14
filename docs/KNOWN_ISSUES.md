@@ -30,11 +30,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   tokens other than SOL are not offered.
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence.
 - **Opportunity comparison** lacks a formal, documented, configurable score.
-- **Wallet button after a cancelled sign-in.** A cancelled NEAR sign-in leaves near-connect's `selected-wallet`, so
-  the kit loads on every later page; a sign-in finished after the kit's list was closed shows the account but does not
-  open the portfolio. → #236.
 - **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
-  usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.
+  usage, so the ledger books ~$0.010 (GLM 5.3 Flash) where a whole run costs ~$0.0003. Safe for the cap, but admin spend overstates. → #183.
 - **A failed HOT bridge swap may refund to the HOT balance.** A deposit through HOT's popup (D42) between different
   tokens that fails can be refunded to the user's HOT intents balance. The portfolio shows that balance (#265) but
   cannot bring it to NEAR: the user withdraws it in HOT Wallet. 1:1 deposits arrive or refund on the origin chain.
@@ -43,6 +40,10 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 
 - **The last good read lives in one web process.** A stale view after a failed read (#256) comes from memory: a
   restart or a second instance has nothing to show and falls back to the plain error. A shared store if we scale out.
+- **The public demo account's AI analysis is its owner's last saved run** (#24). Everyone sees it, and it can be older
+  than the account's current positions; the panel says when it was made.
+- **Saved analyses are encrypted at rest only** (#278). The key lives on the same host as the database, so a
+  compromised host can read them; rotating the key drops every saved analysis.
 
 ## Accepted after the security audit (#142)
 

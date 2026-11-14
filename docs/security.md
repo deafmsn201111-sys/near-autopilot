@@ -15,12 +15,12 @@ the user signs, is in [SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md).
 | Forged decision or approval (cast / copied object) | `PolicyEngine` records decisions and approvals it minted; executors check `ApprovalAuthority`   |
 | Smuggled Burrow action (e.g. Withdraw in `msg`)    | `intent_match` requires exactly the one Repay / IncreaseCollateral action for the intent token  |
 | RPC serves the wrong chain                         | `wire()` asserts the RPC `chain_id` equals `mainnet` before anything else, fail-closed          |
-| Runaway loop                                       | Per-action cap, rolling 24h cap, swap cooldown, one in-flight cycle, one tx per live cycle      |
+| Runaway loop                                       | Per-action cap, rolling 24h cap, swap cooldown, one in-flight cycle                             |
 | Leveraging up                                      | No borrow/withdraw intents exist; v1 can only de-risk or rebalance spot                         |
 | Tx built against a wrong chain / contract / oracle | Burrow builders accept only `BurrowVerifier` proofs (chain id, deployed code, oracle, token)    |
 | Mainnet signing                                    | `loadApiEnv` and `wire()` reject `EXECUTION_MODE=live` on mainnet; no override exists           |
 | Stranded swap output                               | Planner requires storage registration on the output token before building the swap              |
-| Unauthorised API use                               | Bearer token (≥32 chars, constant-time compare); dashboard calls server-side only               |
+| Unauthorised API use                               | Bearer token (≥32 chars, constant-time compare); the site calls the API server-side only        |
 | Secret leakage                                     | Env validation errors name variables, never values; API errors are generic                      |
 
 ## Key custody (deliberately not included)
