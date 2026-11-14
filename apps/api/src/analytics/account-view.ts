@@ -431,6 +431,8 @@ export interface PositionRow {
   readonly key: string;
   readonly label: string;
   readonly sub: string;
+  /** The position's token ids (for logos). */
+  readonly tokens: readonly string[];
   readonly amount: number | null;
   /** Null when no leg has a price; then the row is listed but adds nothing to the totals. */
   readonly usd: number | null;
@@ -452,7 +454,7 @@ export function accountPortfolio(p: AccountPositions) {
   const positions: PositionRow[] = [];
   const trust = p.trust ?? (() => ({ verified: true, estimate: false }));
   const position = (
-    row: Omit<PositionRow, 'usd' | 'verified' | 'estimate' | 'small'>,
+    row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
     protocol: string,
   ) => {
@@ -465,7 +467,14 @@ export function accountPortfolio(p: AccountPositions) {
         estimate ||= trust(x.token).estimate;
       }
     const verified = parts.every((x) => trust(x.token).verified);
-    positions.push({ ...row, usd, verified, estimate, small: isSmall(usd, row.amount, verified) });
+    positions.push({
+      ...row,
+      tokens: parts.map((x) => x.token),
+      usd,
+      verified,
+      estimate,
+      small: isSmall(usd, row.amount, verified),
+    });
   };
   for (const h of p.holdings) {
     if (h.usd === null || h.usd <= 0) continue;

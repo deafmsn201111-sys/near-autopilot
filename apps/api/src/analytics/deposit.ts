@@ -42,6 +42,8 @@ export interface DepositDeps {
   /** NEP-141 account ids the user may receive (config/market.json): our own list, never user input. */
   readonly destinationTokens: readonly string[];
   readonly newId?: () => string;
+  /** The logo of a NEAR token id (every 1Click asset is a `nep141:` NEAR token). Absent: no logos. */
+  readonly icon?: (token: string) => Promise<string | null>;
 }
 
 const CHAIN_NAMES: Record<DepositChain, string> = {
@@ -75,6 +77,7 @@ const rank = (symbol: string) => {
   const i = POPULAR.indexOf(symbol);
   return i === -1 ? POPULAR.length : i;
 };
+const NEP141 = 'nep141:';
 const asset = (t: OneClickToken) => ({
   assetId: t.assetId,
   symbol: t.symbol,
@@ -111,13 +114,22 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
   app.get('/v1/deposit/assets', async (req, reply) => {
     try {
       const { origins, destinations } = await lists();
+      const icon = async (t: OneClickToken) =>
+        deps.icon && t.assetId.startsWith(NEP141)
+          ? deps.icon(t.assetId.slice(NEP141.length))
+          : null;
       return {
-        origins: origins.map((t) => ({
-          ...asset(t),
-          chain: t.blockchain,
-          chainName: CHAIN_NAMES[t.blockchain as DepositChain],
-        })),
-        destinations: destinations.map(asset),
+        origins: await Promise.all(
+          origins.map(async (t) => ({
+            ...asset(t),
+            icon: await icon(t),
+            chain: t.blockchain,
+            chainName: CHAIN_NAMES[t.blockchain as DepositChain],
+          })),
+        ),
+        destinations: await Promise.all(
+          destinations.map(async (t) => ({ ...asset(t), icon: await icon(t) })),
+        ),
       };
     } catch (err) {
       req.log.warn({ err }, '1Click token list failed');

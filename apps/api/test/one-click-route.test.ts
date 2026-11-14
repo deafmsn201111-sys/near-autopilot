@@ -57,7 +57,9 @@ const quoted = (over: Partial<DepositQuote> = {}): DepositQuote => ({
   ...over,
 });
 
-function setup(o: { quote?: () => Promise<DepositQuote> } = {}) {
+function setup(
+  o: { quote?: () => Promise<DepositQuote>; icon?: DepositDeps['icon'] } = {},
+) {
   const saved: StoredDepositQuote[] = [];
   const asked: DepositQuoteRequest[] = [];
   const deposit: DepositDeps = {
@@ -71,6 +73,7 @@ function setup(o: { quote?: () => Promise<DepositQuote> } = {}) {
     store: { save: async (q) => void saved.push(q), purge: async () => undefined },
     destinationTokens: ['wrap.near', USDC_NEAR_ID, 'usdt.tether-token.near'],
     newId: () => 'dq_1',
+    ...(o.icon ? { icon: o.icon } : {}),
   };
   const app = buildAnalyticsServer({
     apiToken: API_TOKEN,
@@ -136,6 +139,22 @@ describe('GET /v1/deposit/assets', () => {
       'nep141:zzz.omft.near',
     ]);
     expect(json.destinations.map((d) => d.symbol)).toEqual(['wNEAR', 'USDC']);
+  });
+
+  it('gives every listed token the logo of its NEAR token (nep141 id), or null', async () => {
+    const asked: string[] = [];
+    const res = await setup({
+      icon: async (id) => {
+        asked.push(id);
+        return id === 'eth.omft.near' ? 'data:image/png;base64,AAAA' : null;
+      },
+    }).app.inject({ url: '/v1/deposit/assets', headers: { authorization: `Bearer ${API_TOKEN}` } });
+    const json = res.json<{ origins: { assetId: string; icon: string | null }[] }>();
+    expect(json.origins.find((o) => o.assetId === 'nep141:eth.omft.near')?.icon).toBe(
+      'data:image/png;base64,AAAA',
+    );
+    expect(json.origins.find((o) => o.assetId === 'nep141:btc.omft.near')?.icon).toBeNull();
+    expect(asked).toContain('wrap.near');
   });
 });
 

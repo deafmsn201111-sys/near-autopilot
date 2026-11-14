@@ -8,6 +8,7 @@ import type { CollectorStore } from '../collector/store';
 import type { EvidenceStore } from '../evidence/store';
 import { registerAdmin, type AdminDeps } from './admin';
 import { registerDeposit, type DepositDeps } from './deposit';
+import { registerTokenIcons, type TokenIcons } from './token-icons';
 import { registerEvidence } from './evidence';
 import { registerSeries } from './series';
 import { registerActivity } from './activity';
@@ -38,6 +39,8 @@ export interface AnalyticsDeps {
   readonly admin?: AdminDeps;
   /** Real 1Click quotes for deposits from other chains (D19). Absent: /v1/deposit/* is not served. */
   readonly deposit?: DepositDeps;
+  /** Token logos (ft_metadata.icon, checked). Absent: /v1/tokens/icons is not served. */
+  readonly icons?: TokenIcons;
 }
 
 const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
@@ -96,6 +99,7 @@ export function buildAnalyticsServer(
   if (deps.mainnet) registerAccountView(app, deps.store, deps.mainnet);
   if (deps.admin?.token) registerAdmin(app, deps.admin, now);
   if (deps.deposit) registerDeposit(app, deps.deposit, now);
+  if (deps.icons) registerTokenIcons(app, deps.icons);
 
   /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */
   app.get('/v1/analytics/freshness', async () => {
