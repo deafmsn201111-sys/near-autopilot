@@ -1,9 +1,9 @@
 # near-autopilot
 
-A policy-gated autopilot for NEAR DeFi positions. Agents watch a wallet and its
-[Burrow](https://burrow.finance) lending position, propose actions (repay debt, add collateral,
-rebalance through [Rhea](https://rhea.finance) pools), and a deterministic **policy engine** decides
-whether each action may run. Nothing is signed unless policy approved that exact transaction.
+An AI DeFi analyst for NEAR mainnet. Agents read a wallet, its [Burrow](https://burrow.finance) lending position
+and its [Rhea](https://rhea.finance) liquidity, rank what is worth doing with the numbers behind it (repay debt, add
+collateral, put idle money to work, exit an out-of-range pool), and build the exact transactions. A deterministic
+**policy engine** checks every one of them, and only you sign, in your own wallet.
 
 > **The server never signs.** It holds no key. It builds an exact **unsigned** transaction cascade, checks it
 > against fixed caps (allowlisted contracts and methods, at most 0.15 NEAR per action and 0.3 NEAR per cascade) and
@@ -31,11 +31,11 @@ NEAR Autopilot is an AI DeFi analyst for NEAR. It guards lending positions again
 liquidation, refuses actions that lose money after costs, and analyses liquidity pools. Three levels are kept apart
 everywhere in this repository:
 
-| Level             | What                                                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Works now**     | Automatic decisions, a 12-check policy engine, a tamper-evident audit trail. Execution is **dry-run only**: plans are built, checked and simulated, never signed or sent. |
-| **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                     |
-| **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                     |
+| Level             | What                                                                                                                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Works now**     | Ranked recommendations for a real mainnet wallet, a 12-check policy engine, a tamper-evident audit trail. Every transaction is built unsigned and signed only in the user's own wallet. |
+| **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                                   |
+| **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                                   |
 
 The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
 Intents 1Click gives dry quotes for route comparison, and real quotes only for depositing into your account from
@@ -352,7 +352,7 @@ Four pages for a person, and one area for reviewers.
 
 | Page              | What you see and do                                                                                                                                                                                                                                                    |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision                             |
+| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the analyst's own view                                                  |
 | **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                   |
 | **Activity**      | What you did through the app for your account, newest first: each prepared cascade with what NEAR says really happened for every signed step, confirmed by RPC. Anyone sees the confirmed transactions; analyses and unsigned cascades only after you verify ownership |
 | **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                                |
@@ -488,7 +488,7 @@ LP_SIMULATION_ELIGIBLE` with reason codes. Discovery never allowlists a pool;
 - prices per source (Pyth, DefiLlama, exchanges), with freshness, confidence and divergence checks;
 - fee windows 1H / 24H / 7D / 30D from cumulative pool volumes, an LP entry simulation (fees, impermanent loss,
   entry/exit cost, gas) and a strategy comparison for the demo portfolios, all from one snapshot per cycle;
-- the agents' decision for each demo portfolio (`DATA_SOURCE=simulation`: an in-process mock RPC serves the
+- the agents' internal run over each demo portfolio, which feeds its recommendations (`DATA_SOURCE=simulation`: an in-process mock RPC serves the
   synthetic balances, every row is labelled `simulation`), the policy verdicts and the Shadow Gateway's dry quotes.
 
 The cycle interval is `SHADOW_CYCLE_INTERVAL_SECONDS` (default 900 s, counted from the end of a cycle). Opening the
