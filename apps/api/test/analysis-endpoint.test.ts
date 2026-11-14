@@ -696,6 +696,89 @@ describe('prepare the exit of a meme-pool DCL position (#193)', () => {
   });
 });
 
+describe('prepare supply_all: every idle token in one cascade (#196)', () => {
+  const WNEAR = 'wrap.near';
+  const node = rpc(
+    {
+      [`${BURROW}#get_asset`]: (args) =>
+        args['token_id'] === USDT || args['token_id'] === WNEAR
+          ? { ...usdtAsset, token_id: args['token_id'] }
+          : null,
+      [`${WNEAR}#ft_balance_of`]: () => (5n * 10n ** 24n).toString(),
+    },
+    { [WNEAR]: TOKEN_REQUIRED_EXPORTS },
+  );
+  const twoPrices = {
+    ...store,
+    latestSnapshot: async () => ({
+      id: 'snap-1',
+      takenAt: new Date(),
+      summary: {
+        prices: [
+          { token: USDT, usd: '1', quality: 'OK' },
+          { token: WNEAR, usd: '3', quality: 'OK' },
+        ],
+      },
+    }),
+    tokenMetadata: async () => [
+      { token: USDT, symbol: 'USDt', decimals: 6 },
+      { token: WNEAR, symbol: 'wNEAR', decimals: 24 },
+    ],
+  } as unknown as CollectorStore;
+  const prepare = (tokens: unknown) =>
+    server(node, twoPrices).inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers,
+      payload: { account: 'alice.near', intent: { action: 'supply_all', tokens } },
+    });
+
+  it('supplies each token from the wallet, one ft_transfer_call per token, Burrow and the tokens only', async () => {
+    const res = await prepare([
+      { token: USDT, approxUsd: 50 },
+      { token: WNEAR, approxUsd: 9 },
+    ]);
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      transactions: {
+        receiverId: string;
+        actions: { methodName: string; args: { receiver_id?: string; amount?: string } }[];
+      }[];
+      preview: string[];
+    }>();
+    expect(body.transactions.map((t) => t.receiverId)).toEqual([USDT, WNEAR]);
+    expect(body.transactions.flatMap((t) => t.actions.map((a) => a.methodName))).toEqual([
+      'ft_transfer_call',
+      'ft_transfer_call',
+    ]);
+    expect(body.transactions.every((t) => t.actions[0]?.args.receiver_id === BURROW)).toBe(true);
+    expect(body.transactions[0]?.actions[0]?.args.amount).toBe('50000000');
+    expect(body.transactions[1]?.actions[0]?.args.amount).toBe((3n * 10n ** 24n).toString());
+  });
+
+  it.each([
+    [[]],
+    [[{ token: USDT, approxUsd: 5 }]],
+    [
+      [
+        { token: USDT, approxUsd: 5 },
+        { token: USDT, approxUsd: 6 },
+      ],
+    ],
+    [Array.from({ length: 6 }, (_, i) => ({ token: `t${i}.near`, approxUsd: 5 }))],
+  ])('rejects %j: two to five distinct tokens', async (tokens) => {
+    expect((await prepare(tokens)).statusCode).toBe(400);
+  });
+
+  it('refuses a token the wallet does not hold rather than supplying the rest silently', async () => {
+    const res = await prepare([
+      { token: USDT, approxUsd: 5 },
+      { token: 'nothing.near', approxUsd: 5 },
+    ]);
+    expect(res.statusCode).toBe(409);
+  });
+});
+
 describe('prepare exact amount', () => {
   const app = server(chain, store);
   const prepare = (intent: Record<string, unknown>) =>

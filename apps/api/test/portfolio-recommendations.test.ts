@@ -397,7 +397,7 @@ describe('portfolioRecommendations', () => {
     const r = portfolioRecommendations(
       ctx({
         idleEarn: [
-          { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 2 },
+          { token: 'usdc', symbol: 'USDC', usd: 6, aprPct: 2 },
           { token: 'usdt.tether-token.near', symbol: 'USDt', usd: 500, aprPct: 8 },
         ],
       }),
@@ -410,7 +410,45 @@ describe('portfolioRecommendations', () => {
     });
     expect(i?.title).toBe('$500 of USDt is sitting idle');
     expect(i?.why).toContain('about $40.00 a year');
-    expect(i?.why).toContain('$600 of USDC would earn about $12.00 a year');
+    expect(i?.why).toContain('$6 of USDC would earn about $0.12 a year');
+  });
+
+  describe('all idle money in one cascade (#196)', () => {
+    it('puts every idle token worth its fee to work with one card and one signature', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [
+            { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 10 },
+            { token: 'usdt', symbol: 'USDt', usd: 500, aprPct: 8 },
+            { token: 'dust', symbol: 'D', usd: 2, aprPct: 5 },
+          ],
+        }),
+      );
+      const idle = r.filter((x) => x.kind === 'put_idle_to_work');
+      expect(idle).toHaveLength(1);
+      expect(idle[0]?.id).toBe('supply-all-idle');
+      expect(idle[0]?.intent).toEqual({
+        action: 'supply_all',
+        tokens: [
+          { token: 'usdc', approxUsd: 600 },
+          { token: 'usdt', approxUsd: 500 },
+        ],
+      });
+      expect(idle[0]?.title).toBe('$1,100 of USDC and USDt is sitting idle');
+      expect(idle[0]?.why).toContain('about $100.00 a year');
+    });
+
+    it('keeps the single-token card when only one token is worth its fee', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [
+            { token: 'usdc', symbol: 'USDC', usd: 600, aprPct: 10 },
+            { token: 'dust', symbol: 'D', usd: 2, aprPct: 5 },
+          ],
+        }),
+      );
+      expect(r.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+    });
   });
 
   describe('idle money after costs (#194)', () => {

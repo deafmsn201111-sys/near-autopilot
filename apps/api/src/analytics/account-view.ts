@@ -561,6 +561,10 @@ export type RecommendationIntent =
       readonly sizing?: RepaySizing;
     }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
+  | {
+      readonly action: 'supply_all';
+      readonly tokens: readonly { readonly token: string; readonly approxUsd: number }[];
+    }
   | SwapRepayIntent
   | {
       readonly action: 'recentre_dcl';
@@ -802,6 +806,11 @@ export function portfolioAdvice(
     .sort((a, b) => yearly(b) - yearly(a));
   // A deposit stays for months: its year of interest, after the one network fee, must clear the usual hurdle.
   const worthIt = idle && yearWorthTheFee(yearly(idle));
+  // ponytail: at most 5 tokens in one cascade (the prepare limit); a wallet with more supplies its five best.
+  const worthy = earning
+    .filter((a) => a.usd >= MIN_ACTION_USD && yearWorthTheFee(yearly(a)))
+    .sort((a, b) => yearly(b) - yearly(a))
+    .slice(0, 5);
   // The same token borrowed at a higher rate: repaying beats supplying, unless the loan card above already repays it.
   const debt = ctx.largestDebt;
   const borrowPct = debt?.borrowAprPct ?? null;
@@ -839,6 +848,23 @@ export function portfolioAdvice(
     skipped.push(
       `${money2(idle.usd)} of ${idle.symbol} would earn about ${money2(yearly(idle))} a year on Burrow: not worth the network fee of about ${money2(GAS)} for so little.`,
     );
+  } else if (worthy.length >= 2) {
+    const total = worthy.reduce((s, a) => s + a.usd, 0);
+    const names = worthy.map((a) => a.symbol);
+    const list = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+    recs.push({
+      id: 'supply-all-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: `${money0(total)} of ${list} is sitting idle`,
+      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(worthy.reduce((s, a) => s + yearly(a), 0))} a year (${worthy.map((a) => `${a.symbol} ${a.aprPct.toFixed(1)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
+      intent: {
+        action: 'supply_all',
+        tokens: worthy.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
+      },
+      carry: idleRule(worthy[0]!, strategy),
+    });
   } else if (idle) {
     const other = runnerUp
       ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
@@ -2321,6 +2347,14 @@ export function registerAccountView(
         account: accountIdSchema,
         intent: z.discriminatedUnion('action', [
           z.object({ action: z.literal('supply'), token: accountIdSchema, approxUsd: usd, amount }),
+          z.object({
+            action: z.literal('supply_all'),
+            tokens: z
+              .array(z.object({ token: accountIdSchema, approxUsd: usd }))
+              .min(2)
+              .max(5)
+              .refine((ts) => new Set(ts.map((t) => t.token)).size === ts.length),
+          }),
           z.object({ action: z.literal('repay'), token: accountIdSchema, approxUsd: usd, amount }),
           z.object({
             action: z.literal('swap'),
@@ -3035,6 +3069,81 @@ export function registerAccountView(
           },
           {
             amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+          },
+        );
+      } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
+
+    // supply_all — every idle token the card names, one Burrow supply each, signed as one cascade (#196).
+    if (intent.action === 'supply_all') {
+      try {
+        const [prices, meta, deployment, storage] = await Promise.all([
+          latestPrices(),
+          store.tokenMetadata(),
+          burrowVerifier.verifyDeployment(),
+          burrow.getStorageBalance(account),
+        ]);
+        const steps: CascadeStep[] = [];
+        if (storage === null) {
+          const b = await burrow.getStorageBalanceBounds();
+          steps.push({
+            intentId: 'register',
+            tx: buildBurrowStorageDeposit({ deployment, accountId: account, deposit: b.min }),
+            preview: `Register your account on Burrow — one-time, ${formatNear(b.min)} NEAR, refundable.`,
+          });
+        }
+        const amounts: { raw: string; human: number; symbol: string }[] = [];
+        for (const t of intent.tokens) {
+          const m = meta.find((x) => x.token === t.token);
+          const price = prices.get(t.token);
+          if (!m || price === undefined || !(price > 0))
+            return reply.code(409).send({ error: `no confirmed price for ${t.token}` });
+          const walletRaw = await tokens.getBalance(t.token, account).catch(() => 0n);
+          const walletHuman = Number(walletRaw) / 10 ** m.decimals;
+          if (walletHuman <= 0)
+            return reply.code(409).send({ error: `your wallet holds no ${m.symbol}` });
+          const { rawAmount, humanAmount } = resolveIntentAmount(
+            t.approxUsd,
+            price,
+            m.decimals,
+            walletHuman,
+          );
+          if (rawAmount <= 0n)
+            return reply.code(409).send({ error: `the resolved ${m.symbol} amount is zero` });
+          const verifiedToken = await burrowVerifier.verifyToken(deployment, t.token, 'supply');
+          steps.push({
+            intentId: `supply-${t.token}`,
+            tx: buildSupply({ deployment, token: verifiedToken, now: clock.now(), rawAmount }),
+            preview: `Supply ${humanAmount.toFixed(Math.min(6, m.decimals))} ${m.symbol} to Burrow (earns the current supply rate).`,
+          });
+          amounts.push({ raw: rawAmount.toString(), human: humanAmount, symbol: m.symbol });
+        }
+        const cascade = assembleCascade(account, steps);
+        const totalGas = cascade.transactions.reduce(
+          (s, tx) => s + tx.actions.reduce((g, a) => g + a.gas, 0n),
+          0n,
+        );
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([
+              deps.burrowId,
+              ...intent.tokens.map((t) => t.token),
+            ]),
+          },
+          {
+            amounts,
+            cost: {
+              networkFeeMaxNear:
+                Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6,
+              swap: null,
+            },
           },
         );
       } catch (e) {
