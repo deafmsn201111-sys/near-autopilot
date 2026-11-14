@@ -14,7 +14,6 @@ import { shortHash } from '../lib/activity';
 import {
   connectOriginWallet,
   disconnectOriginWallet,
-  loadKit,
   openDepositBridge,
   type OriginWallet,
 } from '../lib/hot-kit';
@@ -328,7 +327,7 @@ export function OriginWallets({
 }
 
 /**
- * Fund the connected NEAR account from another chain through HOT's bridge popup (D40): one line on HOT's fee first,
+ * Fund the connected NEAR account from another chain through HOT's bridge popup (D42): one line on HOT's fee first,
  * then the popup with the account locked as the recipient. Nothing is built or signed here.
  */
 export function DepositDialog({ account, label = 'Deposit' }: { account: string; label?: string }) {
@@ -337,22 +336,22 @@ export function DepositDialog({ account, label = 'Deposit' }: { account: string;
   const [error, setError] = useState<string | null>(null);
 
   async function continueInHot() {
+    const dialog = ref.current;
     setBusy(true);
     setError(null);
     try {
-      if ((await currentAccount()) !== account)
+      if ((await currentAccount().catch(() => null)) !== account)
         return setError(
           'Connect your NEAR wallet first: the deposit goes to the connected account.',
         );
-      await loadKit();
-    } catch {
-      return setError('HOT could not be loaded. Check your connection and try again.');
+      await withoutModal(dialog, () => openDepositBridge(account));
+      dialog?.close();
+    } catch (e) {
+      if (!(e instanceof Error && e.message === 'User rejected'))
+        setError('HOT could not open the deposit. Check your connection and try again.');
     } finally {
       setBusy(false);
     }
-    ref.current?.close();
-    // Rejects when the popup is closed before a swap: nothing to report.
-    await openDepositBridge(account).catch(() => undefined);
   }
 
   return (

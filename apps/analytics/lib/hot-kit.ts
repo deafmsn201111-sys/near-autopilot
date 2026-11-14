@@ -165,7 +165,6 @@ export async function disconnectOriginWallet(wallet: OriginWallet): Promise<void
   if (w) await k.disconnect(w);
 }
 
-/** The kit popups in the page's own colours, read from the design tokens of the theme on screen. */
 function pageTheme(): KitTheme | undefined {
   if (typeof getComputedStyle !== 'function' || !document.documentElement) return undefined;
   const css = getComputedStyle(document.documentElement);
@@ -207,7 +206,6 @@ export const isBridgeSource = (
   oneClickChain: (id: ChainId) => string | undefined,
 ) => (typeof chain === 'number' ? oneClickChain(chain) !== undefined : SOURCE_CHAINS.has(chain));
 
-/** The bridge popup's setup for a deposit into `account`: that recipient, locked; NEAR tokens only on arrival. */
 export function bridgeSetup(
   recipient: Recipient,
   oneClickChain: (id: ChainId) => string | undefined,
@@ -230,5 +228,7 @@ export function bridgeSetup(
 export async function openDepositBridge(account: string): Promise<void> {
   const [kit, k] = await Promise.all([import('@hot-labs/kit'), load()]);
   const recipient = await kit.Recipient.fromAddress('near', account);
+  const theme = pageTheme();
+  if (theme) k.setUIOptions({ theme });
   await k.openBridge({ setup: bridgeSetup(recipient, kit.toOneClickChain) });
 }

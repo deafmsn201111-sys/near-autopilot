@@ -51,7 +51,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   tokens that fails can be refunded to the user's HOT intents balance, which the portfolio does not read. 1:1 deposits
   arrive or refund on the origin chain. → #260.
 - **Deposit quote API without UI.** `POST /v1/deposit/quote` and `GET /v1/deposit/incidents` (with SHIELD) are no
-  longer called by the site after D42. → #261.
+  longer called by the site after D42, so a deposit no longer shows 1Click SHIELD incident warnings; HOT's popup
+  shows its own status. → #261.
 
 ## Watch list (external)
 

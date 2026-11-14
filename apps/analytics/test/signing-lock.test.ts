@@ -30,7 +30,7 @@ describe('one-click signing lock (dashboard)', () => {
     expect(hits).toEqual([]);
   });
 
-  it('no source asks an origin-chain wallet to send; only lib/hot-kit.ts opens the HOT bridge (D40)', () => {
+  it('no source asks an origin-chain wallet to send; only lib/hot-kit.ts opens the HOT bridge (D42)', () => {
     const HOT_KIT = join(ROOT, 'lib', 'hot-kit.ts');
     const send = /\.(transfer|sendTransaction|signIntents)\s*\(/;
     expect(sources.filter((f) => send.test(readFileSync(f, 'utf8')))).toEqual([]);
