@@ -500,6 +500,23 @@ describe('prepare withdraw_1click', () => {
       expect(methods(res)[0]!.deposit).toBe((4n * NEAR + REG).toString());
     });
 
+    it('wraps, registers the deposit address and transfers when nothing is registered', async () => {
+      const res = await prepare(near('0', false), {}, deps(), 5n * NEAR);
+      const actions = methods(res);
+      expect(actions.map((a) => a.methodName)).toEqual([
+        'near_deposit',
+        'storage_deposit',
+        'ft_transfer',
+      ]);
+      expect(actions[1]!.deposit).toBe(REG.toString());
+      expect(JSON.stringify(res.json())).toMatch(/wrap 1 NEAR into wNEAR \(plus 0\.0012 NEAR/);
+    });
+
+    it('builds at exactly the quote plus 1 NEAR, and refuses 1 yocto less', async () => {
+      expect((await prepare(near('0'), {}, deps(), 2n * NEAR)).statusCode).toBe(200);
+      expect((await prepare(near('0'), {}, deps(), 2n * NEAR - 1n)).statusCode).toBe(409);
+    });
+
     it('keeps 1 NEAR in the wallet for fees', async () => {
       const res = await prepare(near('0'), {}, deps(), 2n * NEAR - 1n);
       expect(res.statusCode).toBe(409);

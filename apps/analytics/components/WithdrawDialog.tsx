@@ -68,7 +68,7 @@ function WithdrawQuote({
           Sign one NEAR transaction within <b className="num">{remaining(left)}</b>: it sends {send}{' '}
           from <b>{account}</b> to the 1Click deposit address of this quote.
           {q.origin.assetId === 'nep141:wrap.near' &&
-            ' Any of it your wallet lacks as wNEAR is first wrapped from native NEAR, in the same transaction, keeping 1 NEAR for fees.'}
+            ' Any of it your wallet lacks as wNEAR is first wrapped from native NEAR, in the same transaction, keeping 1 NEAR for fees. A 1Click refund comes back as wNEAR.'}
         </p>
       )}
       <StatusLine q={q} />
