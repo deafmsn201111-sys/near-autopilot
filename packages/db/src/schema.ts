@@ -642,6 +642,10 @@ export const llmCalls = pgTable(
     outcome: text('outcome', {
       enum: ['ok', 'cap', 'model_error', 'invalid_output', 'empty', 'deadline', 'loop_limit'],
     }).notNull(),
+    /** Strategy and candidate cards offered (migration 0023); null on rows from before it. */
+    input: jsonb('input').$type<unknown>(),
+    /** Picks, or the capped raw reply on invalid output (migration 0023). */
+    output: jsonb('output').$type<unknown>(),
   },
   (t) => [index('llm_calls_at_idx').on(t.at)],
 );

@@ -551,6 +551,21 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   polling so the refund shows up. "Check again" starts a new round with an immediate check; a 1Click 404 for our
   address reads as `PENDING_DEPOSIT`; late responses never replace newer ones; the browser zod-checks the status.
 
+## 2026-11-14 — Swap output shows without a reload (#160)
+
+- `refreshPortfolio` no longer stops at the first changed read: a Rhea swap's debit lands first and its credit a few
+  blocks later. It keeps reading every 5 s until a read after a change shows nothing new, at most 6 reads (~25 s).
+
+## 2026-11-14 — Admin screens 2 Funnel and 3 LLM quality (#33)
+
+- `llm_calls` gets `input` (strategy + candidate cards offered: id, kind) and `output` (the model's own picks: id,
+  kind or null for an id no tool returned, why; the raw reply capped at 2000 chars on `invalid_output`), migration
+  0023, kept 7 days with the row.
+- `GET /v1/admin/funnel`: connect / analyse / prepare / signed and unique wallets per UTC day for 7 days, from
+  `events`. `GET /v1/admin/llm`: fallback rate by code, validation-error rate (`invalid_output`), p50/p95 latency
+  (percentile_cont, in TS), top recommendation kinds the model picked, last 20 runs. Both behind `ADMIN_API_TOKEN`.
+- `/admin/funnel` and `/admin/llm` in the loopback admin container, with an admin nav; "no data yet" when empty.
+
 ## 2026-11-14 — A broken AI stream no longer starts a second run or spends a second token (#150)
 
 - `analyseAccount`: runs still going live in `AnalysisMemo.running` by account + strategy, checked before the wallet

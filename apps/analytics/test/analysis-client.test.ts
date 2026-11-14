@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { pipelineOf, runAnalysis } from '../lib/analysis-client';
+import { pipelineOf, runAnalysis, type Pipeline } from '../lib/analysis-client';
 
 const reply = (body: unknown) =>
   vi.stubGlobal(
@@ -181,12 +181,28 @@ describe('runAnalysis as a stream', () => {
     const read = { model: 'claude-haiku-5-5', read: { tokens: 7, loan: true } };
     const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
-      { ...read, asked: [], trace: [], turns: null, checks: null },
-      { ...read, asked, trace: [], turns: null, checks: null },
-      { ...read, asked, trace: [step], turns: null, checks: null },
-      { ...read, asked, trace: [step], turns: 2, checks: null },
-      { ...read, asked, trace: [step], turns: 2, checks },
+      { ...read, asked: [], trace: [], turns: null, checks: null, stage: 1 },
+      { ...read, asked, trace: [], turns: null, checks: null, stage: 1 },
+      { ...read, asked, trace: [step], turns: null, checks: null, stage: 2 },
+      { ...read, asked, trace: [step], turns: 2, checks: null, stage: 3 },
+      { ...read, asked, trace: [step], turns: 2, checks, stage: 4 },
     ]);
+  });
+
+  it('never moves the stage back when the model asks more agents in a later turn', async () => {
+    const more = { tool: 'yield_scout', agent: 'Yield Scout' };
+    serve(
+      stream(
+        frame('read', { model: 'm', tokens: 1, loan: false }) +
+          frame('asked', { agents: [{ tool: step.tool, agent: step.agent }] }) +
+          frame('agent', { step }) +
+          frame('asked', { agents: [more] }) +
+          frame('done', done),
+      ),
+    );
+    const seen: Pipeline[] = [];
+    await runAnalysis('alice.near', 'balanced', (p) => p && seen.push(p));
+    expect(seen.map((p) => p.stage)).toEqual([1, 1, 2, 2]);
   });
 
   it('ignores an unknown or malformed event', async () => {

@@ -565,6 +565,20 @@ describe('analyseAccount', () => {
     expect(out.recommendations).toEqual([heuristic]);
   });
 
+  it('records what the model picked when every pick is an id no tool returned', async () => {
+    const l = ledger();
+    const { llm } = fake([() => callAll, () => final([{ id: 'made-up', why: 'Trust me.' }])]);
+    const out = await analyseAccount(ai(llm, l), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.fallback).toBe('empty');
+    expect(l.rows[0]?.output).toEqual({
+      picks: [{ id: 'made-up', kind: null, why: 'Trust me.' }],
+    });
+  });
+
   it('never says "nothing to do" for a loan below target the wallet cannot repay', async () => {
     const { llm } = fake([
       () => callAll,
@@ -1591,17 +1605,29 @@ describe('analyseAccount', () => {
         'portfolio_concentration',
       ]);
       expect(row.latencyMs).toBeGreaterThanOrEqual(0);
-      expect(Object.keys(row).sort()).toEqual([
-        'accountId',
-        'at',
-        'costMicroUsd',
-        'inputTokens',
-        'latencyMs',
-        'model',
-        'outcome',
-        'outputTokens',
-        'tools',
-      ]);
+      expect(Object.keys(row).sort()).toEqual(
+        [
+          'accountId',
+          'at',
+          'costMicroUsd',
+          'inputTokens',
+          'latencyMs',
+          'model',
+          'outcome',
+          'outputTokens',
+          'tools',
+          'input',
+          'output',
+        ].sort(),
+      );
+      expect(row.input).toMatchObject({ strategy: 'balanced' });
+      expect(row.input?.candidates).toContainEqual({
+        id: 'reduce-concentration',
+        kind: 'reduce_concentration',
+      });
+      expect(row.output).toEqual({
+        picks: [{ id: 'reduce-concentration', kind: 'reduce_concentration', why: 'Diversify.' }],
+      });
     });
 
     it('keeps the tokens spent so far when the model fails mid-run', async () => {
@@ -1634,7 +1660,17 @@ describe('analyseAccount', () => {
         checks: [heuristic],
       });
       expect(out.fallback).toBe('invalid_output');
-      expect(l.rows).toMatchObject([{ outcome: 'invalid_output' }]);
+      expect(l.rows).toMatchObject([{ outcome: 'invalid_output', output: { reply: turn.text } }]);
+    });
+
+    it('caps the stored reply of an invalid output at 2000 characters', async () => {
+      const l = ledger();
+      await analyseAccount(ai(fake([() => ({ kind: 'final', text: 'x'.repeat(5000) })]).llm, l), {
+        ...ctx,
+        heuristics: [heuristic],
+        checks: [heuristic],
+      });
+      expect(l.rows[0]?.output).toEqual({ reply: 'x'.repeat(2000) });
     });
 
     it('records a deadline with its code', async () => {
