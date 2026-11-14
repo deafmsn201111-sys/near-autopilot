@@ -60,8 +60,9 @@ export interface OtherChainGroup {
     amount: number;
     usd: number | null;
     logos: readonly Logo[];
+    action?: ReactNode;
   }[];
-  action: ReactNode;
+  action?: ReactNode;
 }
 
 // ponytail: mirrors the API's NEAR_RESERVE; send a flag from the API if the two ever diverge
@@ -334,12 +335,13 @@ export function HoldingsPanel({
           <tbody key={`other-${o.key}`} className="hold-ext">
             <tr className="hold-grp">
               <th scope="rowgroup" colSpan={3}>
-                {o.label} · shown only, not analysed
+                {o.label} · shown only, not analysed{' '}
+                <ProvenanceMark kind="estimate">Estimate · HOT Kit</ProvenanceMark>
               </th>
               <td className="r num">{usdText(o.items.reduce((s, i) => s + (i.usd ?? 0), 0))}</td>
             </tr>
             {o.items.map((i) => (
-              <Row key={i.key} r={i} status={o.action} />
+              <Row key={i.key} r={i} status={i.action ?? o.action} />
             ))}
           </tbody>
         ))}

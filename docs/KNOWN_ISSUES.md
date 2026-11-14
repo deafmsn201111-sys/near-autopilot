@@ -40,8 +40,10 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
   usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.
 - **A failed HOT bridge swap may refund to the HOT balance.** A deposit through HOT's popup (D42) between different
-  tokens that fails can be refunded to the user's HOT intents balance, which the portfolio does not read. 1:1 deposits
-  arrive or refund on the origin chain. → #260.
+  tokens that fails can be refunded to the user's HOT intents balance. The portfolio shows that balance (#265) but
+  cannot bring it to NEAR: the user withdraws it in HOT Wallet. 1:1 deposits arrive or refund on the origin chain.
+- **Other-chain balances are read when a wallet connects.** HOT Kit fetches them on connect (and the bridge refreshes
+  its own); after a deposit made elsewhere the "+ $X on other chains" line stays as it was until a reload. (#265)
 
 - **The last good read lives in one web process.** A stale view after a failed read (#256) comes from memory: a
   restart or a second instance has nothing to show and falls back to the plain error. A shared store if we scale out.

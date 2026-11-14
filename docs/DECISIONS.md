@@ -814,8 +814,16 @@ list, so the proxy is gone (#290): the kit calls hex-api from the browser with i
 refused, so Caddy redirects any `www.` host to the bare one; 127.0.0.1 is refused too, so local bridge checks run on
 `http://localhost:3001`. The kit verifies every 1Click quote signature itself.
 **Consequences:** no new caps; no server code on the deposit path; our deposit quote endpoints have no UI any more.
-A failed non-1:1 swap may refund to the user's HOT balance, which the portfolio does not show (KNOWN_ISSUES). The kit
+A failed non-1:1 swap may refund to the user's HOT balance (shown since #265, see below). The kit
 popups take the page's design tokens at load (`pageTheme`).
+**Other-chain balances (#265):** the page shows what the kit already reads for its connected wallets
+(`kit.walletsTokens`, watched with mobx `reaction` in `watchOtherBalances`): per origin wallet and one "HOT balance"
+group, valued at the kit's prices ("Estimate · HOT Kit"), only on the connected user's own portfolio. Nothing goes to
+our API; they are never analysed or ranked; no new host (the kit's chain RPCs and hex-api were already in use, CSP
+allows them). **Bring to NEAR** is the same `openDepositBridge` with the row's token and wallet preselected (`from`,
+`sender`) when it passes `isBridgeSource`, and `to` set to the NEAR token of the same symbol if there is one (the kit
+applies preset `from` / `to` without its token filters, so both are checked in `openDepositBridge`); the HOT balance gets no button (taking it out is a NEAR signature around
+`validateCascade`), only "Withdraw it in HOT Wallet".
 
 ## D43 — Every AI reply's TEE signature is checked before the answer is shown; users see a privacy mark, not a model (#233)
 

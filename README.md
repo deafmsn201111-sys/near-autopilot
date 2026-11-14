@@ -151,6 +151,10 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
    token), already taken off the amount the popup shows you receive; the portfolio picks up the incoming tokens by itself. Without
    a connected NEAR account the button asks you to connect first. A deposit straight from an exchange is not offered.
    Locally, open this step on `http://localhost:3001`: HOT's API answers `localhost` but refuses `127.0.0.1`.
+   Once an EVM / Solana / Tron / Bitcoin wallet is connected, your own portfolio shows what it holds (and your HOT
+   balance, where a failed HOT swap refunds) as "+ $X on other chains · not analysed", in the wallet menu and as a
+   holdings group, valued by HOT Kit in your browser and never sent to our server or analysed. **Bring to NEAR** on a
+   row opens the same popup with that token preselected; the HOT balance is withdrawn in HOT Wallet.
 6. **Withdraw to another chain.** On your own portfolio or in the wallet menu, press **Withdraw**. Pick a token your NEAR
    wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
    Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or

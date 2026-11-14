@@ -11,7 +11,9 @@ import {
   watchOriginWallets,
   type OriginChain,
   type OriginWallet,
+  type OtherBalance,
 } from '../lib/hot-kit';
+import { useOtherBalances } from './OtherChains';
 import { portfolioUrl } from '../lib/portfolio-mode';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
 import type { WalletBalance } from '../lib/withdraw';
@@ -82,25 +84,38 @@ export function ConnectButton({
   );
 }
 
-const ChainMark = ({ chain }: { chain: OriginChain }) => (
+const ChainMark = ({ label }: { label: string }) => (
   <span className="app-tok" aria-hidden="true">
-    {CHAIN_LABEL[chain].slice(0, 1)}
+    {label.slice(0, 1)}
   </span>
 );
+
+const OtherUsd = ({ usd }: { usd: number | undefined }) =>
+  usd === undefined ? null : (
+    <span className="bal num">
+      {money(usd, false)}
+      <small>
+        <ProvenanceMark kind="estimate">Estimate · HOT Kit</ProvenanceMark>
+      </small>
+    </span>
+  );
 
 function WalletMenu({
   account,
   portfolio,
   wallets,
+  balances,
   onDisconnect,
 }: {
   account: string;
   portfolio: WalletPortfolio | null;
   wallets: readonly OriginWallet[];
+  balances: readonly OtherBalance[];
   onDisconnect: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const missing = ORIGIN_CHAINS.filter((c) => !wallets.some((w) => w.chain === c));
+  const hot = balances.find((b) => b.chain === 'hot');
   return (
     <>
       <h4>Portfolio account</h4>
@@ -122,13 +137,24 @@ function WalletMenu({
       <h4>Other chains · for deposits and withdrawals</h4>
       {wallets.map((w) => (
         <div key={w.chain} className="row">
-          <ChainMark chain={w.chain} />
+          <ChainMark label={CHAIN_LABEL[w.chain]} />
           <div>
             <b title={w.address}>{shortHash(w.address)}</b>
             <small>{CHAIN_LABEL[w.chain]} · not analysed</small>
           </div>
+          <OtherUsd usd={balances.find((b) => b.key === `${w.chain}:${w.address}`)?.usd} />
         </div>
       ))}
+      {hot && (
+        <div className="row">
+          <ChainMark label="HOT" />
+          <div>
+            <b>HOT balance</b>
+            <small>Refunds of failed HOT swaps · not analysed</small>
+          </div>
+          <OtherUsd usd={hot.usd} />
+        </div>
+      )}
       {missing.map((c) => (
         <button
           key={c}
@@ -140,7 +166,7 @@ function WalletMenu({
             void connectOriginWallet(c).finally(() => setBusy(false));
           }}
         >
-          <ChainMark chain={c} />
+          <ChainMark label={CHAIN_LABEL[c]} />
           <div>
             <b>Connect {CHAIN_LABEL[c]}</b>
             <small>
@@ -197,6 +223,7 @@ export function WalletButton({ initialAccount }: { initialAccount: string | null
     [router],
   );
   useEffect(() => (account ? watchOriginWallets(setWallets) : undefined), [account]);
+  const balances = useOtherBalances(account !== null);
 
   useEffect(() => {
     if (!open || !account) return;
@@ -247,7 +274,7 @@ export function WalletButton({ initialAccount }: { initialAccount: string | null
         <span className="stack">
           <TokenIcon icon={known?.nearIcon} symbol="NEAR" size={18} />
           {wallets.map((w) => (
-            <ChainMark key={w.chain} chain={w.chain} />
+            <ChainMark key={w.chain} label={CHAIN_LABEL[w.chain]} />
           ))}
         </span>
         <span className="who">{account}</span>
@@ -258,6 +285,7 @@ export function WalletButton({ initialAccount }: { initialAccount: string | null
           account={account}
           portfolio={known}
           wallets={wallets}
+          balances={balances}
           onDisconnect={() => {
             setLeaving(true);
             void Promise.allSettled([disconnect(), clearOwnershipProof()]).finally(() => {

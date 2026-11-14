@@ -1,5 +1,5 @@
 'use client';
-import type { BridgeSetup, ChainId, HotKit, Recipient } from '@hot-labs/kit';
+import type { BridgeSetup, ChainId, HotKit, Recipient, Token } from '@hot-labs/kit';
 import type { OmniWallet } from '@hot-labs/kit/core';
 import type { KitTheme } from '@hot-labs/kit/ui';
 import type { EventMap, NearConnector } from '@hot-labs/near-connect';
@@ -237,11 +237,105 @@ export function bridgeSetup(
  * Opens HOT's bridge popup to fund `account` from another chain: the account is the locked recipient, NEAR the only
  * destination. HOT builds the transfer and the user signs it in the origin wallet (D42). Resolves once it is open.
  */
-export async function openDepositBridge(account: string): Promise<void> {
-  const [kit, k] = await Promise.all([import('@hot-labs/kit'), load()]);
+export async function openDepositBridge(account: string, tokenId?: string): Promise<void> {
+  const k = await load();
+  const kit = await import('@hot-labs/kit');
   const recipient = await kit.Recipient.fromAddress('near', account);
   const theme = pageTheme();
   if (theme) k.setUIOptions({ theme });
+  const held = k.walletsTokens.find(
+    (t) => t.token.id === tokenId && isBridgeSource(t.token.chain, kit.toOneClickChain),
+  );
+  // The kit applies a preset `from` / `to` without its token filters: both are checked here.
+  const twin =
+    held && k.tokens.find((t) => t.chain === 'near' && !t.isOmni && t.symbol === held.token.symbol);
+  const setup = bridgeSetup(recipient, kit.toOneClickChain);
+  const preset = held && { from: held.token, sender: held.wallet, ...(twin && { to: twin }) };
   // Settles with the swap, whose result and errors HOT's popup shows itself.
-  void k.openBridge({ setup: bridgeSetup(recipient, kit.toOneClickChain) }).catch(() => undefined);
+  void k.openBridge({ setup: { ...setup, ...preset } }).catch(() => undefined);
+}
+
+export interface KitBalance {
+  wallet: { type: number; address: string };
+  balance: bigint;
+  token: Pick<Token, 'id' | 'symbol' | 'chain' | 'chainName' | 'icon' | 'usd' | 'isOmni'> & {
+    float(balance: bigint): number;
+  };
+}
+
+export interface OtherHolding {
+  key: string;
+  tokenId: string;
+  symbol: string;
+  chainName: string;
+  icon: string | null;
+  amount: number;
+  usd: number;
+  bringable: boolean;
+}
+
+/** One connected origin wallet, or `hot`: the HOT (intents) balance, where a failed HOT swap refunds (D42). */
+export interface OtherBalance {
+  key: string;
+  chain: OriginChain | 'hot';
+  address: string;
+  usd: number;
+  items: OtherHolding[];
+}
+
+const DUST_USD = 0.01;
+
+/**
+ * The kit's balances outside the NEAR account, by wallet, valued at the kit's prices. Shown only: never sent to our
+ * API, analysed or ranked. The NEAR wallet's own tokens are skipped (the API reads them from the chain).
+ */
+export function otherBalances(
+  entries: readonly KitBalance[],
+  oneClickChain: (id: ChainId) => string | undefined,
+): OtherBalance[] {
+  const groups = new Map<string, OtherBalance>();
+  for (const { wallet, balance, token } of entries) {
+    const chain = token.isOmni ? 'hot' : CHAIN_BY_TYPE[wallet.type];
+    const amount = token.float(balance);
+    const usd = amount * token.usd;
+    if (!chain || !(usd >= DUST_USD)) continue;
+    const key = chain === 'hot' ? 'hot' : `${chain}:${wallet.address}`;
+    const group = groups.get(key) ?? { key, chain, address: wallet.address, usd: 0, items: [] };
+    group.usd += usd;
+    group.items.push({
+      key: `${wallet.address}:${token.id}`,
+      tokenId: token.id,
+      symbol: token.symbol,
+      chainName: token.chainName,
+      icon: token.icon || null,
+      amount,
+      usd,
+      bringable: chain !== 'hot' && isBridgeSource(token.chain, oneClickChain),
+    });
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+/** Calls `onChange` with the other-chain balances now and whenever the kit reads new ones or a wallet (dis)connects. */
+export function watchOtherBalances(onChange: (balances: OtherBalance[]) => void): () => void {
+  let stop: (() => void) | null = null;
+  let live = true;
+  void load()
+    .then(async (k) => {
+      const [kit, { comparer, reaction }] = await Promise.all([
+        import('@hot-labs/kit'),
+        import('mobx'),
+      ]);
+      if (!live) return;
+      stop = reaction(() => otherBalances(k.walletsTokens, kit.toOneClickChain), onChange, {
+        fireImmediately: true,
+        equals: comparer.structural,
+      });
+    })
+    .catch(() => undefined);
+  return () => {
+    live = false;
+    stop?.();
+  };
 }

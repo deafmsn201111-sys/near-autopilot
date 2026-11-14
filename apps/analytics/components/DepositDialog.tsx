@@ -333,10 +333,13 @@ export function DepositButton({
   account,
   label = 'Add funds',
   className = 'btn primary small',
+  tokenId,
 }: {
   account: string;
   label?: string;
   className?: string;
+  /** A kit token to preselect as the source (Bring to NEAR). */
+  tokenId?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -346,7 +349,7 @@ export function DepositButton({
     setError(null);
     try {
       if ((await currentAccount().catch(() => null)) !== account) return setError(NO_NEAR_ACCOUNT);
-      await openDepositBridge(account);
+      await openDepositBridge(account, tokenId);
     } catch (e) {
       setError(bridgeOpenError(e));
     } finally {
