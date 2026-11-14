@@ -1,9 +1,11 @@
-# near-autopilot
+# NEAR Autopilot
+
+**Your AI DeFi autopilot on NEAR. It does the analysis and builds the transactions. You keep the controls.**
 
 An AI DeFi analyst for NEAR mainnet. Agents read a wallet, its [Burrow](https://burrow.finance) lending position
-and its [Rhea](https://rhea.finance) liquidity, rank what is worth doing with the numbers behind it (repay debt, add
-collateral, put idle money to work, exit an out-of-range pool), and build the exact transactions. A deterministic
-**policy engine** checks every one of them, and only you sign, in your own wallet.
+and its [Rhea](https://rhea.finance) liquidity, rank what is worth doing with the numbers behind it (repay debt, put
+idle money to work, exit or re-centre an out-of-range pool), and build the exact transactions. `validateCascade`
+checks every transaction against fixed allowlists and caps, and only you sign, in your own wallet.
 
 > **The server never signs.** It holds no key. It builds an exact **unsigned** transaction cascade, checks it
 > against fixed caps (allowlisted contracts and methods, at most 0.15 NEAR per action and 0.3 NEAR per cascade) and
@@ -12,11 +14,11 @@ collateral, put idle money to work, exit an out-of-range pool), and build the ex
 > **Status:** read-only mainnet analytics and wallet-signed cascades. No seed phrase, private key or wallet is needed
 > to run anything below.
 
-**Plan and roadmap:** [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).
+**Plan:** [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md). **Roadmap and known limitations:** [below](#roadmap).
 
 ## NEAR HACKATHON 2026
 
-Tracks: **security** (primary), **defi**, **thesis**. When and how it was built, the libraries used, and how to tell
+Tracks: **security** (primary), **privacy**, **defi**, **thesis**. When and how it was built, the libraries used, and how to tell
 the hackathon work apart: [HACKATHON_BUILD.md](HACKATHON_BUILD.md).
 
 - **Whole project:** [`hackathon-submission`](https://github.com/deafmsn201111-sys/near-autopilot/tree/hackathon-submission).
@@ -31,11 +33,11 @@ NEAR Autopilot is an AI DeFi analyst for NEAR. It guards lending positions again
 liquidation, refuses actions that lose money after costs, and analyses liquidity pools. Three levels are kept apart
 everywhere in this repository:
 
-| Level             | What                                                                                                                                                                                    |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Works now**     | Ranked recommendations for a real mainnet wallet, a 12-check policy engine, a tamper-evident audit trail. Every transaction is built unsigned and signed only in the user's own wallet. |
-| **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. The agent never opens a position.                                                                   |
-| **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                                   |
+| Level             | What                                                                                                                                                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Works now**     | Ranked recommendations for a real mainnet wallet, checked by `validateCascade`, built unsigned and signed only in the user's own wallet. On the demo portfolios: a 12-check policy engine and a tamper-evident audit trail. |
+| **Analysis only** | Liquidity pools (Rhea v1 and DCL concentrated liquidity) are costed and backtested. An out-of-range DCL position you hold can be exited or re-centred; the app never opens a new position.                                  |
+| **Roadmap**       | See [Roadmap](#roadmap).                                                                                                                                                                                                    |
 
 The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
 Intents 1Click gives dry quotes for route comparison, and real quotes only for moving your own money between NEAR and
@@ -45,8 +47,12 @@ from the stored quote and you sign in your NEAR wallet.
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
 
+**Try without a wallet:** open the site and switch between the **$5,000 demo** and **$500 demo** portfolios. They are
+simulated and labelled so: holdings, loan safety and ranked options, computed by the rule-based agents. The AI analysis
+needs a connected wallet whose ownership you verify; there is no cached AI run for visitors yet (#24).
+
 Every "try it" step below starts from the [Quick start](#quick-start): `./scripts/quickstart.sh`, then the dashboard on
-`http://127.0.0.1:3001`. On a fresh clone it took 6 min 13 s (2026-11-08).
+`http://127.0.0.1:3001`.
 
 ### Security track: give an AI money without giving it the keys
 
@@ -64,6 +70,18 @@ Every "try it" step below starts from the [Quick start](#quick-start): `./script
 - Every decision is appended to a hash chain in PostgreSQL, with ed25519-signed checkpoints.
 - Scam tokens: an airdropped token outside our list may copy a real symbol. It is marked **Unverified**, its
   estimated value stays out of every total, and `prepare` refuses any swap into it (D44).
+
+**The security track's questions, answered**
+
+| Track topic             | Our answer                                                                                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spending limits         | `validateCascade`: at most 0.15 NEAR attached per action and 0.3 NEAR per cascade, a gas cap, allowlisted receivers and methods                    |
+| Policy engine           | 12 checks, ALLOW / WARN / BLOCK, on the demo portfolios; `validateCascade` on every cascade built for a connected wallet                           |
+| Sandboxed wallet        | The server holds no key and has no signer: the user's own wallet is the only place a transaction is signed                                         |
+| Function-call keys      | Not used, on purpose: they cannot attach the 1 yoctoNEAR every NEP-141 `ft_transfer_call` needs (below)                                            |
+| TEE attestation         | The AI runs in a NEAR AI Cloud TEE; every reply's signature is checked against the attested key (the hardware quote is left to NEAR AI's verifier) |
+| Scam detection          | Tokens outside our list are marked **Unverified**, kept out of totals and never swapped into (D44)                                                 |
+| Counterparty reputation | No                                                                                                                                                 |
 
 **Why the agent does not sign, not even with a function-call key**
 
@@ -109,10 +127,42 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 - No counterparty-reputation service. The AI runs in a NEAR AI TEE and every reply's signature is checked against
   the attested key, but the hardware quote itself is left to the official verifier (see Privacy below).
 
+### Privacy track: your strategy and your questions stay private
+
+The wallet is public anyway: anyone can read its balances on-chain. What is private here is what you ask, the strategy
+you choose and the advice you get.
+
+**What works**
+
+- The AI runs on [NEAR AI Cloud](https://cloud.near.ai) private inference, inside a TEE (Intel TDX + NVIDIA
+  confidential computing). There is no fallback to a model outside a TEE.
+- Every model reply's signature is checked against the key NEAR AI's attestation names, and the page shows
+  **Private AI · signed in TEE** or **Private AI · signature not verified** with the reason (#233, D43).
+- Only the proven owner sees their analysis: a NEP-413 signed message (no transaction, no gas) gates the AI analysis,
+  the saved result and "What the AI saw".
+- The model never gets the account id or a token's own symbol. We log no IP address. `llm_calls` keeps no prompt
+  text, only tokens, cost, tools called, the outcome and the model's picks with their short "why" (and up to 2,000
+  characters of a reply that failed to parse); its rows are kept 7 days, `events` rows 30 days.
+
+**Try it**
+
+1. Connect a wallet, verify ownership and press **Run AI analysis**. The "How this was decided" header shows the
+   privacy mark; a verified mark opens the reply in NEAR AI's Verification Center.
+2. Open "What the AI saw" under "How this was decided". You see the exact request sent to the model, with no account
+   id in it.
+
+**Not done**
+
+- The saved analysis (`account_analyses`, #190) holds the full request sent to the model (your positions and strategy)
+  and its answer, stored readable in Postgres for 30 days; encryption at rest is #278.
+- Our code checks reply signatures, not the Intel TDX quote or the GPU evidence; that is left to the official verifier.
+
 ### DeFi track: protect the position, refuse value-losing actions
 
-**This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
-route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for withdrawals
+**The demo portfolios are dry runs; a connected wallet signs real transactions.** The server reads mainnet with view
+calls only. On the demo portfolios plans are built, checked and simulated, never sent. On a connected wallet the
+server builds an unsigned cascade that you sign in your own wallet. The route comparison calls 1Click with `dry: true`,
+a constant in that client. Real 1Click quotes exist only for withdrawals
 to another chain (below), in a separate client; deposits are quoted by HOT Kit's bridge popup.
 
 **What works**
@@ -124,7 +174,8 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 - An action below the hurdle is refused: a net benefit under $0.50, or a benefit under 3× its cost.
   The same bar decides whether idle money is worth supplying on Burrow: a year of its interest must clear it,
   whatever the rate (no rate floor; D40).
-- The health guardian repays debt or adds collateral when the Burrow health factor falls. It never borrows.
+- On the demo portfolios the health guardian repays debt or adds collateral when the Burrow health factor falls. On
+  a connected wallet it repays, from the wallet or from the collateral (no collateral top-up, D13). It never borrows.
 - The Shadow Gateway compares a Rhea quote with a 1Click dry quote for each allowed plan. It records the best route
   with `executed: false`.
 
@@ -168,7 +219,7 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 **Not done**
 
 - The agents never act on their own: every mainnet transaction is one the user signed.
-- No LP execution: pools are analysis only.
+- No new LP positions: the app exits or re-centres a DCL position you already hold, and never opens one.
 - No Chain Signatures and no cross-chain settlement.
 
 ### Thesis track: the case for NEAR is the asset and real credit demand, not the displayed APR
@@ -196,24 +247,25 @@ days alone give the same result on every count.
 
 ## What it does
 
-The collector runs the agents on the two simulated demo portfolios every cycle
+The collector runs the agents on the two simulated demo portfolios every cycle (the connected-wallet path is
+[architecture C](#architecture-c-the-central-llm-on-a-connected-wallet))
 (snapshot → agents → planner → **policy engine** → dry-run executor → Postgres → site). Two engines exist, selected by
 `AUTOPILOT_ENGINE`; the collector uses `orchestrator`:
 
 **`legacy`**
 
-| Agent             | Job                                                                                                                     |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `health-guardian` | When the Burrow health factor drops below a trigger, repays debt (or adds collateral) to reach a target. Never borrows. |
-| `rebalancer`      | Optional. Keeps wallet holdings near target weights with one capped Rhea swap per cycle.                                |
+| Agent             | Job                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `health-guardian` | Demo portfolios: when the Burrow health factor drops below a trigger, repays debt (or adds collateral). Never borrows. |
+| `rebalancer`      | Optional. Keeps wallet holdings near target weights with one capped Rhea swap per cycle.                               |
 
-**`orchestrator`** (dry-run only; [docs/orchestrator.md](docs/orchestrator.md))
+**`orchestrator`** (dry-run only on the demo portfolios; [docs/orchestrator.md](docs/orchestrator.md))
 
 | Agent                  | Job                                                                                  | In the current API wiring                                                                                       |
 | ---------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
 | `liquidation-guardian` | Ranked de-risk candidates (repay, add collateral) from the position and stress tests | Active                                                                                                          |
 | `market-intelligence`  | Volatility, oracle-divergence, depeg and liquidity signals that tighten decisions    | Shadow profile: mainnet prices (source divergence, 24h range); else `insufficient_data`                         |
-| `lp-optimizer`         | Rhea DCL range re-centring, advisory only, with payback estimate                     | `insufficient_data`: no LP positions are read; shadow profile reports the pools observed and why rejected       |
+| `lp-optimizer`         | Rhea DCL range re-centring with payback estimate                                     | Demo portfolios: `insufficient_data` (they hold no LP); on a connected wallet it is a tool (below)              |
 | `capital-allocator`    | Target-weight allocation swaps using yield estimates                                 | Shadow profile: valid Burrow supply APRs ([docs/mainnet-shadow.md](docs/mainnet-shadow.md)); missing ones named |
 
 Agent output is strictly schema-validated, then a pure decision engine ranks candidates; each one still has to pass
@@ -251,15 +303,15 @@ unknown token appears as its shortened contract id, on the AI-ranked cards too),
 account id. The model only orders the candidates the tools returned and writes a short "why". Code computes every number and every
 transaction amount: an id no tool returned is dropped, and a "why" that contains a number its own card or the tools' shared context does not show is replaced
 by the code's own text, and every warning the model left out (a loan warning above all) is put back first. At most 6 model turns and 45 s. With no API key, or on any failure (model error, invalid JSON, too many
-turns), the page shows the rule-based list, labelled **Heuristic (AI unavailable)**; an LLM answer is labelled
+turns), the page shows the rule-based list, labelled **Rules only · AI unavailable**; an LLM answer is labelled
 **AI-ranked**. When neither the rules nor the agents find an action worth $1 or more, no model is called: the page says
-**Nothing for the AI to rank** and keeps the same "How the AI got here" timeline: the wallet read, each agent's line,
-and a neutral "AI not asked" step with a reason built by code from those lines (e.g. "Why: Health factor 1.29; safe
+**Nothing to rank** (labelled **Rules only**) and keeps the same "How this was decided" timeline: the wallet read, each agent's line,
+and a neutral step saying the AI was not asked, with a reason built by code from those lines (e.g. "Why: Health factor 1.29; safe
 from 1.25 on Aggressive · Nothing idle to put to work · …"). A recommendation still goes through `POST /v1/wallet/prepare` and `validateCascade`; agent-sized
-amounts are passed as exact base units and capped at the wallet balance. The LP Optimizer is not a tool yet (it
-needs a 24 h volume source), and the allocator's swap proposals and the guardian's collateral top-up are not offered.
+amounts are passed as exact base units and capped at the wallet balance. The allocator's swap proposals and the
+guardian's collateral top-up are not offered.
 
-Under **AI-ranked**, **How the AI got here** lists each agent the model called, one line each with its key number
+Under **AI-ranked**, **How this was decided** lists each agent the model called, one line each with its key number
 (health factor before and after the repayment, the supply rate, the largest gap between two price sources, the
 concentration share, positions out of range) and that number's provenance label, plus what became of its card
 (its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
@@ -305,7 +357,7 @@ bytes>`, `x-no-aliasing: true`), requires every report to echo our fresh nonce a
 response bytes we received)`;
 3. recovers the EIP-191 signer (secp256k1) and requires it to be an attested key.
 
-Every reply passes → the "How the AI got here" header says **Private AI · signed in TEE**; anything else (no signature
+Every reply passes → the "How this was decided" header says **Private AI · signed in TEE**; anything else (no signature
 within ~3 s, wrong hash, unknown signer, a nonce not echoed, the gateway down) → **Private AI · signature not verified** with the reason on hover,
 and the cards are still shown. A verified mark opens the final reply in NEAR AI's
 [Verification Center](https://cloud.near.ai/verify) (`?model=<id>#receipt=<signer, signed text, signature>`), which
@@ -355,10 +407,10 @@ packages/
   financial-engine/ Pure bigint maths: CLMM valuation, fee APR, IL, net yield (realized/marked/estimated), rebalance cost, slippage, liquidation risk, stress tests, constrained allocation (docs/financial-engine.md)
   near-adapter/     NEAR JSON-RPC client; implements core read/broadcast ports
   rhea-adapter/     Rhea (Ref v1 AMM) swap quoter + swap transaction planner
-  rhea-dcl-adapter/ Rhea/Ref v2 concentrated-liquidity (DCL): typed views, exact tick math, tx builders, ABI check (the analytics API uses its liquidity math for the DCL estimates; no DCL transaction is built)
+  rhea-dcl-adapter/ Rhea/Ref v2 concentrated-liquidity (DCL): typed views, exact tick math, tx builders, ABI check (exit and re-centre cascades for a wallet's DCL positions: remove → swap → add_liquidity)
   burrow-adapter/   Burrow markets/accounts/oracle readers, exact health-factor/LTV/stress maths, verified repay and collateral builders
   agents/           Health guardian and rebalancer (pure decision logic)
-  orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; AUTOPILOT_ENGINE=orchestrator, dry-run only)
+  orchestrator/     Multi-agent portfolio orchestrator: schema-validated proposals, pure decision engine, stale-data guard, idempotency, audit hash chain, escalation, emergency read-only mode (docs/orchestrator.md; AUTOPILOT_ENGINE=orchestrator, dry-run only on the demo portfolios)
   policy-engine/    12 checks -> ALLOW / WARN / BLOCK verdict with policy version and snapshot id (stored in policy_verdicts, docs/policy-verdicts.md); the only code that can mint an ApprovedPlan
   tx-execution/     Planner registry, dry-run executor
   db/               Drizzle schema, client, SQL migrations
@@ -406,29 +458,28 @@ The script never overwrites anything. It works as follows:
 2. Starts Postgres, the analytics API (applies the migrations), the mainnet collector and the site (`:3001`).
 3. Waits until every container is healthy. The collector's first cycle fills the pages within a few minutes.
 
-Nothing is signed or sent. Mainnet is read with view calls through a public RPC.
+Nothing is signed unless you sign it in your own wallet (local signing is on: `MAINNET_WALLET_SIGNING=1` in
+`.env.example`). The server reads mainnet with view calls through a public RPC and never signs.
 
 **Without keys**, the public RPC is rate-limited, so the collector sends one request at a time and retries patiently.
 Pyth is skipped and cycles report `partial`; the NEAR price still comes from the three-exchange quorum plus DefiLlama.
 Set `MAINNET_READ_RPC_API_KEY` (FastNEAR) and `PYTH_API_KEY` in `.env` for full-speed, complete cycles.
 
-**Measured on a fresh clone** (2026-11-08, macOS, Docker Desktop): `./scripts/quickstart.sh` took 6 min 13 s to
-healthy containers, with no manual edits, and `pnpm verify` passed (measured before the autopilot API was removed).
+The first run builds the images and takes a few minutes until every container is healthy, with no manual edits.
 
 ## Using the dashboard (`:3001`)
 
-Four pages for a person, and one area for reviewers.
+Three tabs for a person (Portfolio, Opportunities, Activity), and one area for reviewers ("For reviewers").
 
 | Page              | What you see and do                                                                                                                                                                                                                                                    |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the analyst's own view                                                  |
 | **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                   |
 | **Activity**      | What you did through the app for your account, newest first: each prepared cascade with what NEAR says really happened for every signed step, confirmed by RPC. Anyone sees the confirmed transactions; analyses and unsigned cascades only after you verify ownership |
-| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                                |
-| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                                                    |
+| For reviewers     | Start here, then the technical evidence: **Research** (the investment thesis in four findings and one table), safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log              |
 
 **Live data, simulated demo.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two demo
-portfolios ($500 and $5,000) on Home are simulated and labelled as such.
+portfolios ($500 and $5,000) on Portfolio are simulated and labelled as such.
 
 - **Signing progress.** After you sign, each step shows ⏳ while it executes and ✓ or ✗ when the server has asked
   NEAR RPC for its final status. A failed step names the contract, its error and what happened to your funds (refund
@@ -481,15 +532,15 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
 
 **Actions on the Portfolio page** (all simulated over 30 days, current rates held, not compounded):
 
-- _Repay part of the loan with idle USDt_ — saves the borrow interest; the autopilot itself repays only to protect the
-  loan (health factor below 1.5).
+- _Repay part of the loan with idle USDt_ — saves the borrow interest; on the demo portfolios the guardian itself
+  repays only to protect the loan (health factor below 1.5).
 - _Lend idle USDt / NEAR on Burrow_, _swap NEAR to a stablecoin and lend it_ — supply rate minus gas and swap cost.
 - _Provide liquidity on Rhea_ — from the stored LP simulation: fees − impermanent loss − entry/exit − gas.
 - _Loop on Burrow_ — deposit, borrow the same asset, deposit again: leverage set exactly by Burrow's health-factor
-  formula for a target HF of 1.6. Shown for comparison; the autopilot never borrows.
+  formula for a target HF of 1.6. Shown for comparison; the app never borrows.
 
-Each action says whether it clears the autopilot's profit bar (at least $0.50 after costs and a gain of at least 3× the
-costs), or why the autopilot would not do it.
+Each action says whether it clears the profit bar (at least $0.50 after costs and a gain of at least 3× the costs), or
+why the agents would not do it.
 
 ### What works today, and what does not
 
@@ -501,11 +552,11 @@ costs), or why the autopilot would not do it.
 | Durable orchestrator mode and idempotency (restart- and race-safe)                  | Implemented (PostgreSQL, migrations 0013-0014)                                                                                                   |
 | LP simulation                                                                       | Two-token v1 pools: stored simulation. DCL: per-range backtest from stored history (pools with confirmed prices). Other pool types `UNSUPPORTED` |
 | Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)                                                                        |
-| Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                                                                                         |
+| Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the app cannot borrow                                                                                               |
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
 | Wallet connection and signing                                                       | HOT Kit (NEAR, EVM, Solana); unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)            |
 | Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
-| AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and three wallet checks as tools (architecture C above); rule-based fallback, labelled  |
+| AI analysis of a connected wallet                                                   | Implemented: central LLM calls four orchestrator agents and two wallet checks as tools (architecture C above); rule-based fallback, labelled     |
 
 Verify without the UI, inside the running container (no Node needed on the host):
 
@@ -648,11 +699,12 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
   [docs/security.md](docs/security.md#pre-signing-checklist).
 - Pyth Hermes requires an API key since August 2026; without `PYTH_API_KEY` only DefiLlama is used and every price is
   `single_source`.
-- The orchestrator engine is dry-run only. Its control state (mode, quarantines) and idempotency (cycle claims,
+- The orchestrator engine is dry-run only on the demo portfolios. Its control state (mode, quarantines) and idempotency (cycle claims,
   actions, in-doubt executions) are durable in Postgres (migration 0013) and restart- and race-safe; its audit entries
   are written through to `audit_events` (fails closed). Yields come only from mainnet
   Burrow supply rates (shadow profile); Rhea v1 fee APRs need two observations ≥ 1 h apart and an allowlisted pool,
-  DCL APRs are not computed, and there is no LP position reader, so the LP Optimizer returns `insufficient_data`.
+  DCL APRs are not computed for the demo portfolios, which hold no LP, so there the LP Optimizer returns
+  `insufficient_data`; on a connected wallet it reads the DCL positions (architecture C).
 - Public RPCs are slow and rate-limit (HTTP 429). The RPC client retries reads only, with
   backoff, jitter, Retry-After and bounded concurrency, and never retries a send; a dedicated endpoint is still
   advisable.
@@ -663,6 +715,20 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
   approval UI yet.
 - `requires_approval` and `approved` rows are never auto-resumed. An `approved` row that never resolves
   (crash mid-send) must be reconciled by hand using its transaction hash/plan hash.
+
+## Roadmap
+
+- Sign a multi-step cascade with one wallet approval (`signAndSendTransactions`, #230).
+- A backup LLM provider for NEAR AI Cloud outages, LLM-backed specialist agents, admin alerts.
+- Cancel a Rhea limit order from the portfolio (#223).
+- A cached AI analysis of the demo portfolio for visitors without a wallet (#24).
+- Encrypt saved AI analyses at rest (#278).
+
+## Known limitations
+
+- One wallet prompt per cascade step: a three-step cascade asks you to sign three times.
+- Rhea limit orders are shown in the portfolio, with no cancel button.
+- The AI analysis needs a connected wallet with verified ownership; visitors without one see the rule-based demo.
 
 ## Disclaimer
 

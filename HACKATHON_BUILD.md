@@ -1,6 +1,6 @@
 # NEAR HACKATHON 2026: how this was built
 
-NEAR Autopilot was built for NEAR HACKATHON 2026 (tracks: **security**, **defi**, **thesis**). This file says when the
+NEAR Autopilot was built for NEAR HACKATHON 2026 (tracks: **security**, **privacy**, **defi**, **thesis**). This file says when the
 code was written, how, with what, and how a judge can tell the hackathon work apart.
 
 ## What to review
