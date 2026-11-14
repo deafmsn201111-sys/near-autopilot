@@ -1,6 +1,6 @@
 import type { PoolMetrics } from './analysis';
 import type { ThesisData } from './rebuild';
-import { tokenLabel } from './labels';
+import { STABLES, tokenLabel } from './labels';
 
 /**
  * THESIS.md, generated. Every number comes from `ThesisData`; the verdict follows from the falsification rules stated
@@ -110,6 +110,162 @@ export function thesisSummary(d: ThesisData) {
   };
 }
 
+/** The long-term case for NEAR, from the committed data only: one calculation and one wording for THESIS.md and /research. */
+export function nearCase(d: ThesisData) {
+  const n = d.pools.length;
+  const stable = d.burrow.filter(
+    (b) => STABLES.has(b.token) && (b.supplyAprEnd > 0 || b.supplyAprRealized > 0),
+  );
+  const wnear = d.burrow.find((b) => b.token === 'wrap.near');
+  const sc = d.cohorts.find((c) => c.key === 'stable');
+  const vc = d.cohorts.find((c) => c.key === 'volatile');
+  const nominalMedian = (stables: boolean) =>
+    med(
+      d.pools.flatMap((m) =>
+        STABLES.has(m.other) === stables && m.nominalApr24hEnd !== null ? [m.nominalApr24hEnd] : [],
+      ),
+    );
+  const range = (xs: readonly number[]) =>
+    xs.length ? ([Math.min(...xs), Math.max(...xs)] as const) : null;
+  const lending = {
+    markets: stable.length,
+    medianShown: med(stable.map((b) => b.supplyAprEnd)),
+    medianRealized: med(stable.map((b) => b.supplyAprRealized)),
+    realized: range(stable.map((b) => b.supplyAprRealized)),
+    utilization: range(stable.map((b) => b.utilizationEnd)),
+  };
+  const rise = d.nearUsdStart && d.nearUsdEnd ? d.nearUsdEnd / d.nearUsdStart - 1 : null;
+  const holdNearBeatLp = d.pools.filter((m) => m.lpReturnInNearApr < 0).length;
+  const profitable = [...d.pools]
+    .filter((m) => m.netApr5000 !== null && m.netApr5000 > 0)
+    .sort((a, b) => b.tvlNearEnd - a.tvlNearEnd)
+    .map((m) => ({ pool: m.pool, label: name(m) }));
+  const profitableText = profitable.map((x) => x.label).join(', ') || 'none';
+  const beatHodl90 = d.pools.filter((m) => m.lpVsHodlApr > 0).length;
+  // Counted at the CSV's 6 decimals, so a reader of pools.csv gets the same count.
+  const beatHodl30 = d.pools.filter(
+    (m) => Number((d.pools30.get(m.pool)?.lpVsHodlApr ?? 0).toFixed(6)) > 0,
+  ).length;
+  const nearWon = rise !== null && rise > 0 && holdNearBeatLp > n / 2;
+  const creditDemand = lending.medianRealized !== null && lending.medianRealized > 0;
+  const signed = (v: number | null) => (v !== null && v > 0 ? `+${p(v, 0)}` : p(v, 0));
+  const pctRange = (r: readonly [number, number] | null, digits = 1) =>
+    r ? `${p(r[0], digits)} – ${p(r[1], digits)}` : 'n/a';
+  const stablesPaidMostLostMost =
+    sc !== undefined &&
+    vc !== undefined &&
+    (sc.medianFeeApr ?? 0) > (vc.medianFeeApr ?? 0) &&
+    (sc.medianNetApr5000 ?? 0) < (vc.medianNetApr5000 ?? 0);
+
+  const lead =
+    nearWon && creditDemand
+      ? 'The case for NEAR in this data is the asset itself and real demand for credit on it, not the APR a pool list shows.'
+      : 'In this window the data does not make a simple case for holding NEAR over its DeFi: read the points below.';
+  const summary = [
+    {
+      label: `NEAR over ${d.manifest.days} days`,
+      value: `${usd(d.nearUsdStart)} → ${usd(d.nearUsdEnd)}`,
+      text: `${signed(rise)}. Holding NEAR beat providing liquidity in ${holdNearBeatLp} of ${n} pools.`,
+    },
+    {
+      label: 'Stablecoin lenders on Burrow kept',
+      value: `${p(lending.medianRealized)} a year`,
+      text: `Median of ${lending.markets} markets (${pctRange(lending.realized)}), paid by borrowers: ${pctRange(lending.utilization, 0)} of the supply was borrowed. Incentives excluded.`,
+    },
+    {
+      label: 'Pools in profit after costs',
+      value: `${profitable.length} of ${n}`,
+      text: `After impermanent loss and the cost of a $5,000 round trip: ${profitableText}.`,
+    },
+  ];
+  const meaning = [
+    {
+      title: nearWon ? 'Holding NEAR beat most of NEAR DeFi.' : 'Holding NEAR vs providing liquidity.',
+      text: `NEAR went from ${usd(d.nearUsdStart)} to ${usd(d.nearUsdEnd)} (${signed(rise)}). Measured in NEAR, an LP share lost value in ${holdNearBeatLp} of ${n} pools (lp_return_in_near_apr < 0): a pool sells NEAR as its price rises and buys it as it falls.`,
+    },
+    {
+      title: creditDemand ? 'People pay to borrow on NEAR.' : 'Stablecoin lending.',
+      text:
+        lending.markets === 0
+          ? 'No Burrow stablecoin market accrued supply yield in the window.'
+          : `${pctRange(lending.utilization, 0)} of the supply in ${lending.markets} Burrow stablecoin markets was borrowed at the end, and lenders earned a median ${p(lending.medianRealized)} a year from borrowers' interest alone (supply_apr_realized), against ${p(lending.medianShown)} shown.${
+              wnear
+                ? ` wNEAR is ${p(wnear.utilizationEnd, 0)} borrowed, and lending it earned ${p(wnear.supplyAprRealized)} a year.`
+                : ''
+            }`,
+    },
+    {
+      title: profitable.length
+        ? 'Fee income is kept only where people trade.'
+        : 'No pool kept its fee income after costs.',
+      text: `${profitable.length} of ${n} pools were in profit after impermanent loss and costs (net_apr_5000 > 0): ${profitableText}.${
+        stablesPaidMostLostMost
+          ? ` wNEAR/stablecoin pools earned the most in fees (median ${p(sc.medianFeeApr)}) and lost the most once NEAR's price moved (median ${p(sc.medianNetApr5000)} net, ${sc.negativeNet5000} of ${sc.pools.length} negative).`
+          : ''
+      }`,
+    },
+    {
+      title: "The result follows NEAR's price path.",
+      text: `${beatHodl90} of ${n} pools beat holding the two tokens over ${d.manifest.days} days, ${beatHodl30} of ${n} over the last 30 (lp_vs_hodl_apr_30d).${
+        nearWon && creditDemand
+          ? ' For a long-term holder the data favours holding NEAR and lending stablecoins on top; liquidity only in a pool that trades, judged after costs.'
+          : ''
+      }`,
+    },
+  ];
+  return {
+    pools: n,
+    nearUsdStart: d.nearUsdStart,
+    nearUsdEnd: d.nearUsdEnd,
+    holdNearBeatLp,
+    lending,
+    profitable,
+    beatHodl90,
+    beatHodl30,
+    lead,
+    summary,
+    meaning,
+    rows: [
+      { label: 'Burrow: lend stablecoins', shown: lending.medianShown, kept: lending.medianRealized },
+      {
+        label: 'Burrow: lend wNEAR',
+        shown: wnear?.supplyAprEnd ?? null,
+        kept: wnear?.supplyAprRealized ?? null,
+      },
+      {
+        label: 'Rhea: wNEAR/token pools',
+        shown: nominalMedian(false),
+        kept: vc?.medianNetApr5000 ?? null,
+      },
+      {
+        label: 'Rhea: wNEAR/stablecoin pools',
+        shown: nominalMedian(true),
+        kept: sc?.medianNetApr5000 ?? null,
+      },
+    ],
+  };
+}
+
+type NearCase = ReturnType<typeof nearCase>;
+
+const summarySection = (c: NearCase) => `## Summary
+
+${c.lead}
+
+${c.summary.map((x) => `- **${x.label}: ${x.value}.** ${x.text}`).join('\n')}
+
+![Shown vs kept, by where the money sits](thesis/out/charts/summary.svg)
+`;
+
+const nearSection = (c: NearCase) => `## What this means for NEAR
+
+Every number below is in \`thesis/out/pools.csv\` or \`thesis/out/burrow.csv\` (column names in brackets).
+
+${c.meaning.map((x, i) => `${i + 1}. **${x.title}** ${x.text}`).join('\n')}
+
+This is one window and one market regime (counterargument 7).
+`;
+
 type Summary = ReturnType<typeof thesisSummary>;
 
 const held = (h: boolean) => `**${h ? 'holds' : 'falsified'}**`;
@@ -175,6 +331,7 @@ export function thesisMarkdown(d: ThesisData, recent: ThesisData | null = null):
     idle,
     verdictText,
   } = summary;
+  const near = nearCase(d);
   const first = d.manifest.blocks[0];
   const last = d.manifest.blocks[d.manifest.blocks.length - 1];
 
@@ -206,6 +363,7 @@ export function thesisMarkdown(d: ThesisData, recent: ThesisData | null = null):
 **Verdict: ${verdictText}.** Data: Rhea v1 and Burrow on NEAR mainnet, ${d.manifest.blocks.length} daily blocks (${d.manifest.days} days) from
 ${first?.timestamp.slice(0, 10) ?? ''} (block ${first?.height ?? ''}) to ${last?.timestamp.slice(0, 10) ?? ''} (block ${last?.height ?? ''}).
 
+${summarySection(near)}
 ## The claim
 
 TVL and nominal APR alone do not show the real, sustainable net yield of NEAR DeFi markets. An investment decision
@@ -339,6 +497,7 @@ counted in every claim above.`
 Gross is the fee APR LPs earned; after IL is LP vs HODL (fees minus impermanent loss); net also subtracts the
 round-trip cost of a $5,000 position.
 
+${nearSection(near)}
 ## Limitations
 
 ${pausedText(d, recent)}- Daily granularity; simple annualisation; constant-product (v1 SIMPLE_POOL) pools only. Concentrated-liquidity (DCL)

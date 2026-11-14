@@ -7,6 +7,16 @@
 **Verdict: SUPPORTED on all three counts.** Data: Rhea v1 and Burrow on NEAR mainnet, 181 daily blocks (180 days) from
 2026-05-08 (block 197499765) to 2026-11-04 (block 223087984).
 
+## Summary
+
+The case for NEAR in this data is the asset itself and real demand for credit on it, not the APR a pool list shows.
+
+- **NEAR over 180 days: $1.59 → $4.00.** +151%. Holding NEAR beat providing liquidity in 14 of 16 pools.
+- **Stablecoin lenders on Burrow kept: 6.5% a year.** Median of 6 markets (5.9% – 14.6%), paid by borrowers: 79% – 87% of the supply was borrowed. Incentives excluded.
+- **Pools in profit after costs: 2 of 16.** After impermanent loss and the cost of a $5,000 round trip: #6458 wNEAR/RHEA, #5469 wNEAR/AURORA.
+
+![Shown vs kept, by where the money sits](thesis/out/charts/summary.svg)
+
 ## The claim
 
 TVL and nominal APR alone do not show the real, sustainable net yield of NEAR DeFi markets. An investment decision
@@ -168,6 +178,17 @@ counted in every claim above.
 
 Gross is the fee APR LPs earned; after IL is LP vs HODL (fees minus impermanent loss); net also subtracts the
 round-trip cost of a $5,000 position.
+
+## What this means for NEAR
+
+Every number below is in `thesis/out/pools.csv` or `thesis/out/burrow.csv` (column names in brackets).
+
+1. **Holding NEAR beat most of NEAR DeFi.** NEAR went from $1.59 to $4.00 (+151%). Measured in NEAR, an LP share lost value in 14 of 16 pools (lp_return_in_near_apr < 0): a pool sells NEAR as its price rises and buys it as it falls.
+2. **People pay to borrow on NEAR.** 79% – 87% of the supply in 6 Burrow stablecoin markets was borrowed at the end, and lenders earned a median 6.5% a year from borrowers' interest alone (supply_apr_realized), against 9.7% shown. wNEAR is 17% borrowed, and lending it earned 0.4% a year.
+3. **Fee income is kept only where people trade.** 2 of 16 pools were in profit after impermanent loss and costs (net_apr_5000 > 0): #6458 wNEAR/RHEA, #5469 wNEAR/AURORA. wNEAR/stablecoin pools earned the most in fees (median 11.2%) and lost the most once NEAR's price moved (median -10.1% net, 4 of 4 negative).
+4. **The result follows NEAR's price path.** 3 of 16 pools beat holding the two tokens over 180 days, 6 of 16 over the last 30 (lp_vs_hodl_apr_30d). For a long-term holder the data favours holding NEAR and lending stablecoins on top; liquidity only in a pool that trades, judged after costs.
+
+This is one window and one market regime (counterargument 7).
 
 ## Limitations
 

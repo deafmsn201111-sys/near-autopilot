@@ -19,7 +19,7 @@ import {
 } from './analysis';
 import { OUT_DIR, RAW_DIR, ROOT } from './paths';
 import { STABLES, tokenLabel } from './labels';
-import { thesisMarkdown } from './report';
+import { nearCase, thesisMarkdown } from './report';
 import { dumbbell, scatterLogX } from './svg';
 
 /**
@@ -42,6 +42,7 @@ export interface ThesisData {
   readonly pools: readonly PoolMetrics[];
   readonly daily: readonly DailyPoint[];
   readonly burrow: readonly BurrowMetrics[];
+  readonly nearUsdStart: number | null;
   readonly nearUsdEnd: number | null;
   readonly nearUsdDays: { readonly priced: number; readonly total: number };
   readonly gasPriceEnd: bigint;
@@ -120,6 +121,7 @@ export function computeThesis(lastDays?: number): ThesisData {
   );
   const prices = lines('near-usd.jsonl').map((l) => nearUsd(priceLine.parse(l)));
   const nearUsdEnd = prices.find((p) => p.height === last?.height)?.usd ?? null;
+  const nearUsdStart = prices.find((p) => p.height === manifest.blocks[0]?.height)?.usd ?? null;
 
   const raw = lines('rhea-pools.jsonl').map((l) => rheaLine.parse(l));
   const otherOf = new Map<number, string>();
@@ -196,6 +198,7 @@ export function computeThesis(lastDays?: number): ThesisData {
     pools,
     daily,
     burrow,
+    nearUsdStart,
     nearUsdEnd,
     nearUsdDays: { priced: prices.filter((p) => p.usd !== null).length, total: prices.length },
     gasPriceEnd,
@@ -362,6 +365,12 @@ export function renderOutputs(d: ThesisData): Record<string, string> {
     rows: [...bw]
       .sort((a, b) => b.supplyAprEnd - a.supplyAprEnd)
       .map((b) => ({ label: tokenLabel(b.token), values: [b.supplyAprEnd, b.supplyAprRealized] })),
+  });
+  files['thesis/out/charts/summary.svg'] = dumbbell({
+    title: 'NEAR DeFi: the yield shown vs the yield kept',
+    subtitle: `Medians, annualised. ${d.manifest.days} days to ${d.manifest.end.slice(0, 10)}. Kept = realized supply yield (Burrow); after IL and $5,000 costs (Rhea).`,
+    series: ['Shown (end)', `Kept (${d.manifest.days}d)`],
+    rows: nearCase(d).rows.map((r) => ({ label: r.label, values: [r.shown, r.kept] })),
   });
   files['THESIS.md'] = thesisMarkdown(
     d,

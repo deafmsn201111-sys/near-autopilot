@@ -165,11 +165,14 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 - No LP execution: pools are analysis only.
 - No Chain Signatures and no cross-chain settlement.
 
-### Thesis track: displayed APR and TVL are not the yield you keep
+### Thesis track: the case for NEAR is the asset and real credit demand, not the displayed APR
 
-[THESIS.md](THESIS.md) tests three counts on 180 days of NEAR mainnet data: Rhea v1 and Burrow, 181 daily blocks,
-from 2026-05-08 to 2026-11-04. The falsification rules were fixed in advance. Verdict: supported on all three, with the
-counter-evidence written out. The same rules over the last 90 days alone give the same result on every count.
+Over 180 days of mainnet data NEAR went from $1.59 to $4.00, holding it beat providing liquidity in 14 of 16 of the
+largest pools, and stablecoin lenders on Burrow kept a median 6.5% a year paid by borrowers. [THESIS.md](THESIS.md)
+opens with that summary and a chart and ends with what it means for NEAR. It tests three counts on 180 days of NEAR
+mainnet data: Rhea v1 and Burrow, 181 daily blocks, from 2026-05-08 to 2026-11-04. The falsification rules were fixed
+in advance. Verdict: supported on all three, with the counter-evidence written out. The same rules over the last 90
+days alone give the same result on every count.
 
 **Try it**
 

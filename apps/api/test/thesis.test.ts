@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { nearUsd, poolMetrics, spearman, type PoolPoint } from '../src/thesis/analysis';
 import { RAW_DIR, ROOT } from '../src/thesis/paths';
 import { computeThesis, renderOutputs } from '../src/thesis/rebuild';
+import { nearCase } from '../src/thesis/report';
 
 const DAY = 86_400_000;
 const NEAR = 10n ** 24n;
@@ -93,6 +94,7 @@ describe.skipIf(!existsSync(resolve(RAW_DIR, 'manifest.json')))('thesis:rebuild'
       'thesis/out/burrow.csv',
       'thesis/out/charts/burrow-supply.svg',
       'thesis/out/charts/nominal-vs-realized.svg',
+      'thesis/out/charts/summary.svg',
       'thesis/out/charts/tvl-vs-lp-vs-hodl.svg',
       'thesis/out/pools-daily.csv',
       'thesis/out/pools.csv',
@@ -110,6 +112,40 @@ describe.skipIf(!existsSync(resolve(RAW_DIR, 'manifest.json')))('thesis:rebuild'
     expect(last90.daily.every((p) => p.height >= first)).toBe(true);
     expect(() => computeThesis(full.manifest.days)).toThrow();
     expect(() => computeThesis(0)).toThrow();
+  });
+
+  it('the case for NEAR reads its numbers from the committed data (values from thesis/out/*.csv)', () => {
+    const c = nearCase(computeThesis());
+    expect(c.nearUsdStart).toBeCloseTo(1.59, 2);
+    expect(c.nearUsdEnd).toBeCloseTo(4.005, 3);
+    expect(c.holdNearBeatLp).toBe(14);
+    expect(c.pools).toBe(16);
+    expect(c.lending.markets).toBe(6);
+    expect(c.lending.medianRealized).toBeCloseTo(0.065, 2);
+    expect(c.lending.utilization?.[0]).toBeCloseTo(0.79, 2);
+    expect(c.lending.utilization?.[1]).toBeCloseTo(0.87, 2);
+    expect(c.profitable.map((m) => m.pool)).toEqual([6458, 5469]);
+    expect(c.beatHodl90).toBe(3);
+    expect(c.rows.map((r) => r.label)).toHaveLength(4);
+  });
+
+  it('the NEAR wording follows the numbers: a falling NEAR gets no "+" and no case for holding it', () => {
+    const d = computeThesis();
+    const c = nearCase({ ...d, nearUsdEnd: (d.nearUsdStart ?? 0) * 0.7 });
+    expect(c.summary[0]?.text).toMatch(/^-30%\./);
+    expect(c.lead).toMatch(/does not make a simple case/);
+    expect(c.meaning[0]?.title).not.toMatch(/beat most/);
+    expect(c.meaning.map((m) => m.text).join(' ')).not.toMatch(/favours holding NEAR/);
+  });
+
+  it('THESIS.md opens with the summary and has the NEAR section before the claim', () => {
+    const md = renderOutputs(computeThesis())['THESIS.md'] ?? '';
+    const summary = md.indexOf('## Summary');
+    const near = md.indexOf('## What this means for NEAR');
+    expect(summary).toBeGreaterThan(0);
+    expect(summary).toBeLessThan(md.indexOf('## The claim'));
+    expect(near).toBeGreaterThan(md.indexOf('## Survivorship and pool types'));
+    expect(md).toContain('thesis/out/charts/summary.svg');
   });
 
   it('is deterministic: two rebuilds are byte-identical', () => {
