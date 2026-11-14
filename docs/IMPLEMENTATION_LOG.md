@@ -758,3 +758,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `list_active_orders` on the DCL contract (view call): each open order is a holdings row "SELL → BUY", "Rhea limit
   order · waiting to fill at P BUY per SELL", valued as what is still on the order plus what it bought but has not paid
   out; counted in net worth. Display only: no card, no analysis, no transaction (cancel stays in the backlog).
+
+## 2026-11-14 — One wallet connector: HOT Kit for NEAR, EVM and Solana (#189)
+
+- `lib/hot-kit.ts` owns the one kit; its NEAR connector wraps our near-connect 0.12 (CSP nonce, no access key, D35).
+  `lib/wallet.ts` keeps its interface (`currentAccount`, `watchAccount`, `connect`, `connectedWallet`, `disconnect`).
+- "Connect wallet" opens the kit's list of all chains; Disconnect signs out of all of them.
+- The kit loads only on click or with a stored session: first-load JS `/` 170 → 155 kB, `/activity` 158 → 143 kB.
+- Tests: `test/wallet.test.ts` (no load without a session, restore, account change, sign-out of all, cascade unchanged).
