@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { Env } from '../../components/Env';
 import { Token } from '../../components/Token';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { Chip, FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { actionName } from '../../lib/activity';
 import { tryApi } from '../../lib/api';
 import { ts } from '../../lib/format';
@@ -69,25 +70,25 @@ export default async function PolicyPage({ searchParams }: { searchParams: Promi
         lead="Every cascade the prepare endpoint built for a real account, and the verdict of the independent validateCascade gate: signer, receivers, methods, gas, deposit and arguments. It is stored before anything is shown to sign; a blocked cascade is never shown."
         meta={`${all.length} stored verdicts`}
       />
-      <div className="kpis">
-        <Tile
-          label="Allowed"
-          value={count('ALLOW')}
-          sub={<Status code="ALLOW" label="shown to sign" />}
-          href="/policy?verdict=ALLOW"
-        />
-        <Tile
-          label="Blocked"
-          value={count('BLOCK')}
-          sub={<Status code="BLOCK" label="never shown" />}
-          href="/policy?verdict=BLOCK"
-        />
-        <Tile
-          label="Attack demo"
-          value={`${stopped} / ${attackCount}`}
-          sub="attacks stopped (fixtures)"
-        />
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Allowed',
+            value: count('ALLOW'),
+            sub: <Status code="ALLOW" label="shown to sign" />,
+          },
+          {
+            label: 'Blocked',
+            value: count('BLOCK'),
+            sub: <Status code="BLOCK" label="never shown" />,
+          },
+          {
+            label: 'Attack demo',
+            value: `${stopped} / ${attackCount}`,
+            sub: 'attacks stopped (fixtures)',
+          },
+        ]}
+      />
 
       <Section
         title="Real cascades"
@@ -100,7 +101,7 @@ export default async function PolicyPage({ searchParams }: { searchParams: Promi
                 href={v ? `/policy?verdict=${v}` : '/policy'}
                 aria-current={verdictFilter === v ? 'true' : undefined}
               >
-                <span className="chip">{v || 'All'}</span>
+                <Chip>{v || 'All'}</Chip>
               </Link>
             ))}
           </div>

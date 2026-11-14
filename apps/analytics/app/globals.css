@@ -319,7 +319,7 @@ main {
   text-decoration: underline;
 }
 
-/* ------------------------------------------------------------------ cards, tiles */
+/* ------------------------------------------------------------------ cards */
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--line);
@@ -346,33 +346,6 @@ main {
   color: var(--text-3);
   font-size: 12px;
 }
-.kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-}
-.tile {
-  display: grid;
-  gap: 4px;
-  align-content: start;
-}
-.tile .label {
-  font-size: 12px;
-  color: var(--text-2);
-}
-.tile .value {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-.tile .sub {
-  font-size: 12px;
-  color: var(--text-3);
-}
-.tile.hero .value {
-  font-size: 48px;
-}
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
@@ -398,44 +371,6 @@ main {
   border-radius: 6px;
 }
 
-/* ------------------------------------------------------------------ status: icon + label, never color alone */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-1);
-}
-.badge i {
-  font-style: normal;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  display: inline-grid;
-  place-items: center;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--bg-page);
-  flex: none;
-}
-.badge.good i {
-  background: var(--safe);
-}
-.badge.warning i {
-  background: var(--watch);
-  color: var(--bg-page);
-}
-.badge.serious i {
-  background: var(--act);
-}
-.badge.critical i {
-  background: var(--liq);
-}
-.badge.neutral i {
-  background: var(--line-strong);
-  color: var(--text-1);
-}
 .chip {
   display: inline-block;
   padding: 1px 8px;
@@ -566,30 +501,6 @@ td a:hover {
   font-weight: 600;
 }
 
-/* ------------------------------------------------------------------ meter (same-ramp track) */
-.meter {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.meter .track {
-  width: 64px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--bg-inset);
-  overflow: hidden;
-}
-.meter .fill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-}
-.meter.high .fill {
-  background: var(--act);
-}
-
 /* ------------------------------------------------------------------ filters: one row above what they scope */
 .filters {
   display: flex;
@@ -634,7 +545,7 @@ td a:hover {
 .counts a {
   text-decoration: none;
 }
-.counts a[aria-current='true'] .chip {
+.counts a[aria-current='true'] .ds-chip {
   background: var(--accent-muted);
   color: var(--text-1);
   font-weight: 600;
@@ -1603,15 +1514,6 @@ details.more > summary {
   .opp .chev {
     display: none;
   }
-  .kpis {
-    grid-template-columns: 1fr 1fr;
-  }
-  .tile .value {
-    font-size: 22px;
-  }
-  .tile.hero .value {
-    font-size: 32px;
-  }
   .feed-item {
     grid-template-columns: 18px 1fr;
   }
@@ -1662,12 +1564,10 @@ body {
 }
 @media (max-width: 640px) {
   .strip,
-  .kpis,
   .opp {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
-  .strip .s,
-  .tile .sub {
+  .strip .s {
     overflow-wrap: anywhere;
   }
   .page-head p {
@@ -3010,6 +2910,9 @@ main.page {
 :root:not([data-theme='light']) .ds-chip-lg.ds-chip-liq {
   background: color-mix(in oklch, var(--liq) 20%, transparent);
 }
+.ds-chip i {
+  font-style: normal;
+}
 .ds-hatch {
   width: 8px;
   height: 8px;
@@ -3320,10 +3223,17 @@ main.page {
   color: var(--text-1);
   font-variant-numeric: tabular-nums slashed-zero;
 }
+.ds-facts dd .ds-chip {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+}
 .ds-facts dd.good {
   color: var(--safe);
 }
 .ds-facts dd small {
+  overflow-wrap: anywhere;
   font-size: var(--fs-s);
   font-weight: 400;
   letter-spacing: 0;

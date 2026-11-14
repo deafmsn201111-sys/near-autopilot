@@ -1,6 +1,7 @@
 import { LineChart } from '../../../components/LineChart';
 import { Pair } from '../../../components/Token';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../../components/ui';
+import { FactsStrip } from '../../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../../components/ui';
 import { tryApi } from '../../../lib/api';
 import { age, pct, poolName, ts, usd, usd2, usdCompact } from '../../../lib/format';
 import type { FeeWindow } from '../../../lib/types';
@@ -83,32 +84,32 @@ export default async function PoolPage({ params }: { params: Promise<{ key: stri
           </>
         }
       />
-      <div className="kpis">
-        <Tile
-          label="TVL"
-          value={usdCompact(p.tvlUsd)}
-          sub={`${p.latest.tvlMethod ?? 'method —'} · prices ${p.priceQuality.toLowerCase()}`}
-        />
-        <Tile
-          label="30-day fee APR"
-          value={pct(w30?.annualizedApr)}
-          sub={
-            w30
+      <FactsStrip
+        items={[
+          {
+            label: 'TVL',
+            value: usdCompact(p.tvlUsd),
+            sub: `${p.latest.tvlMethod ?? 'method —'} · prices ${p.priceQuality.toLowerCase()}`,
+          },
+          {
+            label: '30-day fee APR',
+            value: pct(w30?.annualizedApr),
+            sub: w30
               ? `realised ${pct(w30.realizedYield, 3)} over ${Math.round((w30.seconds ?? 0) / 86400)} days`
-              : 'no 30-day window'
-          }
-        />
-        <Tile
-          label="Category"
-          value={<Status code={p.category} />}
-          sub={`model ${p.modelStatus.toLowerCase()}`}
-        />
-        <Tile
-          label="History stored"
-          value={age(p.latest.historySeconds ?? 0)}
-          sub={`first seen ${ts(p.firstSeenAt)}`}
-        />
-      </div>
+              : 'no 30-day window',
+          },
+          {
+            label: 'Category',
+            value: <Status code={p.category} />,
+            sub: `model ${p.modelStatus.toLowerCase()}`,
+          },
+          {
+            label: 'History stored',
+            value: age(p.latest.historySeconds ?? 0),
+            sub: `first seen ${ts(p.firstSeenAt)}`,
+          },
+        ]}
+      />
 
       {p.reasons.length > 0 && (
         <Section title="Why this category">

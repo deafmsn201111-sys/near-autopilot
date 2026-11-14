@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { statusOf } from '../lib/format';
+import { Chip } from './primitives';
 import { ErrorState } from './states';
 
 export function PageHeader(p: {
@@ -52,53 +53,25 @@ export function Section(p: {
   );
 }
 
-export function Tile(p: {
-  label: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  hero?: boolean;
-  href?: string;
-}) {
-  const body = (
-    <div className={`card tile${p.hero ? ' hero' : ''}`}>
-      <div className="label">{p.label}</div>
-      <div className="value">{p.value}</div>
-      {p.sub && <div className="sub">{p.sub}</div>}
-    </div>
-  );
-  return p.href ? (
-    <Link href={p.href} style={{ textDecoration: 'none' }}>
-      {body}
-    </Link>
-  ) : (
-    body
-  );
-}
-
 const ICON = { good: '✓', warning: '!', serious: '!', critical: '×', neutral: '•' } as const;
+
+const TONE = {
+  good: 'safe',
+  warning: 'watch',
+  serious: 'act',
+  critical: 'liq',
+  neutral: undefined,
+} as const;
+
+const glyph = (kind: keyof typeof ICON) => <i aria-hidden="true">{ICON[kind]}</i>;
 
 /** A state with an icon and a label (never colour alone). The raw code is in the tooltip. */
 export function Status({ code, label }: { code: string | null | undefined; label?: string }) {
   const s = statusOf(code);
   return (
-    <span className={`badge ${s.kind}`} data-tip={code ?? 'unknown'} tabIndex={0}>
-      <i aria-hidden="true">{ICON[s.kind]}</i>
+    <Chip tone={TONE[s.kind]} icon={glyph(s.kind)} tip={code ?? 'unknown'}>
       {label ?? s.label}
-    </span>
-  );
-}
-
-/** A fraction as a meter on a same-ramp track, with the value beside it. */
-export function Meter({ value, high = 0.9 }: { value: number | null; high?: number }) {
-  if (value === null || !Number.isFinite(value)) return <span className="dim">—</span>;
-  const v = Math.max(0, Math.min(1, value));
-  return (
-    <span className={`meter${value >= high ? ' high' : ''}`}>
-      <span className="track" aria-hidden="true">
-        <span className="fill" style={{ width: `${(v * 100).toFixed(1)}%`, display: 'block' }} />
-      </span>
-      {(value * 100).toFixed(1)}%
-    </span>
+    </Chip>
   );
 }
 
@@ -155,11 +128,10 @@ export function Level({
     ? LEVEL_KIND[level === 'low' ? 'high' : level === 'high' ? 'low' : 'medium']
     : LEVEL_KIND[level];
   return (
-    <span className={`badge ${kind}`} data-tip={`${what} score ${score} / 100`} tabIndex={0}>
-      <i aria-hidden="true">{ICON[kind]}</i>
+    <Chip tone={TONE[kind]} icon={glyph(kind)} tip={`${what} score ${score} / 100`}>
       {level[0]?.toUpperCase()}
       {level.slice(1)} {what}
-    </span>
+    </Chip>
   );
 }
 

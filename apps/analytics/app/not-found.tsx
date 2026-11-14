@@ -10,7 +10,7 @@ export default function NotFound() {
         <b>Nothing here.</b>
         <p>This page or item does not exist, or it is no longer in the latest data.</p>
         <div style={{ marginTop: 10 }}>
-          <Link className="btn secondary" href="/">
+          <Link className="ds-btn ds-btn-secondary" href="/">
             Back to the overview
           </Link>
         </div>
