@@ -51,7 +51,9 @@ import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
+import { Chip, LoanGauge } from '../components/primitives';
 import {
+  STRATEGIES,
   savedStrategy,
   STRATEGY_COOKIE,
   STRATEGY_IDS,
@@ -59,6 +61,8 @@ import {
 } from '@near-autopilot/core/strategy';
 
 export const dynamic = 'force-dynamic';
+
+const HEALTH_TONE = { low: 'safe', medium: 'watch', high: 'liq' } as const;
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -457,12 +461,24 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           <div className="hero-stat">
             <span className="eyebrow">Loan safety</span>
             <div className="hero-safe">
-              <span className={`safe-chip health-${data.health.level}`}>
-                <span className="dot" aria-hidden="true" />
+              <Chip tone={HEALTH_TONE[data.health.level]} large>
                 {data.health.label}
-              </span>
+              </Chip>
+              {data.health.healthFactor !== null && (
+                <span className="muted-note num">
+                  Health factor {data.health.healthFactor.toFixed(2)}
+                </span>
+              )}
             </div>
-            <span className="muted-note">{data.health.sentence}</span>
+            {data.health.healthFactor !== null ? (
+              <LoanGauge
+                healthFactor={data.health.healthFactor}
+                urgentBelow={STRATEGIES[strategy].warningBelow}
+                safeFrom={STRATEGIES[strategy].healthyAt}
+              />
+            ) : (
+              <span className="muted-note">{data.health.sentence}</span>
+            )}
           </div>
         </div>
       </section>

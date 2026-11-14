@@ -19,6 +19,7 @@ import { label } from '../lib/token-label';
 import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
+import { Button, Card, Chip, Panel, ProvenanceMark } from './primitives';
 
 /** A saved analysis this old still ranks the right cards, but its prices and rates may have moved. */
 const FRESH_MS = 60 * 60_000;
@@ -84,12 +85,7 @@ export function Recommendations({
           {recommendations.length} {recommendations.length === 1 ? 'action' : 'actions'} worth your
           attention
         </span>
-        <button
-          type="button"
-          className="btn secondary small"
-          onClick={() => void analyse()}
-          disabled={running}
-        >
+        <Button size="sm" onClick={() => void analyse()} disabled={running}>
           {running ? (
             <>
               Analysing… <Elapsed since={startedAt} />
@@ -97,24 +93,17 @@ export function Recommendations({
           ) : (
             'Run AI analysis'
           )}
-        </button>
+        </Button>
       </div>
       {analysis && !running && (
         <p className="muted-note">
-          <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
-            <i aria-hidden="true">
-              {analysis.source === 'llm'
-                ? '✓'
-                : analysis.fallback === 'nothing_to_rank'
-                  ? 'i'
-                  : '!'}
-            </i>
+          <Chip tone={analysis.source === 'llm' ? 'ai' : undefined}>
             {analysis.source === 'llm'
               ? 'AI-ranked'
               : analysis.fallback === 'nothing_to_rank'
                 ? 'Nothing for the AI to rank'
                 : 'Heuristic (AI unavailable)'}
-          </span>
+          </Chip>
           {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
         </p>
       )}
@@ -165,9 +154,10 @@ export function Recommendations({
               symbol: holdings.find((h) => h.token === t)?.symbol ?? label(t, new Map()).symbol,
             }));
             return (
-              <article
-                className={`rec sev-${r.severity}${analysis ? ' rec-in' : ''}`}
+              <Card
                 key={r.id}
+                urgent={r.severity === 'warning'}
+                className={analysis ? 'rec-in' : undefined}
                 style={order(i)}
               >
                 <span className="rec-agent">
@@ -182,12 +172,9 @@ export function Recommendations({
                 {r.carry && (
                   <p className="muted-note">
                     {r.carry.text}{' '}
-                    <span
-                      className="ai-tag"
-                      title={PROVENANCE_TIER_INFO[r.carry.provenance].describe}
-                    >
+                    <ProvenanceMark kind="estimate">
                       {PROVENANCE_TIER_INFO[r.carry.provenance].label}
-                    </span>
+                    </ProvenanceMark>
                   </p>
                 )}
                 {r.intent &&
@@ -211,7 +198,7 @@ export function Recommendations({
                     Advisory — no one-click action for this one yet.
                   </span>
                 )}
-              </article>
+              </Card>
             );
           })}
         </div>
@@ -295,7 +282,7 @@ function AiTrace({
   }
   if (!live && !model)
     return (
-      <section className="ai-trace" aria-label="How the AI got here">
+      <Panel className="ai-trace" label="How the AI got here">
         <header>
           <h3>How the AI got here</h3>
         </header>
@@ -330,7 +317,7 @@ function AiTrace({
             </span>
           </Stage>
         </ol>
-      </section>
+      </Panel>
     );
   const who = model ? modelName(model) : 'The AI';
   const current = stage;
@@ -357,7 +344,7 @@ function AiTrace({
   ][current];
 
   return (
-    <section className="ai-trace" aria-label="How the AI got here" aria-busy={live}>
+    <Panel className="ai-trace" label="How the AI got here" busy={live}>
       <header>
         <h3>How the AI got here</h3>
         <span className="muted-note ai-clock" suppressHydrationWarning>
@@ -443,7 +430,7 @@ function AiTrace({
           )}
         </Stage>
       </ol>
-    </section>
+    </Panel>
   );
 }
 

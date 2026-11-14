@@ -1,9 +1,9 @@
 'use client';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { STRATEGIES, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import { saveStrategy } from '../app/account-actions';
+import { Segmented } from './primitives';
 
 /** The risk preset for "Your account": the cards, repay amounts and the AI ranking follow it. */
 export function StrategyPicker({
@@ -17,42 +17,30 @@ export function StrategyPicker({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const href = (id: StrategyId) =>
-    `/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`;
+  const s = STRATEGIES[current];
+
+  const choose = (id: StrategyId) =>
+    startTransition(async () => {
+      await saveStrategy(account, id);
+      router.push(`/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`);
+    });
 
   return (
-    <div className="strategy-picker">
+    <div className="strategy-picker" aria-busy={pending}>
       <span className="eyebrow">Strategy</span>
-      <nav className="segmented" aria-label="Strategy" aria-busy={pending}>
-        {STRATEGY_IDS.map((id) => {
-          const s = STRATEGIES[id];
-          return (
-            <Link
-              key={id}
-              href={href(id)}
-              aria-current={id === current ? 'true' : undefined}
-              onClick={(e) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-                e.preventDefault();
-                startTransition(async () => {
-                  await saveStrategy(account, id);
-                  router.push(href(id));
-                });
-              }}
-            >
-              {s.label}
-              <small className="strategy-lines">
-                safe loan ≥ {s.healthyAt.toFixed(2)} · one token ≤ {s.concentrationInfoPct}%
-              </small>
-            </Link>
-          );
-        })}
-      </nav>
+      <Segmented
+        legend="Strategy"
+        name="strategy"
+        value={current}
+        options={STRATEGY_IDS.map((id) => ({ value: id, label: STRATEGIES[id].label }))}
+        onChange={choose}
+        disabled={pending}
+      />
       <span className="muted-note">
-        Repay back to health factor {STRATEGIES[current].targetHealthFactor.toFixed(2)}; urgent
-        below {STRATEGIES[current].warningBelow.toFixed(2)} or above{' '}
-        {STRATEGIES[current].concentrationWarningPct}% in one token. Stablecoins never count as a
-        concentration.
+        Safe loan from health factor <b>{s.healthyAt.toFixed(2)}</b>, one token up to{' '}
+        <b>{s.concentrationInfoPct}%</b>. Repay back to <b>{s.targetHealthFactor.toFixed(2)}</b>;
+        urgent below <b>{s.warningBelow.toFixed(2)}</b> or above <b>{s.concentrationWarningPct}%</b>{' '}
+        in one token. Stablecoins never count as a concentration.
       </span>
       {note && <p className="strategy-note">{note}</p>}
     </div>
