@@ -14,6 +14,8 @@ checks every transaction against fixed allowlists and caps, and only you sign, i
 > **Status:** read-only mainnet analytics and wallet-signed cascades. No seed phrase, private key or wallet is needed
 > to run anything below.
 
+**▶ Demo video:** [X post](https://x.com/sergeserge1989/status/2121745949504803121).
+
 **Plan:** [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md). **Roadmap and known limitations:** [below](#roadmap).
 
 ## NEAR HACKATHON 2026
