@@ -46,7 +46,7 @@ import {
 } from '../wallet/cascade';
 import type { CascadeValidationContext } from '../wallet/validate-cascade';
 import { sealCascade } from '../wallet/seal';
-import { buildWithdrawTransfer } from '../wallet/withdraw';
+import { buildWithdrawTransfer, withdrawValidation } from '../wallet/withdraw';
 import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
 import { prepareSwapRepay } from '../wallet/swap-repay';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
@@ -2744,14 +2744,9 @@ export function registerAccountView(
             preview: `In one transaction: ${register}send ${formatUnits(w.amount, w.decimals)} ${w.symbol} to the 1Click deposit address of your quote.`,
           }),
         ]);
-        return seal(
-          reply,
-          account,
-          intent,
-          cascade,
-          { signerId: account, allowedReceivers: new Set([token]), transferTo: w.receiver },
-          { amount: { raw: w.amount.toString(), human, symbol: w.symbol } },
-        );
+        return seal(reply, account, intent, cascade, withdrawValidation(account, w), {
+          amount: { raw: w.amount.toString(), human, symbol: w.symbol },
+        });
       } catch (e) {
         return prepareFailure(req, reply, e);
       }

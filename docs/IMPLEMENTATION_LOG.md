@@ -928,3 +928,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Withdraw keeps `GET /v1/deposit/assets`, `GET /v1/deposit/status/:id`, `mint` and `deposit_quotes`. The quote
   tests that guarded `mint` (no fee, refused quote, store failure, 1Click failure, Solana fee tokens) now run
   against `POST /v1/withdraw/quote`.
+
+## 2026-11-14 — Attack demo covers the wallet path, AI replies and 1Click (#270)
+
+- `apps/api/src/demo/wallet-attacks.ts`: 11 new attacks and 2 controls, each through the production check:
+  `TeeVerifier` (forged signer, swapped answer; fixture secp256k1 keys over a fake NEAR AI fetch), `withdrawLookup`
+  (expiring, foreign, tampered quote), `validateCascade` (redirected withdrawal `ft_transfer`, method, receiver, gas,
+  deposit), and `analyseAccount` with a fake model for a token symbol carrying a prompt injection (the run fails
+  unless the model really got the token, under our label only, and the forged pick is dropped).
+- The deposit-rebuild scenario from the issue was replaced: D42 removed that endpoint (HOT Kit builds deposits).
+- `pnpm demo:attack`: 19/19 attacks stopped, 4 controls allowed, signed 0, broadcast 0; log regenerated.
