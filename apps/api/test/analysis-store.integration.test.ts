@@ -10,6 +10,7 @@ const adminUrl = process.env['DATABASE_TEST_URL'];
 const NOW = new Date('2026-11-14T10:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;
 const ALICE = accountId('alice.near');
+const KEY = randomBytes(32);
 
 const analysis = (note: string): Analysis => ({
   source: 'llm',
@@ -36,7 +37,7 @@ describe.skipIf(!adminUrl)('DrizzleAnalysisStore (PostgreSQL)', () => {
     url.pathname = `/${dbName}`;
     handle = createDatabase(url.toString(), { max: 2 });
     await runMigrations(handle.db);
-    store = new DrizzleAnalysisStore(handle.db, () => NOW);
+    store = new DrizzleAnalysisStore(handle.db, KEY, () => NOW);
   });
 
   afterAll(async () => {
@@ -84,5 +85,46 @@ describe.skipIf(!adminUrl)('DrizzleAnalysisStore (PostgreSQL)', () => {
     await store.purge();
     expect(await store.latest(ALICE, 'conservative')).toBeNull();
     expect(await store.latest(ALICE, 'aggressive')).not.toBeNull();
+  });
+
+  it('stores the analysis encrypted, unreadable without the key', async () => {
+    await store.save(ALICE, 'balanced', {
+      key: 'k4',
+      signature: null,
+      at: NOW,
+      analysis: analysis('secret advice'),
+    });
+    const raw = await handle.db.execute(
+      sql`SELECT analysis::text AS a FROM account_analyses WHERE account_id = 'alice.near' AND strategy = 'balanced'`,
+    );
+    const text = String((raw.rows[0] as { a?: string } | undefined)?.a);
+    expect(text).toContain('"ct"');
+    expect(text).not.toContain('secret advice');
+    expect(
+      await new DrizzleAnalysisStore(handle.db, randomBytes(32), () => NOW).latest(
+        ALICE,
+        'balanced',
+      ),
+    ).toBeNull();
+  });
+
+  it('reads a plaintext row as none and purges it', async () => {
+    const BOB = accountId('bob.near');
+    await store.save(BOB, 'balanced', {
+      key: 'kb',
+      signature: null,
+      at: NOW,
+      analysis: analysis('plain'),
+    });
+    await handle.db.execute(
+      sql`UPDATE account_analyses SET analysis = ${JSON.stringify(analysis('plain'))}::jsonb WHERE account_id = 'bob.near'`,
+    );
+    expect(await store.latest(BOB, 'balanced')).toBeNull();
+    await store.purge();
+    const left = await handle.db.execute(
+      sql`SELECT 1 FROM account_analyses WHERE account_id = 'bob.near'`,
+    );
+    expect(left.rows).toHaveLength(0);
+    expect(await store.latest(ALICE, 'balanced')).not.toBeNull();
   });
 });

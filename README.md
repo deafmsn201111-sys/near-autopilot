@@ -152,6 +152,9 @@ you choose and the advice you get.
 - The model never gets the account id or a token's own symbol. We log no IP address. `llm_calls` keeps no prompt
   text, only tokens, cost, tools called, the outcome and the model's picks with their short "why" (and up to 2,000
   characters of a reply that failed to parse); its rows are kept 7 days, `events` rows 30 days.
+- The saved analysis (`account_analyses`: the request sent to the model with your positions and strategy, and its
+  answer) is encrypted at rest with AES-256-GCM under a server key (`ANALYSIS_ENCRYPTION_KEY`, outside the database),
+  bound to the account and strategy; a database dump alone does not read it (#278, D47). It is kept 30 days.
 
 **Try it**
 
@@ -162,9 +165,9 @@ you choose and the advice you get.
 
 **Not done**
 
-- The saved analysis (`account_analyses`, #190) holds the full request sent to the model (your positions and strategy)
-  and its answer, stored readable in Postgres for 30 days; encryption at rest is #278.
 - Our code checks reply signatures, not the Intel TDX quote or the GPU evidence; that is left to the official verifier.
+- The analysis key lives on the same server as the API, so whoever runs the server can still decrypt a saved analysis;
+  encryption in the browser under a key only the user holds is not built.
 
 ### DeFi track: protect the position, refuse value-losing actions
 
@@ -347,7 +350,7 @@ placeholder until its result arrives, and a clock runs until the end. The events
 to the plain JSON request.
 
 **The last analysis survives a reload.** The API saves the last AI analysis per account and strategy in Postgres
-(`account_analyses`, kept 30 days) with the page's portfolio signature, and serves it back only to the proven owner
+(`account_analyses`, kept 30 days, encrypted with AES-256-GCM under `ANALYSIS_ENCRYPTION_KEY`, D47) with the page's portfolio signature, and serves it back only to the proven owner
 (`GET /v1/analytics/account/:id/analysis`). The page shows it on open: "✓ Up to date" while the portfolio is unchanged and the
 run is under an hour old, a note that prices and rates may have moved once it is older, and "Your portfolio changed —
 run the AI analysis again" once the portfolio itself changed. A repeat run on the same wallet state within 10
@@ -688,7 +691,8 @@ mainnet contract defaults are built in.
 - The server holds no key and never signs: `EXECUTION_MODE=live` is refused at start-up, and there is no signer in
   the code. Users sign in their own wallet, only when `MAINNET_WALLET_SIGNING=1`, and only cascades that pass
   `validateCascade`.
-- Generate `API_TOKEN` and `POSTGRES_PASSWORD` locally (`openssl rand -hex 32`); never reuse example values.
+- Generate `API_TOKEN`, `POSTGRES_PASSWORD` and `ANALYSIS_ENCRYPTION_KEY` locally (`openssl rand -hex 32`;
+  `quickstart.sh` does it); never reuse example values.
 - All published ports bind to `127.0.0.1`. Details and threat model: [docs/security.md](docs/security.md).
 
 ## HTTP API
@@ -737,7 +741,6 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
 - A backup LLM provider for NEAR AI Cloud outages, LLM-backed specialist agents, admin alerts.
 - Cancel a Rhea limit order from the portfolio (#223).
 - A server-refreshed AI analysis of the demo account for visitors, on a spend cap (full #24).
-- Encrypt saved AI analyses at rest (#278).
 
 ## Known limitations
 

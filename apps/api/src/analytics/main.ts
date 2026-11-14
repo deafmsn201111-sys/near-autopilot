@@ -12,7 +12,7 @@ import { nearAiToolLlmFromEnv } from '../llm/near-ai-client';
 import { TeeVerifier } from '../llm/tee-verifier';
 import { analysisMemo } from './ai-analysis';
 import { DrizzleDepositQuoteStore } from './deposit-store';
-import { DrizzleAnalysisStore } from './analysis-store';
+import { analysisKeySchema, DrizzleAnalysisStore } from './analysis-store';
 import { DrizzleEventStore } from './events-store';
 import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
@@ -42,6 +42,8 @@ const env = z
     MARKET_CONFIG_FILE: z.string().optional(),
     /** Only the loopback admin site holds it; unset or empty = the admin routes answer 401. */
     ADMIN_API_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
+    /** Encrypts saved AI analyses at rest (#278); never logged. */
+    ANALYSIS_ENCRYPTION_KEY: analysisKeySchema,
   })
   .refine((e) => e.ADMIN_API_TOKEN !== e.API_TOKEN, 'ADMIN_API_TOKEN must differ from API_TOKEN')
   .parse(process.env);
@@ -75,7 +77,7 @@ const solanaFees = new SolanaTransferFees({
   onError: (err) => app.log.warn({ err }, 'Solana mint read failed; unread mints are not offered'),
 });
 const events = new DrizzleEventStore(database.db);
-const analyses = new DrizzleAnalysisStore(database.db);
+const analyses = new DrizzleAnalysisStore(database.db, env.ANALYSIS_ENCRYPTION_KEY);
 // The tokens a deposit may arrive as: our own allowlist, never user input.
 const destinationTokens = market.policy?.allowedTokens ?? [];
 const mainnet = env.MAINNET_READ_RPC_URL

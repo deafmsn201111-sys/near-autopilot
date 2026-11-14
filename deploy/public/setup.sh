@@ -52,6 +52,11 @@ if ! grep -q '^ADMIN_API_TOKEN=.' .env; then
   echo "ADMIN_API_TOKEN=$(openssl rand -hex 24)" >>.env
   echo "• ADMIN_API_TOKEN added to .env (not shown)"
 fi
+if ! grep -q '^ANALYSIS_ENCRYPTION_KEY=.' .env; then
+  sed -i.bak '/^ANALYSIS_ENCRYPTION_KEY=/d' .env && rm -f .env.bak
+  echo "ANALYSIS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >>.env
+  echo "• ANALYSIS_ENCRYPTION_KEY added to .env (not shown)"
+fi
 mkdir -p checkpoints
 # the containers run as the unprivileged `node` user (uid 1000)
 if [[ "$(stat -c %u checkpoints)" != 1000 ]] && ! chown 1000:1000 checkpoints; then

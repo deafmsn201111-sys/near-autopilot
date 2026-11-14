@@ -63,7 +63,7 @@ exits 0; otherwise the AI is silently off (heuristics only) — fix the `.env` a
 
 `.env` must be copied before `setup.sh`: without it, `setup.sh` creates a new database password that does not match
 the kept database. The compose project name is fixed, so the database volume carries over. `setup.sh` appends a generated
-`ADMIN_API_TOKEN` to the copied `.env` if it has none (it is kept from then on), for `analytics-api` and the
+`ADMIN_API_TOKEN` and `ANALYSIS_ENCRYPTION_KEY` to the copied `.env` if it has none (kept from then on; a new key only drops the saved AI analyses), for `analytics-api` and the
 loopback `analytics-admin`.
 
 ## 5. Check — roll back on failure
