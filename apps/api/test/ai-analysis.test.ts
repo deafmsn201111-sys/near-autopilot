@@ -25,6 +25,7 @@ import {
   type ToolLlmDeps,
 } from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
+import { lpObservation, type WalletObservation } from '../src/analytics/lp-recentre';
 
 const ALICE = accountId('alice.near');
 const WNEAR = accountId('wrap.near');
@@ -153,7 +154,7 @@ const callAll: LlmToolTurn = {
     { id: '2', name: 'capital_allocator', input: {} },
     { id: '3', name: 'market_intelligence', input: {} },
     { id: '4', name: 'portfolio_concentration', input: {} },
-    { id: '5', name: 'liquidity_positions', input: {} },
+    { id: '5', name: 'lp_optimizer', input: {} },
   ],
 };
 const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
@@ -225,7 +226,7 @@ describe('analyseAccount', () => {
       'capital_allocator',
       'market_intelligence',
       'portfolio_concentration',
-      'liquidity_positions',
+      'lp_optimizer',
       'burrow_withdrawals',
     ]);
   });
@@ -347,7 +348,7 @@ describe('analyseAccount', () => {
       'capital_allocator',
       'market_intelligence',
       'portfolio_concentration',
-      'liquidity_positions',
+      'lp_optimizer',
     ]);
     expect(out.recommendations.map((r) => r.id)).toEqual([
       'reduce-concentration',
@@ -424,7 +425,7 @@ describe('analyseAccount', () => {
         rank: 3,
       },
       {
-        tool: 'liquidity_positions',
+        tool: 'lp_optimizer',
         agent: 'Liquidity Optimizer',
         ok: true,
         text: 'No position out of range; nothing to do',
@@ -951,7 +952,7 @@ describe('analyseAccount', () => {
       'capital_allocator',
       'market_intelligence',
       'portfolio_concentration',
-      'liquidity_positions',
+      'lp_optimizer',
       'burrow_withdrawals',
     ]);
     expect(out.trace.every((t) => t.ok && t.pick === null)).toBe(true);
@@ -1460,7 +1461,7 @@ describe('analyseAccount', () => {
       expect([...row.tools].sort()).toEqual([
         'capital_allocator',
         'liquidation_guardian',
-        'liquidity_positions',
+        'lp_optimizer',
         'market_intelligence',
         'portfolio_concentration',
       ]);
@@ -1800,7 +1801,7 @@ describe('progress events', () => {
         { tool: 'capital_allocator', agent: 'Capital Allocator' },
         { tool: 'market_intelligence', agent: 'Market Intelligence' },
         { tool: 'portfolio_concentration', agent: 'Portfolio Intelligence' },
-        { tool: 'liquidity_positions', agent: 'Liquidity Optimizer' },
+        { tool: 'lp_optimizer', agent: 'Liquidity Optimizer' },
       ],
     });
     const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step] : []));
@@ -1867,5 +1868,106 @@ describe('progress events', () => {
     await live(deps.llm, deps);
     expect((await live(deps.llm, deps)).events).toEqual([]);
     expect((await live(deps.llm, deps, { ownerVerified: false })).events).toEqual([]);
+  });
+});
+
+describe('lp_optimizer tool', () => {
+  const USDC = accountId('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1');
+  const POOL_ID = `${USDC}|${WNEAR}|100`;
+  const CUR = 405_300;
+  const position = {
+    lpt_id: `${POOL_ID}#7`,
+    pool_id: POOL_ID,
+    left_point: 399_000,
+    right_point: 404_000,
+    amount: 100_000_000_000_000n,
+  };
+  const exit: PortfolioRecommendation = {
+    id: `reposition-dcl-${position.lpt_id}`,
+    kind: 'reposition_dcl_position',
+    agent: 'Liquidity Optimizer',
+    severity: 'info',
+    title: 'Your USDC/wNEAR liquidity is out of range: exit it to your wallet',
+    why: 'This concentrated-liquidity position has drifted outside its price range.',
+    intent: { action: 'reposition_dcl', lptId: position.lpt_id, poolId: POOL_ID },
+  };
+  const walletObservation = (volumeUsd: number | null): WalletObservation => {
+    const lp = lpObservation({
+      positions: [position],
+      pools: new Map([
+        [
+          POOL_ID,
+          {
+            pool_id: POOL_ID,
+            token_x: USDC,
+            token_y: WNEAR,
+            fee: 100,
+            point_delta: 1,
+            current_point: CUR,
+            state: 'Running',
+            liquidity: 50_000_000_000_000_000n,
+          },
+        ],
+      ]),
+      depths: new Map([
+        [
+          POOL_ID,
+          {
+            liquidities: {
+              a: { left_point: 395_000, right_point: 410_000, amount_l: 50_000_000_000_000_000n },
+            },
+            orders: {},
+          },
+        ],
+      ]),
+      allowedPools: new Set([POOL_ID]),
+      volumesUsd: volumeUsd === null ? null : new Map([[POOL_ID, volumeUsd]]),
+      priceUsd: (t) => ({ [USDC]: 1, [WNEAR]: 2.5 })[t],
+      decimals: (t) => ({ [USDC]: 6, [WNEAR]: 24 })[t],
+      label: (t) => (t === WNEAR ? 'wNEAR' : 'USDC'),
+    });
+    const base = observation();
+    return { ...base, market: { ...base.market!, lpPositions: lp.views }, lp: lp.meta };
+  };
+  let offered: PortfolioRecommendation[] = [];
+  const pickAll = (results: readonly ToolResult[] | null) => {
+    const lp = results?.find((r) => r.id === '5');
+    offered = (JSON.parse(lp?.content ?? '{}') as { candidates: PortfolioRecommendation[] })
+      .candidates;
+    return final(offered.map((c) => ({ id: c.id, why: 'Worth a look.' })));
+  };
+  const lpCards = async (volumeUsd: number | null) =>
+    (await run(volumeUsd)).recommendations.filter((r) => r.kind === 'reposition_dcl_position');
+  const run = (volumeUsd: number | null) =>
+    analyseAccount(ai(fake([() => callAll, pickAll]).llm), {
+      ...ctx,
+      observe: async () => walletObservation(volumeUsd),
+      heuristics: [exit],
+      checks: [exit],
+    });
+
+  it('turns a re-centre that pays back into a card with the new range and payback', async () => {
+    const cards = await lpCards(1_000_000);
+    expect(cards).toHaveLength(1);
+    const card = offered.find((r) => r.id.startsWith('lp-optimizer:recentre:'));
+    expect(cards[0]?.id).toBe(card?.id);
+    expect(card?.intent).toMatchObject({
+      action: 'recentre_dcl',
+      lptId: position.lpt_id,
+      poolId: POOL_ID,
+    });
+    const intent = card!.intent as { leftPoint: number; rightPoint: number };
+    expect(intent.leftPoint).toBeLessThanOrEqual(CUR);
+    expect(intent.rightPoint).toBeGreaterThan(CUR);
+    expect(card?.why).toMatch(/pays back in (about \d+ days?|less than a day)/);
+    expect(card?.why).toMatch(/wNEAR between [\d.]+ and [\d.]+ USDC/);
+  });
+
+  it('keeps only the exit when there is no 24 h volume', async () => {
+    expect((await lpCards(null)).map((r) => r.id)).toEqual([exit.id]);
+  });
+
+  it('keeps only the exit when nothing trades in the pool', async () => {
+    expect((await lpCards(0)).map((r) => r.id)).toEqual([exit.id]);
   });
 });

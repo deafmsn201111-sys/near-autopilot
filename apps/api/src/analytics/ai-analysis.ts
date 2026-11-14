@@ -14,7 +14,9 @@ import {
   afterRepay,
   buildLendingModel,
   CapitalAllocatorAgent,
+  evaluateLpReposition,
   LiquidationGuardianAgent,
+  LpOptimizerAgent,
   MarketIntelligenceAgent,
   orchestratorConfigSchema,
   heldTokens,
@@ -30,11 +32,13 @@ import {
   type ToolLlm,
   type ToolTraceEntry,
 } from '@near-autopilot/orchestrator';
+import { alignRange, pointToDecimalPrice } from '@near-autopilot/rhea-dcl-adapter';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
 import { analysisKey } from './analysis-key';
+import type { WalletObservation } from './lp-recentre';
 
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
 export const MAX_TURNS = 6;
@@ -150,7 +154,7 @@ class BudgetReached extends Error {
 export interface AnalysisContext {
   readonly accountId: AccountId;
   /** Reads the wallet for the agents; called only when a model is configured. */
-  readonly observe: () => Promise<AgentObservation>;
+  readonly observe: () => Promise<WalletObservation>;
   /** The account view's rule-based list, as the user sees it: the fallback. */
   readonly heuristics: readonly PortfolioRecommendation[];
   /** The same list with token names from our own labels only: what the two wallet tools return to the model. */
@@ -240,7 +244,7 @@ const KINDS: Readonly<Record<string, PortfolioRecommendation['kind']>> = {
   liquidation_guardian: 'improve_loan_safety',
   capital_allocator: 'put_idle_to_work',
   portfolio_concentration: 'reduce_concentration',
-  liquidity_positions: 'reposition_dcl_position',
+  lp_optimizer: 'reposition_dcl_position',
   burrow_withdrawals: 'withdraw_from_burrow',
 };
 
@@ -249,7 +253,7 @@ const AGENTS: Readonly<Record<string, string>> = {
   capital_allocator: 'Capital Allocator',
   market_intelligence: 'Market Intelligence',
   portfolio_concentration: 'Portfolio Intelligence',
-  liquidity_positions: 'Liquidity Optimizer',
+  lp_optimizer: 'Liquidity Optimizer',
   burrow_withdrawals: 'Liquidation Guardian',
 };
 
@@ -574,6 +578,100 @@ function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
   };
 }
 
+const sig = (n: number) => n.toLocaleString('en-US', { maximumSignificantDigits: 4 });
+
+/**
+ * The LP Optimizer on the wallet: for each out-of-range DCL position it proposes a range around the price only if the
+ * extra fees repay the move in time (re-checked here with the same arithmetic). Positions it does not move keep the
+ * rule-based exit card. The range shown is the one prepare builds: the agent's ticks aligned to the pool's points.
+ */
+function lpTool(
+  obs: WalletObservation,
+  heuristics: readonly PortfolioRecommendation[],
+  found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
+): LoopTool {
+  return {
+    spec: {
+      name: 'lp_optimizer',
+      description:
+        'Orchestrator LP Optimizer: Rhea DCL liquidity positions that drifted out of range; proposes a new range around the price when the extra fees repay the move, else the exit to the wallet.',
+      inputSchema: noInputSchema,
+    },
+    input: noInput,
+    run: async () => {
+      const proposals = await propose(new LpOptimizerAgent(), obs);
+      const candidates: PortfolioRecommendation[] = [];
+      const byCandidate = new Map<string, StepLine>();
+      const usdOf = (raw: bigint, meta: { decimalsY: number; priceYUsd: number }) =>
+        (Number(raw) / 10 ** meta.decimalsY) * meta.priceYUsd;
+      for (const p of proposals) {
+        if (p.kind !== 'lp.reposition') continue;
+        const meta = obs.lp?.get(p.positionId);
+        const view = obs.market?.lpPositions.find((v) => v.id === p.positionId);
+        if (!meta || !view || meta.inRange) continue;
+        let range;
+        try {
+          range = alignRange(p.tickLower, p.tickUpper, meta.pointDelta, meta.currentPoint);
+        } catch {
+          continue;
+        }
+        const ev = evaluateLpReposition(view, range.leftPoint, range.rightPoint, obs.config);
+        if (!ev.ok) continue;
+        const yIn = (point: number) =>
+          sig(1 / pointToDecimalPrice(point, meta.decimalsX, meta.decimalsY));
+        const rangeText = `${meta.symbolY} between ${yIn(range.rightPoint)} and ${yIn(range.leftPoint)} ${meta.symbolX}`;
+        const days =
+          ev.paybackDays === 0n
+            ? 'less than a day'
+            : `about ${ev.paybackDays} day${ev.paybackDays === 1n ? '' : 's'}`;
+        const cost = money(usdOf(ev.costQuote, meta));
+        const perDay = money(usdOf(ev.extraFeesPerDayQuote, meta));
+        const id = `lp-optimizer:recentre:${p.positionId}`;
+        byCandidate.set(id, {
+          text: `Move ${meta.pair} to ${rangeText}: pays back in ${days}`,
+          provenance: 'calculated_estimate',
+        });
+        candidates.push({
+          id,
+          kind: 'reposition_dcl_position',
+          agent: 'Liquidity Optimizer',
+          severity: 'info',
+          title: `Move your ${meta.pair} liquidity back around the current price`,
+          why: `This position is out of range and earns no fees. Moving it to ${rangeText} costs about ${cost} and should earn about ${perDay} a day more in fees, so it pays back in ${days}. This is an estimate from the last 24 hours of trading.`,
+          intent: {
+            action: 'recentre_dcl',
+            lptId: p.positionId,
+            poolId: meta.poolId,
+            ...range,
+          },
+        });
+      }
+      const moved = new Set(
+        candidates.flatMap((c) => (c.intent?.action === 'recentre_dcl' ? [c.intent.lptId] : [])),
+      );
+      for (const h of heuristics)
+        if (h.intent?.action === 'reposition_dcl' && !moved.has(h.intent.lptId)) {
+          candidates.push(h);
+          const { lptId } = h.intent;
+          const costed = obs.market?.lpPositions.some((v) => v.id === lptId);
+          byCandidate.set(h.id, {
+            text: costed
+              ? 'Out of range; a new range would not pay back in time, so exit to the wallet'
+              : 'Out of range; no data to cost a new range, so exit to the wallet',
+            provenance: 'on_chain_verified',
+          });
+        }
+      for (const c of candidates) found.set(c.id, c);
+      steps.set('lp_optimizer', {
+        none: { text: 'No position out of range; nothing to do', provenance: null },
+        byCandidate,
+      });
+      return { candidates, notes: rationales(proposals) };
+    },
+  };
+}
+
 function walletTool(
   name: string,
   description: string,
@@ -707,7 +805,7 @@ export async function analyseAccount(
   });
   const early = (out: Analysis) => (clearTimeout(timer), out);
 
-  let obs: AgentObservation;
+  let obs: WalletObservation;
   try {
     obs = await Promise.race([ctx.observe(), deadline]);
   } catch (e) {
@@ -735,21 +833,7 @@ export async function analyseAccount(
         };
       },
     ),
-    walletTool(
-      'liquidity_positions',
-      'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
-      'reposition_dcl_position',
-      ctx.checks,
-      found,
-      steps,
-      ({ length: n }) =>
-        n > 0
-          ? {
-              text: `${n} position${n === 1 ? '' : 's'} out of range`,
-              provenance: 'on_chain_verified',
-            }
-          : { text: 'No position out of range; nothing to do', provenance: null },
-    ),
+    lpTool(obs, ctx.checks, found, steps),
     walletTool(
       'burrow_withdrawals',
       'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',

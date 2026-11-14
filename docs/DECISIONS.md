@@ -140,7 +140,8 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   priced with the collector's confirmed prices, the same ones the portfolio table uses. `priceoracle.near` returned no
   recent price on 11 Nov 2026, so it is only Market Intelligence's second source (empty when it has none). Yields
   are today's Burrow supply rates; there is no 24 h volatility on this path. Plus three
-  wallet checks: concentration, DCL out of range and Burrow withdrawals (#64). The LP Optimizer waits for a 24 h volume source (separate issue).
+  wallet checks: concentration and Burrow withdrawals (#64), and the `LpOptimizerAgent` on the wallet's DCL
+  positions (D26, #63).
 - Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
   repay text states the health factor the repayment actually reaches. When the account view's loan card repays from
   collateral (the wallet cannot reach the target), the guardian tool returns that card instead of the agent's wallet
@@ -444,3 +445,39 @@ step (withdraw) lowers the health factor, and the user may stop after any step.
   strictest preset's target.
   **Consequences:** one extra Rhea quote per account read, only for a loan under the strictest preset's safe line with
   no same-token collateral. Prices can still move between the steps; the floor is the margin.
+
+## D26 — The LP Optimizer re-centres an out-of-range DCL position (#63)
+
+**Context:** An out-of-range DCL position earns nothing, and the only offer was the exit to the wallet.
+**Decision:** The `lp_optimizer` tool replaces the `liquidity_positions` wallet check and runs `LpOptimizerAgent` on
+every wallet DCL position in an allowlisted pool.
+
+- **24 h volume:** Rhea's indexer `list-pools?type=dcl&sort=tvl&limit=100` (`volume_24h`, USD), zod-parsed, cached
+  5 min, converted to the pool's token Y at the confirmed price. A pool with no row, or an indexer error, gives the
+  agent no view of that position (`insufficient_data`), never a guessed number. Chosen over two of our own on-chain
+  readings 24 h apart, which a fresh deploy or a local run does not have.
+- **Units:** DCL liquidity counts Y per point; the CLMM formulas count per unit of sqrt price. Every DCL liquidity
+  (position, pool, market depth) is multiplied by `1 / (sqrt(1.0001) - 1)` before the agent sees it (tested against
+  the contract math). Gas is an estimate of 0.1 NEAR for the whole cascade.
+- **Range:** the agent's ticks (`±halfWidthTicks`, agent config) are widened outward to multiples of the pool's
+  `point_delta` and clamped to the contract bounds; the result must hold the current point. Only out-of-range
+  positions get a card.
+- **Cascade** (`recentre_dcl`): reads the position and pool fresh, then remove liquidity → withdraw both tokens →
+  swap the surplus token to the new range's ratio (only when it is above 0.5 % of the position; min-out = the
+  contract's `quote` minus slippage) → deposit both → `add_liquidity`. Every amount is sized from guaranteed minimums
+  (the removal's minimums, the swap's min-out), and the add's minimums follow the same slippage. Stopping halfway
+  leaves the tokens in the wallet, the same state as the exit.
+- **`validateCascade`:** `add_liquidity` sent to the DCL contract needs a string `pool_id` in the DCL allowlist
+  (`rhea.dclPools` in `config/market.json`: the two USDC/wNEAR pools, fees 100 and 2000). Any other receiver keeps the
+  v1 rule (numeric `pool_id` in `rhea.pools`). Caps are unchanged.
+- **One card per position:** the re-centre when it pays back within `maxPaybackDays` (14), else the exit, now titled
+  as an exit.
+- **Our own swap moves the pool** before the add: the add's minimums allow for the move implied by the quote, and a
+  move larger than the slippage refuses the re-centre (409) rather than loosening the minimums. Prepare also refuses
+  a position back in range, a paused pool, and a range at the top point bound or wider than 200 000 points.
+- **wNEAR stays wNEAR:** the DCL contract pays withdrawals and swap output with `ft_transfer` (ref-ui passes no unwrap
+  flag to `withdraw_asset`; no `near_withdraw` in 100 recent mainnet receipts), so the later wNEAR deposit is funded.
+
+**Consequences:** The cost and fee numbers are estimates (volume persists, fixed time in range, no IL). A position too
+large for the pool's depth gets the card but prepare refuses it. If the add still fails, the tokens sit in the
+user's Rhea balance.

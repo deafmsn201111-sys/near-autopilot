@@ -25,9 +25,11 @@ export const marketConfigSchema = z
               .strict(),
           )
           .default([]),
+        /** Reviewed DCL pools (string ids) a re-centre may add liquidity to. Empty means no DCL add is allowed. */
+        dclPools: z.array(z.string().min(1).max(200)).max(20).default([]),
       })
       .strict()
-      .default({ pools: [] }),
+      .default({ pools: [], dclPools: [] }),
     /**
      * Yield data (YIELD_DATA=mainnet-onchain). Pools listed here are OBSERVED only; strategic use of a Rhea v1
      * pool still requires it in `rhea.pools` (the operator allowlist), and no DCL pool is reviewed.

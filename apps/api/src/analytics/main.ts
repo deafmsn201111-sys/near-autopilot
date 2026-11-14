@@ -52,7 +52,7 @@ const toolLlm = anthropicToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const market = env.MARKET_CONFIG_FILE
   ? (JSON.parse(readFileSync(env.MARKET_CONFIG_FILE, 'utf8')) as {
-      rhea?: { pools?: { poolId: number; tokenA: string; tokenB: string }[] };
+      rhea?: { pools?: { poolId: number; tokenA: string; tokenB: string }[]; dclPools?: string[] };
       policy?: { allowedTokens?: string[] };
     })
   : {};
@@ -79,6 +79,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
         tokenA: accountId(p.tokenA),
         tokenB: accountId(p.tokenB),
       })),
+      dclPools: market.rhea?.dclPools ?? [],
       discovery: httpDiscovery(),
       ai: toolLlm
         ? {
