@@ -75,15 +75,15 @@ export function WalletButton() {
       type="button"
       className="btn primary small"
       onClick={() => {
-        connect()
-          .then((id) => {
-            if (!id) return;
-            reportConnect(id);
-            setAccount(id);
-            rememberAccount(id);
-            setState('opening');
-            window.location.assign(portfolioUrl(id));
-          })
+        const open = (id: string) => {
+          reportConnect(id);
+          setAccount(id);
+          rememberAccount(id);
+          setState('opening');
+          window.location.assign(portfolioUrl(id));
+        };
+        connect(open)
+          .then((id) => id && open(id))
           .catch(() => undefined); // the kit failed to load: stay here
       }}
     >

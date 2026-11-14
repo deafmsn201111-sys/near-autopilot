@@ -35,7 +35,7 @@ const fake = vi.hoisted(() => {
       state.bases.push(options);
     }
     async getConnectedWallet() {
-      if (!state.account) throw new Error('No wallet selected');
+      if (!state.account) throw new Error('No accounts found');
       return { wallet: baseWallet, accounts: [{ accountId: state.account }] };
     }
     get availableWallets() {
@@ -115,6 +115,7 @@ const store = new Map<string, string>();
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => store.get(k) ?? null,
   setItem: (k: string, v: string) => store.set(k, v),
+  removeItem: (k: string) => store.delete(k),
   clear: () => store.clear(),
 });
 vi.stubGlobal('document', { querySelector: () => null });
@@ -224,6 +225,41 @@ describe('NEAR wallet through HOT Kit', () => {
     fake.state.account = 'carol.near';
     fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
     expect(await Promise.all([first, second])).toEqual([null, 'carol.near']);
+    expect(fake.events.get('wallet:signIn')?.size).toBe(1);
+  });
+
+  it('forgets a sign-in cancelled in the wallet, so the next page load skips the kit', async () => {
+    const m = await fresh();
+    localStorage.setItem('selected-wallet', 'hot-wallet');
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBeNull();
+    vi.resetModules();
+    fake.state.kits = 0;
+    expect(await (await import('../lib/wallet')).currentAccount()).toBeNull();
+    expect(fake.state.kits).toBe(0);
+  });
+
+  it('opens the account once when its sign-in lands after the list was closed', async () => {
+    const m = await fresh();
+    const late: string[] = [];
+    expect(await m.connect((id) => late.push(id))).toBeNull();
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    await flush();
+    expect(late).toEqual(['carol.near']);
+  });
+
+  it('a later click takes over a sign-in left pending by a closed list', async () => {
+    const m = await fresh();
+    const late: string[] = [];
+    expect(await m.connect((id) => late.push(id))).toBeNull();
+    fake.state.hang = true;
+    const second = m.connect((id) => late.push(`second:${id}`));
+    await flush();
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    expect(await second).toBe('carol.near');
+    await flush();
+    expect(late).toEqual([]);
     expect(fake.events.get('wallet:signIn')?.size).toBe(1);
   });
 

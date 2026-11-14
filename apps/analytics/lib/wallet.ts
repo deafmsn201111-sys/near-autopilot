@@ -21,11 +21,22 @@ const emit = (id: string | null) => {
 };
 
 // near-connect's session key: without it there is nothing to restore, so the kit is not loaded on page load.
+const SESSION_KEY = 'selected-wallet';
 function hasSession(): boolean {
   try {
-    return localStorage.getItem('selected-wallet') !== null;
+    return localStorage.getItem(SESSION_KEY) !== null;
   } catch {
     return false;
+  }
+}
+
+// near-connect writes the key before the wallet's sign-in and keeps it when that sign-in is cancelled.
+function forgetCancelledSignIn(e: unknown) {
+  if (!(e instanceof Error) || e.message !== 'No accounts found') return;
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // storage blocked: hasSession() is false anyway
   }
 }
 
@@ -48,8 +59,9 @@ export async function currentAccount(): Promise<string | null> {
   try {
     const { accounts } = await (await near()).near.getConnectedWallet();
     return accounts[0]?.accountId ?? null;
-  } catch {
-    return null; // nothing connected
+  } catch (e) {
+    forgetCancelledSignIn(e);
+    return null;
   }
 }
 
@@ -66,10 +78,13 @@ export function watchAccount(onChange: (accountId: string | null) => void): () =
  * Opens the kit's wallet list (NEAR, EVM, Solana). Resolves with the NEAR account signed in there; null when the list
  * was closed or only another chain's wallet was connected. A NEAR sign-in also settles it: in kit 2.0.0 the list may
  * never settle after its nested chain list is closed, so a later click opens it again; only the latest click gets the
- * account.
+ * account. A NEAR sign-in still pending in its wallet when the list closed goes to `onLateSignIn` once it lands,
+ * unless another click came first.
  */
 let attempt = 0;
-export async function connect(): Promise<string | null> {
+export async function connect(
+  onLateSignIn: (accountId: string) => void = () => undefined,
+): Promise<string | null> {
   const mine = ++attempt;
   const { kit, near: connector } = await near();
   let onSignIn: (t: NearSignIn) => void = () => undefined;
@@ -82,6 +97,13 @@ export async function connect(): Promise<string | null> {
     () => null,
   );
   const id = await Promise.race([signedIn, picked]);
+  if (id === null && mine === attempt) {
+    void signedIn.then((late) => {
+      connector.off('wallet:signIn', onSignIn);
+      if (late && mine === attempt) onLateSignIn(late);
+    });
+    return null;
+  }
   connector.off('wallet:signIn', onSignIn);
   return mine === attempt ? id : null;
 }
