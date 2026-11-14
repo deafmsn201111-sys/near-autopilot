@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { progressFooter, stepAfterCheck } from '../lib/sign-progress';
+import { progressFooter, progressResult, stepAfterCheck } from '../lib/sign-progress';
 
 const sent: string[] = [];
 vi.mock('../lib/wallet', () => ({
@@ -49,5 +49,53 @@ describe('progressFooter', () => {
 
   it('says not signed when the wallet declined', () => {
     expect(progressFooter([{ kind: 'stopped', reason: 'declined' }], false)).toMatch(/Not signed/);
+  });
+});
+
+describe('progressResult', () => {
+  const done = stepAfterCheck('h', { status: 'confirmed', lines: [] });
+  const failed = stepAfterCheck('h', {
+    status: 'failed',
+    lines: [],
+    failure: { contract: 'v2.ref-finance.near', error: 'the price moved past your minimum' },
+    funds: 'No funds left your wallet.',
+  });
+
+  it('has no result while signing', () => {
+    expect(progressResult([{ kind: 'signing' }], true)).toBeNull();
+  });
+
+  it('is done when every step is confirmed', () => {
+    expect(progressResult([done], false)).toEqual({
+      tone: 'ok',
+      title: 'Done. Every step is confirmed on NEAR.',
+      detail: 'Your portfolio updates when you close this window.',
+    });
+  });
+
+  it('says nothing was sent when the wallet declined the first step', () => {
+    expect(
+      progressResult([{ kind: 'stopped', reason: 'declined' }, { kind: 'waiting' }], false),
+    ).toEqual({
+      tone: 'watch',
+      title: 'Not signed in your wallet.',
+      detail: 'Your wallet reported nothing sent. Check its activity before you try again.',
+    });
+  });
+
+  it('keeps the steps already sent in view when a later one is declined', () => {
+    expect(progressResult([done, { kind: 'stopped', reason: 'declined' }], false)).toMatchObject({
+      tone: 'watch',
+      detail: 'Step 1 went through; nothing after it was sent.',
+    });
+  });
+
+  it('names the failure and what NEAR says about the funds', () => {
+    expect(progressResult([failed, { kind: 'waiting' }], false)).toEqual({
+      tone: 'liq',
+      title: 'The transaction failed on NEAR.',
+      detail:
+        'v2.ref-finance.near: the price moved past your minimum. No funds left your wallet. The next step was not offered.',
+    });
   });
 });

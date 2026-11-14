@@ -55,6 +55,7 @@ import { WithdrawDialog } from '../components/WithdrawDialog';
 import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
+import { signBlocked } from '../lib/sign-review';
 import { StrategyPicker } from '../components/StrategyPicker';
 import { PortfolioSummary } from '../components/PortfolioSummary';
 import {
@@ -157,13 +158,13 @@ function HoldingsTable({
         <span className="r">Value</span>
       </div>
       {rows.slice(0, top).map((r) => (
-        <HoldingRow key={r.key} r={r} assetsTotal={assetsTotal} />
+        <HoldingRow key={`${r.key}:${r.amount}`} r={r} assetsTotal={assetsTotal} />
       ))}
       {rest.length > 0 && (
         <details className="ht-more">
           <summary>Show all ({rows.length})</summary>
           {rest.map((r) => (
-            <HoldingRow key={r.key} r={r} assetsTotal={assetsTotal} />
+            <HoldingRow key={`${r.key}:${r.amount}`} r={r} assetsTotal={assetsTotal} />
           ))}
         </details>
       )}
@@ -457,6 +458,11 @@ async function Portfolio({ sp }: { sp: Search }) {
             hasLoan={data.holdings.some((h) => h.where === 'borrowed')}
             loanValued={data.health.healthFactor !== null}
             hasLp={(data.positions ?? []).some((p) => p.key.startsWith('dcl-'))}
+            signBlock={signBlocked({
+              account: accountParam,
+              connected: cookieAccount,
+              signingEnabled,
+            })}
           />
         </section>
       )}
