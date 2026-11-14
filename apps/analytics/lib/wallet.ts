@@ -30,9 +30,10 @@ function hasSession(): boolean {
   }
 }
 
-// near-connect writes the key before the wallet's sign-in and keeps it when that sign-in is cancelled.
+// near-connect writes the key before the wallet's sign-in and keeps it when that sign-in is cancelled. While a
+// connect() still waits for a sign-in, an empty account list only means the wallet has not answered yet.
 function forgetCancelledSignIn(e: unknown) {
-  if (!(e instanceof Error) || e.message !== 'No accounts found') return;
+  if (waiting > 0 || !(e instanceof Error) || e.message !== 'No accounts found') return;
   try {
     localStorage.removeItem(SESSION_KEY);
   } catch {
@@ -82,29 +83,45 @@ export function watchAccount(onChange: (accountId: string | null) => void): () =
  * unless another click came first.
  */
 let attempt = 0;
+let waiting = 0;
+let dropLate: () => void = () => undefined;
 export async function connect(
   onLateSignIn: (accountId: string) => void = () => undefined,
 ): Promise<string | null> {
   const mine = ++attempt;
+  dropLate();
   const { kit, near: connector } = await near();
   let onSignIn: (t: NearSignIn) => void = () => undefined;
   const signedIn = new Promise<string | null>((resolve) => {
     onSignIn = (t) => resolve(t.accounts[0]?.accountId ?? null);
     connector.on('wallet:signIn', onSignIn);
   });
+  waiting++;
+  let listening = true;
+  const stop = () => {
+    if (!listening) return;
+    listening = false;
+    waiting--;
+    connector.off('wallet:signIn', onSignIn);
+  };
+  let closed = false;
   const picked = kit.connect().then(
     (w) => (Number(w.type) === NEAR_WALLET_TYPE ? w.address : null),
-    () => null,
+    () => {
+      closed = true;
+      return null;
+    },
   );
   const id = await Promise.race([signedIn, picked]);
-  if (id === null && mine === attempt) {
+  if (id === null && closed && mine === attempt) {
+    dropLate = stop;
     void signedIn.then((late) => {
-      connector.off('wallet:signIn', onSignIn);
+      stop();
       if (late && mine === attempt) onLateSignIn(late);
     });
     return null;
   }
-  connector.off('wallet:signIn', onSignIn);
+  stop();
   return mine === attempt ? id : null;
 }
 

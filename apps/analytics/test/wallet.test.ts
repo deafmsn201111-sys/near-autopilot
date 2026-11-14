@@ -249,6 +249,33 @@ describe('NEAR wallet through HOT Kit', () => {
     expect(late).toEqual(['carol.near']);
   });
 
+  it('keeps the session key while a sign-in may still land after the list closed', async () => {
+    const m = await fresh();
+    await m.connect();
+    localStorage.setItem('selected-wallet', 'hot-wallet');
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');
+  });
+
+  it('waits for no late sign-in after an EVM-only pick', async () => {
+    const m = await fresh();
+    fake.state.pick = { type: EVM, address: '0xabc' };
+    const late: string[] = [];
+    expect(await m.connect((id) => late.push(id))).toBeNull();
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    await flush();
+    expect(late).toEqual([]);
+    expect(fake.events.get('wallet:signIn')?.size).toBe(1);
+  });
+
+  it("a new closed list drops the previous one's pending sign-in listener", async () => {
+    const m = await fresh();
+    await m.connect();
+    await m.connect();
+    await m.connect();
+    expect(fake.events.get('wallet:signIn')?.size).toBe(2);
+  });
+
   it('a later click takes over a sign-in left pending by a closed list', async () => {
     const m = await fresh();
     const late: string[] = [];
