@@ -1359,7 +1359,7 @@ function idleSwapRepay(
   const saves = (repayUsd * borrowPct - swapUsd * supplyPct) / 100 - lossUsd;
   const swapRaw = rawOf(plan.swapIn, swap.decimals, false);
   if (!swapRaw || repayUsd < MIN_ACTION_USD || saves <= 0) return null;
-  const rates = `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${swap.symbol} on Burrow earns about ${supplyPct.toFixed(1)}%`;
+  const rates = `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${swap.symbol} on Burrow earns about ${ratePct(supplyPct)}%`;
   if (!yearWorthTheFee(saves))
     return {
       skip: `${rates}. Repaying the ${debt.symbol} loan with your ${swap.symbol} would save about ${money2(saves)} a year after the swap: not worth the network fees.`,

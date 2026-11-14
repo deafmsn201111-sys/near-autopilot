@@ -589,8 +589,7 @@ function allocatorTool(
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
-        const apr = Number(yieldWad / 10n ** 14n) / 100;
-        const aprPct = ratePct(apr);
+        const aprPct = ratePct(Number(yieldWad) / 1e16);
         const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
         const yearlyUsd = (value * Number(yieldWad)) / 1e18;
         if (!yearWorthTheFee(yearlyUsd)) {
