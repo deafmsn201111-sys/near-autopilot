@@ -19,9 +19,8 @@ rules that would falsify each fixed in advance:
 | H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \|Spearman ρ\| ≥ 0.7 | ρ = 0.39: **holds** |
 | H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within 0.5 pp of realized in at least 3/4 of markets | 11 of 18 within: **holds** |
 
-**Does the verdict hold over a longer window?** The thesis was first tested on 90 days. The same
-rules over the whole 180-day window and over its last 90 days, from the same raw data and the same pool
-universe:
+**Does the verdict hold over a longer window?** The same rules over the whole 180-day window and over its
+last 90 days, from the same raw data and the same pool universe:
 
 | | 180 days | Last 90 days | Same result |
 |---|---|---|---|
@@ -143,9 +142,8 @@ The full series are in `thesis/out/pools.csv`, `thesis/out/pools-daily.csv` and 
    realized base yield, and the reward token's own price risk would come on top.
 5. **"The gas cost is overstated."** It is an upper bound. For $5,000 the cost per dollar is small. The $500 column
    shows where costs matter, and the cost figures are in `pools.csv`.
-6. **"The sample is biased."** The universe is the top 16 wNEAR pools by reserve at the END block. That is
-   survivorship: pools that drained during the window are not in it, which flatters LP outcomes. So the gap is, if
-   anything, understated.
+6. **"The sample is biased."** Ranking at the end only would keep the survivors. The universe also takes the top pools at the FIRST block, so
+   pools that drained during the window are in it (see "Survivorship and pool types" below).
 7. **"One window is one market regime."** Yes. Over these 180 days NEAR moved from
    1.593 to 4.012 USDC (pool #4512), and the impermanent loss of NEAR pairs follows that move. Another window can give other numbers. The claim
    is about what the displayed figures leave out, not about a fixed number.
@@ -173,6 +171,9 @@ round-trip cost of a $5,000 position.
 
 ## Limitations
 
+- Burrow reported a supply APR below 0.0001% on every market, and balances did not accrue, on 4 of
+  181 days (2026-05-08 – 2026-05-12, blocks 197499765, 197646150, 197790195, 197936988). These days are in the window as read from the
+  chain; they pull the realized supply APR down. The last 90 days contain none of them and give the same H3 result (table above).
 - Daily granularity; simple annualisation; constant-product (v1 SIMPLE_POOL) pools only. Concentrated-liquidity (DCL)
   and stable pools are not modelled.
 - Rewards and incentives are excluded (counterargument 4).

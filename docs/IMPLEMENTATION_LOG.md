@@ -909,7 +909,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 ## 2026-11-14 — Thesis window extended to 180 days (#273)
 
 - `thesis:fetch --days 180` (end 2026-11-05, same as the 90-day version) and `extend.ts` re-read the raw data from
-  FastNEAR's archival RPC: 181 daily blocks, 16 pools (the start-of-window ranking adds #6503), 180 of 181 days priced.
+  FastNEAR's archival RPC: 181 daily blocks, 16 pools (the same set as the 90-day version), 180 of 181 days priced. Burrow was paused (no accrual) on the first 4 days; THESIS.md says so.
 - `computeThesis(lastDays)` recomputes the whole thesis on the last N days of the same raw files; THESIS.md shows each
   count over 180 days and over the last 90. Both: supported on all three counts (H1 5→4 of 16 within 2 pp, ρ 0.39 /
   0.33, H3 11 of 18 both).

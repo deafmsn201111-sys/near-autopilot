@@ -108,7 +108,8 @@ describe.skipIf(!existsSync(resolve(RAW_DIR, 'manifest.json')))('thesis:rebuild'
     expect(last90.manifest.blocks).toEqual(full.manifest.blocks.slice(-91));
     const first = last90.manifest.blocks[0]?.height ?? 0;
     expect(last90.daily.every((p) => p.height >= first)).toBe(true);
-    expect(full.last90?.manifest.days).toBe(full.manifest.days > 90 ? 90 : undefined);
+    expect(() => computeThesis(full.manifest.days)).toThrow();
+    expect(() => computeThesis(0)).toThrow();
   });
 
   it('is deterministic: two rebuilds are byte-identical', () => {

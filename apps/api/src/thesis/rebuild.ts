@@ -47,8 +47,7 @@ export interface ThesisData {
   readonly gasPriceEnd: bigint;
   readonly tvlVsNet: number | null;
   readonly tvlVsNominal: number | null;
-  /** The whole thesis over the last 90 days of the same raw data, when the window is longer: does the verdict hold? */
-  readonly last90: ThesisData | null;
+  readonly burrowPausedHeights: readonly number[];
   /** The same metrics over the last 30 days, by pool id. */
   readonly pools30: ReadonlyMap<number, PoolMetrics>;
   /**
@@ -98,6 +97,8 @@ export function computeThesis(lastDays?: number): ThesisData {
   const all = manifestSchema.parse(
     JSON.parse(readFileSync(resolve(RAW_DIR, 'manifest.json'), 'utf8')),
   );
+  if (lastDays !== undefined && (lastDays < 1 || lastDays >= all.days))
+    throw new Error(`lastDays must be between 1 and ${all.days - 1}`);
   const manifest =
     lastDays === undefined
       ? all
@@ -155,10 +156,11 @@ export function computeThesis(lastDays?: number): ThesisData {
       : null,
     maxBps: sortedDiffs.length ? (sortedDiffs[sortedDiffs.length - 1] ?? null) : null,
   };
-  const burrow = burrowMetrics(
-    lines('burrow-assets.jsonl').map((l) => burrowLine.parse(l)),
-    times,
-  );
+  const burrowLines = lines('burrow-assets.jsonl').map((l) => burrowLine.parse(l));
+  const burrow = burrowMetrics(burrowLines, times);
+  const burrowPausedHeights = burrowLines
+    .filter((l) => l.assets.every((a) => Number(a.supply_apr) < 1e-6))
+    .map((l) => l.height);
   const priced = pools.filter((p) => p.tvlUsdEnd !== null && p.netApr500 !== null);
   const endSet = new Set(manifest.universe.endPools ?? manifest.universe.pools);
   const cohorts: Cohort[] = [
@@ -189,8 +191,7 @@ export function computeThesis(lastDays?: number): ThesisData {
   ];
   return {
     manifest,
-    last90:
-      lastDays === undefined && manifest.days > COMPARE_DAYS ? computeThesis(COMPARE_DAYS) : null,
+    burrowPausedHeights,
     cohorts,
     pools,
     daily,
@@ -362,7 +363,10 @@ export function renderOutputs(d: ThesisData): Record<string, string> {
       .sort((a, b) => b.supplyAprEnd - a.supplyAprEnd)
       .map((b) => ({ label: tokenLabel(b.token), values: [b.supplyAprEnd, b.supplyAprRealized] })),
   });
-  files['THESIS.md'] = thesisMarkdown(d);
+  files['THESIS.md'] = thesisMarkdown(
+    d,
+    d.manifest.days > COMPARE_DAYS ? computeThesis(COMPARE_DAYS) : null,
+  );
   return files;
 }
 

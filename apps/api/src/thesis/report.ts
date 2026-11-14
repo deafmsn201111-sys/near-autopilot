@@ -122,30 +122,43 @@ function countResults(s: Summary): readonly [string, string, string] {
   ];
 }
 
-/** The same rules over the last 90 days of the same raw data: does the verdict depend on the window? */
-function windowTable(d: ThesisData): string {
-  if (!d.last90) return '';
+function windowTable(d: ThesisData, last: ThesisData | null): string {
+  if (!last) return '';
   const whole = thesisSummary(d);
-  const recent = thesisSummary(d.last90);
+  const recent = thesisSummary(last);
   const [a, b] = [countResults(whole), countResults(recent)];
   const same = [whole.h1 === recent.h1, whole.h2 === recent.h2, whole.h3 === recent.h3];
   const rows = ['H1', 'H2', 'H3'].map(
     (h, i) => `| ${h} | ${a[i] ?? ''} | ${b[i] ?? ''} | ${same[i] ? 'yes' : '**no**'} |`,
   );
   return `
-**Does the verdict hold over a longer window?** The thesis was first tested on ${d.last90.manifest.days} days. The same
-rules over the whole ${d.manifest.days}-day window and over its last ${d.last90.manifest.days} days, from the same raw data and the same pool
-universe:
+**Does the verdict hold over a longer window?** The same rules over the whole ${d.manifest.days}-day window and over its
+last ${last.manifest.days} days, from the same raw data and the same pool universe:
 
-| | ${d.manifest.days} days | Last ${d.last90.manifest.days} days | Same result |
+| | ${d.manifest.days} days | Last ${last.manifest.days} days | Same result |
 |---|---|---|---|
 ${rows.join('\n')}
 
-Over ${d.manifest.days} days the verdict is ${whole.verdictText}; over the last ${d.last90.manifest.days} days it is ${recent.verdictText}.
+Over ${d.manifest.days} days the verdict is ${whole.verdictText}; over the last ${last.manifest.days} days it is ${recent.verdictText}.
 `;
 }
 
-export function thesisMarkdown(d: ThesisData): string {
+function pausedText(d: ThesisData, last: ThesisData | null): string {
+  const paused = d.burrowPausedHeights;
+  if (paused.length === 0) return '';
+  const blocks = d.manifest.blocks.filter((b) => paused.includes(b.height));
+  const range = `${blocks[0]?.timestamp.slice(0, 10) ?? ''} – ${blocks[blocks.length - 1]?.timestamp.slice(0, 10) ?? ''}`;
+  return `- Burrow reported a supply APR below 0.0001% on every market, and balances did not accrue, on ${paused.length} of
+  ${d.manifest.blocks.length} days (${range}, blocks ${paused.join(', ')}). These days are in the window as read from the
+  chain; they pull the realized supply APR down.${
+    last && last.burrowPausedHeights.length === 0
+      ? ` The last ${last.manifest.days} days contain none of them and give the same H3 result (table above).`
+      : ''
+  }
+`;
+}
+
+export function thesisMarkdown(d: ThesisData, recent: ThesisData | null = null): string {
   const summary = thesisSummary(d);
   const results = countResults(summary);
   const {
@@ -204,7 +217,7 @@ rules that would falsify each fixed in advance:
 | H1 | The 24h fee APR a pool list shows is not what an LP kept | nominal is within ${(RULES.closeEnoughPp * 100).toFixed(0)} pp of LP vs HODL in at least half the pools | ${results[0]} |
 | H2 | TVL does not rank pools by what LPs kept | TVL rank predicts LP vs HODL with \\|Spearman ρ\\| ≥ ${RULES.strongRho} | ${results[1]} |
 | H3 | Burrow's displayed supply APR is not the yield accrued | displayed is within ${(RULES.burrowCloseEnoughPp * 100).toFixed(1)} pp of realized in at least 3/4 of markets | ${results[2]} |
-${windowTable(d)}
+${windowTable(d, recent)}
 ## Evidence
 
 - **Universe.** ${d.manifest.universe.rule}; ${d.manifest.universe.candidates} candidate pools, ${n} analysed.
@@ -289,9 +302,13 @@ The full series are in \`thesis/out/pools.csv\`, \`thesis/out/pools-daily.csv\` 
    realized base yield, and the reward token's own price risk would come on top.
 5. **"The gas cost is overstated."** It is an upper bound. For $5,000 the cost per dollar is small. The $500 column
    shows where costs matter, and the cost figures are in \`pools.csv\`.
-6. **"The sample is biased."** The universe is the top ${n} wNEAR pools by reserve at the END block. That is
-   survivorship: pools that drained during the window are not in it, which flatters LP outcomes. So the gap is, if
-   anything, understated.
+6. **"The sample is biased."** ${
+     d.manifest.universe.startPools
+       ? `Ranking at the end only would keep the survivors. The universe also takes the top pools at the FIRST block, so
+   pools that drained during the window are in it (see "Survivorship and pool types" below).`
+       : `The universe is the top ${n} wNEAR pools by reserve at the END block. That is survivorship: pools that drained
+   during the window are not in it, which flatters LP outcomes. So the gap is, if anything, understated.`
+   }
 7. **"One window is one market regime."** Yes. Over these ${d.manifest.days} days NEAR moved from
    ${(() => {
      const s = d.daily.find((x) => x.pool === 4512);
@@ -324,7 +341,7 @@ round-trip cost of a $5,000 position.
 
 ## Limitations
 
-- Daily granularity; simple annualisation; constant-product (v1 SIMPLE_POOL) pools only. Concentrated-liquidity (DCL)
+${pausedText(d, recent)}- Daily granularity; simple annualisation; constant-product (v1 SIMPLE_POOL) pools only. Concentrated-liquidity (DCL)
   and stable pools are not modelled.
 - Rewards and incentives are excluded (counterargument 4).
 - Burrow balances are in the contract's inner units; the share-price ratio is unit-free, so this does not affect the
