@@ -98,6 +98,10 @@ const rate = (pct: number) => `${pct.toFixed(pct < 1 ? 2 : 1)}%`;
 
 const IDLE: Status = { label: 'Idle', tone: 'watch', icon: 'minus' };
 
+const LIQUID_STAKING = new Set(['STNEAR', 'LINEAR', 'NEARX']);
+const liquidStaking = (h: HoldingInput) =>
+  h.where === 'wallet' && h.verified !== false && LIQUID_STAKING.has(h.symbol.toUpperCase());
+
 function holdingStatus(h: HoldingInput): Status {
   const apr = h.aprPct ?? 0;
   if (h.where === 'borrowed')
@@ -115,7 +119,9 @@ function positionStatus(p: PositionInput): [GroupKey, Status] {
         'liquidity',
         p.inRange === false
           ? { label: 'Out of range', tone: 'watch', icon: 'alert' }
-          : { label: 'In range', icon: 'up' },
+          : p.inRange
+            ? { label: 'In range', icon: 'up' }
+            : { label: 'Liquidity' },
       ];
     case 'v1':
       return ['liquidity', { label: 'Earning fees', icon: 'up' }];
@@ -142,7 +148,7 @@ export function holdingGroups(
     ...holdings.map((h): Entry => {
       return {
         key: `${h.where}-${h.token ?? h.symbol}`,
-        group: h.where === 'wallet' ? 'wallet' : 'burrow',
+        group: liquidStaking(h) ? 'staking' : h.where === 'wallet' ? 'wallet' : 'burrow',
         symbol: h.symbol,
         sub:
           (h.where === 'wallet'
@@ -151,7 +157,7 @@ export function holdingGroups(
         logos: h.logos ?? [],
         amount: h.amount,
         usd: h.usd === null ? null : h.where === 'borrowed' ? -h.usd : h.usd,
-        status: holdingStatus(h),
+        status: liquidStaking(h) ? { label: 'Staking', icon: 'up' } : holdingStatus(h),
         verified: h.verified !== false,
         small: h.small ?? (h.usd !== null ? h.usd < 1 : h.amount < 0.005),
       };
@@ -177,7 +183,10 @@ export function holdingGroups(
   return {
     groups: GROUPS.map(([key, label]) => {
       const rows = shown.filter((r) => r.group === key);
-      return { key, label, rows, totalUsd: rows.reduce((s, r) => s + (r.usd ?? 0), 0) };
+      const totalUsd = rows.some((r) => r.usd === null)
+        ? null
+        : rows.reduce((s, r) => s + (r.usd ?? 0), 0);
+      return { key, label, rows, totalUsd };
     }).filter((g) => g.rows.length > 0),
     unverified: all.filter((r) => !r.verified && !r.small),
     small: all.filter((r) => r.small),
@@ -311,7 +320,7 @@ export function HoldingsPanel({
         {groups.map((g) => (
           <tbody key={g.key}>
             <tr className="hold-grp">
-              <th scope="colgroup" colSpan={3}>
+              <th scope="rowgroup" colSpan={3}>
                 {g.label}
               </th>
               <td className="r num">{usdText(g.totalUsd)}</td>
@@ -324,7 +333,7 @@ export function HoldingsPanel({
         {other?.map((o) => (
           <tbody key={`other-${o.key}`} className="hold-ext">
             <tr className="hold-grp">
-              <th scope="colgroup" colSpan={3}>
+              <th scope="rowgroup" colSpan={3}>
                 {o.label} · shown only, not analysed
               </th>
               <td className="r num">{usdText(o.items.reduce((s, i) => s + (i.usd ?? 0), 0))}</td>
@@ -349,11 +358,10 @@ export function HoldingsPanel({
       {flashScope && (
         <RowFlash
           scope={flashScope}
-          // ponytail: an LP row has no amount, so a price swing past 2 digits flashes it too
-          rows={shown.map((r) => [
-            r.key,
-            r.amount === null ? (r.usd?.toPrecision(2) ?? '') : r.amount.toPrecision(4),
-          ])}
+          // ponytail: rows without an amount (LP, orders) never flash; their USD moves with every price tick
+          rows={shown.flatMap((r) =>
+            r.amount === null ? [] : [[r.key, r.amount.toPrecision(4)] as const],
+          )}
         />
       )}
     </section>

@@ -4165,7 +4165,7 @@ main.page {
     padding: 0;
     border: 0;
   }
-  .hold-t th[scope='colgroup'] {
+  .hold-t th[scope='rowgroup'] {
     white-space: normal;
   }
   .hold-t th[scope='row'] {

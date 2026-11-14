@@ -155,6 +155,7 @@ export interface PortfolioView {
     verified?: boolean;
     estimate?: boolean;
     small?: boolean;
+    kind?: 'v1' | 'dcl' | 'staking' | 'unstaking' | 'order';
     /** Rhea DCL: whether the pool price sits inside the position's range. */
     inRange?: boolean;
   }[];

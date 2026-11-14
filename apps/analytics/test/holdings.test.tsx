@@ -122,6 +122,20 @@ describe('holdingGroups', () => {
     expect(out).toMatch(/USDC\/wNEAR.*?hold-amt">LP share</);
   });
 
+  it('puts liquid staking held in the wallet under Staking, not Idle', () => {
+    const { groups } = holdingGroups([h('wallet', 'meta-pool.near', 'STNEAR', 1, 5)], []);
+    expect(groups.map((g) => g.label)).toEqual(['Staking']);
+    expect(groups[0]!.rows[0]!.status).toEqual({ label: 'Staking', icon: 'up' });
+  });
+
+  it('shows no group total when a row in it has no price', () => {
+    const { groups } = holdingGroups(
+      [h('deposited', 'usdt', 'USDt', 50, 50), h('borrowed', 'x', 'X', 5, null)],
+      [],
+    );
+    expect(groups[0]!.totalUsd).toBeNull();
+  });
+
   it('calls NEAR above the 1 NEAR fee reserve idle', () => {
     const rows = holdingGroups([h('wallet', 'near', 'NEAR', 300, 998)], []).groups[0]!.rows;
     expect(rows[0]!.status).toEqual({ label: 'Idle', tone: 'watch', icon: 'minus' });
@@ -132,7 +146,7 @@ describe('HoldingsPanel', () => {
   it('is a real table: column heads, group heads and row heads carry a scope', () => {
     const out = html();
     expect(out).toContain('<th scope="col">Asset</th>');
-    expect(out).toContain('<th scope="colgroup"');
+    expect(out).toContain('<th scope="rowgroup"');
     expect(out).toContain('<th scope="row"');
   });
 
