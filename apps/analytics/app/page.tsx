@@ -1,5 +1,4 @@
 import { cookies } from 'next/headers';
-import Link from 'next/link';
 import { Suspense } from 'react';
 import Loading from './loading';
 
@@ -29,7 +28,9 @@ const TOKEN_KIND: Record<string, string> = {
   USDT: 'Stablecoin',
 };
 
-import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
+import { portfolioOf } from '../components/PortfolioSwitch';
+import { ContextStrip, SwitchView } from '../components/ContextStrip';
+import { Intro } from '../components/Intro';
 import { ErrorState } from '../components/states';
 import {
   accountRecommendations,
@@ -276,12 +277,14 @@ async function Portfolio({ sp }: { sp: Search }) {
       savedStrategy((await cookies()).get(STRATEGY_COOKIE)?.value, accountParam),
   );
   const id = portfolioOf(sp.p);
+  const current = isAccount ? 'account' : id;
   if (isAccount && !accountParam)
     return (
       <>
-        <div className="hero-head">
-          <PortfolioSwitch current="account" path="/" withAccount account={cookieAccount} />
+        <div className="ctx">
+          <SwitchView current="account" connected="" />
         </div>
+        <Intro />
         <AccountForm />
       </>
     );
@@ -291,14 +294,18 @@ async function Portfolio({ sp }: { sp: Search }) {
   if (!data)
     return (
       <>
-        <div className="hero-head">
-          <PortfolioSwitch
-            current={isAccount ? 'account' : id}
-            path="/"
-            withAccount
-            account={cookieAccount || accountParam}
-          />
-        </div>
+        <ContextStrip
+          mode={portfolioMode({
+            isAccount,
+            account: accountParam,
+            connected: cookieAccount,
+            verified: null,
+            signingEnabled: isAccount && walletSigningEnabled(),
+          })}
+          account={accountParam}
+          current={current}
+          connected={cookieAccount}
+        />
         {isAccount && <AccountForm value={accountParam} />}
         <ErrorState
           what={isAccount ? `Account ${accountParam}` : 'Your portfolio'}
@@ -392,17 +399,15 @@ async function Portfolio({ sp }: { sp: Search }) {
   return (
     <>
       {isAccount && accountParam && <AccountWatcher account={accountParam} />}
-      <div className="hero-head">
-        <PortfolioSwitch
-          current={isAccount ? 'account' : id}
-          path="/"
-          withAccount
-          account={cookieAccount || accountParam}
-        />
-      </div>
-
-      {isAccount && <AccountForm compact />}
-
+      {mode.kind === 'mine' && <h1 className="sr-only">Portfolio of {accountParam}</h1>}
+      <ContextStrip
+        key={`${current}:${accountParam}`}
+        mode={mode}
+        account={accountParam}
+        current={current}
+        connected={cookieAccount}
+      />
+      {mode.kind !== 'mine' && <Intro />}
       {isAccount && (
         <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
       )}
@@ -414,21 +419,6 @@ async function Portfolio({ sp }: { sp: Search }) {
           page fills in by itself.
         </div>
       )}
-      <div className="hero-mode">
-        <span className={`hero-live ${mode.mine ? 'is-live' : ''}`}>
-          <span className="dot" aria-hidden="true" />
-          {mode.label}
-        </span>
-        <span className="muted-note">{mode.note}</span>
-        {mode.backTo && (
-          <Link
-            className="btn secondary small"
-            href={`/?p=account&account=${encodeURIComponent(mode.backTo)}`}
-          >
-            ← Back to my wallet
-          </Link>
-        )}
-      </div>
       <PortfolioSummary
         key={`summary:${isAccount ? accountParam : id}`}
         netWorthUsd={t.netWorthUsd}
@@ -447,8 +437,9 @@ async function Portfolio({ sp }: { sp: Search }) {
           accountParam &&
           accountParam === cookieAccount && (
             <>
-              <DepositButton account={accountParam} label="Add funds" />
+              <DepositButton account={accountParam} />
               <WithdrawDialog
+                label="Withdraw"
                 account={accountParam}
                 balances={data.holdings.flatMap((h) =>
                   h.where === 'wallet' && h.token ? [{ token: h.token, amount: h.amount }] : [],

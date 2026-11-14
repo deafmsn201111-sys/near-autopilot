@@ -13,15 +13,20 @@ import type { EventMap, NearConnector } from '@hot-labs/near-connect';
  * The kit (and every chain SDK it pulls in) is imported on first use, never on page load. Nothing here signs NEAR
  * transactions (lib/wallet-sign.ts does); the only send is the one HOT's bridge popup builds for a deposit (D42).
  */
-export type OriginChain = 'evm' | 'solana' | 'btc';
+export type OriginChain = 'evm' | 'solana' | 'tron' | 'btc';
 export interface OriginWallet {
   chain: OriginChain;
   address: string;
 }
 
-// WalletType.EVM / SOLANA / Btc / NEAR, inlined so this module stays free of a runtime kit import.
-const TYPE_BY_CHAIN: Record<OriginChain, number> = { evm: 1, solana: 1001, btc: -6 };
-const CHAIN_BY_TYPE: Record<number, OriginChain> = { 1: 'evm', 1001: 'solana', [-6]: 'btc' };
+// WalletType.EVM / SOLANA / Tron / Btc / NEAR, inlined so this module stays free of a runtime kit import.
+const TYPE_BY_CHAIN: Record<OriginChain, number> = { evm: 1, solana: 1001, tron: 333, btc: -6 };
+const CHAIN_BY_TYPE: Record<number, OriginChain> = {
+  1: 'evm',
+  1001: 'solana',
+  333: 'tron',
+  [-6]: 'btc',
+};
 export const NEAR_WALLET_TYPE = 1010;
 export type NearSignIn = EventMap['wallet:signIn'];
 
@@ -144,7 +149,7 @@ function originWallets(wallets: OmniWallet[]): OriginWallet[] {
   });
 }
 
-/** Calls `onChange` with the connected EVM / Solana / Bitcoin wallets now and on every connect / disconnect. */
+/** Calls `onChange` with the connected EVM / Solana / Tron / Bitcoin wallets now and on every connect / disconnect. */
 export function watchOriginWallets(onChange: (wallets: OriginWallet[]) => void): () => void {
   listeners.add(onChange);
   void load().then(

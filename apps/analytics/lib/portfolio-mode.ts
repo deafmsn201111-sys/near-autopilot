@@ -8,9 +8,9 @@ export interface PortfolioModeInput {
 }
 
 export interface PortfolioMode {
+  kind: 'demo' | 'readonly' | 'mine';
   label: string;
   note: string;
-  mine: boolean;
   /** The connected wallet to go back to while another account is open; null otherwise. */
   backTo: string | null;
 }
@@ -24,31 +24,35 @@ export function portfolioMode({
 }: PortfolioModeInput): PortfolioMode {
   if (!isAccount)
     return {
+      kind: 'demo',
       label: 'Demo portfolio · simulated',
       note: 'Explore only: a simulated portfolio, not a real account.',
-      mine: false,
       backTo: null,
     };
 
   const ai = verified ? ' AI analysis available.' : '';
   const signingOff = 'Prepare only: signing is off on this server.';
   if (!connected || connected !== account) {
-    const whose = connected ? `This is not your connected wallet (${connected}). ` : '';
     return {
+      kind: 'readonly',
       label: 'Mainnet account · read-only',
-      note: `${whose}${signingEnabled ? "Prepare only: the account's owner signs in their own wallet." : signingOff}${ai}`,
-      mine: false,
+      note: `${signingEnabled ? "Prepare only: the account's owner signs in their own wallet." : signingOff}${ai}`,
       backTo: connected || null,
     };
   }
 
   const act = signingEnabled ? 'Prepare and sign in your wallet.' : signingOff;
   return verified
-    ? { label: 'Your wallet · ownership verified', note: `${act}${ai}`, mine: true, backTo: null }
+    ? {
+        kind: 'mine',
+        label: 'Your wallet · ownership verified',
+        note: `${act}${ai}`,
+        backTo: null,
+      }
     : {
+        kind: 'mine',
         label: 'Your wallet',
         note: verified === null ? act : `${act} Verify ownership to unlock AI analysis.`,
-        mine: true,
         backTo: null,
       };
 }

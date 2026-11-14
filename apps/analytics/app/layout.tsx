@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { AutoRefresh } from '../components/AutoRefresh';
-import { SubNav, TopNav } from '../components/Nav';
+import { SubNav, TabBar, TopNav } from '../components/Nav';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { WalletButton } from '../components/WalletButton';
 import { THEME_COLOR, THEME_SCRIPT } from '../lib/theme';
@@ -24,6 +24,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const account = (await cookies()).get('np_account')?.value || null;
   return (
     <html lang="en" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
@@ -31,25 +32,20 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>
-        <header className="topbar">
-          <div className="topbar-inner">
-            <Link href="/" className="logo">
-              <span className="logo-mark" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M6 18V6l12 12V6"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
+        <header className="app-top">
+          <div className="app-top-in">
+            <Link href="/" className="app-logo">
+              <svg viewBox="0 0 22 22" aria-hidden="true">
+                <rect x="1" y="1" width="20" height="20" rx="6" fill="currentColor" />
+                <path d="M6.5 15.5 11 5.5l4.5 10-4.5-2.4z" fill="var(--bg-page)" />
+              </svg>
               NEAR Autopilot
             </Link>
             <TopNav />
-            <ThemeToggle />
-            <WalletButton />
+            <div className="app-top-right">
+              <ThemeToggle />
+              <WalletButton initialAccount={account} />
+            </div>
           </div>
         </header>
         <main className="page">
@@ -64,7 +60,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             (Burrow, Rhea, liquid staking) carry smart-contract, oracle, liquidation,
             impermanent-loss and slippage risk. Unaudited hackathon software, provided as is (MIT).
           </p>
+          <p className="app-foot-reviewers">
+            <Link href="/reviewers">For reviewers</Link>: the safety policy, audit trail and
+            research behind every number.
+          </p>
         </footer>
+        <TabBar />
         <AutoRefresh seconds={15} />
       </body>
     </html>

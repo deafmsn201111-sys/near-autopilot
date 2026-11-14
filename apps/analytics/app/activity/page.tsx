@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { accountIdSchema } from '@near-autopilot/core';
 import { ErrorState } from '../../components/states';
 import { EmptyState } from '../../components/ui';
-import { WalletButton } from '../../components/WalletButton';
+import { ConnectButton } from '../../components/WalletButton';
 import { headline, shortHash, STATUS, stepLines, type TimelineItem } from '../../lib/activity';
 import { accountEvents } from '../../lib/product';
 
@@ -83,7 +83,10 @@ export default async function ActivityPage({ searchParams }: { searchParams: Pro
     return (
       <>
         {title}
-        <EmptyState title="Connect your wallet to see what you did here" action={<WalletButton />}>
+        <EmptyState
+          title="Connect your wallet to see what you did here"
+          action={<ConnectButton>Connect wallet</ConnectButton>}
+        >
           <Link href={`/activity?account=${EXAMPLE}`} className="link">
             See a real example → {EXAMPLE}
           </Link>

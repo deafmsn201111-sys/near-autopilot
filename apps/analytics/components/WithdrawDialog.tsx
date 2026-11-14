@@ -1,6 +1,7 @@
 'use client';
 import { describeProvenance } from '@near-autopilot/core';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DEPOSIT_CHAINS,
   defaultOrigin,
@@ -143,10 +144,14 @@ export function WithdrawDialog({
   account,
   balances,
   signingEnabled,
+  label = 'Withdraw to another chain',
+  className = 'btn secondary small',
 }: {
   account: string;
   balances: readonly WalletBalance[];
   signingEnabled: boolean;
+  label?: string;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [assets, setAssets] = useState<DepositAssets | null>(null);
@@ -161,6 +166,9 @@ export function WithdrawDialog({
   const [picking, setPicking] = useState<'send' | 'receive' | null>(null);
   const [opened, setOpened] = useState(false);
   const [wallets, setWallets] = useState<OriginWallet[]>([]);
+  // In the page body, so a non-modal moment (withoutModal) never lays it out inside a popover that opened it.
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => setHost(document.body), []);
   useEffect(() => (opened ? watchOriginWallets(setWallets) : undefined), [opened]);
 
   const held = withdrawSources(assets?.destinations ?? [], balances);
@@ -221,175 +229,183 @@ export function WithdrawDialog({
 
   return (
     <>
-      <button type="button" className="btn secondary small" onClick={() => void open()}>
-        Withdraw to another chain
+      <button type="button" className={className} onClick={() => void open()}>
+        {label}
       </button>
-      <dialog
-        ref={ref}
-        className="modal deposit"
-        onCancel={(e) => {
-          if (!picking) return;
-          e.preventDefault();
-          setPicking(null);
-        }}
-      >
-        {quote ? (
-          <WithdrawQuote
-            q={quote}
-            account={account}
-            signingEnabled={signingEnabled}
-            onBack={() => setQuote(null)}
-          />
-        ) : picking === 'send' ? (
-          <TokenPicker
-            title="Send from NEAR"
-            tokens={held}
-            selected={origin}
-            note={() => 'on NEAR'}
-            onPick={(id) => {
-              setOrigin(id);
-              setAmount('');
+      {host &&
+        createPortal(
+          <dialog
+            ref={ref}
+            className="modal deposit"
+            onCancel={(e) => {
+              if (!picking) return;
+              e.preventDefault();
               setPicking(null);
             }}
-            onBack={() => setPicking(null)}
-          />
-        ) : picking === 'receive' ? (
-          <TokenPicker
-            title={`Receive on ${chainName}`}
-            tokens={targets}
-            selected={destination}
-            note={() => `on ${chainName}`}
-            onPick={(id) => {
-              setDestination(id);
-              setPicking(null);
-            }}
-            onBack={() => setPicking(null)}
-          />
-        ) : (
-          <form onSubmit={(e) => void submit(e)}>
-            <h3>Withdraw to another chain</h3>
-            <p>
-              Through NEAR Intents 1Click. You sign one transaction in your NEAR wallet; it arrives
-              at the address you give on the chain you pick. A refund comes back to <b>{account}</b>
-              .
-            </p>
-            {opened && <OriginWallets wallets={wallets} chains={['evm', 'solana']} />}
-            <div className="asset-box">
-              <span className="asset-box-label">You send from NEAR</span>
-              <div className="asset-box-row">
-                <TokenButton
-                  label="Token to send"
-                  token={chosen}
-                  where="on NEAR"
-                  disabled={!assets || held.length === 0}
-                  onClick={() => setPicking('send')}
-                />
-                <input
-                  className="asset-amount num"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="0"
-                  aria-label={`Amount${chosen ? ` of ${chosen.symbol}` : ''}`}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  required
-                />
-              </div>
-              {chosen && balance > 0 && (
-                <div className="chain-chips" aria-label="Share of your balance">
-                  <span className="muted-note">
-                    Balance {balance} {chosen.symbol} (
-                    {
-                      describeProvenance(
-                        chosen.assetId === 'nep141:wrap.near'
-                          ? 'calculated_estimate'
-                          : 'on_chain_verified',
-                      ).label
-                    }
-                    )
-                  </span>
-                  {SHARES.map((p) => (
+          >
+            {quote ? (
+              <WithdrawQuote
+                q={quote}
+                account={account}
+                signingEnabled={signingEnabled}
+                onBack={() => setQuote(null)}
+              />
+            ) : picking === 'send' ? (
+              <TokenPicker
+                title="Send from NEAR"
+                tokens={held}
+                selected={origin}
+                note={() => 'on NEAR'}
+                onPick={(id) => {
+                  setOrigin(id);
+                  setAmount('');
+                  setPicking(null);
+                }}
+                onBack={() => setPicking(null)}
+              />
+            ) : picking === 'receive' ? (
+              <TokenPicker
+                title={`Receive on ${chainName}`}
+                tokens={targets}
+                selected={destination}
+                note={() => `on ${chainName}`}
+                onPick={(id) => {
+                  setDestination(id);
+                  setPicking(null);
+                }}
+                onBack={() => setPicking(null)}
+              />
+            ) : (
+              <form onSubmit={(e) => void submit(e)}>
+                <h3>Withdraw to another chain</h3>
+                <p>
+                  Through NEAR Intents 1Click. You sign one transaction in your NEAR wallet; it
+                  arrives at the address you give on the chain you pick. A refund comes back to{' '}
+                  <b>{account}</b>.
+                </p>
+                {opened && <OriginWallets wallets={wallets} chains={['evm', 'solana']} />}
+                <div className="asset-box">
+                  <span className="asset-box-label">You send from NEAR</span>
+                  <div className="asset-box-row">
+                    <TokenButton
+                      label="Token to send"
+                      token={chosen}
+                      where="on NEAR"
+                      disabled={!assets || held.length === 0}
+                      onClick={() => setPicking('send')}
+                    />
+                    <input
+                      className="asset-amount num"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0"
+                      aria-label={`Amount${chosen ? ` of ${chosen.symbol}` : ''}`}
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      required
+                    />
+                  </div>
+                  {chosen && balance > 0 && (
+                    <div className="chain-chips" aria-label="Share of your balance">
+                      <span className="muted-note">
+                        Balance {balance} {chosen.symbol} (
+                        {
+                          describeProvenance(
+                            chosen.assetId === 'nep141:wrap.near'
+                              ? 'calculated_estimate'
+                              : 'on_chain_verified',
+                          ).label
+                        }
+                        )
+                      </span>
+                      {SHARES.map((p) => (
+                        <button
+                          type="button"
+                          key={p}
+                          className="btn secondary small"
+                          onClick={() => setAmount(shareOf(balance, p, chosen.decimals))}
+                        >
+                          {p === 100 ? 'Max' : `${p}%`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {assets && held.length === 0 && (
+                  <p className="deposit-warn">
+                    Your wallet holds none of the tokens that can be withdrawn here.
+                  </p>
+                )}
+                <div className="chain-chips" role="radiogroup" aria-label="Network">
+                  {chains.map((c) => (
                     <button
                       type="button"
-                      key={p}
-                      className="btn secondary small"
-                      onClick={() => setAmount(shareOf(balance, p, chosen.decimals))}
+                      key={c.id}
+                      role="radio"
+                      aria-checked={c.id === chain}
+                      className={`chain-chip${c.id === chain ? ' is-on' : ''}`}
+                      onClick={() => pickChain(c.id)}
                     >
-                      {p === 100 ? 'Max' : `${p}%`}
+                      <img src={`/chains/${c.id}.svg`} alt="" width={20} height={20} />
+                      {c.name}
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-            {assets && held.length === 0 && (
-              <p className="deposit-warn">
-                Your wallet holds none of the tokens that can be withdrawn here.
-              </p>
+                <div className="asset-box">
+                  <span className="asset-box-label">You receive on {chainName}</span>
+                  <div className="asset-box-row">
+                    <TokenButton
+                      label="Token to receive"
+                      token={receive}
+                      where={`on ${chainName}`}
+                      disabled={!assets}
+                      onClick={() => setPicking('receive')}
+                    />
+                  </div>
+                </div>
+                <label className="field">
+                  Recipient address on {chainName}
+                  <input
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={REFUND_HINT[chain] ?? ''}
+                    value={recipient}
+                    onChange={(e) => setRecipient(e.target.value)}
+                    required
+                  />
+                  <span className="muted-note">
+                    {walletAddress && recipient === walletAddress
+                      ? 'Filled from your connected wallet. '
+                      : ''}
+                    Check it: a transfer to a wrong address cannot be undone.
+                  </span>
+                </label>
+                {error && (
+                  <p className="deposit-warn" role="alert">
+                    {error}
+                  </p>
+                )}
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() => ref.current?.close()}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn primary"
+                    disabled={!assets || busy || !origin || !destination}
+                  >
+                    {busy ? 'Getting a quote…' : 'Get quote'}
+                  </button>
+                </div>
+              </form>
             )}
-            <div className="chain-chips" role="radiogroup" aria-label="Network">
-              {chains.map((c) => (
-                <button
-                  type="button"
-                  key={c.id}
-                  role="radio"
-                  aria-checked={c.id === chain}
-                  className={`chain-chip${c.id === chain ? ' is-on' : ''}`}
-                  onClick={() => pickChain(c.id)}
-                >
-                  <img src={`/chains/${c.id}.svg`} alt="" width={20} height={20} />
-                  {c.name}
-                </button>
-              ))}
-            </div>
-            <div className="asset-box">
-              <span className="asset-box-label">You receive on {chainName}</span>
-              <div className="asset-box-row">
-                <TokenButton
-                  label="Token to receive"
-                  token={receive}
-                  where={`on ${chainName}`}
-                  disabled={!assets}
-                  onClick={() => setPicking('receive')}
-                />
-              </div>
-            </div>
-            <label className="field">
-              Recipient address on {chainName}
-              <input
-                autoComplete="off"
-                spellCheck={false}
-                placeholder={REFUND_HINT[chain] ?? ''}
-                value={recipient}
-                onChange={(e) => setRecipient(e.target.value)}
-                required
-              />
-              <span className="muted-note">
-                {walletAddress && recipient === walletAddress
-                  ? 'Filled from your connected wallet. '
-                  : ''}
-                Check it: a transfer to a wrong address cannot be undone.
-              </span>
-            </label>
-            {error && (
-              <p className="deposit-warn" role="alert">
-                {error}
-              </p>
-            )}
-            <div className="modal-actions">
-              <button type="button" className="btn secondary" onClick={() => ref.current?.close()}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={!assets || busy || !origin || !destination}
-              >
-                {busy ? 'Getting a quote…' : 'Get quote'}
-              </button>
-            </div>
-          </form>
+          </dialog>,
+          host,
         )}
-      </dialog>
     </>
   );
 }
