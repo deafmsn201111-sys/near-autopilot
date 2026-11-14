@@ -1,6 +1,6 @@
 # NEAR Autopilot
 
-**Your AI DeFi autopilot on NEAR. It does the analysis and builds the transactions. You keep the controls.**
+**Give an AI your DeFi, not your keys. It reasons privately in a NEAR AI TEE, builds the exact transactions, and only your own wallet signs them.**
 
 An AI DeFi analyst for NEAR mainnet. Agents read a wallet, its [Burrow](https://app.rhea.finance/lending) lending position
 and its [Rhea](https://rhea.finance) liquidity, rank what is worth doing with the numbers behind it (repay debt, put
