@@ -25,15 +25,9 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope = `demo-500` or `demo-5000`).
 - **The strategy preset is remembered per browser only** (one cookie for the last 20 accounts, #25). Another device or a cleared
   browser falls back to Balanced. → #100 (server-side per-account settings, written by the proven owner).
-- **Deposit payment links are not device-tested yet** (#128): wallet support for EIP-681 and Solana Pay is weakly
-  documented (Rabby does not parse EIP-681; MetaMask Mobile, Phantom and Solflare should). A wallet that ignores the
-  amount leaves it to the user; the dialog shows it with a copy button and an **Address only** switch.
 - **Fee-on-transfer is checked on Solana only** (#185, D32): an EVM token that takes a fee on transfer is still offered.
   Solana mints are read from `SOLANA_RPC_URL` (public mainnet RPC by default); while it has never answered, Solana
   tokens other than SOL are not offered.
-- **Deposit quotes are `EXACT_INPUT`** (#128): less than the quoted amount is refunded after the deadline, not
-  credited in part. `FLEX_INPUT` would accept any amount in a band but loosens the quote echo check; after the
-  hackathon.
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence. → `T2.1`.
 - **No uniform provenance tagging** across all financial values. → `T1.1/T1.2`.
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
@@ -45,17 +39,12 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
 - **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
   usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.
-- **SHIELD scope names are inferred.** Chain ids are assumed to be 1Click's `blockchain` codes (`eth`, `sol`, …) and
-  bridges `poa`/`hot`; SHIELD's docs name neither. Unknown values show no warning. Check against a real incident. → #129.
 - **A failed HOT bridge swap may refund to the HOT balance.** A deposit through HOT's popup (D42) between different
   tokens that fails can be refunded to the user's HOT intents balance, which the portfolio does not read. 1:1 deposits
   arrive or refund on the origin chain. → #260.
 - **HOT's quotes come through our server's IP.** hex-api refuses our origin in the browser, so `/api/hex` forwards
   the bridge's calls (D42). Every visitor shares our server's IP there; if hex-api rate-limits it, the popup shows
   HOT's own error. Asking HOT to allow `https://near-autopilot.tech` would let us drop the proxy. → #260.
-- **Deposit quote API without UI.** `POST /v1/deposit/quote` and `GET /v1/deposit/incidents` (with SHIELD) are no
-  longer called by the site after D42, so a deposit no longer shows 1Click SHIELD incident warnings; HOT's popup
-  shows its own status. → #261.
 
 ## Watch list (external)
 

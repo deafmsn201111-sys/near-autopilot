@@ -8,7 +8,6 @@ import {
   type OneClickToken,
   type SwapStatus,
 } from '../gateway/one-click-deposit';
-import { incidentsFor, type ShieldClient, type ShieldIncident } from '../gateway/shield';
 import {
   DEPOSIT_CHAINS,
   isNearImplicitAccount,
@@ -19,8 +18,8 @@ import type { SolanaTransferFees } from '../gateway/solana-transfer-fee';
 import { eventRecorder, type EventStore } from './events';
 
 /**
- * Fund the account from another chain through 1Click (D19): the user gets a verified deposit address on the origin
- * chain and sends to it from their own wallet there. No NEAR transaction is built, so nothing reaches validateCascade.
+ * A stored 1Click quote. Deposits go through HOT Kit's bridge popup (D42); the API mints quotes for withdrawals only:
+ * the user's NEAR token to another chain, sent by a transfer /v1/wallet/prepare builds from this row.
  */
 export interface StoredDepositQuote {
   readonly id: string;
@@ -68,8 +67,6 @@ export interface DepositDeps {
   readonly icon?: (token: string) => Promise<string | null>;
   /** Re-check unfinished quotes in the background this often, so a closed deposit screen does not freeze a status. */
   readonly refreshEveryMs?: number;
-  /** 1Click SHIELD incidents, shown as a warning. Absent (no SHIELD_JWT): never an incident. */
-  readonly shield?: Pick<ShieldClient, 'incidents'>;
   /** Solana mints with a transfer fee arrive short of the quote and are refunded, so they are never offered. */
   readonly solanaFees?: Pick<SolanaTransferFees, 'unsafe'>;
 }
@@ -81,8 +78,6 @@ const CHAIN_NAMES: Record<DepositChain, string> = {
   sol: 'Solana',
   btc: 'Bitcoin',
 };
-const BRIDGE_NAMES: Record<string, string> = { poa: 'The PoA bridge', hot: 'The HOT bridge' };
-const MAX_INCIDENTS = 5;
 const POPULAR = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
 const SLIPPAGE_BPS = 100;
 const NOT_VERIFIED =
@@ -143,52 +138,20 @@ const asset = (t: OneClickToken) => ({
   decimals: t.decimals,
 });
 
-// The chain's own coin as 1Click lists it: no contract and exactly this asset id. Anything else is not native.
-const NATIVE_ASSETS: Record<DepositChain, string> = {
-  eth: 'nep141:eth.omft.near',
-  base: 'nep141:base.omft.near',
-  arb: 'nep141:arb.omft.near',
-  sol: 'nep141:sol.omft.near',
-  btc: 'nep141:btc.omft.near',
-};
-
-export type PaymentToken = { readonly native: true } | { readonly contract: string } | null;
-
-/**
- * What a payment link (EIP-681, Solana Pay, BIP21) may ask the wallet to send, or null: then the QR holds the
- * address only. On EVM chains the quoted assetId names the contract, so a contract it does not name is refused;
- * Solana assetIds are hashes, so there the mint is the one 1Click lists for the asset.
- */
-export function paymentToken(chain: DepositChain, t: OneClickToken): PaymentToken {
-  const c = t.contractAddress;
-  if (!c) return t.assetId === NATIVE_ASSETS[chain] ? { native: true } : null;
-  if (chain === 'btc' || !isRefundAddress(chain, c)) return null;
-  if (chain !== 'sol' && !t.assetId.toLowerCase().includes(c.toLowerCase())) return null;
-  return { contract: c };
-}
+const NATIVE_SOL = 'nep141:sol.omft.near';
 
 // The assetIds of Solana tokens whose mint takes a transfer fee or cannot be checked; native SOL has no mint.
 async function solanaUnsafe(
   fees: Pick<SolanaTransferFees, 'unsafe'>,
   tokens: readonly OneClickToken[],
 ): Promise<Set<string>> {
-  const spl = tokens.filter((t) => t.blockchain === 'sol' && t.assetId !== NATIVE_ASSETS.sol);
+  const spl = tokens.filter((t) => t.blockchain === 'sol' && t.assetId !== NATIVE_SOL);
   const mints = spl.flatMap((t) => (t.contractAddress ? [t.contractAddress] : []));
   const charging = await fees.unsafe(mints);
   return new Set(
     spl.filter((t) => !t.contractAddress || charging.has(t.contractAddress)).map((t) => t.assetId),
   );
 }
-
-const quoteBody = z
-  .object({
-    account: accountIdSchema,
-    originAsset: z.string().min(1).max(200),
-    destinationAsset: z.string().min(1).max(200),
-    amount: z.string().min(1).max(64),
-    refundTo: z.string().min(1).max(200),
-  })
-  .strict();
 
 const withdrawBody = z
   .object({
@@ -261,47 +224,6 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     });
     return { origins, destinations };
   };
-
-  const incidentQuery = z.object({
-    origin: z.string().min(1).max(200),
-    destination: z.string().min(1).max(200),
-  });
-
-  const ownCopy = (i: ShieldIncident, route: readonly OneClickToken[]) => {
-    const what =
-      i.scopeType === 'chain'
-        ? i.scopeValue === 'near'
-          ? 'NEAR'
-          : (CHAIN_NAMES[i.scopeValue as DepositChain] ?? i.scopeValue)
-        : i.scopeType === 'bridge'
-          ? (BRIDGE_NAMES[i.scopeValue] ?? i.scopeValue)
-          : (route.find((t) => t.assetId.toLowerCase() === i.scopeValue)?.symbol ?? i.scopeValue);
-    return `${what} is affected, so your deposit may take longer than usual.`;
-  };
-
-  // Display only: anything that goes wrong here means no warning, never a broken dialog.
-  app.get('/v1/deposit/incidents', async (req) => {
-    const q = incidentQuery.safeParse(req.query);
-    if (!deps.shield || !q.success) return { incidents: [] };
-    try {
-      const [incidents, tokens] = await Promise.all([
-        deps.shield.incidents(),
-        deps.oneClick.tokens(),
-      ]);
-      const origin = tokens.find((t) => t.assetId === q.data.origin);
-      const destination = tokens.find((t) => t.assetId === q.data.destination);
-      if (!origin || !destination) return { incidents: [] };
-      const messages = incidentsFor(incidents, { origin, destination }).map(
-        (i) => i.text ?? ownCopy(i, [origin, destination]),
-      );
-      return {
-        incidents: [...new Set(messages)].slice(0, MAX_INCIDENTS).map((message) => ({ message })),
-      };
-    } catch (err) {
-      req.log.warn({ err }, 'deposit incidents unavailable');
-      return { incidents: [] };
-    }
-  });
 
   app.get('/v1/deposit/assets', async (req, reply) => {
     try {
@@ -413,7 +335,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
 
   type Leg = { readonly asset: OneClickToken; readonly chain: string; readonly chainName: string };
 
-  /** A real 1Click quote, verified and stored before it is shown: the same path for a deposit and a withdrawal. */
+  /** A real 1Click quote, verified and stored before it is shown. */
   const mint = async (
     reply: FastifyReply,
     r: {
@@ -492,10 +414,7 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       chain: r.from.chain,
       chainName: r.from.chainName,
       to: { chain: r.to.chain, chainName: r.to.chainName },
-      origin: {
-        ...asset(r.from.asset),
-        payment: isDepositChain(r.from.chain) ? paymentToken(r.from.chain, r.from.asset) : null,
-      },
+      origin: asset(r.from.asset),
       destination: asset(r.to.asset),
       amountIn: q.amountIn.toString(),
       amountOut: q.amountOut.toString(),
@@ -525,38 +444,6 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       );
     return u;
   };
-
-  app.post('/v1/deposit/quote', async (req, reply) => {
-    const body = quoteBody.parse(req.body);
-    let leg;
-    try {
-      const { origins, destinations } = await lists();
-      const o = origins.find((t) => t.assetId === body.originAsset);
-      const d = destinations.find((t) => t.assetId === body.destinationAsset);
-      if (!o || !isDepositChain(o.blockchain)) throw new BadRequest('Unknown origin token.');
-      if (!d) throw new BadRequest('Unknown token to receive.');
-      const amountIn = units(body.amount, o.decimals);
-      if (!isRefundAddress(o.blockchain, body.refundTo))
-        throw new BadRequest(
-          `The refund address is not a valid ${CHAIN_NAMES[o.blockchain]} address.`,
-        );
-      leg = { o, chain: o.blockchain, d, amountIn };
-    } catch (err) {
-      if (err instanceof BadRequest) return reply.code(400).send({ error: err.message });
-      req.log.warn({ err }, '1Click token list failed');
-      return reply.code(502).send({ error: UNAVAILABLE });
-    }
-    const { o, chain, d, amountIn } = leg;
-    return mint(reply, {
-      account: body.account,
-      from: { asset: o, chain, chainName: CHAIN_NAMES[chain] },
-      to: { asset: d, ...NEAR_LEG },
-      amountIn,
-      refundTo: body.refundTo,
-      recipient: body.account,
-      depositAddressOk: (a) => isRefundAddress(chain, a),
-    });
-  });
 
   // Withdraw (#171): the user's NEAR token to another chain. The NEAR transfer is built by /v1/wallet/prepare
   // (withdraw_1click) from the stored quote; a refund comes back to the NEAR account.

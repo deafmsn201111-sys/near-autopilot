@@ -108,10 +108,8 @@ services:
       AUDIT_CHECKPOINT_FILE: /checkpoints/checkpoints.jsonl
       MAINNET_READ_RPC_URL: ${MAINNET_READ_RPC_URL:-https://rpc.mainnet.fastnear.com}
       MAINNET_READ_RPC_API_KEY: ${MAINNET_READ_RPC_API_KEY:-}
-      # 1Click partner JWT for deposit quotes: only this service gets it. Empty = keyless fee schedule.
+      # 1Click partner JWT for withdrawal quotes: only this service gets it. Empty = keyless fee schedule.
       ONE_CLICK_JWT: ${ONE_CLICK_JWT:-}
-      # SHIELD incident warning in the deposit dialog: only this service gets the key. Empty = off.
-      SHIELD_JWT: ${SHIELD_JWT:-}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
       # Server LLM: only this service gets the key. Empty = LLM off, heuristics only.
       NEAR_AI_API_KEY: ${NEAR_AI_API_KEY:-}
