@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseSaved, pipelineOf, runAnalysis, type Pipeline } from '../lib/analysis-client';
+import {
+  parseSaved,
+  pipelineOf,
+  privacyMark,
+  runAnalysis,
+  type Pipeline,
+} from '../lib/analysis-client';
 
 const reply = (body: unknown) =>
   vi.stubGlobal(
@@ -70,6 +76,7 @@ describe('runAnalysis', () => {
       read: { tokens: 7, loan: true },
       checks: { picked: 2, explained: 2, replaced: 0, restored: 1, dropped: 0 },
       ranking: 'The loan comes first: its health factor is 1.37.',
+      privacy: { verified: true, reason: null, chatIds: ['c1', 'c2'], receipts: [] },
     };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
     const r = await runAnalysis('alice.near', 'balanced');
@@ -85,6 +92,23 @@ describe('runAnalysis', () => {
       },
     });
     expect(r.ok && pipelineOf(r.analysis).ranking).toBe(run.ranking);
+    expect(r.ok && pipelineOf(r.analysis).privacy).toEqual(run.privacy);
+  });
+
+  it('reads a run saved before the TEE check as not checked', async () => {
+    const { privacy: _, ...old } = {
+      model: 'z-ai/glm-5.3-flash',
+      turns: 1,
+      toolCalls: 1,
+      ms: 1,
+      read: { tokens: 1, loan: false },
+      checks: { picked: 1, explained: 1, replaced: 0, restored: 0, dropped: 0 },
+      ranking: null,
+      privacy: null,
+    };
+    reply({ ...base, run: old });
+    const r = await runAnalysis('alice.near', 'balanced');
+    expect(r.ok && r.analysis.run?.privacy).toBeNull();
   });
 
   it('reads a run without a ranking sentence, or with one over 300 characters, as no sentence', async () => {
@@ -210,11 +234,47 @@ describe('runAnalysis as a stream', () => {
     const read = { model: 'z-ai/glm-5.3-flash', read: { tokens: 7, loan: true } };
     const asked = [{ tool: step.tool, agent: step.agent }];
     expect(seen).toEqual([
-      { ...read, asked: [], trace: [], turns: null, checks: null, ranking: null, stage: 1 },
-      { ...read, asked, trace: [], turns: null, checks: null, ranking: null, stage: 1 },
-      { ...read, asked, trace: [step], turns: null, checks: null, ranking: null, stage: 2 },
-      { ...read, asked, trace: [step], turns: 2, checks: null, ranking: null, stage: 3 },
-      { ...read, asked, trace: [step], turns: 2, checks, ranking: null, stage: 4 },
+      {
+        ...read,
+        asked: [],
+        trace: [],
+        turns: null,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 1,
+      },
+      {
+        ...read,
+        asked,
+        trace: [],
+        turns: null,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 1,
+      },
+      {
+        ...read,
+        asked,
+        trace: [step],
+        turns: null,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 2,
+      },
+      {
+        ...read,
+        asked,
+        trace: [step],
+        turns: 2,
+        checks: null,
+        ranking: null,
+        privacy: null,
+        stage: 3,
+      },
+      { ...read, asked, trace: [step], turns: 2, checks, ranking: null, privacy: null, stage: 4 },
     ]);
   });
 
@@ -289,5 +349,61 @@ describe('parseSaved', () => {
     expect(parseSaved({ analysis: null, signature: null })).toBeNull();
     expect(parseSaved({ analysis: { source: 'nope' }, signature: 's' })).toBeNull();
     expect(parseSaved({ analysis: base, signature: null })).toBeNull();
+  });
+});
+
+describe('privacyMark', () => {
+  const model = 'z-ai/glm-5.3-flash';
+  const receipt = (chatId: string) => ({
+    chatId,
+    signingAddress: '0x3b753b4406613c5e70ae640508632b600424fa0c',
+    signedText: `${model}:${'a'.repeat(64)}:${'b'.repeat(64)}`,
+    signature: '0x' + 'c'.repeat(130),
+  });
+  const decoded = (href: string | null) => {
+    const b64 = new URL(href!).hash
+      .replace(/^#receipt=/, '')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    return JSON.parse(atob(b64)) as unknown;
+  };
+  const verified = {
+    verified: true,
+    reason: null,
+    chatIds: ['c1', 'c2'],
+    receipts: [receipt('c1'), receipt('c2')],
+  };
+
+  it('says signed in TEE for a verified run and opens the final reply in NEAR AI’s Verification Center', () => {
+    const mark = privacyMark(verified, model)!;
+    expect(mark.label).toBe('Private AI · signed in TEE');
+    expect(mark.title).toContain('signed by the key');
+    expect(
+      mark.href.startsWith('https://cloud.near.ai/verify?model=z-ai%2Fglm-5.3-flash#receipt='),
+    ).toBe(true);
+    expect(decoded(mark.href)).toEqual({
+      completionId: 'c2',
+      model,
+      signingAlgo: 'ecdsa',
+      signingAddress: '0x3b753b4406613c5e70ae640508632b600424fa0c',
+      signedText: `${model}:${'a'.repeat(64)}:${'b'.repeat(64)}`,
+      signature: '0x' + 'c'.repeat(130),
+      signatureKind: 'provider_tee',
+    });
+    expect(mark.replies.map((r) => r.id)).toEqual(['c1', 'c2']);
+    expect(decoded(mark.replies[0]!.href)).toMatchObject({ completionId: 'c1' });
+  });
+  it('never claims a signature for an unverified run, says why, and links only the model attestation', () => {
+    const mark = privacyMark(
+      { verified: false, reason: 'no signature', chatIds: ['c1'], receipts: [] },
+      model,
+    )!;
+    expect(mark.label).toBe('Private AI · signature not verified');
+    expect(mark.title).toContain('no signature');
+    expect(mark.href).toBe('https://cloud.near.ai/verify?model=z-ai%2Fglm-5.3-flash');
+    expect(mark.replies).toEqual([{ id: 'c1', href: null }]);
+  });
+  it('shows no mark for a run that was not checked', () => {
+    expect(privacyMark(null, model)).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import { ShieldClient } from '../gateway/shield';
 import { createJsonLogger } from '../logger';
 import { HttpJsonClient } from '../market-data/http';
 import { nearAiToolLlmFromEnv } from '../llm/near-ai-client';
+import { TeeVerifier } from '../llm/tee-verifier';
 import { analysisMemo } from './ai-analysis';
 import { DrizzleDepositQuoteStore } from './deposit-store';
 import { DrizzleAnalysisStore } from './analysis-store';
@@ -117,6 +118,10 @@ const mainnet = env.MAINNET_READ_RPC_URL
             ledger: llmLedger,
             memo: analysisMemo(),
             store: analyses,
+            verifier: new TeeVerifier(globalThis.fetch, {
+              apiKey: llmEnv.NEAR_AI_API_KEY!,
+              model: llmEnv.LLM_MODEL,
+            }),
           }
         : null,
     }

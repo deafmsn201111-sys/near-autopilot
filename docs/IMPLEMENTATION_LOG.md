@@ -895,3 +895,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `ContextStrip` replaces the portfolio switch, the compact lookup form and the hero's mode line; `Intro` (three
   stages + "Why you can trust it") shows on demo and read-only; the owner view gets a visually hidden `h1`.
 - `lib/hot-kit.ts` maps Tron wallets (`WalletType.Tron` = 333). "Deposit" / "Fund from another chain" → "Add funds".
+
+## 2026-11-14 — TEE signature of every AI reply checked and shown (#233)
+
+- `apps/api/src/llm/tee-verifier.ts`: attestation reports with a fresh nonce (cached 1 h), per-reply signature,
+  hash and EIP-191 signer checks (`@noble/curves`). `NearAiToolLlm` hashes the exact request and received bytes and
+  hands them over through the new `onReply` of the `ToolLlm` port.
+- `analyseAccount` checks a successful run before returning it; `run.privacy` and `llm_calls.privacy` (migration 0027).
+- UI: "Private AI · signed in TEE" / "Private AI · signature not verified" in the trace header; a verified mark
+  and each reply id open that reply in NEAR AI's Verification Center (`#receipt=`), plus a copy button; the steps say "The AI"; `modelName()` removed. README Privacy section, D43.
+- Live: one GLM 5.3 Flash reply verified in 735 ms.

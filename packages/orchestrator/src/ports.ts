@@ -56,6 +56,13 @@ export interface LlmUsage {
   readonly outputTokens: number;
 }
 
+/** A reply a provider signs: hashes of the exact request and response bytes, so the signature can be checked later. */
+export interface SignedReply {
+  readonly chatId: string;
+  readonly requestSha256: string;
+  readonly responseSha256: string;
+}
+
 /** One conversation. The first `send` passes null; every later one answers the previous turn's tool calls. */
 export interface ToolChat {
   send(results: readonly ToolResult[] | null): Promise<LlmToolTurn>;
@@ -71,6 +78,8 @@ export interface ToolLlm {
     readonly signal?: AbortSignal;
     /** Called with the billed tokens of every reply as it arrives, before the reply is checked (so also on a throw). */
     readonly onUsage?: (usage: LlmUsage) => void;
+    /** Called for every reply of a provider that signs them, before the reply is checked. */
+    readonly onReply?: (reply: SignedReply) => void;
   }): ToolChat;
 }
 

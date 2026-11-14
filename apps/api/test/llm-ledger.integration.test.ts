@@ -28,6 +28,7 @@ const call = (over: Partial<LlmCallRecord> = {}): LlmCallRecord => ({
   tools: ['liquidation_guardian'],
   outcome: 'ok',
   input: { strategy: 'balanced', candidates: [{ id: 'a', kind: 'improve_loan_safety' }] },
+  privacy: null,
   output: { picks: [{ id: 'a', kind: 'improve_loan_safety', why: 'Repay.' }] },
   ...over,
 });
