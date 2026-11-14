@@ -6,7 +6,7 @@ import { EXPIRY_GRACE_MS } from './deposit';
 
 const LIST_LIMIT = 100;
 
-/** A stored 1Click quote with the latest status #29 saw; status null = never checked. */
+/** A stored 1Click quote with the latest status seen and when it was checked; status null = never checked. */
 export interface AdminDepositRow {
   readonly id: string;
   readonly createdAt: Date;
@@ -42,10 +42,7 @@ export const DEPOSIT_STATES = [
 ] as const;
 export type DepositState = (typeof DEPOSIT_STATES)[number];
 
-/**
- * Unpaid after the deadline plus the grace is expired, as on the user's deposit screen; a never-checked quote too,
- * since its status is only stored while that screen is open.
- */
+/** Unpaid after the deadline plus the grace is expired, as on the user's deposit screen; a never-checked quote too. */
 export function depositState(r: AdminDepositRow, now: Date): DepositState {
   switch (r.status) {
     case 'SUCCESS':

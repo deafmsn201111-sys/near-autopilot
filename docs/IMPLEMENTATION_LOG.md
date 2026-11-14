@@ -628,6 +628,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   says whether it beats plain supply. The supply intent is unchanged; no new builder, no limit changed (D30).
 - The AI Capital Allocator card copies the rule card's line for the same token; the strategy prompt names the idle rule.
 
+## 2026-11-14 — 1Click deposit statuses refreshed by the server (#167)
+
+- `registerDeposit` runs a background refresh every minute (`refreshEveryMs`, set in `analytics/main.ts`): quotes
+  without `SUCCESS`/`REFUNDED`/`FAILED` are re-checked every fifth of their age, between 1 and 10 minutes, longest
+  unchecked first, at most 20 1Click calls per run (`dueQuotes`). Unpaid ones (no status or `PENDING_DEPOSIT`) stop
+  at deadline + 30 min grace; a deposit already in flight is followed until it is final or purged.
+- The refresh and `GET /v1/deposit/status/:id` share one status cache. A 1Click error skips that quote only and
+  backs it off like a check; an overlapping run is skipped, and shutdown waits for the running one.
+- `status_at` is now the time of the last check, written on every check (Admin → 1Click "Checked").
+- `DepositQuoteStore.unfinished(since)`; `@near-autopilot/db` re-exports `notInArray`.
+
 ## 2026-11-14 — AI analysis stops when the visitor leaves (#151)
 
 - `analyseAccount` takes an optional outer `AbortSignal`; aborting it rejects the deadline race and aborts the run's
