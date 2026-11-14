@@ -7,7 +7,7 @@ import { watchAccount } from '../lib/wallet';
 import { signOwnership } from '../lib/wallet-sign';
 
 const RETRY_MS = 2000;
-const CHECK_FOR_MS = 20_000;
+const CHECK_FOR_MS = 12_000;
 
 /**
  * Which analysis this account gets. AI analysis needs proof of ownership: a NEP-413 message signed by a full-access
@@ -25,7 +25,7 @@ export function OwnershipCheck({
 }) {
   const router = useRouter();
   const [connected, setConnected] = useState<string | null>(null);
-  const [state, setState] = useState<'idle' | 'signing' | 'checking' | 'declined' | 'rejected'>(
+  const [state, setState] = useState<'idle' | 'signing' | 'checking' | 'declined' | 'unverified'>(
     'idle',
   );
   const [checking, startChecking] = useTransition();
@@ -35,10 +35,13 @@ export function OwnershipCheck({
     if (!waitingForProof) return;
     return refreshUntilChecked(
       () => router.refresh(),
-      () => setState('rejected'),
+      () => setState('unverified'),
       { everyMs: RETRY_MS, forMs: CHECK_FOR_MS },
     );
   }, [waitingForProof, router]);
+  useEffect(() => {
+    if (verified || checkFailed) setState('idle');
+  }, [verified, checkFailed]);
   useEffect(() => {
     if (!checkFailed) return;
     const retry = setTimeout(() => router.refresh(), RETRY_MS);
@@ -103,10 +106,10 @@ export function OwnershipCheck({
           {state === 'declined' && (
             <span className="muted-note"> Not signed: you keep the heuristic analysis.</span>
           )}
-          {state === 'rejected' && (
+          {state === 'unverified' && (
             <span className="muted-note">
               {' '}
-              The signature was not accepted: you keep the heuristic analysis.
+              Not verified yet: you keep the heuristic analysis. Reload the page to check again.
             </span>
           )}
         </>
