@@ -2094,6 +2094,9 @@ export function registerAccountView(
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
     const ownerVerified = await owner;
     if (ownerVerified === null) return reply.code(503).send({ error: OWNER_CHECK_FAILED });
+    // A visitor who leaves stops the model run: no spend on an answer nobody reads.
+    const left = new AbortController();
+    reply.raw.on('close', () => reply.raw.writableFinished || left.abort());
     const run = async (onEvent?: (e: AnalysisEvent) => void) => {
       const analysis = await analyseAccount(
         deps.ai ?? null,
@@ -2101,6 +2104,7 @@ export function registerAccountView(
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
+        left.signal,
       );
       await record({
         at: new Date(),
@@ -2117,7 +2121,7 @@ export function registerAccountView(
     if (!req.headers.accept?.includes('text/event-stream')) return run();
     // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
     const out = new PassThrough();
-    // ponytail: a tool that returns after the deadline would write after `done`; the run is not aborted on disconnect.
+    // ponytail: a tool that returns after the deadline would write after `done`.
     const send = (event: string, data: unknown) =>
       out.writable && out.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     run(({ type, ...data }) => send(type, data))

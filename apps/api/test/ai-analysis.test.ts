@@ -1630,6 +1630,55 @@ describe('analyseAccount', () => {
       expect(l.rows).toMatchObject([{ outcome: 'deadline', inputTokens: 2000 }]);
     });
 
+    it('stops a run when the caller aborts, cancels the call in flight and records it as cancelled', async () => {
+      const l = ledger();
+      const stop = new AbortController();
+      let inFlight: AbortSignal | undefined;
+      let turn = 0;
+      const llm: ToolLlm = {
+        open: (req) => {
+          inFlight = req.signal;
+          return {
+            send: () => {
+              req.onUsage?.({ inputTokens: 1000, outputTokens: 100 });
+              if (turn++ > 0) {
+                setTimeout(() => stop.abort(), 0);
+                return new Promise<LlmToolTurn>(() => {});
+              }
+              return Promise.resolve(callAll);
+            },
+          };
+        },
+      };
+      const out = await analyseAccount(
+        ai(llm, l),
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+        () => {},
+        undefined,
+        undefined,
+        stop.signal,
+      );
+      expect(out.fallback).toBe('cancelled');
+      expect(inFlight?.aborted).toBe(true);
+      expect(l.rows).toMatchObject([{ outcome: 'cancelled' }]);
+    });
+
+    it('calls no model for a run aborted before it starts', async () => {
+      const l = ledger();
+      const model = fake([() => final([])]);
+      const out = await analyseAccount(
+        ai(model.llm, l),
+        { ...ctx, heuristics: [heuristic], checks: [heuristic] },
+        () => {},
+        undefined,
+        undefined,
+        AbortSignal.abort(),
+      );
+      expect(out.fallback).toBe('cancelled');
+      expect(model.tools).toEqual([]);
+      expect(l.rows).toEqual([]);
+    });
+
     it('counts a call cut off by the deadline at its worst case, so the next run sees the budget reached', async () => {
       const l = ledger(150n + 2n * WORST_CALL_MICRO - 1n);
       let turn = 0;

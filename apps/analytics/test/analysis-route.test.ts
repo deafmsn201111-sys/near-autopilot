@@ -55,12 +55,14 @@ describe('POST /api/analysis', () => {
   it('passes an event stream through unbuffered when the browser asks for one', async () => {
     proof = 'signed-proof';
     const { POST } = await import('../app/api/analysis/route');
-    const res = await POST(request({ account: 'alice.near' }, undefined, 'text/event-stream'));
+    const req = request({ account: 'alice.near' }, undefined, 'text/event-stream');
+    const res = await POST(req);
     expect(apiPostStream).toHaveBeenCalledWith(
       '/v1/analytics/account/alice.near/analysis',
       { strategy: 'balanced' },
       60_000,
       { 'x-ownership-proof': 'signed-proof' },
+      req.signal,
     );
     expect(apiPost).not.toHaveBeenCalled();
     expect(res.headers.get('content-type')).toBe('text/event-stream');

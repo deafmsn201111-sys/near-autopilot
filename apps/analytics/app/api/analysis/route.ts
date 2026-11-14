@@ -55,7 +55,10 @@ export async function POST(req: Request): Promise<Response> {
   const path = `/v1/analytics/account/${encodeURIComponent(account.data)}/analysis`;
   const forward: Record<string, string> = proof ? { 'x-ownership-proof': proof } : {};
   if (req.headers.get('accept')?.includes('text/event-stream')) {
-    return stream(await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward));
+    // The browser leaving cancels the upstream request, so the API stops the model run.
+    return stream(
+      await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward, req.signal),
+    );
   }
   const { status, body: out } = await apiPost(
     path,

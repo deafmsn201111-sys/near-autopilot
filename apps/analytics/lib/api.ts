@@ -87,6 +87,7 @@ export async function apiPostStream(
   body: unknown,
   timeoutMs: number,
   extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<Response | null> {
   const env = getEnv();
   try {
@@ -100,7 +101,7 @@ export async function apiPostStream(
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]),
     });
   } catch (e) {
     console.error(`analytics API ${path} unreachable`, e);

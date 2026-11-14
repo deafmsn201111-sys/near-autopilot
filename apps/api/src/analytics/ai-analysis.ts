@@ -63,6 +63,7 @@ export type FallbackCode =
   | 'empty'
   | 'nothing_to_rank'
   | 'deadline'
+  | 'cancelled'
   | 'loop_limit';
 
 /** A run that reached the model ends in one of these; the excluded codes never reach it. */
@@ -739,6 +740,7 @@ const NOTES: Record<FallbackCode, string> = {
   empty: 'The AI ranked nothing; showing the rule-based list.',
   nothing_to_rank: `Nothing to rank: the agents found no action worth $${MIN_ACTION_USD} or more on this portfolio.`,
   deadline: 'AI analysis took too long; showing the rule-based list.',
+  cancelled: 'AI analysis was stopped; showing the rule-based list.',
   loop_limit: 'AI analysis failed; showing the rule-based list.',
 };
 
@@ -766,6 +768,7 @@ export async function analyseAccount(
   onError: (e: unknown) => void = () => {},
   deadlineMs: number = DEADLINE_MS,
   onEvent: (e: AnalysisEvent) => void = () => {},
+  signal?: AbortSignal,
 ): Promise<Analysis> {
   const fallback = (code: FallbackCode): Analysis => ({
     source: 'heuristic',
@@ -806,11 +809,13 @@ export async function analyseAccount(
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      abort.abort();
-      reject(new Error(`no answer within ${deadlineMs} ms`));
-    }, deadlineMs);
+    const stop = (why: string) => (abort.abort(), reject(new Error(why)));
+    timer = setTimeout(() => stop(`no answer within ${deadlineMs} ms`), deadlineMs);
+    if (signal?.aborted) stop('stopped by the caller');
+    signal?.addEventListener('abort', () => stop('stopped by the caller'), { once: true });
   });
+  deadline.catch(() => {});
+  const stopped = (): 'cancelled' | 'deadline' => (signal?.aborted ? 'cancelled' : 'deadline');
   const early = (out: Analysis) => (clearTimeout(timer), out);
 
   let obs: WalletObservation;
@@ -818,7 +823,7 @@ export async function analyseAccount(
     obs = await Promise.race([ctx.observe(), deadline]);
   } catch (e) {
     onError(e);
-    return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
+    return early(fallback(abort.signal.aborted ? stopped() : 'model_error'));
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
     guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
@@ -884,7 +889,7 @@ export async function analyseAccount(
     }
   }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
-  if (abort.signal.aborted) return early(fallback('deadline'));
+  if (abort.signal.aborted) return early(fallback(stopped()));
   if (!admit(ai.memo)) return early(fallback('busy'));
   onEvent({ type: 'read', model: ai.model, ...read });
 
@@ -1015,7 +1020,7 @@ export async function analyseAccount(
   } catch (e) {
     if (e instanceof BudgetReached) return failed('cap');
     onError(e);
-    if (abort.signal.aborted) return failed('deadline');
+    if (abort.signal.aborted) return failed(stopped());
     return failed(e instanceof ToolLoopError ? 'loop_limit' : 'model_error');
   }
   const { text, trace } = reply;

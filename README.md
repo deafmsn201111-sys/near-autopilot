@@ -253,7 +253,7 @@ to the plain JSON request.
 start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
 page shows the rule-based list with "daily AI budget reached". Every fallback carries a code (`off`, `kill_switch`, `not_owner`,
-`cap`, `model_error`, `invalid_output`, `empty`, `nothing_to_rank`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
+`cap`, `model_error`, `invalid_output`, `empty`, `nothing_to_rank`, `deadline`, `cancelled`, `loop_limit`). **What we log:** one `llm_calls` row per
 analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
 called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
 days are deleted (on start, then hourly). One `events` row per wallet connect (reported by the browser, marked

@@ -640,7 +640,16 @@ export const llmCalls = pgTable(
     latencyMs: integer('latency_ms').notNull(),
     tools: jsonb('tools').$type<string[]>().notNull(),
     outcome: text('outcome', {
-      enum: ['ok', 'cap', 'model_error', 'invalid_output', 'empty', 'deadline', 'loop_limit'],
+      enum: [
+        'ok',
+        'cap',
+        'model_error',
+        'invalid_output',
+        'empty',
+        'deadline',
+        'cancelled',
+        'loop_limit',
+      ],
     }).notNull(),
   },
   (t) => [index('llm_calls_at_idx').on(t.at)],
