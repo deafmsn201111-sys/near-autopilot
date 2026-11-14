@@ -318,6 +318,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     ...data.holdings.flatMap((h) => tokenOf(h) ?? []),
     ...(data.positions ?? []).flatMap((r) => (r.tokens ?? []).map((t) => t.token)),
     ...(recs?.recommendations ?? []).flatMap((r) => intentTokens(r.intent)),
+    ...(data.metrics?.byToken ?? []).map((b) => b.token),
   ]);
   // An unverified token may copy a real logo, so it keeps the letter placeholder.
   const logo = (token: string | undefined, symbol: string, verified = true) => ({
@@ -344,15 +345,30 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   const unverifiedRows = allRows.filter((h) => !isSmall(h) && h.verified === false);
   const smallRows = allRows.filter(isSmall);
   const assetsTotal = t.assetsUsd || 1;
-  const iconBySymbol = new Map(allRows.map((r) => [r.symbol, r.logos[0]?.icon ?? null]));
-  const alloc = (
-    data.metrics
-      ? data.metrics.byToken.map((b) => ({ symbol: b.symbol, pct: b.pct / 100 }))
-      : allocBySymbol(
-          allRows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
-          assetsTotal,
-        )
-  ).map((a) => ({ ...a, icon: iconBySymbol.get(a.symbol) ?? null }));
+  const unverified = new Set([
+    ...data.holdings.flatMap((h) => (h.verified === false && h.token ? [h.token] : [])),
+    ...(data.positions ?? []).flatMap((r) =>
+      r.verified === false ? (r.tokens ?? []).map((t) => t.token) : [],
+    ),
+  ]);
+  const alloc = data.metrics
+    ? data.metrics.byToken.map((b) => {
+        const verified = !unverified.has(b.token);
+        return {
+          key: b.token,
+          symbol: b.symbol,
+          pct: b.pct / 100,
+          verified,
+          icon: verified ? (icons[b.token] ?? null) : null,
+        };
+      })
+    : allocBySymbol(
+        allRows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
+        assetsTotal,
+      ).map((a) => {
+        const token = curatedId(a.symbol);
+        return { ...a, key: a.symbol, verified: true, icon: token ? (icons[token] ?? null) : null };
+      });
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
   const mode = portfolioMode({
     isAccount,

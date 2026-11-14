@@ -6,7 +6,10 @@ import { Chip, LoanGauge, ProvenanceMark, type ChipTone } from './primitives';
 import { TokenIcon, TokenIcons } from './TokenIcon';
 
 interface AllocItem {
+  key: string;
   symbol: string;
+  /** An unverified token may copy a real symbol: it never gets the real token's colour. */
+  verified: boolean;
   pct: number;
   icon: string | null;
 }
@@ -27,13 +30,23 @@ const TOP_TOKENS = 4;
 
 export const allocSegments = (alloc: readonly AllocItem[]) => {
   const other = alloc.slice(TOP_TOKENS).reduce((s, a) => s + a.pct, 0);
+  let unknown = 0;
   return [
-    ...alloc.slice(0, TOP_TOKENS).map((a, i) => ({
+    ...alloc.slice(0, TOP_TOKENS).map((a) => ({
       ...a,
-      color: TOKEN_COLOUR[a.symbol.toUpperCase()] ?? FALLBACK[i % 2]!,
+      color: (a.verified && TOKEN_COLOUR[a.symbol.toUpperCase()]) || FALLBACK[unknown++ % 2]!,
     })),
     ...(other > 0.0005
-      ? [{ symbol: 'Other', pct: other, icon: null, color: 'var(--series-5)' }]
+      ? [
+          {
+            key: 'other',
+            symbol: 'Other',
+            verified: true,
+            pct: other,
+            icon: null,
+            color: 'var(--series-5)',
+          },
+        ]
       : []),
   ];
 };
@@ -80,7 +93,7 @@ function LoanCell({ health, by, source }: { health: Health; by: string; source: 
   if (health.healthFactor === null)
     return (
       <div>
-        <span className="sum-lbl">Loan safety</span>
+        <span className="sum-lbl">Loan safety {source}</span>
         <span className="sum-kpi">{health.label}</span>
         <span className="sum-sub">{health.sentence}</span>
       </div>
@@ -150,19 +163,19 @@ export function PortfolioSummary({
           <CountUp value={netWorthUsd} kind="money" />
         </span>
         <span className="sum-sub num">
-          {money(assetsUsd, false)} in assets
-          {debtUsd > 0 && ` − ${money(debtUsd, false)} borrowed`}
+          {money(assetsUsd)} in assets
+          {debtUsd >= 0.005 && ` − ${money(debtUsd)} borrowed`}
         </span>
         {segs.length > 0 && (
           <>
             <div className="sum-alloc" aria-hidden="true">
               {segs.map((s) => (
-                <span key={s.symbol} style={{ width: `${s.pct * 100}%`, background: s.color }} />
+                <span key={s.key} style={{ width: `${s.pct * 100}%`, background: s.color }} />
               ))}
             </div>
             <div className="sum-legend">
               {segs.map((s) => (
-                <span key={s.symbol} style={{ '--sw': s.color } as CSSProperties}>
+                <span key={s.key} style={{ '--sw': s.color } as CSSProperties}>
                   <TokenIcon icon={s.icon} symbol={s.symbol} size={16} />
                   <b>{s.symbol}</b> {(s.pct * 100).toFixed(1)}%
                 </span>
@@ -191,7 +204,16 @@ export function PortfolioSummary({
         </span>
         <span className="sum-sub">{monthly.sentence}</span>
       </div>
-      <LoanCell health={health} by={loanBy} source={src} />
+      <LoanCell
+        health={health}
+        by={loanBy}
+        source={
+          <ProvenanceMark
+            kind={source.kind === 'simulated' ? 'simulated' : 'estimate'}
+            age={source.age}
+          />
+        }
+      />
     </section>
   );
 }

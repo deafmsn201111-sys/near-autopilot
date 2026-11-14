@@ -142,7 +142,7 @@ export interface PortfolioView {
   earnings: { monthlyNetUsd: number | null; sentence: string };
   actions: PortfolioAction[];
   simulatedChanges?: { count: number; since: string | null } | null;
-  metrics?: { byToken: { symbol: string; usd: number; pct: number }[] };
+  metrics?: { byToken: { token: string; symbol: string; usd: number; pct: number }[] };
   positions?: {
     key: string;
     label: string;

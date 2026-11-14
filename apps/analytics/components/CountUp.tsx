@@ -20,11 +20,11 @@ const FORMAT = {
 /** Counts from the last shown value to a new one (after a transaction); the first render and reduced motion show it at once. */
 export function CountUp({ value, kind }: { value: number; kind: keyof typeof FORMAT }) {
   const [shown, setShown] = useState(value);
-  const last = useRef(value);
+  const onScreen = useRef(value);
   useEffect(() => {
-    const from = last.current;
-    last.current = value;
+    const from = onScreen.current;
     if (from === value || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      onScreen.current = value;
       setShown(value);
       return;
     }
@@ -32,7 +32,8 @@ export function CountUp({ value, kind }: { value: number; kind: keyof typeof FOR
     let frame = 0;
     const step = (now: number) => {
       const k = Math.min(1, (now - start) / DURATION_MS);
-      setShown(from + (value - from) * (1 - (1 - k) ** 3));
+      onScreen.current = from + (value - from) * (1 - (1 - k) ** 3);
+      setShown(onScreen.current);
       if (k < 1) frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
