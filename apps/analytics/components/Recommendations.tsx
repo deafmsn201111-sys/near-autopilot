@@ -111,12 +111,20 @@ export function Recommendations({
           AI analysis failed: {error}
         </div>
       )}
-      {recommendations.length === 0 && skipped.length === 0 && (
+      {nothingToDo ? (
         <p className="muted-note">
-          {nothingToDo
-            ? `Nothing to do: ${analysis.note}`
-            : 'Nothing to improve right now — the portfolio looks balanced at current prices.'}
+          Nothing to do: {analysis.note}{' '}
+          <span className="ai-tag" title={PROVENANCE_TIER_INFO.calculated_estimate.describe}>
+            {PROVENANCE_TIER_INFO.calculated_estimate.label}
+          </span>
         </p>
+      ) : (
+        recommendations.length === 0 &&
+        skipped.length === 0 && (
+          <p className="muted-note">
+            Nothing to improve right now — the portfolio looks balanced at current prices.
+          </p>
+        )
       )}
       {skipped.length > 0 && (
         <ul className="muted-note">
