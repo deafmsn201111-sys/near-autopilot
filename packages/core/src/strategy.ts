@@ -33,7 +33,7 @@ export const STRATEGIES: Readonly<Record<StrategyId, Strategy>> = {
     concentrationTargetPct: 40,
     idle: {
       weighsLoop: false,
-      rule: 'Conservative: plain lending only, no leverage and no impermanent loss.',
+      rule: 'plain lending only, no leverage and no impermanent loss',
     },
   },
   balanced: {
@@ -47,7 +47,7 @@ export const STRATEGIES: Readonly<Record<StrategyId, Strategy>> = {
     // ponytail: no stablecoin pair is in the collector's pools; once one is, Balanced compares its net APR here
     idle: {
       weighsLoop: false,
-      rule: 'Balanced: lending, or a stablecoin pool when one pays clearly more; none is tracked yet.',
+      rule: 'a stablecoin pool would need to pay clearly more, and none is tracked yet',
     },
   },
   aggressive: {
@@ -58,7 +58,7 @@ export const STRATEGIES: Readonly<Record<StrategyId, Strategy>> = {
     concentrationInfoPct: 75,
     concentrationWarningPct: 95,
     concentrationTargetPct: 65,
-    idle: { weighsLoop: true, rule: 'Aggressive: highest yield, leverage included.' },
+    idle: { weighsLoop: true, rule: 'highest yield, leverage included' },
   },
 };
 

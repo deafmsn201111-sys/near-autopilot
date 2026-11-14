@@ -401,7 +401,7 @@ describe('portfolioRecommendations', () => {
   });
 
   describe('the strategy decides where idle money goes (#132)', () => {
-    const usdcMarket = (supplyApr: string, borrowApr: string) => ({
+    const usdcMarket = (supplyApr: string, borrowApr: string, availableUsd = '1000000') => ({
       token: USDC,
       status: 'OK',
       supplyApr,
@@ -410,20 +410,23 @@ describe('portfolioRecommendations', () => {
       collateralFactor: 0.95,
       canUseAsCollateral: true,
       canBorrow: true,
+      availableUsd,
     });
-    const idleUsdc = (loop?: ReturnType<typeof usdcMarket>) =>
+    const idleUsdc = (loop?: ReturnType<typeof usdcMarket>, usd = 500) =>
       ctx({
-        idleEarn: [{ token: USDC, symbol: 'USDC', usd: 500, aprPct: 10, ...(loop && { loop }) }],
+        idleEarn: [{ token: USDC, symbol: 'USDC', usd, aprPct: 10, ...(loop && { loop }) }],
       });
     const card = (c: RecommendationContext, s: keyof typeof STRATEGIES) =>
       portfolioRecommendations(c, STRATEGIES[s]).find((x) => x.kind === 'put_idle_to_work');
+    // Expected values worked by hand from looping.ts's formulas: L = 1.35 / (1.35 - 0.95^2) = 3.0168, 11 rounds,
+    // gas 2 x (1 + 2 x 11) x $0.05 = $2.30, over 30 days, annualised.
 
     it('Conservative supplies and says it keeps to plain lending', () => {
       const c = card(idleUsdc(usdcMarket('0.10', '0.16')), 'conservative');
       expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
       expect(c?.carry).toEqual({
-        text: 'Conservative: plain lending only, no leverage and no impermanent loss.',
-        provenance: 'calculated_estimate',
+        text: 'Conservative: Burrow supply at 10.0% a year; plain lending only, no leverage and no impermanent loss.',
+        provenance: 'protocol_reported',
       });
     });
 
@@ -431,32 +434,46 @@ describe('portfolioRecommendations', () => {
       const c = card(idleUsdc(usdcMarket('0.10', '0.16')), 'balanced');
       expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
       expect(c?.carry?.text).toBe(
-        'Balanced: lending, or a stablecoin pool when one pays clearly more; none is tracked yet.',
+        'Balanced: Burrow supply at 10.0% a year; a stablecoin pool would need to pay clearly more, and none is tracked yet.',
       );
     });
 
     it('Aggressive weighs a loop at its health factor and supplies when the loop pays less', () => {
-      // L = 1.35 / (1.35 - 0.95^2) = 3.0168; 3.0168 x 10% - 2.0168 x 16% = -2.1%
+      // $500: 3.0168 x 10% - 2.0168 x 16% on 30 days, minus $2.30 gas = -7.7% a year
       const c = card(idleUsdc(usdcMarket('0.10', '0.16')), 'aggressive');
       expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
-      expect(c?.carry?.text).toBe(
-        'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn -2.1% a year (10.0% supply on 3.0×, 16.0% borrow on 2.0×), less than plain supply, so this supplies.',
-      );
+      expect(c?.carry).toEqual({
+        text: 'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn -7.7% a year after fees (10.0% supply on 3.0×, 16.0% borrow on 2.0×), less than plain supply at 10.0%, so this supplies.',
+        provenance: 'calculated_estimate',
+      });
     });
 
     it('Aggressive names the loop when it pays more, with its risk, and keeps the supply button', () => {
-      // 3.0168 x 10% - 2.0168 x 5% = 20.1%, $100.42 a year on $500; break-even borrow 3.0168 x 10% / 2.0168 = 15.0%
+      // $500: 3.0168 x 10% - 2.0168 x 5% minus gas = 14.5% a year, $72.44; break-even 3.0168 x 10% / 2.0168 = 15.0%
       const c = card(idleUsdc(usdcMarket('0.10', '0.05')), 'aggressive');
       expect(c?.intent).toEqual({ action: 'supply', token: USDC, approxUsd: 500 });
       expect(c?.carry?.text).toBe(
-        'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn about 20.1% a year ($100.42), more than plain supply, but it borrows: it loses money above a 15.0% borrow rate and the loan can be liquidated. The app does not borrow; supplying is the first step of a loop.',
+        'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn about 14.5% a year after fees ($72.44), more than plain supply at 10.0%, but it borrows: it loses money above a 15.0% borrow rate and the loan can be liquidated. The app does not borrow; supplying is the first step of a loop.',
       );
     });
 
-    it('Aggressive says so when Burrow allows no loop for the token', () => {
-      expect(card(idleUsdc(), 'aggressive')?.carry?.text).toBe(
-        'Aggressive: highest yield, leverage included; Burrow allows no USDC loop, so this supplies.',
+    it('Aggressive does not promise a loop the fees eat on a small amount', () => {
+      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 5), 'aggressive');
+      expect(c?.carry?.text).toMatch(/would earn -539\.6% a year after fees .*so this supplies\.$/);
+    });
+
+    it('Aggressive does not promise a loop Burrow has too little to lend for', () => {
+      const c = card(idleUsdc(usdcMarket('0.10', '0.05', '100')), 'aggressive');
+      expect(c?.carry?.text).toBe(
+        'Aggressive: a 3.0× USDC loop at health factor 1.35 would earn 14.5% a year after fees, but Burrow has too little USDC left to lend for it, so this supplies at 10.0%.',
       );
+    });
+
+    it('Aggressive says so when no loop can be computed for the token', () => {
+      expect(card(idleUsdc(), 'aggressive')?.carry).toEqual({
+        text: "Aggressive: highest yield, leverage included, but no USDC loop can be computed from Burrow's market today, so this supplies at 10.0% a year.",
+        provenance: 'protocol_reported',
+      });
     });
 
     it('the three presets give three different cards on the same idle USDC', () => {
