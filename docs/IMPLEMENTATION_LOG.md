@@ -575,3 +575,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   (within 2 min of the stream, `BoundedMap` of 10 000; the pass is dropped only when used), so the client's fallback after a broken stream costs no second visitor token.
 - `runAnalysis`: an `error` frame returns its error (zod, ≤ 200 chars) instead of re-POSTing as JSON; only a stream
   that ends without a valid `done` falls back.
+
+## 2026-11-14 — Admin screen 4: 1Click (#34)
+
+- `GET /v1/admin/deposits` (admin token only, same `onRequest` check as Spend): `deposit_quotes` of the last 7 UTC
+  days, newest first, at most 100 listed; counts by state — waiting, processing, success, refunded, failed, expired.
+  Expired = never checked or `PENDING_DEPOSIT` 30 min past the deadline (the deposit screen's rule).
+- Chain, symbol and decimals come from 1Click's cached token list; when it is down the row shows the raw asset id and
+  base units. Deposit and refund addresses leave the API shortened (`0x1111…2222`).
+- `/admin/1click` page and an admin nav (Spend · 1Click). Statuses are what the user's deposit screen last saw;
+  server-side refresh is a separate issue.
