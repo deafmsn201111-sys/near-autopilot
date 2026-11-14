@@ -803,6 +803,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 ## 2026-11-14 — #236 Wallet button after a cancelled or interrupted NEAR sign-in
 
-- `lib/wallet.ts`: a cancelled sign-in (`No accounts found` while no `connect()` is waiting) drops near-connect's
-  `selected-wallet`, so the next page load skips the kit. A NEAR sign-in that lands after the kit list was closed goes
+- `lib/wallet.ts`: a cancelled sign-in drops near-connect's `selected-wallet` (while no `connect()` is waiting), so the
+  next page load skips the kit. Checked in a browser: MyNearWallet answers `[{ accountId: '' }]`, HOT throws
+  `Connect NEAR`; only near-connect's own load errors (`No wallet selected`, executor / iframe not loaded) keep the key. A NEAR sign-in that lands after the kit list was closed goes
   to `connect(onLateSignIn)`; `WalletButton` reports it and opens the portfolio. The next click drops that listener.

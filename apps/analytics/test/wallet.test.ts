@@ -19,6 +19,8 @@ const fake = vi.hoisted(() => {
     nearSignedOut: false,
     hang: false,
     connectorsRequested: false,
+    blankAccount: false,
+    accountError: 'No accounts found',
   };
   const events = new Map<string, Set<Listener>>();
   const emit = (name: string, payload: unknown) => {
@@ -35,7 +37,8 @@ const fake = vi.hoisted(() => {
       state.bases.push(options);
     }
     async getConnectedWallet() {
-      if (!state.account) throw new Error('No accounts found');
+      if (state.blankAccount) return { wallet: baseWallet, accounts: [{ accountId: '' }] };
+      if (!state.account) throw new Error(state.accountError);
       return { wallet: baseWallet, accounts: [{ accountId: state.account }] };
     }
     get availableWallets() {
@@ -137,6 +140,8 @@ async function fresh({ session = null as string | null } = {}) {
     nearSignedOut: false,
     hang: false,
     connectorsRequested: false,
+    blankAccount: false,
+    accountError: 'No accounts found',
   });
   localStorage.clear();
   if (session) localStorage.setItem('selected-wallet', 'hot-wallet');
@@ -247,6 +252,25 @@ describe('NEAR wallet through HOT Kit', () => {
     fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
     await flush();
     expect(late).toEqual(['carol.near']);
+  });
+
+  it('forgets a sign-in the wallet answers with its own error, not when the wallet list did not load', async () => {
+    const m = await fresh();
+    localStorage.setItem('selected-wallet', 'hot-wallet');
+    fake.state.accountError = 'No wallet selected';
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');
+    fake.state.accountError = 'Connect NEAR';
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBeNull();
+  });
+
+  it('treats the blank account MyNearWallet reports after a cancelled sign-in as none', async () => {
+    const m = await fresh();
+    localStorage.setItem('selected-wallet', 'mynearwallet');
+    fake.state.blankAccount = true;
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBeNull();
   });
 
   it('keeps the session key while a sign-in may still land after the list closed', async () => {

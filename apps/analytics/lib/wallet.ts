@@ -31,15 +31,23 @@ function hasSession(): boolean {
 }
 
 // near-connect writes the key before the wallet's sign-in and keeps it when that sign-in is cancelled. While a
-// connect() still waits for a sign-in, an empty account list only means the wallet has not answered yet.
-function forgetCancelledSignIn(e: unknown) {
-  if (waiting > 0 || !(e instanceof Error) || e.message !== 'No accounts found') return;
+// connect() still waits for a sign-in, a missing account only means the wallet has not answered yet.
+function forgetCancelledSignIn() {
+  if (waiting > 0) return;
   try {
     localStorage.removeItem(SESSION_KEY);
   } catch {
     // storage blocked: hasSession() is false anyway
   }
 }
+
+// near-connect 0.12's own errors when the wallet list or the wallet's frame did not load: the session may still be
+// valid. Anything else is the wallet's own answer that it has no account (HOT: "Connect NEAR").
+const couldNotAsk = (e: unknown) =>
+  e instanceof Error &&
+  /^(No wallet selected|Failed to load executor|Iframe not loaded|Invalid executor URL)/.test(
+    e.message,
+  );
 
 let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
 function near() {
@@ -59,9 +67,12 @@ export async function currentAccount(): Promise<string | null> {
   if (!subscribed && !hasSession()) return null;
   try {
     const { accounts } = await (await near()).near.getConnectedWallet();
-    return accounts[0]?.accountId ?? null;
+    // MyNearWallet answers a cancelled sign-in with [{ accountId: '' }].
+    const id = accounts[0]?.accountId || null;
+    if (!id) forgetCancelledSignIn();
+    return id;
   } catch (e) {
-    forgetCancelledSignIn(e);
+    if (!couldNotAsk(e)) forgetCancelledSignIn();
     return null;
   }
 }
