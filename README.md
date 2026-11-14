@@ -78,9 +78,19 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 
 **Try it**
 
-1. Run `pnpm demo:attack`. You see 8 attacks stopped and 2 control actions allowed, ending in `signed 0, broadcast 0`.
-   - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
-     approval and a full-access key.
+1. Run `pnpm demo:attack`. You see 19 attacks stopped and 4 control actions allowed, ending in `signed 0, broadcast 0`.
+   Each attack runs through the check that stops it in production.
+   - Agent path (policy engine, output parser, gateway, executor): two prompt injections, a foreign recipient, an
+     extra Withdraw, a stale price, a thin pool, a forged approval and a full-access key.
+   - AI replies (`TeeVerifier`): a reply signed by a key the TEE attestation does not name, and an answer swapped
+     after signing. Both are labelled unverified, never shown as private.
+   - 1Click withdrawals: an `ft_transfer` redirected away from the quote's deposit address (`validateCascade`), and
+     a quote that expires too soon, belongs to another account or has a tampered deposit address (`withdrawLookup`).
+     Deposits from other chains are built and checked by HOT Kit's bridge popup (D42), not by our server.
+   - Signed cascades (`validateCascade`): a method or a receiver outside the allowlist, gas over the cap, a deposit
+     over the cap.
+   - Prompt injection through a token symbol: the full AI analysis with a fake model. The model never sees the
+     symbol, and the card it is told to pick is dropped.
    - The log is in `docs/evidence/demo-attack.log.jsonl`.
 2. Open `:3001/activity?account=autopilot-test.near`. You see the transactions that account signed through the app,
    each confirmed by NEAR RPC, with what really happened ("Repaid 5.01 USDC on Burrow") and an explorer link.
@@ -354,7 +364,8 @@ committed in `thesis/data/raw/`: CSV, SVG charts and the document with every num
 outputs differ from what the raw data gives. `pnpm thesis:fetch` re-reads the raw data (archival RPC, view calls only).
 
 `pnpm demo:attack` runs labelled attack fixtures (prompt injection, foreign recipient, extra Withdraw, stale price,
-thin pool, forged approval, full-access key) through the real defences. Every attack is stopped and the log is
+thin pool, forged approval, full-access key, forged AI replies, redirected or replayed 1Click withdrawals, cascades
+outside the allowlists or caps, an injected token symbol) through the real defences. Every attack is stopped and the log is
 written to `docs/evidence/demo-attack.log.jsonl`. See
 [docs/security.md](docs/security.md).
 

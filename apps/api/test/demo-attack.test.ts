@@ -37,6 +37,46 @@ describe('demo:attack (fixtures against the real defences)', () => {
     });
   });
 
+  it('stops the wallet-path, AI-reply and 1Click attacks at the production check meant for each', async () => {
+    const { entries } = await runAttacks(attackPolicy());
+    const by = Object.fromEntries(entries.map((e) => [e.attack, e]));
+    expect(by['control-tee-reply']).toMatchObject({ kind: 'control', outcome: 'ALLOWED' });
+    expect(by['tee-forged-signer']).toMatchObject({
+      outcome: 'UNVERIFIED',
+      failed: ['signer is not the attested key'],
+    });
+    expect(by['tee-tampered-reply']).toMatchObject({
+      outcome: 'UNVERIFIED',
+      failed: ['signed text does not match the reply'],
+    });
+    expect(by['control-withdraw']).toMatchObject({
+      kind: 'control',
+      outcome: 'ALLOWED',
+      verdict: 'ALLOW',
+    });
+    expect(by['withdraw-foreign-recipient']).toMatchObject({
+      verdict: 'BLOCK',
+      failed: ['receivers'],
+    });
+    for (const [attack, status] of [
+      ['withdraw-expiring-quote', '409'],
+      ['withdraw-foreign-quote', '404'],
+      ['withdraw-tampered-quote', '409'],
+    ] as const)
+      expect(by[attack]).toMatchObject({ outcome: 'REFUSED', failed: [status] });
+    for (const [attack, rule] of [
+      ['cascade-method', 'methods'],
+      ['cascade-receiver', 'receivers'],
+      ['cascade-gas', 'gas'],
+      ['cascade-deposit', 'deposit'],
+    ] as const)
+      expect(by[attack]).toMatchObject({ verdict: 'BLOCK', failed: [rule] });
+    expect(by['symbol-injection']).toMatchObject({ outcome: 'DISCARDED' });
+    expect(by['symbol-injection']?.failed).toEqual(['injected text never sent', 'pick dropped']);
+    expect(entries.filter((e) => e.kind === 'attack')).toHaveLength(19);
+    expect(entries.filter((e) => e.kind === 'control')).toHaveLength(4);
+  });
+
   it('the committed log is exactly what a run produces (deterministic, not hand-edited)', async () => {
     const { entries } = await runAttacks(attackPolicy());
     expect(readFileSync(LOG_FILE, 'utf8')).toBe(toLog(entries));
