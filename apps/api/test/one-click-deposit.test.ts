@@ -230,3 +230,86 @@ describe('OneClickDepositClient.tokens', () => {
     );
   });
 });
+
+describe('OneClickDepositClient.status', () => {
+  const NEAR_TX = '7Ytp5ZTdDuEe8VbWbkxhV5mBvRcP4tH8u6uJYHzdGMqd';
+  const reply = (over: object = {}, details: object = {}) => ({
+    correlationId: 'c0ffee',
+    quoteResponse: {},
+    status: 'SUCCESS',
+    updatedAt: '2026-11-13T10:05:00Z',
+    swapDetails: {
+      depositedAmount: '100000000',
+      depositedAmountFormatted: '100',
+      amountOut: '99750000',
+      refundedAmount: '0',
+      destinationChainTxHashes: [{ hash: NEAR_TX, explorerUrl: 'https://evil.example/tx' }],
+      ...details,
+    },
+    ...over,
+  });
+
+  it('asks by deposit address with the JWT and returns the parsed status', async () => {
+    const { http, calls } = stub(reply());
+    const s = await new OneClickDepositClient({ http, jwt: 'eyJ.secret' }).status(DEPOSIT);
+    expect(calls[0]).toEqual({
+      url: `${ONE_CLICK_BASE_URL}/v0/status?depositAddress=${encodeURIComponent(DEPOSIT)}`,
+      headers: { authorization: 'Bearer eyJ.secret' },
+    });
+    expect(s).toEqual({
+      status: 'SUCCESS',
+      depositedAmount: 100_000_000n,
+      amountOut: 99_750_000n,
+      refundedAmount: 0n,
+      refundReason: null,
+      nearTxHash: NEAR_TX,
+    });
+  });
+
+  it('reports a status it does not know as UNKNOWN', async () => {
+    const { http } = stub(reply({ status: 'DONE_TRUST_ME' }));
+    expect((await new OneClickDepositClient({ http }).status(DEPOSIT)).status).toBe('UNKNOWN');
+  });
+
+  it('drops malformed details instead of trusting them', async () => {
+    const { http } = stub(
+      reply(
+        { status: 'REFUNDED' },
+        {
+          depositedAmount: '-5',
+          amountOut: '1e9',
+          refundedAmount: '40000000',
+          refundReason: '<script>alert(1)</script>',
+          destinationChainTxHashes: [{ hash: 'javascript:alert(1)', explorerUrl: '' }],
+        },
+      ),
+    );
+    expect(await new OneClickDepositClient({ http }).status(DEPOSIT)).toEqual({
+      status: 'REFUNDED',
+      depositedAmount: null,
+      amountOut: null,
+      refundedAmount: 40_000_000n,
+      refundReason: null,
+      nearTxHash: null,
+    });
+  });
+
+  it('keeps a plain refund reason and survives missing swap details', async () => {
+    const { http } = stub({
+      status: 'INCOMPLETE_DEPOSIT',
+      swapDetails: { refundReason: 'PARTIAL_DEPOSIT' },
+    });
+    expect(await new OneClickDepositClient({ http }).status(DEPOSIT)).toMatchObject({
+      status: 'INCOMPLETE_DEPOSIT',
+      depositedAmount: null,
+      refundReason: 'PARTIAL_DEPOSIT',
+    });
+  });
+
+  it('refuses an answer without a status', async () => {
+    const { http } = stub({ swapDetails: {} });
+    await expect(new OneClickDepositClient({ http }).status(DEPOSIT)).rejects.toBeInstanceOf(
+      DepositQuoteRefused,
+    );
+  });
+});

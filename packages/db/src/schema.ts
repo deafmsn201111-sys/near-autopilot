@@ -682,6 +682,9 @@ export const depositQuotes = pgTable(
     signature: text('signature').notNull(),
     /** As 1Click echoed it in the quote; null when it echoed none. */
     feeBps: integer('fee_bps'),
+    /** The latest 1Click `/v0/status` we saw (#29) and when; null until first checked. */
+    status: text('status'),
+    statusAt: ts('status_at'),
   },
   (t) => [
     index('deposit_quotes_created_at_idx').on(t.createdAt),

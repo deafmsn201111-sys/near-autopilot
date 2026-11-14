@@ -430,3 +430,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   they complete), placeholders for the agents the model asked for (`asked` event, `onCalls` in the tool loop), a
   running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
   `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.
+
+## 2026-11-14 — 1Click deposit status polling with limits (#29)
+
+- `OneClickDepositClient.status`: `GET /v0/status?depositAddress=…` (JWT if set), zod per field; an unknown status
+  is `UNKNOWN`, a malformed amount, reason or tx hash is dropped; only a base58 NEAR tx hash is kept, 1Click's
+  `explorerUrl` is never used (the UI links nearblocks.io itself).
+- `GET /v1/deposit/status/:id`: our quote id → stored deposit address → 1Click; answers cached 5 s per quote in a
+  `BoundedMap` (1000 quotes), concurrent callers share one call; `deadlinePassed` from the server clock. The latest
+  status and its time go to `deposit_quotes.status` / `status_at` (migration 0021) when it changes.
+- `apps/analytics`: `/api/deposit/status/[id]` proxy with its own `consume('deposit-status')` limit (60 per visitor,
+  1200 overall per 10 min); `poll()` takes a schedule (`everyMs` as a function of ticks done); the deposit dialog
+  polls 5 s → ×1.5 → 30 s, at most 120 checks, stops at `SUCCESS`/`REFUNDED`/`FAILED` or, while `PENDING_DEPOSIT`,
+  at the deadline; `INCOMPLETE_DEPOSIT` keeps polling so the refund shows up. "Check again" asks once.

@@ -98,3 +98,40 @@ describe('GET /api/deposit/assets', () => {
     expect(tryApi).toHaveBeenCalledWith('/v1/deposit/assets');
   });
 });
+
+describe('GET /api/deposit/status/:id', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    tryApi.mockClear();
+    forwardedFor = '203.0.113.1';
+  });
+  const get = async (id: string) => {
+    const { GET } = await import('../app/api/deposit/status/[id]/route');
+    return GET(new Request(`http://localhost/api/deposit/status/${id}`), {
+      params: Promise.resolve({ id }),
+    });
+  };
+
+  it('forwards only our quote id to the API', async () => {
+    expect((await get('dq_1')).status).toBe(200);
+    expect(tryApi).toHaveBeenCalledWith('/v1/deposit/status/dq_1');
+  });
+
+  it('answers 400 to an id that is not ours without calling the API', async () => {
+    expect((await get('../admin')).status).toBe(400);
+    expect(tryApi).not.toHaveBeenCalled();
+  });
+
+  it('allows 60 checks per visitor in 10 minutes, apart from the quote limit', async () => {
+    for (let i = 0; i < 60; i++) expect((await get('dq_1')).status).toBe(200);
+    const limited = await get('dq_1');
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('retry-after')).toBe('600');
+    expect(tryApi).toHaveBeenCalledTimes(60);
+    forwardedFor = '198.51.100.7';
+    expect((await get('dq_1')).status).toBe(200);
+    forwardedFor = '203.0.113.1';
+    const { POST } = await import('../app/api/deposit/quote/route');
+    expect((await POST(request('application/json'))).status).toBe(200);
+  });
+});

@@ -83,3 +83,127 @@ export function defaultDestination(
     destinations[0]
   );
 }
+
+export type SwapStatus =
+  | 'PENDING_DEPOSIT'
+  | 'KNOWN_DEPOSIT_TX'
+  | 'PROCESSING'
+  | 'INCOMPLETE_DEPOSIT'
+  | 'SUCCESS'
+  | 'REFUNDED'
+  | 'FAILED'
+  | 'UNKNOWN';
+
+/** `GET /api/deposit/status/:id`: 1Click's status, checked by the API. Amounts are base-unit strings. */
+export interface DepositStatus {
+  readonly status: SwapStatus;
+  readonly depositedAmount: string | null;
+  readonly amountOut: string | null;
+  readonly refundedAmount: string | null;
+  readonly refundReason: string | null;
+  readonly nearTxHash: string | null;
+  readonly deadlinePassed: boolean;
+}
+
+export const loadDepositStatus = (id: string) =>
+  call<DepositStatus>(`/api/deposit/status/${encodeURIComponent(id)}`);
+
+export const STATUS_MAX_CHECKS = 120;
+export const statusDelayMs = (checks: number) =>
+  Math.round(Math.min(5_000 * 1.5 ** checks, 30_000));
+
+const FINAL: readonly SwapStatus[] = ['SUCCESS', 'REFUNDED', 'FAILED'];
+
+/** Why polling stops now, or null to keep going. A seen deposit may finish after the deadline, so only an unpaid quote expires. */
+export function stopReason(
+  s: DepositStatus | null,
+  checks: number,
+): 'final' | 'expired' | 'limit' | null {
+  if (s && FINAL.includes(s.status)) return 'final';
+  if (s?.status === 'PENDING_DEPOSIT' && s.deadlinePassed) return 'expired';
+  return checks >= STATUS_MAX_CHECKS ? 'limit' : null;
+}
+
+export interface StatusScreen {
+  readonly tone: 'wait' | 'ok' | 'warn';
+  readonly title: string;
+  readonly detail?: string;
+  readonly txUrl?: string;
+}
+
+const REFUND_REASONS: Record<string, string> = {
+  PARTIAL_DEPOSIT: 'the deposit was less than the quote',
+};
+
+export function describeStatus(s: DepositStatus | null, q: DepositQuote): StatusScreen {
+  const sent = (units: string) => `${formatUnits(units, q.origin.decimals)} ${q.origin.symbol}`;
+  const received = s?.depositedAmount
+    ? `Received ${formatUnits(s.depositedAmount, q.origin.decimals)} of ${sent(q.amountIn)}`
+    : null;
+  const withReceived = (screen: StatusScreen): StatusScreen =>
+    received ? { ...screen, detail: `${received}.` } : screen;
+  switch (s?.status) {
+    case undefined:
+      return { tone: 'wait', title: 'Checking the deposit status…' };
+    case 'PENDING_DEPOSIT':
+      return s.deadlinePassed
+        ? {
+            tone: 'warn',
+            title: 'Expired: no deposit arrived before the deadline',
+            detail: 'Do not send to this address; get a new one.',
+          }
+        : { tone: 'wait', title: 'Waiting for your deposit' };
+    case 'KNOWN_DEPOSIT_TX':
+      return withReceived({
+        tone: 'wait',
+        title: `Deposit seen on ${q.chainName}, waiting for confirmations`,
+      });
+    case 'PROCESSING':
+      return withReceived({
+        tone: 'wait',
+        title: `Deposit received, swapping to ${q.destination.symbol}`,
+      });
+    case 'INCOMPLETE_DEPOSIT': {
+      const detail = `Less than the quote arrived. 1Click refunds it to ${q.refundTo} after the deadline.`;
+      if (!s.depositedAmount) return { tone: 'warn', title: 'Incomplete deposit', detail };
+      const missing = BigInt(q.amountIn) - BigInt(s.depositedAmount);
+      return {
+        tone: 'warn',
+        title: `${received}: ${sent((missing > 0n ? missing : 0n).toString())} missing`,
+        detail,
+      };
+    }
+    case 'SUCCESS': {
+      const what = s.amountOut
+        ? `${formatUnits(s.amountOut, q.destination.decimals)} ${q.destination.symbol}`
+        : 'the swap';
+      return {
+        tone: 'ok',
+        title: `Done: ${what} arrived in ${q.recipient}`,
+        ...(s.nearTxHash ? { txUrl: `https://nearblocks.io/txns/${s.nearTxHash}` } : {}),
+      };
+    }
+    case 'REFUNDED':
+      return {
+        tone: 'warn',
+        title: s.refundedAmount
+          ? `Refunded: ${sent(s.refundedAmount)} sent back to ${q.refundTo}`
+          : `Refunded to ${q.refundTo}`,
+        ...(s.refundReason
+          ? { detail: `Reason: ${REFUND_REASONS[s.refundReason] ?? s.refundReason}.` }
+          : {}),
+      };
+    case 'FAILED':
+      return {
+        tone: 'warn',
+        title: 'The swap failed',
+        detail: `1Click refunds a deposit to ${q.refundTo}.`,
+      };
+    case 'UNKNOWN':
+      return {
+        tone: 'wait',
+        title: 'Unknown status from 1Click',
+        detail: 'Not trusted as done; checking again.',
+      };
+  }
+}

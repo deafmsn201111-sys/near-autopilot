@@ -148,6 +148,13 @@
       "when": 1794050000000,
       "tag": "0020_deposit_quotes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794060000000,
+      "tag": "0021_deposit_quote_status",
+      "breakpoints": true
     }
   ]
 }

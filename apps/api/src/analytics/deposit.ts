@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { accountIdSchema, type ProvenanceTier } from '@near-autopilot/core';
+import { accountIdSchema, BoundedMap, type ProvenanceTier } from '@near-autopilot/core';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   DepositQuoteRefused,
   type OneClickDepositClient,
   type OneClickToken,
+  type SwapStatus,
 } from '../gateway/one-click-deposit';
 import { DEPOSIT_CHAINS, isRefundAddress, type DepositChain } from '../gateway/refund-address';
 
@@ -32,12 +33,15 @@ export interface StoredDepositQuote {
 
 export interface DepositQuoteStore {
   save(q: StoredDepositQuote): Promise<void>;
+  find(id: string): Promise<StoredDepositQuote | null>;
+  /** The latest 1Click status and when we saw it. */
+  saveStatus(id: string, status: SwapStatus, at: Date): Promise<void>;
   /** Deletes quotes older than 30 days. */
   purge(): Promise<void>;
 }
 
 export interface DepositDeps {
-  readonly oneClick: Pick<OneClickDepositClient, 'tokens' | 'quote'>;
+  readonly oneClick: Pick<OneClickDepositClient, 'tokens' | 'quote' | 'status'>;
   readonly store: DepositQuoteStore;
   /** NEP-141 account ids the user may receive (config/market.json): our own list, never user input. */
   readonly destinationTokens: readonly string[];
@@ -57,6 +61,11 @@ const NOT_VERIFIED =
   'The 1Click quote could not be verified, so no deposit address is shown. Try again.';
 const NO_QUOTE =
   '1Click has no quote for this amount right now. Try a larger amount or another token.';
+const STATUS_UNAVAILABLE =
+  'The 1Click status is unavailable right now. It is checked again shortly.';
+// Many tabs on one quote cost one 1Click call per this long; the map holds at most this many quotes.
+export const STATUS_CACHE_MS = 5_000;
+export const STATUS_CACHE_SIZE = 1_000;
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
 
 /** "1.5" with 6 decimals -> 1500000n. Null unless a positive plain decimal with at most `decimals` places. */
@@ -92,6 +101,20 @@ const quoteBody = z
   .strict();
 
 class BadRequest extends Error {}
+class NotFound extends Error {}
+
+export interface DepositStatusView {
+  readonly status: SwapStatus;
+  readonly depositedAmount: string | null;
+  readonly amountOut: string | null;
+  readonly refundedAmount: string | null;
+  readonly refundReason: string | null;
+  readonly nearTxHash: string | null;
+  /** From the server clock, so a wrong browser clock cannot end the wait early. */
+  readonly deadlinePassed: boolean;
+}
+
+const quoteId = z.string().regex(/^[\w-]{1,64}$/);
 
 export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: () => Date) {
   const newId = deps.newId ?? randomUUID;
@@ -122,6 +145,51 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     } catch (err) {
       req.log.warn({ err }, '1Click token list failed');
       return reply.code(502).send({ error: UNAVAILABLE });
+    }
+  });
+
+  const statuses = new BoundedMap<
+    string,
+    { at: number; view: Promise<DepositStatusView>; saved?: SwapStatus }
+  >(STATUS_CACHE_SIZE);
+
+  const fetchStatus = async (id: string, at: Date): Promise<DepositStatusView> => {
+    const q = await deps.store.find(id);
+    if (!q) throw new NotFound();
+    const r = await deps.oneClick.status(q.depositAddress);
+    const entry = statuses.get(id);
+    if (entry && entry.saved !== r.status) {
+      await deps.store.saveStatus(id, r.status, at);
+      entry.saved = r.status;
+    }
+    const units = (v: bigint | null) => (v === null ? null : v.toString());
+    return {
+      status: r.status,
+      depositedAmount: units(r.depositedAmount),
+      amountOut: units(r.amountOut),
+      refundedAmount: units(r.refundedAmount),
+      refundReason: r.refundReason,
+      nearTxHash: r.nearTxHash,
+      deadlinePassed: at.getTime() >= q.deadline.getTime(),
+    };
+  };
+
+  app.get('/v1/deposit/status/:id', async (req, reply) => {
+    const id = quoteId.safeParse((req.params as { id?: unknown }).id);
+    if (!id.success) return reply.code(400).send({ error: 'Bad quote id.' });
+    const at = now();
+    let entry = statuses.get(id.data);
+    if (!entry || at.getTime() - entry.at >= STATUS_CACHE_MS) {
+      entry = { at: at.getTime(), view: fetchStatus(id.data, at), saved: entry?.saved };
+      statuses.set(id.data, entry);
+    }
+    try {
+      return await entry.view;
+    } catch (err) {
+      if (statuses.get(id.data) === entry) statuses.delete(id.data);
+      if (err instanceof NotFound) return reply.code(404).send({ error: 'Unknown deposit.' });
+      req.log.warn({ err }, '1Click status failed');
+      return reply.code(502).send({ error: STATUS_UNAVAILABLE });
     }
   });
 

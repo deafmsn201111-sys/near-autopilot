@@ -67,6 +67,24 @@ describe('poll', () => {
     expect(tick).toHaveBeenCalledTimes(9);
   });
 
+  it('waits by a schedule of the ticks done so far, not counting hidden turns', () => {
+    vi.setSystemTime(0);
+    let hidden = false;
+    const at: number[] = [];
+    poll(() => at.push(Date.now()), {
+      everyMs: (n) => 1_000 * 2 ** n,
+      forMs: 60_000,
+      hidden: () => hidden,
+    });
+    vi.advanceTimersByTime(3_000);
+    expect(at).toEqual([1_000, 3_000]);
+    hidden = true;
+    vi.advanceTimersByTime(4_000);
+    hidden = false;
+    vi.advanceTimersByTime(4_000);
+    expect(at).toEqual([1_000, 3_000, 11_000]);
+  });
+
   it('stops when the returned function is called and ignores presence afterwards', () => {
     const tick = vi.fn();
     const stop = poll(tick, { everyMs: 1_000, forMs: 60_000, hidden: () => false });

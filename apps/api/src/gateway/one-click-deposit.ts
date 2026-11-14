@@ -109,6 +109,48 @@ const quoteResponse = z.object({
     .passthrough(),
 });
 
+export const SWAP_STATUSES = [
+  'PENDING_DEPOSIT',
+  'KNOWN_DEPOSIT_TX',
+  'PROCESSING',
+  'INCOMPLETE_DEPOSIT',
+  'SUCCESS',
+  'REFUNDED',
+  'FAILED',
+] as const;
+export type SwapStatus = (typeof SWAP_STATUSES)[number] | 'UNKNOWN';
+
+/** `/v0/status` reduced to what we show. Every detail is untrusted: a malformed one is null, never passed on. */
+export interface SwapStatusReport {
+  readonly status: SwapStatus;
+  readonly depositedAmount: bigint | null;
+  readonly amountOut: bigint | null;
+  readonly refundedAmount: bigint | null;
+  readonly refundReason: string | null;
+  /** The NEAR delivery tx, base58-checked; 1Click's explorer URL is never used. */
+  readonly nearTxHash: string | null;
+}
+
+const amount = u128.transform(BigInt).nullable().catch(null);
+const NEAR_TX_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
+const statusResponse = z.object({
+  status: z.string().transform((s): SwapStatus => SWAP_STATUSES.find((k) => k === s) ?? 'UNKNOWN'),
+  swapDetails: z.preprocess(
+    (v) => (v && typeof v === 'object' ? v : {}),
+    z.object({
+      depositedAmount: amount,
+      amountOut: amount,
+      refundedAmount: amount,
+      refundReason: z
+        .string()
+        .regex(/^[A-Z_]{1,40}$/)
+        .nullable()
+        .catch(null),
+      destinationChainTxHashes: z.array(z.object({ hash: z.string() }).passthrough()).catch([]),
+    }),
+  ),
+});
+
 type Http = Pick<HttpJsonClient, 'getJson' | 'postJson'>;
 
 export class OneClickDepositClient {
@@ -146,6 +188,26 @@ export class OneClickDepositClient {
       const p = token.safeParse(t);
       return p.success ? [p.data] : [];
     });
+  }
+
+  /** `/v0/status` by deposit address (we never ask for a memo). Throws on HTTP errors, 404 included. */
+  async status(depositAddress: string): Promise<SwapStatusReport> {
+    const parsed = statusResponse.safeParse(
+      await this.o.http.getJson(
+        `${ONE_CLICK_BASE_URL}/v0/status?depositAddress=${encodeURIComponent(depositAddress)}`,
+        this.headers(),
+      ),
+    );
+    if (!parsed.success) throw new DepositQuoteRefused('unexpected 1Click status answer');
+    const { status, swapDetails: d } = parsed.data;
+    return {
+      status,
+      depositedAmount: d.depositedAmount,
+      amountOut: d.amountOut,
+      refundedAmount: d.refundedAmount,
+      refundReason: d.refundReason,
+      nearTxHash: d.destinationChainTxHashes.find((t) => NEAR_TX_HASH.test(t.hash))?.hash ?? null,
+    };
   }
 
   async quote(r: DepositQuoteRequest): Promise<DepositQuote> {
