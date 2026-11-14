@@ -42,7 +42,10 @@ export const DEPOSIT_STATES = [
 ] as const;
 export type DepositState = (typeof DEPOSIT_STATES)[number];
 
-/** Unpaid after the deadline plus the grace is expired: the same rule as the user's deposit screen. */
+/**
+ * Unpaid after the deadline plus the grace is expired, as on the user's deposit screen; a never-checked quote too,
+ * since its status is only stored while that screen is open.
+ */
 export function depositState(r: AdminDepositRow, now: Date): DepositState {
   switch (r.status) {
     case 'SUCCESS':
@@ -58,6 +61,14 @@ export function depositState(r: AdminDepositRow, now: Date): DepositState {
       return 'processing';
   }
 }
+
+const scaled = (units: string, decimals: number) => {
+  try {
+    return formatUnits(BigInt(units), decimals);
+  } catch {
+    return units;
+  }
+};
 
 const shorten = (s: string) => (s.length > 12 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s);
 
@@ -85,7 +96,7 @@ export function depositsSummary(
       accountId: r.accountId,
       chain: token?.blockchain ?? null,
       asset: token?.symbol ?? r.originAsset,
-      amount: token ? formatUnits(BigInt(r.amountIn), token.decimals) : r.amountIn,
+      amount: token ? scaled(r.amountIn, token.decimals) : r.amountIn,
       depositAddress: shorten(r.depositAddress),
       refundTo: shorten(r.refundTo),
       deadline: r.deadline.toISOString(),

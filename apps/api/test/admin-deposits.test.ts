@@ -101,6 +101,12 @@ describe('depositsSummary', () => {
     expect(q).toMatchObject({ chain: null, asset: USDC_ETH, amount: '1500000' });
   });
 
+  it('keeps a row whose amount cannot be scaled as base units instead of failing the screen', () => {
+    const bad = [{ ...TOKENS[0]!, decimals: 1.5 }];
+    const [q] = depositsSummary([row({ amountIn: 'x' }), row({})], bad, NOW).quotes;
+    expect(q).toMatchObject({ asset: 'USDC', amount: 'x' });
+  });
+
   it('keeps at most 100 quotes in the list but counts all of them', () => {
     const many = Array.from({ length: 120 }, (_, i) => row({ id: `q${i}` }));
     const s = depositsSummary(many, TOKENS, NOW);
