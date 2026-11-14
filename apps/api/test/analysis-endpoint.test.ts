@@ -9,6 +9,7 @@ import {
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
 import type { ToolLlm } from '@near-autopilot/orchestrator';
 import { buildAnalyticsServer } from '../src/analytics/server';
+import { MemoryEventStore } from './support/memory-events';
 import type { CollectorStore } from '../src/collector/store';
 import { signOwnership } from './support/nep413';
 
@@ -129,11 +130,13 @@ function server(
   collector: CollectorStore,
   llm: ToolLlm | null = null,
   dclId?: string,
+  events?: MemoryEventStore,
 ) {
   return buildAnalyticsServer({
     apiToken: TOKEN,
     store: collector,
     intervalSeconds: 900,
+    ...(events ? { events } : {}),
     mainnet: {
       rpc: node,
       burrowId: BURROW,
@@ -209,6 +212,36 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(llm.opened).toBe(1);
+  });
+
+  it('records the analysis, and the ownership proof as verified, with the account id only', async () => {
+    const events = new MemoryEventStore();
+    const app = server(chain, store, countingLlm(), undefined, events);
+    await analyse(app, 'alice.near', await proofHeader('alice.near'));
+    await analyse(app, 'alice.near');
+    expect(events.rows.map((e) => [e.kind, e.accountId, e.source, e.detail?.['source']])).toEqual([
+      ['verified', 'alice.near', 'server', undefined],
+      ['analyse', 'alice.near', 'server', 'heuristic'],
+      ['analyse', 'alice.near', 'server', 'heuristic'],
+    ]);
+    expect(JSON.stringify(events.rows)).not.toMatch(/127\.0\.0\.1|x-forwarded|remoteAddress/);
+  });
+
+  it('shows the public only confirmed transactions and the owner everything', async () => {
+    const events = new MemoryEventStore();
+    const app = server(chain, store, null, undefined, events);
+    await analyse(app, 'alice.near');
+    const read = async (proof?: string) =>
+      (
+        await app.inject({
+          url: '/v1/analytics/account/alice.near/events',
+          headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
+        })
+      ).json<{ owner: boolean; items: { type: string }[] }>();
+    expect(await read()).toEqual({ owner: false, items: [] });
+    const mine = await read(await proofHeader('alice.near'));
+    expect(mine.owner).toBe(true);
+    expect(mine.items.map((i) => i.type)).toContain('analyse');
   });
 
   it('does not accept a proof made for another account', async () => {

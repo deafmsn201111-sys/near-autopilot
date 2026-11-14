@@ -34,8 +34,15 @@ import {
 } from '@near-autopilot/burrow-adapter';
 import { exactAmount, resolveBalancedLpAmounts, resolveIntentAmount } from '../wallet/amounts';
 import { buildUnwrapNear } from '../wallet/wrap';
-import { assembleCascade, formatNear, type CascadeStep } from '../wallet/cascade';
-import { validateCascade } from '../wallet/validate-cascade';
+import {
+  assembleCascade,
+  formatNear,
+  type CascadeStep,
+  type PreparedCascade,
+} from '../wallet/cascade';
+import type { CascadeValidationContext } from '../wallet/validate-cascade';
+import { sealCascade } from '../wallet/seal';
+import { activityTimeline, eventRecorder, type EventStore } from './events';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
@@ -998,7 +1005,9 @@ export function registerAccountView(
   app: FastifyInstance,
   store: CollectorStore,
   deps: MainnetReadDeps,
+  events?: EventStore,
 ) {
+  const record = eventRecorder(events, app.log);
   const viewer = new NearContractViewer(deps.rpc);
   const tokens = new NearTokenReader(viewer);
   const native = new NearAccountReader(deps.rpc);
@@ -1056,9 +1065,37 @@ export function registerAccountView(
     const at = owners.get(key);
     if (at !== undefined && Date.now() - at < OWNER_CACHE_TTL_MS) return true;
     const ok = await verifyOwnership(proofFromHeader(header), id, ownership);
-    if (ok) owners.set(key, Date.now());
-    else owners.delete(key);
+    if (ok) {
+      owners.set(key, Date.now());
+      await record({ at: new Date(), kind: 'verified', accountId: id, source: 'server' });
+    } else owners.delete(key);
     return ok;
+  };
+
+  /** The unsigned cascade with its id, or a 422 when the safety check blocked it (stored either way). */
+  const seal = async (
+    reply: FastifyReply,
+    account: AccountId,
+    intent: Record<string, unknown>,
+    cascade: PreparedCascade,
+    ctx: CascadeValidationContext,
+    extra: Record<string, unknown>,
+  ) => {
+    const sealed = await sealCascade(record, account, intent, cascade, ctx);
+    if (!sealed.ok)
+      return reply
+        .code(422)
+        .send({ error: 'assembled cascade failed safety checks', reasons: sealed.reasons });
+    return {
+      account,
+      intent,
+      ...extra,
+      cascadeId: sealed.cascadeId,
+      transactions: sealed.transactions,
+      preview: cascade.preview,
+      signed: false,
+      note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
+    };
   };
 
   /** Confirmed prices of the latest snapshot: the median of the valid USD quotes per token. */
@@ -1719,6 +1756,18 @@ export function registerAccountView(
     };
   };
 
+  /** The account's timeline (#32). Public: RPC-confirmed transactions only; the owner's proof adds everything else. */
+  app.get('/v1/analytics/account/:id/events', async (req, reply) => {
+    const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
+    if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
+    if (!events) return { owner: false, items: [] };
+    const [owner, rows] = await Promise.all([
+      isOwner(req.headers[OWNERSHIP_HEADER], parsed.data),
+      events.forAccount(parsed.data, 500),
+    ]);
+    return { owner, items: activityTimeline(rows, { owner }) };
+  });
+
   /** Architecture C (see ai-analysis.ts): the central LLM ranks and explains; code computes every number. */
   app.post('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
@@ -1728,14 +1777,26 @@ export function registerAccountView(
     const ownerVerified = isOwner(req.headers[OWNERSHIP_HEADER], parsed.data);
     const inputs = await analysisInputs(parsed.data, req.log, body.data.strategy);
     if ('error' in inputs) return reply.code(inputs.status).send({ error: inputs.error });
-    const run = async (onEvent?: (e: AnalysisEvent) => void) =>
-      analyseAccount(
+    const run = async (onEvent?: (e: AnalysisEvent) => void) => {
+      const analysis = await analyseAccount(
         deps.ai ?? null,
         { ...inputs, ownerVerified: await ownerVerified },
         (err) => req.log.warn({ err, account: parsed.data }, 'llm analysis fell back'),
         undefined,
         onEvent,
       );
+      await record({
+        at: new Date(),
+        kind: 'analyse',
+        accountId: parsed.data,
+        source: 'server',
+        detail: {
+          source: analysis.source === 'llm' ? 'ai' : 'heuristic',
+          strategy: body.data.strategy,
+        },
+      });
+      return analysis;
+    };
     if (!req.headers.accept?.includes('text/event-stream')) return run();
     // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
     const out = new PassThrough();
@@ -1918,36 +1979,23 @@ export function registerAccountView(
         });
 
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([deps.rheaId, token0, token1]),
-          allowedPools,
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amounts: [
-            { raw: side0.rawAmount.toString(), human: side0.humanAmount, symbol: sym0 },
-            { raw: side1.rawAmount.toString(), human: side1.humanAmount, symbol: sym1 },
-          ],
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([deps.rheaId, token0, token1]),
+            allowedPools,
+          },
+          {
+            amounts: [
+              { raw: side0.rawAmount.toString(), human: side0.humanAmount, symbol: sym0 },
+              { raw: side1.rawAmount.toString(), human: side1.humanAmount, symbol: sym1 },
+            ],
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2014,36 +2062,23 @@ export function registerAccountView(
         ];
 
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([dclId]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          position: { lptId: pos.lpt_id, poolId: pos.pool_id },
-          freed: [
-            { raw: freed.x.toString(), human: Number(freed.x) / 10 ** decX, symbol: symX },
-            { raw: freed.y.toString(), human: Number(freed.y) / 10 ** decY, symbol: symY },
-          ],
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([dclId]),
+          },
+          {
+            position: { lptId: pos.lpt_id, poolId: pos.pool_id },
+            freed: [
+              { raw: freed.x.toString(), human: Number(freed.x) / 10 ** decX, symbol: symX },
+              { raw: freed.y.toString(), human: Number(freed.y) / 10 ** decY, symbol: symY },
+            ],
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2077,32 +2112,19 @@ export function registerAccountView(
           },
         ];
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([WRAP]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([WRAP]),
+          },
+          {
+            amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2202,32 +2224,19 @@ export function registerAccountView(
                 ];
 
         const cascade = assembleCascade(account, steps);
-        const check = validateCascade(cascade.transactions, {
-          signerId: account,
-          allowedReceivers: new Set<string>([deployment.oracleId]),
-        });
-        if (!check.ok)
-          return reply
-            .code(422)
-            .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
-        return {
+        return seal(
+          reply,
           account,
           intent,
-          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
-          transactions: cascade.transactions.map((t) => ({
-            intentId: t.intentId,
-            receiverId: t.receiverId,
-            actions: t.actions.map((a) => ({
-              methodName: a.methodName,
-              args: a.args,
-              gas: a.gas.toString(),
-              deposit: a.deposit.toString(),
-            })),
-          })),
-          preview: cascade.preview,
-          signed: false,
-          note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-        };
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([deployment.oracleId]),
+          },
+          {
+            amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+          },
+        );
       } catch (e) {
         return prepareFailure(req, reply, e);
       }
@@ -2433,14 +2442,6 @@ export function registerAccountView(
       const cascade = assembleCascade(account, steps);
       const allowed = new Set<string>([deps.burrowId, deps.rheaId, intent.token]);
       if (intent.action === 'swap') allowed.add(intent.tokenOut);
-      const check = validateCascade(cascade.transactions, {
-        signerId: account,
-        allowedReceivers: allowed,
-      });
-      if (!check.ok)
-        return reply
-          .code(422)
-          .send({ error: 'assembled cascade failed safety checks', reasons: check.reasons });
       // Upper-bound network fee: total prepaid gas × the minimum gas price (most of it is refunded in practice).
       const totalGas = cascade.transactions.reduce(
         (s, t) => s + t.actions.reduce((g, a) => g + a.gas, 0n),
@@ -2448,25 +2449,20 @@ export function registerAccountView(
       );
       const networkFeeMaxNear =
         Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6;
-      return {
+      return seal(
+        reply,
         account,
         intent,
-        amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
-        transactions: cascade.transactions.map((t) => ({
-          intentId: t.intentId,
-          receiverId: t.receiverId,
-          actions: t.actions.map((a) => ({
-            methodName: a.methodName,
-            args: a.args,
-            gas: a.gas.toString(),
-            deposit: a.deposit.toString(),
-          })),
-        })),
-        preview: cascade.preview,
-        cost: { networkFeeMaxNear, swap: swapCost },
-        signed: false,
-        note: 'Unsigned. Review and sign in your own wallet; the server holds no key and sends nothing.',
-      };
+        cascade,
+        {
+          signerId: account,
+          allowedReceivers: allowed,
+        },
+        {
+          amount: { raw: rawAmount.toString(), human: humanAmount, symbol: sym },
+          cost: { networkFeeMaxNear, swap: swapCost },
+        },
+      );
     } catch (e) {
       return prepareFailure(req, reply, e);
     }
