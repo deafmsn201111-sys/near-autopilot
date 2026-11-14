@@ -651,7 +651,62 @@ status polling follows the deposit. The API hands a quote's transfer out once (#
 `deposit_quotes` is set by a conditional update, and a second request (another tab) gets 409. Only the dialog that saw
 its wallet reject the send (declined, no gas, no token, refused by the network) asks again with `retry=1`. Bitcoin and TRON wallets stay manual (stretch).
 
-## D35 — The analysis runs on NEAR AI Cloud private inference: GLM 5.3 Flash in a TEE (#232)
+## D35 — One HOT Kit connects every wallet; its NEAR connector runs on our near-connect 0.12 (#189)
+
+**Context:** #189. After #126 there were two connectors: near-connect for the NEAR account and HOT Kit for EVM /
+Solana. The kit's own NEAR connector creates near-connect 0.8.2, which cannot pass the CSP nonce to the wallet iframes
+(D11): under our nonce CSP no NEAR wallet would load.
+**Decision:** `lib/hot-kit.ts` creates one kit with NEAR, EVM and Solana connectors. The NEAR one is the kit's
+connector built on our own near-connect 0.12 instance (`network: mainnet`, `signInWithoutAddKey`, `cspNonce`), the only
+place near-connect is imported; a one-line shim turns the kit's `connect(walletId)` (0.8 form) into 0.12's
+`{ walletId }`, or 0.12 would open its own second list. The session stays near-connect's `selected-wallet` key, so a
+wallet connected before #189 stays connected. "Connect wallet" opens the kit's all-chains list and settles on a NEAR
+sign-in, so the 2.0.0 bug (D33: the list may never settle) cannot hang the button; connecting only an EVM / Solana
+wallet leaves the page without a NEAR account. Disconnect signs out of every kit wallet. Signing is unchanged:
+`lib/wallet-sign.ts` signs on the same near-connect wallet, cascades still pass `validateCascade`. The kit is loaded
+only on "Connect wallet" or when `selected-wallet` exists. No Tron (not a deposit origin); Bitcoin is a follow-up
+because `walletChainOf` would also open a wallet send on BTC, which D34 keeps manual.
+**Consequences:** first-load JS fell by 15 kB on `/` and `/activity` (near-connect left the page bundle); a visitor
+with a NEAR session now loads the kit core (~110 kB gzip, lazy) after hydration. The near-connect wallet type is cast
+to the kit's 0.8.2 type; a kit upgrade must re-check that `connect(id)` shim. On a NEAR connect the kit also reads that account's token
+balances client-side (public chain data, read-only); it signs nothing on connect.
+
+## D36 — A withdrawal sends `ft_transfer` only to its stored 1Click quote's deposit address (#171)
+
+**Context:** #171. Getting money out of NEAR was manual. For a NEAR origin, 1Click's deposit address is a NEAR
+implicit account (64 hex, checked live on 14 Nov) that holds no storage on the token, so the transfer needs
+`storage_deposit` for it and a plain `ft_transfer` (an `ft_transfer_call` would bounce: the account has no contract).
+`ft_transfer` was not in `validateCascade`'s method allowlist.
+**Decision:** `POST /v1/withdraw/quote` quotes one of our tokens (`policy.allowedTokens`, as 1Click lists it on NEAR)
+to any 1Click token on Ethereum, Base, Arbitrum or Solana (the D32 filter applies; no Bitcoin), with the recipient
+checked as an address of that chain and the NEAR account as the refund address; the quote is verified like a deposit
+quote, its deposit address must be a NEAR implicit account, and it is stored in `deposit_quotes`. The intent
+`withdraw_1click { quoteId }` of `/v1/wallet/prepare` takes token, receiver and amount from that row only: the row must
+belong to the signer, be a NEAR-origin quote of a listed token, be more than 2 minutes from its deadline and not seen by
+1Click (stored and freshly asked), and the wallet must hold the amount. It builds one transaction on the token:
+`storage_deposit { account_id: <deposit address>, registration_only: true }` (bounds.min, capped at 0.0125 NEAR like
+other registrations; skipped when registered) and `ft_transfer` of the quoted amount, 1 yocto. `validateCascade` allows
+`ft_transfer` only when the context names `transferTo`, and only to it, with exactly 1 yocto and a positive amount;
+every other cascade has no `transferTo`, so `ft_transfer` stays refused there. No cap changes. A quote is built at most once:
+after every check passes, the build claims it with the same `transfer_issued_at` mark as a deposit transfer (#214), so
+a failed build does not use it up and a second build (another tab, a rebuild) gets 409; the dialog offers one signing
+attempt per quote. One EXACT_INPUT quote cannot be paid twice before 1Click sees the first transfer; after a decline
+the user gets a new quote.
+**Consequences:** A withdrawal is signed in the NEAR wallet like any cascade and confirmed step by step. Its status is
+the deposit status path (#29); the recipient address is kept in the `oneclick_quote` event, not in `deposit_quotes`.
+Native NEAR (needs a wrap first), Bitcoin and other chains are not offered yet.
+
+## D37 — Leaving the analysis view inside the app does not stop the AI run (#168)
+
+**Context:** #168 asked to abort the run when the owner opens another page in the app, as closing the tab does
+(#151). Since #190 the API saves every finished analysis, and the home page reads the saved one on each visit.
+**Decision:** In-app navigation keeps the run going: the browser keeps its request open, the run finishes and is
+saved, and the owner finds it on return. Closing or reloading the tab still cancels the run (#151). A click on
+"Run AI analysis" while the run is still going joins it (one run per account and strategy), so it costs nothing extra.
+**Consequences:** No model spend is lost to a cancel the owner did not ask for. Coming back mid-run shows the last saved
+analysis and the button, not the live progress; showing "Analysing…" on return is #239.
+
+## D38 — The analysis runs on NEAR AI Cloud private inference: GLM 5.3 Flash in a TEE (#232)
 
 **Context:** the hackathon's Privacy & Private AI track is tagged NEAR AI Cloud / TEE, and a wallet's positions,
 strategy and advice are financial data. NEAR AI Cloud (`https://cloud-api.near.ai/v1`, OpenAI-compatible) serves

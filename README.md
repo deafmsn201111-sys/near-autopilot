@@ -38,8 +38,9 @@ everywhere in this repository:
 | **Roadmap**       | See [docs/HACKATHON_PLAN.md](docs/HACKATHON_PLAN.md).                                                                                                                                   |
 
 The server reads mainnet with view calls only; a transaction is only ever signed in the user's own wallet. NEAR
-Intents 1Click gives dry quotes for route comparison, and real quotes only for depositing into your account from
-another chain (you send from your own wallet there; the server builds no transaction).
+Intents 1Click gives dry quotes for route comparison, and real quotes only for moving your own money between NEAR and
+another chain: a deposit you send from your own wallet there, or a withdrawal whose NEAR transfer the server builds
+from the stored quote and you sign in your NEAR wallet.
 
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
@@ -99,7 +100,7 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 
 **This is dry-run. There are no real trades.** Mainnet is read only. Plans are built, checked and simulated. The
 route comparison calls 1Click with `dry: true`, a constant in that client. Real 1Click quotes exist only for deposits
-from another chain (below), in a separate client.
+from and withdrawals to another chain (below), in a separate client.
 
 **What works**
 
@@ -155,6 +156,15 @@ from another chain (below), in a separate client.
    (PoA, HOT) or token, or a withdrawal incident on NEAR or the token you receive. The text is SHIELD's own, as
    plain text and capped, or ours when SHIELD gives none. The server asks SHIELD at most once a minute for everyone;
    no key, an error or an odd answer means no warning, never a broken dialog.
+6. **Withdraw to another chain.** On your own portfolio, press **Withdraw to another chain**. Pick a token your NEAR
+   wallet holds (our token list), an amount (25% / 50% / Max fill it from your balance), Ethereum, Base, Arbitrum or
+   Solana, the token to receive there and the recipient address (filled from your connected EVM / Solana wallet, or
+   typed; the server checks it is an address of that chain). **Get quote** asks 1Click for a real quote with your NEAR
+   account as the refund address, verifies it and stores it. **Build transaction** then assembles one NEAR transaction
+   on the token contract from that stored quote, never from the browser: `storage_deposit` for the 1Click deposit
+   address (a NEAR implicit account) when it holds no storage, then `ft_transfer` of the quoted amount to it. It passes
+   `validateCascade`, where `ft_transfer` may only go to that quote's deposit address (D36). You sign it in your NEAR
+   wallet; the dialog follows the withdrawal with the same 1Click status as a deposit.
 
 **Not done**
 
@@ -280,7 +290,7 @@ TEE (Intel TDX + NVIDIA confidential computing): the prompt with the wallet's po
 enclave that neither we nor the GPU operator can read, and NEAR AI signs every reply with the enclave key (anyone can
 check one at [cloud.near.ai/verify](https://cloud.near.ai/verify)). Our server does not verify those signatures yet
 (#233). There is no fallback to a model outside a TEE: on any failure the page shows the labelled rule-based list. Why
-this model, with the measurement: [D35](docs/DECISIONS.md).
+this model, with the measurement: [D38](docs/DECISIONS.md).
 
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
@@ -390,7 +400,8 @@ portfolios ($500 and $5,000) on Home are simulated and labelled as such.
   NEAR RPC for its final status. A failed step names the contract, its error and what happened to your funds (refund
   confirmed, or nothing left your wallet); the next step is not offered.
 
-- **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
+- **Connect wallet** (HOT Kit): one list for your NEAR wallet and, in the same list, an EVM or Solana wallet for
+  deposits; no access key added. Disconnect signs out of all of them. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
   **Run AI analysis** re-ranks and explains them with the central LLM for a visitor who verified ownership (below; 5 runs per visitor per 10 minutes).
 - **Your account** reads everything the account holds on NEAR: native NEAR, every fungible token (list from
@@ -458,7 +469,7 @@ costs), or why the autopilot would not do it.
 | Net yield for Burrow supply                                                         | Implemented: supply rate minus gas (and swap cost where a swap is needed)                                                                        |
 | Looping strategy (same-asset, Burrow)                                               | Implemented as a simulation; the autopilot cannot borrow                                                                                         |
 | Signed audit checkpoints outside the database                                       | Implemented (ed25519 key in .env; file + append-only table; migration 0015)                                                                      |
-| Wallet connection and signing                                                       | HOT Connector; unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)                          |
+| Wallet connection and signing                                                       | HOT Kit (NEAR, EVM, Solana); unsigned cascades checked by `validateCascade`, signed in the user's wallet (`MAINNET_WALLET_SIGNING=1`)            |
 | Server-side execution                                                               | **None, by design.** The server holds no key                                                                                                     |
 | AI analysis of a connected wallet                                                   | Implemented: central LLM calls three orchestrator agents and three wallet checks as tools (architecture C above); rule-based fallback, labelled  |
 

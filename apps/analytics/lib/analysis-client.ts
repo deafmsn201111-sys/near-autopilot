@@ -308,7 +308,7 @@ export async function runAnalysis(
 
 const MODEL_NAMES: Record<string, string> = {
   'z-ai/glm-5.3-flash': 'GLM 5.3 Flash',
-  // Analyses and spend rows saved before D35.
+  // Analyses and spend rows saved before D38.
   'claude-haiku-5-5': 'Claude Haiku 5.5',
   'claude-sonnet-5-5': 'Claude Sonnet 5.5',
 };

@@ -2,7 +2,7 @@
 
 Tickets: #232 (switch the provider and model), #233 (verify the TEE signature of every reply).
 
-**Outcome (D35):** GLM 5.3 Flash with `reasoning_effort: low` passed the measurement (6/6 AI answers, loan first,
+**Outcome (D38):** GLM 5.3 Flash with `reasoning_effort: low` passed the measurement (6/6 AI answers, loan first,
 $0.0002-0.0003 per analysis); Qwen3.8 27B hit the 45 s deadline; GLM 5.3 and gateway Haiku are not enabled for our
 key.
 

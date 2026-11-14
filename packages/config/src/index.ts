@@ -280,7 +280,7 @@ export const walletConnectProjectIdSchema = z.preprocess(
 );
 
 /**
- * The models the server may call: NEAR AI Cloud private inference only (TEE, D35). Each has a price in
+ * The models the server may call: NEAR AI Cloud private inference only (TEE, D38). Each has a price in
  * apps/api/src/llm/pricing.ts. A model outside TEE would make the privacy claim false, so none is allowed here.
  */
 export const LLM_MODELS = ['z-ai/glm-5.3-flash'] as const;

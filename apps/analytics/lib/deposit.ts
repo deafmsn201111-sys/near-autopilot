@@ -19,6 +19,8 @@ export interface DepositQuote {
   readonly id: string;
   readonly chain: string;
   readonly chainName: string;
+  /** Where the funds arrive: NEAR for a deposit, the target chain for a withdrawal. */
+  readonly to: { readonly chain: string; readonly chainName: string };
   readonly origin: DepositAsset & { readonly payment: PaymentToken };
   readonly destination: DepositAsset;
   readonly amountIn: string;
@@ -74,12 +76,15 @@ export async function loadDepositIncidents(origin: string, destination: string):
 
 export const loadDepositAssets = () => call<DepositAssets>('/api/deposit/assets');
 
-export const requestDepositQuote = (form: DepositForm) =>
-  call<DepositQuote>('/api/deposit/quote', {
+export const requestQuote = <T>(url: string, form: object) =>
+  call<T>(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(form),
   });
+
+export const requestDepositQuote = (form: DepositForm) =>
+  requestQuote<DepositQuote>('/api/deposit/quote', form);
 
 /** 1500000 with 6 decimals -> "1.5". Exact: integer string in, decimal string out. */
 export function formatUnits(units: string, decimals: number): string {

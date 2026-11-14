@@ -765,6 +765,23 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `UPDATE … WHERE transfer_issued_at IS NULL RETURNING`, after every other check, so two tabs on one quote cannot both
   prompt a wallet: the second gets 409. The dialog that saw its wallet reject the send asks again with `retry=1`.
 
+## 2026-11-14 — One wallet connector: HOT Kit for NEAR, EVM and Solana (#189)
+
+- `lib/hot-kit.ts` owns the one kit; its NEAR connector wraps our near-connect 0.12 (CSP nonce, no access key, D35).
+  `lib/wallet.ts` keeps its interface (`currentAccount`, `watchAccount`, `connect`, `connectedWallet`, `disconnect`).
+- "Connect wallet" opens the kit's list of all chains; Disconnect signs out of all of them.
+- The kit loads only on click or with a stored session: first-load JS `/` 170 → 155 kB, `/activity` 158 → 143 kB.
+- Tests: `test/wallet.test.ts` (no load without a session, restore, account change, sign-out of all, cascade unchanged).
+
+## 2026-11-14 — Withdraw from NEAR to EVM / Solana via 1Click (#171)
+
+- `POST /v1/withdraw/quote` (deposit and withdraw share one verify-and-store path in `analytics/deposit.ts`); the
+  answer has the deposit quote's shape plus `to: { chain, chainName }`.
+- Intent `withdraw_1click { quoteId }`: `withdrawLookup` reads the stored quote, `wallet/withdraw.ts` builds
+  `storage_deposit` + `ft_transfer` on the token. `validateCascade`: `ft_transfer` only to `ctx.transferTo` (D36).
+- UI: `WithdrawDialog` (token, 25% / 50% / Max, chain, token, recipient from HOT Kit or typed), status from the
+  deposit `StatusLine`, signing through `PrepareDialog`, which now drops a surrounding modal while the wallet is open.
+
 ## 2026-11-14 — The AI analysis runs on NEAR AI Cloud private inference (#232)
 
 - `apps/api/src/llm/near-ai-client.ts`: `NearAiToolLlm` over `POST https://cloud-api.near.ai/v1/chat/completions`
@@ -772,8 +789,8 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   any finish other than `stop` / `tool_calls`, an empty answer, bad tool arguments or an HTTP error throws (the body is
   not echoed). Replaces `anthropic-client.ts` and `@anthropic-ai/sdk`.
 - Env `NEAR_AI_API_KEY`, `LLM_MODEL` (allowlist `z-ai/glm-5.3-flash`), `LLM_MAX_TOKENS`; NEAR AI prices in
-  `pricing.ts`; `llm:compare` runs every allowlisted model. The reply schema drops unknown keys (D35).
+  `pricing.ts`; `llm:compare` runs every allowlisted model. The reply schema drops unknown keys (D38).
 - UI shows "GLM 5.3 Flash"; admin asks for the NEAR AI Cloud credit balance.
 
 **Tests run:** `pnpm verify` (green); new `near-ai-llm.test.ts` (mocked `fetch`), stray-key case in
-`ai-analysis.test.ts`; `llm:compare` on autopilot-test.near and hodl13.near through NEAR AI Cloud (table in D35).
+`ai-analysis.test.ts`; `llm:compare` on autopilot-test.near and hodl13.near through NEAR AI Cloud (table in D38).

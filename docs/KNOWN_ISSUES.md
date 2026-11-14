@@ -6,7 +6,7 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 
 - **LLM only ranks and explains.** On a connected wallet the central LLM calls the deterministic agents as tools (architecture C, D13); it computes nothing. `LlmAgent` (an LLM as a proposal agent) is still not wired. No "AI confidence" exists.
 - **The LLM spend cap is per UTC day and held in one process.** Each model call in flight holds one worst-case call (≈ $0.010 on GLM 5.3 Flash) against the cap in memory, which works because the analytics API runs as one process; a second replica would need a reservation row. A call aborted on the deadline is recorded at its worst case, and a request that could pass 100K input tokens is never sent. `NEAR_AI_API_KEY` is on the public server (only in `analytics-api`), capped by `LLM_DAILY_CAP_USD` (#72, #232).
-- **Private inference is claimed, not yet checked per reply.** The model runs in a NEAR AI Cloud TEE (D35), and each reply has an enclave signature, but until #233 the server does not verify it; anyone can check a reply at cloud.near.ai/verify.
+- **Private inference is claimed, not yet checked per reply.** The model runs in a NEAR AI Cloud TEE (D38), and each reply has an enclave signature, but until #233 the server does not verify it; anyone can check a reply at cloud.near.ai/verify.
 - **No autonomous execution.** `loadSigner()` is null; dry-run only. Mainnet execution requires the (unbuilt) Guard contract + review.
 - **Owner-signs path is branch-only.** `feat/mainnet-wallet-confirm` is local, never pushed/merged.
 - **Single-operator model.** No per-user accounts/policies/sessions yet.
@@ -39,6 +39,9 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
 - **UX flows** flagged by owner as "not usable" (beyond theme). → `T4.1`.
 - **Guard/contract absent** → autonomy hard-blocked. → `T5.1`.
+- **Wallet button after a cancelled sign-in.** A cancelled NEAR sign-in leaves near-connect's `selected-wallet`, so
+  the kit loads on every later page; a sign-in finished after the kit's list was closed shows the account but does not
+  open the portfolio. → #236.
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
 - **A cut-off model call is booked at its worst case.** A call ended by the deadline or by the visitor leaving reports no
   usage, so the ledger books ~$0.012 (Haiku) where a whole run costs ~$0.0006. Safe for the cap, but admin spend overstates. → #183.

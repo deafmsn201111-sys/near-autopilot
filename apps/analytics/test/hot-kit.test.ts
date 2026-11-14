@@ -44,6 +44,11 @@ const fake = vi.hoisted(() => {
 });
 
 vi.mock('@hot-labs/kit', () => ({ HotKit: fake.HotKit }));
+vi.mock('@hot-labs/near-connect', () => ({
+  NearConnector: class {
+    connect() {}
+  },
+}));
 vi.mock('@hot-labs/kit/defaults', () => ({
   lazyConnector: (id: string) => id,
 }));
@@ -74,14 +79,14 @@ describe('HOT Kit origin wallets', () => {
     m = await fresh();
   });
 
-  it('creates the kit lazily, once, with the EVM and Solana connectors only', async () => {
+  it('creates the kit lazily, once, with the NEAR, EVM and Solana connectors', async () => {
     expect(fake.state.created).toBe(0);
     const stop1 = m.watchOriginWallets(() => undefined);
     const stop2 = m.watchOriginWallets(() => undefined);
     await m.connectOriginWallet('evm');
     await flush();
     expect(fake.state.created).toBe(1);
-    expect(fake.state.options).toEqual({ connectors: ['evm', 'solana'] });
+    expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana'] });
     stop1();
     stop2();
   });
@@ -289,7 +294,7 @@ describe('WalletConnect project id', () => {
       vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', value);
       const m = await fresh();
       await m.connectOriginWallet('evm');
-      expect(fake.state.options).toEqual({ connectors: ['evm', 'solana'] });
+      expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana'] });
     }
     vi.unstubAllEnvs();
   });
