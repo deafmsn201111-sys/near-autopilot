@@ -19,8 +19,7 @@ export interface DepositQuote {
   readonly id: string;
   readonly chain: string;
   readonly chainName: string;
-  /** `contract`: the token contract for a payment link, checked by the API against the quoted asset; null for a native coin. */
-  readonly origin: DepositAsset & { readonly contract: string | null };
+  readonly origin: DepositAsset & { readonly payment: PaymentToken };
   readonly destination: DepositAsset;
   readonly amountIn: string;
   readonly amountOut: string;
@@ -34,6 +33,8 @@ export interface DepositQuote {
   readonly expiresInSeconds: number;
   readonly timeEstimateSeconds: number;
 }
+/** What a payment link may ask the wallet to send, decided by the API from the quoted asset; null: address only. */
+export type PaymentToken = { readonly native: true } | { readonly contract: string } | null;
 export interface DepositForm {
   readonly account: string;
   readonly originAsset: string;

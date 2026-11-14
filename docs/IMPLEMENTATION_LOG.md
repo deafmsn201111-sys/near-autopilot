@@ -652,7 +652,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 - `apps/analytics/lib/payment-uri.ts`: BIP21 / EIP-681 (always `@chainId`, wei and base units as plain integers) /
   Solana Pay links from the quote; null for a chain with no standard or a token that is not named exactly.
-- `apps/api/src/analytics/deposit.ts`: the quote's `origin.contract`, only when it is an address of the chain and, on
-  EVM, the quoted assetId names it.
+- `apps/api/src/analytics/deposit.ts`: the quote's `origin.payment` — native only by the exact 1Click asset id; a
+  contract only when it is a valid address of the chain (checksum, no burn) and, on EVM, the quoted assetId names it.
 - Deposit dialog: QR and **Open in wallet** use the link, **Address only** switch, copy amount. Quotes stay
   `EXACT_INPUT`.
