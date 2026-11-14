@@ -1,3 +1,5 @@
+export const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
+
 export interface PortfolioModeInput {
   isAccount: boolean;
   account: string;

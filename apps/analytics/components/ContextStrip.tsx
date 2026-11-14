@@ -1,10 +1,10 @@
 import Link from 'next/link';
-import type { PortfolioMode } from '../lib/portfolio-mode';
+import { portfolioUrl, type PortfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from './AccountForm';
 import { Icon } from './icons';
 import { PORTFOLIOS, type PortfolioId } from './PortfolioSwitch';
 import { Chip } from './primitives';
-import { ConnectButton, portfolioUrl } from './WalletButton';
+import { ConnectButton } from './WalletButton';
 
 export function SwitchView({
   current,

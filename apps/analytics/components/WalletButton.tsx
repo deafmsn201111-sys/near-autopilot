@@ -11,6 +11,7 @@ import {
   type OriginChain,
   type OriginWallet,
 } from '../lib/hot-kit';
+import { portfolioUrl } from '../lib/portfolio-mode';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
 import type { WalletBalance } from '../lib/withdraw';
 import { CHAIN_LABEL, DepositButton, ORIGIN_CHAINS } from './DepositDialog';
@@ -18,8 +19,6 @@ import { Icon } from './icons';
 import { ProvenanceMark } from './primitives';
 import { TokenIcon } from './TokenIcon';
 import { WithdrawDialog } from './WithdrawDialog';
-
-export const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
 
 const WITHDRAW_TO: readonly OriginChain[] = ['evm', 'solana'];
 
