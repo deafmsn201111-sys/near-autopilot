@@ -537,6 +537,87 @@ describe('portfolioRecommendations', () => {
       expect(weak.find((x) => x.id === 'repay-with-idle')).toBeUndefined();
     });
 
+    describe('a safe loan in another token, repaid through a swap (#227)', () => {
+      // USDC earns 10.8%, the USDt loan costs 13.5%, Rhea swaps USDC -> USDt.
+      const USDT = 'usdt.tether-token.near';
+      const usdtDebt = (usd: number) => ({
+        ...demoDebt,
+        token: USDT,
+        symbol: 'USDt',
+        usd,
+        amount: usd,
+        collateral: 0,
+        borrowAprPct: 13.5,
+      });
+      const safe = {
+        loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 1200, debtAdjUsd: 400 },
+        largestDebt: usdtDebt(300),
+      };
+      const usdc = {
+        token: USDC,
+        symbol: 'USDC',
+        decimals: 6,
+        usdPerToken: 1,
+        vr: 0.95,
+        deposited: 0,
+        collateral: 500,
+        wallet: 400,
+        aprPct: 10.8,
+        outPerIn: 0.997,
+        slippageBps: 50,
+      };
+      const advice = (over: Partial<RecommendationContext>) =>
+        portfolioAdvice(ctx({ ...safe, idleSwapRepay: usdc, ...over }));
+      const card = (over: Partial<RecommendationContext>) =>
+        advice(over).recommendations.find((x) => x.id === 'repay-with-idle');
+
+      it('swaps idle wallet USDC into USDt and repays, withdrawing nothing', () => {
+        const c = card({ idleEarn: [{ token: USDC, symbol: 'USDC', usd: 400, aprPct: 10.8 }] });
+        const intent = c?.intent;
+        if (intent?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
+        expect(intent.token).toBe(USDT);
+        expect(intent.collateralToken).toBe(USDC);
+        expect(intent.withdraw).toBeUndefined();
+        expect(Number(intent.amount) / 1e6).toBeCloseTo(300 / 0.997, 4);
+        expect(c?.why).toMatch(/13\.5%.*10\.8%/);
+      });
+
+      it('leaves the USDC the swap does not take to the supply card', () => {
+        const recs = advice({
+          idleEarn: [{ token: USDC, symbol: 'USDC', usd: 1000, aprPct: 10.8 }],
+          idleSwapRepay: { ...usdc, wallet: 1000 },
+        }).recommendations;
+        expect(recs.find((x) => x.id === 'repay-with-idle')).toBeDefined();
+        const supply = recs.find((x) => x.intent?.action === 'supply');
+        expect(supply?.intent).toMatchObject({ token: USDC, approxUsd: 699.1 });
+      });
+
+      it('withdraws only the plain USDC deposit, never the collateral', () => {
+        const all = card({ idleSwapRepay: { ...usdc, wallet: 0, deposited: 400 } })?.intent;
+        if (all?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
+        expect(all.withdraw).toBe(all.amount);
+        const part = card({ idleSwapRepay: { ...usdc, wallet: 0, deposited: 100 } })?.intent;
+        if (part?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
+        expect(part.amount).toBe('100000000');
+      });
+
+      it('says a small loan is not worth the fees instead of a cents card', () => {
+        const a = advice({ largestDebt: usdtDebt(9.34) });
+        expect(a.recommendations.find((x) => x.id === 'repay-with-idle')).toBeUndefined();
+        expect(a.skipped.join(' ')).toMatch(/USDt loan with your USDC.*not worth/);
+      });
+
+      it('stays quiet when the swap loss eats the savings, the deposit earns more, or no route exists', () => {
+        expect(card({ idleSwapRepay: { ...usdc, outPerIn: 0.95 } })).toBeUndefined();
+        expect(card({ idleSwapRepay: { ...usdc, aprPct: 14 } })).toBeUndefined();
+        expect(card({ idleSwapRepay: null })).toBeUndefined();
+      });
+
+      it('leaves an unsafe loan to the Liquidation Guardian card', () => {
+        expect(card({ loan: demoLoan })).toBeUndefined();
+      });
+    });
+
     it('keeps supplying when the loan is in another token or costs less', () => {
       const base = {
         idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
