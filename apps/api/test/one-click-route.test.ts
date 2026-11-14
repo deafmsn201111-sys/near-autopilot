@@ -366,6 +366,7 @@ describe('POST /v1/deposit/quote', () => {
       id: 'dq_1',
       chain: 'eth',
       chainName: 'Ethereum',
+      to: { chain: 'near', chainName: 'NEAR' },
       origin: {
         assetId: 'nep141:eth-0xa0b8.omft.near',
         symbol: 'USDC',

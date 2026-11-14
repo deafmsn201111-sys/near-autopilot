@@ -120,7 +120,8 @@ export type PrepareRequestIntent =
       readonly leftPoint: number;
       readonly rightPoint: number;
       readonly maxSlippageBps?: number;
-    };
+    }
+  | { readonly action: 'withdraw_1click'; readonly quoteId: string };
 
 export interface PrepareRequest {
   readonly account: string;

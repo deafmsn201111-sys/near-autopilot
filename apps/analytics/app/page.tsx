@@ -48,6 +48,7 @@ import { walletSigningEnabled } from '../lib/wallet-signing';
 import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositDialog } from '../components/DepositDialog';
+import { WithdrawDialog } from '../components/WithdrawDialog';
 import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
@@ -423,7 +424,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           </span>
           {isAccount && accountParam && accountParam === cookieAccount && (
             <div>
-              <DepositDialog account={accountParam} label="Fund from another chain" />
+              <DepositDialog account={accountParam} label="Fund from another chain" />{' '}
+              <WithdrawDialog
+                account={accountParam}
+                balances={data.holdings.flatMap((h) =>
+                  h.where === 'wallet' && h.token ? [{ token: h.token, amount: h.amount }] : [],
+                )}
+                signingEnabled={signingEnabled}
+              />
             </div>
           )}
           {allocSegs.length > 0 && (

@@ -33,11 +33,12 @@ import {
   watchOriginWallets,
   type OriginWallet,
 } from '../lib/hot-kit';
+import { withoutModal } from '../lib/modal';
 import { paymentUri } from '../lib/payment-uri';
 import { poll, tabHidden } from '../lib/polling';
 import { TokenIcon } from './TokenIcon';
 
-const REFUND_HINT: Record<string, string> = {
+export const REFUND_HINT: Record<string, string> = {
   eth: '0x…',
   base: '0x…',
   arb: '0x…',
@@ -91,12 +92,12 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-const remaining = (s: number) =>
+export const remaining = (s: number) =>
   s >= 3600
     ? `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`
     : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-function useNow() {
+export function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -153,7 +154,7 @@ function useDepositStatus(id: string) {
   return { status, error, stopped, checkAgain: () => setRound((r) => r + 1) };
 }
 
-function StatusLine({ q }: { q: DepositQuote }) {
+export function StatusLine({ q }: { q: DepositQuote }) {
   const { status, error, stopped, checkAgain } = useDepositStatus(q.id);
   const screen = describeStatus(status, q);
   return (
@@ -332,7 +333,7 @@ const POPULAR = ['USDC', 'USDT', 'ETH', 'SOL', 'BTC'];
  * Pick a token: search by symbol, popular chips, a list with its logos. Arrow keys move, Enter picks, Esc goes back.
  * Shown inside the deposit dialog in place of the form, never as a second dialog.
  */
-function TokenPicker<T extends DepositAsset>({
+export function TokenPicker<T extends DepositAsset>({
   title,
   tokens,
   selected,
@@ -438,7 +439,7 @@ function TokenPicker<T extends DepositAsset>({
 }
 
 /** The selected token as a large button that opens the picker: logo, symbol, and where it is. */
-function TokenButton({
+export function TokenButton({
   token,
   where,
   disabled,
@@ -480,23 +481,6 @@ function TokenButton({
 const CHAIN_LABEL: Record<OriginWallet['chain'], string> = { evm: 'EVM', solana: 'Solana' };
 const ORIGIN_CHAINS = Object.keys(CHAIN_LABEL) as OriginWallet['chain'][];
 
-/** A modal <dialog> sits in the top layer and makes the kit's sheets inert: drop to non-modal while one may be open. */
-async function withKitPopup<T>(
-  dialog: HTMLDialogElement | null,
-  run: () => Promise<T>,
-): Promise<T> {
-  dialog?.close();
-  dialog?.show();
-  try {
-    return await run();
-  } finally {
-    if (dialog?.open && dialog.isConnected) {
-      dialog.close();
-      dialog.showModal();
-    }
-  }
-}
-
 type WalletSendState = 'idle' | 'busy' | 'sent';
 // As the API's margin: a wallet prompt can stay open, and the transfer must land before 1Click's deadline.
 const SEND_MARGIN_MS = 2 * 60_000;
@@ -532,7 +516,7 @@ function WalletSend({
     setBusy(true);
     setError(null);
     try {
-      await withKitPopup(dialog, async () => {
+      await withoutModal(dialog, async () => {
         if (!connected && !(await connectOriginWallet(chain)))
           return setError('No wallet was connected. Connect one, or send manually below.');
         const t = await loadDepositTransfer(q);
@@ -606,13 +590,13 @@ function WalletSend({
 }
 
 /** EVM / Solana wallets through HOT Kit, as connected in the dialog. */
-function OriginWallets({ wallets }: { wallets: readonly OriginWallet[] }) {
+export function OriginWallets({ wallets }: { wallets: readonly OriginWallet[] }) {
   const [busy, setBusy] = useState(false);
 
   async function connect(chain: OriginWallet['chain'], dialog: HTMLDialogElement | null) {
     setBusy(true);
     try {
-      await withKitPopup(dialog, () => connectOriginWallet(chain));
+      await withoutModal(dialog, () => connectOriginWallet(chain));
     } finally {
       setBusy(false);
     }

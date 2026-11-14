@@ -14,6 +14,7 @@ import {
 import type { PrepareRequest, PreparedCascade } from '../lib/prepare-types';
 import { confirmStep } from '../lib/events-client';
 import { mayContinue, progressFooter, stepAfterCheck, type StepState } from '../lib/sign-progress';
+import { withoutModal } from '../lib/modal';
 import { signCascade } from '../lib/wallet-sign';
 import { SignProgress } from './SignProgress';
 
@@ -63,7 +64,7 @@ export function PrepareDialog({
     setState('idle');
   }
 
-  async function sign() {
+  async function sign(dialog: HTMLDialogElement | null) {
     if (!cascade) return;
     const { cascadeId, transactions, preview } = cascade;
     setState('signing');
@@ -71,21 +72,23 @@ export function PrepareDialog({
     const setStep = (i: number, s: StepState) =>
       setProgress((p) => p && { ...p, steps: p.steps.map((x, j) => (j === i ? s : x)) });
     let at = 0;
-    const r = await signCascade(transactions, request.account, signingEnabled, {
-      onSigning: (i) => {
-        at = i;
-        setStep(i, { kind: 'signing' });
-      },
-      onSent: async (i, hash) => {
-        setStep(i, { kind: 'checking', hash });
-        const result = cascadeId
-          ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
-          : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
-        const next = stepAfterCheck(hash, result);
-        setStep(i, next);
-        return mayContinue(next);
-      },
-    });
+    const r = await withoutModal(dialog, () =>
+      signCascade(transactions, request.account, signingEnabled, {
+        onSigning: (i) => {
+          at = i;
+          setStep(i, { kind: 'signing' });
+        },
+        onSent: async (i, hash) => {
+          setStep(i, { kind: 'checking', hash });
+          const result = cascadeId
+            ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
+            : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
+          const next = stepAfterCheck(hash, result);
+          setStep(i, next);
+          return mayContinue(next);
+        },
+      }),
+    );
     if (!r.ok && r.hashes.length === at)
       setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
     if (r.ok) {
@@ -212,7 +215,7 @@ export function PrepareDialog({
                 <button
                   type="button"
                   className="btn primary small"
-                  onClick={() => void sign()}
+                  onClick={(e) => void sign(e.currentTarget.closest('dialog'))}
                   disabled={state === 'signing' || state === 'updating'}
                 >
                   {state === 'signing'
