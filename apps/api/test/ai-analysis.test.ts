@@ -270,6 +270,60 @@ describe('analyseAccount', () => {
     expect(out.recommendations.map((r) => r.intent?.action)).toEqual(['repay_from_collateral']);
   });
 
+  it('the guardian offers withdraw -> swap -> repay with another collateral, with the HF after each step', async () => {
+    const swapRepay: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.37",
+      why: 'This repays it with your wNEAR in three transactions.',
+      intent: {
+        action: 'repay_with_collateral',
+        token: USDT,
+        collateralToken: 'wrap.near',
+        approxUsd: 56,
+        amount: '19000000000000000000000000',
+        withdraw: '19000000000000000000000000',
+        maxSlippageBps: 50,
+        plan: {
+          hfNow: 1.37,
+          hfAfterWithdraw: 1.24,
+          hfAfterRepay: 1.6,
+          floorHf: 1.15,
+          transactions: 3,
+        },
+      },
+    };
+    const o = observation();
+    const noWalletUsdt: AgentObservation = {
+      ...o,
+      snapshot: {
+        ...o.snapshot,
+        walletBalances: o.snapshot.walletBalances.filter((b) => b.token !== USDT),
+      },
+    };
+    let guardianOutput: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        guardianOutput = JSON.parse(results?.[0]?.content ?? 'null');
+        return final([{ id: 'improve-loan-safety', why: 'Swap collateral and repay.' }]);
+      },
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => noWalletUsdt,
+      heuristics: [swapRepay],
+      checks: [swapRepay],
+      ownerVerified: true,
+    });
+    expect(guardianOutput).toMatchObject({ candidates: [{ id: 'improve-loan-safety' }] });
+    expect(out.source).toBe('llm');
+    expect(out.recommendations.map((r) => r.intent?.action)).toEqual(['repay_with_collateral']);
+    expect(JSON.stringify(out.trace)).toContain('1.24 after withdrawing collateral');
+  });
+
   it('builds the ranked list from tool candidates in the model order, numbers from code only', async () => {
     const { llm } = fake([
       () => callAll,

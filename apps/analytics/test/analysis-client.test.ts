@@ -11,6 +11,36 @@ const base = { source: 'llm', note: null, recommendations: [] };
 describe('runAnalysis', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it('keeps a repay-with-collateral card and its plan', async () => {
+    const card = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.37",
+      why: 'Three transactions.',
+      intent: {
+        action: 'repay_with_collateral',
+        token: 'usdc',
+        collateralToken: 'wrap.near',
+        approxUsd: 56,
+        amount: '19000000000000000000000000',
+        maxSlippageBps: 50,
+        plan: {
+          hfNow: 1.37,
+          hfAfterWithdraw: 1.37,
+          hfAfterRepay: null,
+          floorHf: 1.15,
+          transactions: 2,
+        },
+      },
+    };
+    reply({ ...base, recommendations: [card] });
+    const out = await runAnalysis('alice.near', 'balanced');
+    if (!out.ok) throw new Error(out.error);
+    expect(out.analysis.recommendations[0]?.intent).toEqual(card.intent);
+  });
+
   it('keeps the trace and the called tools', async () => {
     const trace = [
       {

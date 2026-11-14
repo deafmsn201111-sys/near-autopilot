@@ -126,6 +126,38 @@ describe('recommendationToPrepare', () => {
     });
   });
 
+  it('maps a repay with another collateral to its prepare request, without the card-only plan', () => {
+    const intent: RecommendationIntent = {
+      action: 'repay_with_collateral',
+      token: 'usdc',
+      collateralToken: 'wrap.near',
+      approxUsd: 56,
+      amount: '19000000000000000000000000',
+      withdraw: '15000000000000000000000000',
+      maxSlippageBps: 50,
+      plan: {
+        hfNow: 1.37,
+        hfAfterWithdraw: 1.24,
+        hfAfterRepay: 1.6,
+        floorHf: 1.15,
+        transactions: 3,
+      },
+    };
+    expect(recommendationToPrepare(intent, ACC)).toEqual({
+      account: ACC,
+      intent: {
+        action: 'repay_with_collateral',
+        token: 'usdc',
+        collateralToken: 'wrap.near',
+        approxUsd: 56,
+        amount: '19000000000000000000000000',
+        withdraw: '15000000000000000000000000',
+        maxSlippageBps: 50,
+      },
+    });
+    expect(actionLabel(intent)).toBe('Prepare 3 transactions to repay');
+  });
+
   it('has no request for advice-only cards', () => {
     expect(recommendationToPrepare(null, ACC)).toBeNull();
   });
