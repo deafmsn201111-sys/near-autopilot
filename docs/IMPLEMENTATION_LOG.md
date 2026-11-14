@@ -800,3 +800,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - The kit's `utxo` connector (UniSat, Xverse, Leather, Ctrl, Vultisig) joins the picker; a connected Bitcoin wallet fills
   the refund address of a BTC deposit through `refundChainOf`. `walletChainOf` is unchanged, so there is still no wallet
   send for Bitcoin (D34). The withdraw dialog lists only EVM / Solana wallets (Bitcoin is not a withdraw target).
+
+## 2026-11-14 — #236 Wallet button after a cancelled or interrupted NEAR sign-in
+
+- `lib/wallet.ts`: a cancelled sign-in drops near-connect's `selected-wallet` (while no `connect()` is waiting), so the
+  next page load skips the kit. Checked in a browser: MyNearWallet answers `[{ accountId: '' }]`, HOT rejects with the plain string
+  `Connect NEAR`. Only those answers and `No accounts found` drop the key; any other failure (network, a frame that
+  did not load) keeps it, so a valid session is never dropped. Other wallets' wordings are added when seen. A NEAR sign-in that lands after the kit list was closed goes
+  to `connect(onLateSignIn)`; `WalletButton` reports it and opens the portfolio. The next click drops that listener.

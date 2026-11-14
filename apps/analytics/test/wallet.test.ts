@@ -19,6 +19,8 @@ const fake = vi.hoisted(() => {
     nearSignedOut: false,
     hang: false,
     connectorsRequested: false,
+    blankAccount: false,
+    accountError: new Error('No accounts found') as unknown,
   };
   const events = new Map<string, Set<Listener>>();
   const emit = (name: string, payload: unknown) => {
@@ -35,7 +37,8 @@ const fake = vi.hoisted(() => {
       state.bases.push(options);
     }
     async getConnectedWallet() {
-      if (!state.account) throw new Error('No wallet selected');
+      if (state.blankAccount) return { wallet: baseWallet, accounts: [{ accountId: '' }] };
+      if (!state.account) throw state.accountError;
       return { wallet: baseWallet, accounts: [{ accountId: state.account }] };
     }
     get availableWallets() {
@@ -115,6 +118,7 @@ const store = new Map<string, string>();
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => store.get(k) ?? null,
   setItem: (k: string, v: string) => store.set(k, v),
+  removeItem: (k: string) => store.delete(k),
   clear: () => store.clear(),
 });
 vi.stubGlobal('document', { querySelector: () => null });
@@ -136,6 +140,8 @@ async function fresh({ session = null as string | null } = {}) {
     nearSignedOut: false,
     hang: false,
     connectorsRequested: false,
+    blankAccount: false,
+    accountError: new Error('No accounts found'),
   });
   localStorage.clear();
   if (session) localStorage.setItem('selected-wallet', 'hot-wallet');
@@ -224,6 +230,93 @@ describe('NEAR wallet through HOT Kit', () => {
     fake.state.account = 'carol.near';
     fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
     expect(await Promise.all([first, second])).toEqual([null, 'carol.near']);
+    expect(fake.events.get('wallet:signIn')?.size).toBe(1);
+  });
+
+  it('forgets a sign-in cancelled in the wallet, so the next page load skips the kit', async () => {
+    const m = await fresh();
+    localStorage.setItem('selected-wallet', 'hot-wallet');
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBeNull();
+    vi.resetModules();
+    fake.state.kits = 0;
+    expect(await (await import('../lib/wallet')).currentAccount()).toBeNull();
+    expect(fake.state.kits).toBe(0);
+  });
+
+  it('opens the account once when its sign-in lands after the list was closed', async () => {
+    const m = await fresh();
+    const late: string[] = [];
+    expect(await m.connect((id) => late.push(id))).toBeNull();
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    await flush();
+    expect(late).toEqual(['carol.near']);
+  });
+
+  it("forgets a sign-in HOT answers with 'Connect NEAR', keeps the session on any other failure", async () => {
+    const m = await fresh();
+    localStorage.setItem('selected-wallet', 'hot-wallet');
+    for (const error of [
+      new Error('No wallet selected'),
+      new TypeError('Failed to fetch'),
+      'Permission denied',
+    ]) {
+      fake.state.accountError = error;
+      expect(await m.currentAccount()).toBeNull();
+      expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');
+    }
+    fake.state.accountError = 'Connect NEAR';
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBeNull();
+  });
+
+  it('treats the blank account MyNearWallet reports after a cancelled sign-in as none', async () => {
+    const m = await fresh();
+    localStorage.setItem('selected-wallet', 'mynearwallet');
+    fake.state.blankAccount = true;
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBeNull();
+  });
+
+  it('keeps the session key while a sign-in may still land after the list closed', async () => {
+    const m = await fresh();
+    await m.connect();
+    localStorage.setItem('selected-wallet', 'hot-wallet');
+    expect(await m.currentAccount()).toBeNull();
+    expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');
+  });
+
+  it('waits for no late sign-in after an EVM-only pick', async () => {
+    const m = await fresh();
+    fake.state.pick = { type: EVM, address: '0xabc' };
+    const late: string[] = [];
+    expect(await m.connect((id) => late.push(id))).toBeNull();
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    await flush();
+    expect(late).toEqual([]);
+    expect(fake.events.get('wallet:signIn')?.size).toBe(1);
+  });
+
+  it("a new closed list drops the previous one's pending sign-in listener", async () => {
+    const m = await fresh();
+    await m.connect();
+    await m.connect();
+    await m.connect();
+    expect(fake.events.get('wallet:signIn')?.size).toBe(2);
+  });
+
+  it('a later click takes over a sign-in left pending by a closed list', async () => {
+    const m = await fresh();
+    const late: string[] = [];
+    expect(await m.connect((id) => late.push(id))).toBeNull();
+    fake.state.hang = true;
+    const second = m.connect((id) => late.push(`second:${id}`));
+    await flush();
+    fake.emit('wallet:signIn', { accounts: [{ accountId: 'carol.near' }] });
+    expect(await second).toBe('carol.near');
+    await flush();
+    expect(late).toEqual([]);
     expect(fake.events.get('wallet:signIn')?.size).toBe(1);
   });
 
