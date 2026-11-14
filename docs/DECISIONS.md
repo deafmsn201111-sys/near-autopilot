@@ -841,9 +841,10 @@ never a false "signed".
 **Context:** D18 counted an unlisted token's indexer estimate in the totals. An airdropped fake token with a real
 symbol and a thin-pool price can then inflate "what you have", the usual lure of a NEAR wallet scam. `prepare` also
 accepted any `tokenOut` for a swap; only the allowlisted pools stopped a route.
-**Decision:** a leg whose token is unverified (D18's definition) is left out of net worth, assets, idle cash and
-allocation; its estimate is summed into `totals.unverifiedUsd` and shown beside the "Unverified tokens" section,
+**Decision:** an asset leg whose token is unverified (D18's definition) is left out of net worth, assets, idle cash
+and allocation (a debt always counts); its estimate is summed into `totals.unverifiedUsd` and shown beside the "Unverified tokens" section,
 whose rows read "Not counted". `POST /v1/wallet/prepare` refuses a swap into a token that is not on our list or
-Burrow's (409), failing closed when Burrow cannot be read.
+Burrow's (409); when Burrow cannot be read it fails closed (502).
 **Consequences:** a real but unlisted token (a meme coin with a deep pool) no longer adds to the net worth; it is
-still listed with its estimate. An LP position with one unverified leg counts its verified leg only.
+still listed with its estimate. An LP position with one unverified leg counts its verified leg only; its row reads
+"Unverified part not counted".

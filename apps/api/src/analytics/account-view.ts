@@ -546,7 +546,7 @@ export function accountPortfolio(p: AccountPositions) {
   // An unverified token can copy a real symbol and carry an inflated estimate: shown, never counted (#274).
   let unverifiedUsd = 0;
   const count = (l: PortfolioLeg, verified: boolean) => {
-    if (verified) legs.push(l);
+    if (verified || l.kind === 'debt') legs.push(l);
     else unverifiedUsd += l.usd;
   };
   const position = (
@@ -2693,12 +2693,13 @@ export function registerAccountView(
     const { account, intent } = parsed.data;
 
     // A fake token can copy a real symbol: a swap only ever pays out a token on our list (#274), fail closed.
-    if (
-      intent.action === 'swap' &&
-      !isKnownToken(intent.tokenOut) &&
-      !(await burrow.listAssets().catch(() => [])).some((a) => a.tokenId === intent.tokenOut)
-    )
-      return reply.code(409).send({ error: `${intent.tokenOut} is unverified: no swap into it` });
+    if (intent.action === 'swap' && !isKnownToken(intent.tokenOut)) {
+      const listed = await burrow.listAssets().catch(() => null);
+      if (!listed)
+        return reply.code(502).send({ error: 'could not read the verified token list right now' });
+      if (!listed.some((a) => a.tokenId === intent.tokenOut))
+        return reply.code(409).send({ error: `${intent.tokenOut} is unverified: no swap into it` });
+    }
 
     if (intent.action === 'withdraw_1click') {
       if (!deps.withdraw) return reply.code(404).send({ error: 'withdrawals are unavailable' });

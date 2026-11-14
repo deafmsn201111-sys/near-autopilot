@@ -154,13 +154,14 @@ describe('accountPortfolio', () => {
     expect(q.totals.assetsUsd).toBe(100);
   });
 
-  it('keeps unverified tokens out of every total and reports their estimate apart (#274)', () => {
+  it('keeps unverified assets out of every total and reports their estimate apart, but a debt always counts (#274)', () => {
     const fake = 'usdc-airdrop.near';
     const q = accountPortfolio({
       holdings: (
         [
           { where: 'wallet', token: USDC, symbol: 'USDC', amount: 10, usd: 10 },
           { where: 'wallet', token: fake, symbol: 'USDC', amount: 5000, usd: 5000 },
+          { where: 'borrowed', token: fake, symbol: 'USDC', amount: 2, usd: 2 },
         ] as const
       ).map((h) => ({
         ...h,
@@ -177,7 +178,8 @@ describe('accountPortfolio', () => {
     });
     expect(q.totals).toMatchObject({
       assetsUsd: 13,
-      netWorthUsd: 13,
+      debtUsd: 2,
+      netWorthUsd: 11,
       idleUsd: 10,
       unverifiedUsd: 5700,
     });

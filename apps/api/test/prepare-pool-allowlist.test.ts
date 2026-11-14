@@ -64,8 +64,42 @@ const swapInto = (tokenOut: string) =>
   });
 
 describe('prepare swap output (#274)', () => {
-  it('never swaps into a token outside our list, failing closed when Burrow cannot be read', async () => {
+  it('fails closed when the verified token list cannot be read', async () => {
     const res = await swapInto('usdc-airdrop.near');
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'could not read the verified token list right now' });
+  });
+
+  it("never swaps into a token outside our list or Burrow's", async () => {
+    const listed = buildAnalyticsServer({
+      apiToken: TOKEN,
+      store: unreachable as CollectorStore,
+      intervalSeconds: 900,
+      mainnet: {
+        // Burrow answers with an empty asset list: only our own list is verified.
+        rpc: {
+          call: async () => ({ result: [...Buffer.from('[]')] }),
+        } as unknown as NearRpcClient,
+        burrowId: 'contract.main.burrow.near',
+        rheaId: 'v2.ref-finance.near',
+        pools: [],
+      } as never,
+    });
+    const res = await listed.inject({
+      method: 'POST',
+      url: '/v1/wallet/prepare',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: {
+        account: 'alice.near',
+        intent: {
+          action: 'swap',
+          token: WNEAR,
+          tokenOut: 'usdc-airdrop.near',
+          approxUsd: 10,
+          maxSlippageBps: 50,
+        },
+      },
+    });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'usdc-airdrop.near is unverified: no swap into it' });
   });
