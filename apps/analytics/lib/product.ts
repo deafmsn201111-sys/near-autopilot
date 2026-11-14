@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { DEFAULT_STRATEGY, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import type { RecommendationIntent } from './recommendation-intent';
+import type { TimelineItem } from './activity';
 
 /** Shapes of the product endpoints (opportunities, activity, system). */
 export type Level = 'low' | 'medium' | 'high';
@@ -60,16 +61,6 @@ export interface OpportunityList {
   matching: number;
   opportunities: Opportunity[];
 }
-export interface ActivityItem {
-  at: string;
-  kind: string;
-  title: string;
-  result: string;
-  explanation: string;
-  tone: 'good' | 'neutral' | 'warning' | 'critical';
-  environment: string | null;
-  ref: string;
-}
 export interface SystemView {
   now: string;
   api: { ok: boolean };
@@ -100,8 +91,6 @@ export const opportunity = (id: string) =>
     of: number;
     history: Record<string, number | string | null>[];
   }>(`/v1/analytics/opportunities/${encodeURIComponent(id)}`);
-export const activity = (limit = 50) =>
-  tryApi<{ items: ActivityItem[] }>(`/v1/analytics/activity?limit=${limit}`);
 export const system = () => tryApi<SystemView>('/v1/analytics/system');
 
 export const ago = (iso: string | null | undefined, nowIso?: string): string => {
@@ -154,7 +143,6 @@ export interface PortfolioView {
   strategyNote?: string | null;
   earnings: { monthlyNetUsd: number | null; sentence: string };
   actions: PortfolioAction[];
-  lastDecision: { outcome: string | null; headline: string; notes: string[] } | null;
   simulatedChanges?: { count: number; since: string | null } | null;
   metrics?: { byToken: { symbol: string; usd: number; pct: number }[] };
   positions?: {
@@ -171,24 +159,12 @@ export interface PortfolioView {
   /** A real account: false when an indexer was down and only the allowlisted tokens and pools were read. */
   discovery?: { complete: boolean };
 }
-export interface AgentEntry {
-  from: string;
-  to: string;
-  count: number;
-  headline: string;
-  notes: string[];
-  policy: { verdict: string; sentence: string }[];
-}
 
 export const portfolioView = (id: string) => tryApi<PortfolioView>(`/v1/analytics/portfolio/${id}`);
-export const agentActivity = (portfolio: string) =>
-  tryApi<{ entries: AgentEntry[] }>(
-    `/v1/analytics/agent-activity?portfolio=${portfolio}&limit=300`,
-  );
 
 export { money } from './format';
 
-type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated' | 'lastDecision'> & {
+type AccountRead = Omit<PortfolioView, 'id' | 'label' | 'simulated'> & {
   accountId: string;
   recommendations: AccountRecommendation[];
   /** Actions the agents saw but skipped as too small, in plain language. */
@@ -270,6 +246,14 @@ const readAccount = async (
   return r;
 };
 
+export const accountEvents = async (id: string) => {
+  const proof = await ownershipProof();
+  return tryApi<{ owner: boolean; items: TimelineItem[] }>(
+    `/v1/analytics/account/${encodeURIComponent(id)}/events`,
+    proof ? { 'x-ownership-proof': proof } : {},
+  );
+};
+
 export const forgetAccount = async (id: string) => {
   const proof = await ownershipProof();
   for (const strategy of STRATEGY_IDS) accountReads.delete(await readKey(id, proof, strategy));
@@ -299,7 +283,6 @@ export const accountView = async (id: string, strategy?: StrategyId) => {
           id: 'demo-5000',
           label: r.data.accountId,
           simulated: true,
-          lastDecision: null,
         } as PortfolioView)
       : null,
   };

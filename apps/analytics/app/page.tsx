@@ -28,7 +28,6 @@ const TOKEN_KIND: Record<string, string> = {
 
 /** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
 const ALLOC_COLORS = ['#00ec97', '#2bffb0', '#3b82f6', '#f5b544', '#7d8f88'] as const;
-import Link from 'next/link';
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {
@@ -533,26 +532,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               ))}
             </div>
           )}
-        </section>
-      )}
-
-      {!isAccount && data.lastDecision && (
-        <section className="block">
-          <div className="block-head">
-            <h2>What the autopilot decided</h2>
-            <Link href={`/activity?p=${id}`} className="link">
-              Every decision and why →
-            </Link>
-          </div>
-          <div className="decision">
-            <b>{data.lastDecision.headline}</b>
-            <span className="muted-note"> · {ago(data.asOf)}</span>
-            <ul>
-              {data.lastDecision.notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          </div>
         </section>
       )}
     </>

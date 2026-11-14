@@ -8,6 +8,7 @@ import {
   type OneClickToken,
 } from '../gateway/one-click-deposit';
 import { DEPOSIT_CHAINS, isRefundAddress, type DepositChain } from '../gateway/refund-address';
+import { eventRecorder, type EventStore } from './events';
 
 /**
  * Fund the account from another chain through 1Click (D19): the user gets a verified deposit address on the origin
@@ -39,6 +40,7 @@ export interface DepositQuoteStore {
 export interface DepositDeps {
   readonly oneClick: Pick<OneClickDepositClient, 'tokens' | 'quote'>;
   readonly store: DepositQuoteStore;
+  readonly events?: EventStore;
   /** NEP-141 account ids the user may receive (config/market.json): our own list, never user input. */
   readonly destinationTokens: readonly string[];
   readonly newId?: () => string;
@@ -97,6 +99,7 @@ class BadRequest extends Error {}
 
 export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: () => Date) {
   const newId = deps.newId ?? randomUUID;
+  const record = eventRecorder(deps.events, app.log);
 
   const lists = async () => {
     const tokens = await deps.oneClick.tokens();
@@ -210,6 +213,20 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       req.log.error({ err, correlationId: q.correlationId }, 'deposit quote not stored');
       return reply.code(500).send({ error: 'internal error' });
     }
+    await record({
+      at,
+      kind: 'oneclick_quote',
+      accountId: body.account,
+      source: 'server',
+      detail: {
+        quoteId: id,
+        chain: origin.blockchain,
+        from: origin.symbol,
+        to: destination.symbol,
+        amountIn: q.amountIn.toString(),
+        amountOut: q.amountOut.toString(),
+      },
+    });
     return {
       id,
       chain: origin.blockchain,

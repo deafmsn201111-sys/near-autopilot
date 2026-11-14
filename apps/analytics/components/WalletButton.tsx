@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { clearOwnershipProof } from '../app/account-actions';
+import { reportConnect } from '../lib/events-client';
 import { connect, disconnect, watchAccount } from '../lib/wallet';
 import { DepositDialog } from './DepositDialog';
 
@@ -79,6 +80,7 @@ export function WalletButton() {
         connect()
           .then((id) => {
             if (!id) return setState('idle');
+            reportConnect(id);
             setAccount(id);
             rememberAccount(id);
             setState('opening');

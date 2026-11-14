@@ -46,6 +46,11 @@ export async function signCascade(
   transactions: readonly PreparedTransaction[],
   signerId: string,
   enabled: boolean,
+  /** Called before each step is offered, and after it is sent; false stops the cascade before the next step. */
+  hooks: {
+    onSigning?: (step: number) => void;
+    onSent?: (step: number, hash: string) => Promise<boolean>;
+  } = {},
 ): Promise<SignResult> {
   if (!enabled) return { ok: false, hashes: [], reason: 'Wallet signing is not enabled here.' };
   if (transactions.length === 0) return { ok: false, hashes: [], reason: 'Nothing to sign.' };
@@ -63,7 +68,8 @@ export async function signCascade(
   const hashes: string[] = [];
   try {
     const wallet = await connectedWallet();
-    for (const tx of transactions) {
+    for (const [step, tx] of transactions.entries()) {
+      hooks.onSigning?.(step);
       const outcome = await wallet.signAndSendTransaction({
         network: 'mainnet',
         signerId,
@@ -74,6 +80,12 @@ export async function signCascade(
       if (typeof hash !== 'string' || !hash)
         return { ok: false, hashes, reason: 'The wallet did not return a transaction hash.' };
       hashes.push(hash);
+      if (hooks.onSent && !(await hooks.onSent(step, hash)))
+        return {
+          ok: false,
+          hashes,
+          reason: 'This step did not complete, so the next one was not offered.',
+        };
     }
     return { ok: true, hashes };
   } catch (e) {

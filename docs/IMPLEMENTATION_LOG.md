@@ -510,3 +510,18 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   text, never the proof); GET account answers `ownerVerified: false, ownerCheckFailed: true`, POST analysis 503.
 - `apps/analytics`: a read with `ownerCheckFailed` is cached 1 s, not 60 s (it used to hold "not verified" under the
   new proof's key); `OwnershipCheck` says the check could not run, refreshes once after 2 s and offers "Check again".
+
+## 2026-11-14 — Real activity on an events table (#32)
+
+- `packages/db`: migration 0021 `events` (unique tx hash, 30-day purge in `analytics/main.ts`).
+- `packages/near-adapter/src/tx-status.ts`: final transaction status by hash + signer (zod), tested on recorded
+  mainnet answers (`test/fixtures/tx-*.json`: Burrow repay/supply, Rhea swaps, a failed oracle call, unknown hash).
+- `apps/api/src/wallet/validate-cascade.ts`: per-rule checks and a summary; `wallet/seal.ts` stores every prepare's
+  verdict; `wallet/outcome.ts` turns receipts' logs into "Repaid 5.01 USDC on Burrow" and, on failure, the contract,
+  its error and the funds' fate; `wallet/confirm.ts` is `POST /v1/wallet/confirm` (D28).
+- `apps/api/src/analytics/events.ts`: `POST /v1/events` (connect), `GET /v1/analytics/account/:id/events`, `GET
+/v1/analytics/policy/cascades`; analyse, verified and 1Click quote writers. `/v1/analytics/agent-activity` removed.
+- `apps/analytics`: `/api/events` and `/api/confirm` (JSON only, rate-limited); the sign dialog shows each step ⏳ → ✓/✗
+  and stops after a failed one; Activity and /policy rebuilt on events; shadow-mode text removed from Home and
+  Opportunities.
+- Found on the way: Burrow's `oracle_call` failed with "Price oracle disabled" on mainnet on 13 Nov (autopilot-test.near).

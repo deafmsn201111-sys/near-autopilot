@@ -168,7 +168,7 @@ describe('recentreSteps', () => {
         allowedReceivers: new Set<string>([DCL, USDC, WNEAR]),
         dcl: { contract: DCL, pools: new Set([POOL_ID]) },
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true, reasons: [] });
   });
 
   it("loosens the add's minimums by the price move its own swap causes", async () => {
