@@ -122,7 +122,21 @@ describe('llmEnvSchema', () => {
       LLM_MODEL: 'z-ai/glm-5.3-flash',
       LLM_MAX_TOKENS: 4096,
       LLM_DAILY_CAP_USD: 5,
+      PUBLIC_ANALYSIS_ACCOUNT: undefined,
     });
+  });
+
+  it('opens the saved analysis of one valid account only when it is named', () => {
+    expect(llmEnvSchema.parse({ PUBLIC_ANALYSIS_ACCOUNT: '' }).PUBLIC_ANALYSIS_ACCOUNT).toBe(
+      undefined,
+    );
+    expect(
+      llmEnvSchema.parse({ PUBLIC_ANALYSIS_ACCOUNT: 'autopilot-test.near' })
+        .PUBLIC_ANALYSIS_ACCOUNT,
+    ).toBe('autopilot-test.near');
+    expect(llmEnvSchema.safeParse({ PUBLIC_ANALYSIS_ACCOUNT: 'Not An Account!' }).success).toBe(
+      false,
+    );
   });
 
   it('accepts only the allowlisted models', () => {

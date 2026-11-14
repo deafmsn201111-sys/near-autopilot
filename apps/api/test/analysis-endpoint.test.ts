@@ -139,6 +139,7 @@ function server(
   dclId?: string,
   events?: MemoryEventStore,
   saved?: AnalysisStore,
+  publicAccount?: string,
 ) {
   return buildAnalyticsServer({
     apiToken: TOKEN,
@@ -162,6 +163,7 @@ function server(
         },
         memo: analysisMemo(undefined, 0),
         ...(saved && { store: saved }),
+        ...(publicAccount && { publicAccount }),
       },
     } as never,
   });
@@ -317,10 +319,15 @@ describe('the saved analysis (#190)', () => {
       headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
       payload,
     });
-  const latest = (app: ReturnType<typeof server>, proof?: string, strategy = 'balanced') =>
+  const latest = (
+    app: ReturnType<typeof server>,
+    proof?: string,
+    strategy = 'balanced',
+    account = 'alice.near',
+  ) =>
     app.inject({
       method: 'GET',
-      url: `/v1/analytics/account/alice.near/analysis?strategy=${strategy}`,
+      url: `/v1/analytics/account/${account}/analysis?strategy=${strategy}`,
       headers: proof ? { ...headers, 'x-ownership-proof': proof } : headers,
     });
 
@@ -356,6 +363,62 @@ describe('the saved analysis (#190)', () => {
     } finally {
       aiOn = true;
     }
+  });
+
+  describe('the one account the owner made public (#24)', () => {
+    const savedRun = (signature: string): SavedAnalysis => ({
+      key: 'k',
+      signature,
+      at: new Date('2026-11-14T10:00:00.000Z'),
+      analysis: {
+        fallback: null,
+        run: { input: { messages: ['secret'] } },
+      } as unknown as SavedAnalysis['analysis'],
+    });
+    const publicServer = (llm = countingLlm()) => {
+      const { rows, saved } = memoryStore();
+      rows.set('alice.near|balanced', savedRun('sig-a'));
+      rows.set('bob.near|balanced', savedRun('sig-b'));
+      return { llm, app: server(chain, store, llm, undefined, undefined, saved, 'alice.near') };
+    };
+
+    it('serves its saved analysis to a visitor without a proof, without what the AI saw', async () => {
+      const r: unknown = (await latest(publicServer().app)).json();
+      expect(r).toMatchObject({
+        signature: 'sig-a',
+        analysis: { cachedAt: '2026-11-14T10:00:00.000Z', run: { input: null } },
+      });
+    });
+
+    it('still shows its owner what the AI saw', async () => {
+      const r: unknown = (await latest(publicServer().app, await proofHeader('alice.near'))).json();
+      expect(r).toMatchObject({ analysis: { run: { input: { messages: ['secret'] } } } });
+    });
+
+    it('opens no other account', async () => {
+      const r = await latest(publicServer().app, undefined, 'balanced', 'bob.near');
+      expect(r.json()).toEqual({ analysis: null, signature: null });
+    });
+
+    it('serves nothing while the kill switch is off', async () => {
+      aiOn = false;
+      try {
+        expect((await latest(publicServer().app)).json()).toEqual({
+          analysis: null,
+          signature: null,
+        });
+      } finally {
+        aiOn = true;
+      }
+    });
+
+    it('never runs the model or saves for a visitor', async () => {
+      const { llm, app } = publicServer();
+      const run = await analyse(app, { strategy: 'balanced', signature: 'sig-x' });
+      expect(run.json()).toMatchObject({ source: 'heuristic' });
+      expect(llm.opened).toBe(0);
+      expect((await latest(app)).json()).toMatchObject({ signature: 'sig-a' });
+    });
   });
 
   it('rejects an oversized signature and an unknown strategy', async () => {

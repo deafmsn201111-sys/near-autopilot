@@ -116,6 +116,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-z-ai/glm-5.3-flash}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-4096}
       LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
+      PUBLIC_ANALYSIS_ACCOUNT: ${PUBLIC_ANALYSIS_ACCOUNT:-}
       # The only token /v1/admin/* accepts. Held by analytics-admin too, never by the public site.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; setup.sh adds it)}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json

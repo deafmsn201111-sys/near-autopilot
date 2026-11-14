@@ -78,6 +78,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-z-ai/glm-5.3-flash}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-4096}
       LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
+      PUBLIC_ANALYSIS_ACCOUNT: ${PUBLIC_ANALYSIS_ACCOUNT:-}
       # The only token /v1/admin/* accepts (quickstart.sh adds it). Empty = the admin routes answer 401.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json

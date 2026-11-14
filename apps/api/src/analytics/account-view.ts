@@ -2620,7 +2620,7 @@ export function registerAccountView(
     return { owner, items: activityTimeline(rows, { owner }) };
   });
 
-  /** The owner's last saved analysis for a strategy (#190); everyone else gets none. */
+  /** The owner's last saved analysis for a strategy (#190); everyone else gets none, but for the one public account (#24). */
   app.get('/v1/analytics/account/:id/analysis', async (req, reply) => {
     const parsed = accountIdSchema.safeParse((req.params as { id?: string }).id ?? '');
     if (!parsed.success) return reply.code(400).send({ error: 'not a valid NEAR account id' });
@@ -2629,7 +2629,8 @@ export function registerAccountView(
     const none = { analysis: null, signature: null };
     const ai = deps.ai;
     if (!ai?.store) return none;
-    if ((await isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log)) !== true) return none;
+    const owner = (await isOwner(req.headers[OWNERSHIP_HEADER], parsed.data, req.log)) === true;
+    if (!owner && parsed.data !== ai.publicAccount) return none;
     // As for a run: with the kill switch off (or unreadable) no AI result is shown, saved or not.
     if (!(await ai.ledger.enabled().catch(() => false))) return none;
     const saved = ai.store;
@@ -2638,8 +2639,10 @@ export function registerAccountView(
       return null;
     });
     if (!last) return none;
+    const run =
+      last.analysis.run && (owner ? last.analysis.run : { ...last.analysis.run, input: null });
     return {
-      analysis: { ...last.analysis, cachedAt: last.at.toISOString() },
+      analysis: { ...last.analysis, run, cachedAt: last.at.toISOString() },
       signature: last.signature,
     };
   });

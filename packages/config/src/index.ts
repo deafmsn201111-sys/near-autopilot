@@ -302,6 +302,8 @@ export const llmEnvSchema = z.object({
   ),
   /** Spend per UTC day; a DB setting overrides it. Once reached, everyone gets the rule-based list. */
   LLM_DAILY_CAP_USD: z.preprocess(unsetIfEmpty, z.coerce.number().min(0).max(1_000).default(5)),
+  /** The one account whose saved AI analysis anyone may read, by the owner's choice (#24). Empty = none. */
+  PUBLIC_ANALYSIS_ACCOUNT: optionalAccountId,
 });
 export type LlmEnv = z.output<typeof llmEnvSchema>;
 

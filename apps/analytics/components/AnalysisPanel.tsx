@@ -149,14 +149,15 @@ export function AnalysisPanel({
         </span>
         <div className="an-run">
           <span className="an-run-sub">
-            {aiAllowed ? (
-              running ? (
-                'Analysing…'
-              ) : ranAt ? (
+            {running ? (
+              'Analysing…'
+            ) : ranAt ? (
+              <>
+                {!aiAllowed && "The owner's AI run · "}
                 <Updated iso={ranAt} />
-              ) : (
-                'AI analysis not run yet.'
-              )
+              </>
+            ) : aiAllowed ? (
+              'AI analysis not run yet.'
             ) : (
               `AI analysis runs only for the verified owner of ${account}.`
             )}

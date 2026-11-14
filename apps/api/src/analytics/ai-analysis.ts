@@ -125,6 +125,8 @@ export interface ToolLlmDeps {
   readonly memo: AnalysisMemo;
   /** The last result per account and strategy, kept across restarts (#190). */
   readonly store?: AnalysisStore;
+  /** Its saved analysis is served read-only to anyone, without "What the AI saw" (#24). */
+  readonly publicAccount?: AccountId;
   /** Checks the provider's signature on every reply of a run that answered; absent: not checked. */
   readonly verifier?: { verify(replies: readonly SignedReply[]): Promise<PrivacyCheck> };
 }

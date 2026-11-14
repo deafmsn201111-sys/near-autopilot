@@ -1085,3 +1085,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   in-memory tracker (`lib/withdraw-tracker.ts`) so closing the sheet keeps tracking. `validateCascade` unchanged.
 - `DepositDialog.tsx` split: `DepositButton.tsx`, `TokenPicker.tsx`, `lib/use-now.ts`; the old modal CSS is gone.
 - "Add funds" in the empty-wallet state. DESIGN.md / PRODUCT.md / README no longer describe the old deposit form.
+
+## 2026-11-14 — The demo account's saved AI analysis for visitors without a wallet (#24, lite)
+
+- env `PUBLIC_ANALYSIS_ACCOUNT` (config `llmEnvSchema`, both compose files and `.env.example`s).
+- `GET /v1/analytics/account/:id/analysis` serves that one account's saved result to anyone, through
+  `AnalysisStore.latest`, with `run.input` nulled for non-owners; kill switch still applies. `POST` unchanged.
+- UI asks for the saved result without a proof too; the panel shows "The owner's AI run · Updated … ago" to a visitor.
+- D45. The server-refreshed version with a spend cap stays for after the hackathon.

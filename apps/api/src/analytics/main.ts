@@ -106,6 +106,9 @@ const mainnet = env.MAINNET_READ_RPC_URL
             ledger: llmLedger,
             memo: analysisMemo(),
             store: analyses,
+            ...(llmEnv.PUBLIC_ANALYSIS_ACCOUNT && {
+              publicAccount: llmEnv.PUBLIC_ANALYSIS_ACCOUNT,
+            }),
             verifier: new TeeVerifier(globalThis.fetch, {
               apiKey: llmEnv.NEAR_AI_API_KEY!,
               model: llmEnv.LLM_MODEL,
