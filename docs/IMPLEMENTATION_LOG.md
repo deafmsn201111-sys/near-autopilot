@@ -555,6 +555,6 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 - `apps/api`: `picksSchema` takes an optional `ranking` (1–300 chars; an invalid one drops only itself). It reaches
   `run.ranking` only when every number in it appears in the code-built text of a card the user sees or in the tools'
-  shared context; otherwise null. The prompt asks for it.
+  shared context, there are ≥ 2 cards and no warning was put back; otherwise null. The prompt asks for it.
 - `apps/analytics`: `run.ranking` zod-checked (≤ 300, null on anything else), carried on `Pipeline`, shown under the
   "ranked them" step as "Why this order: …" (React text only).

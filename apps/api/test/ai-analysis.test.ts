@@ -773,6 +773,9 @@ describe('analyseAccount', () => {
     ['a magnitude word', 'Repay a thousand USDt now.'],
     ['a sign the tools never showed', 'Your loan is -1.37 from safety.'],
     ['a number from another card', 'Repay 8 USDt now.'],
+    ['a scale suffix on a shown number', 'Repay now: $1.37k is at risk.'],
+    ['a multiplier on a shown number', 'The loan costs 1.37x what it should.'],
+    ['a "times" on a shown number', 'The loan is 1.37 times riskier.'],
   ])('keeps the code explanation for %s', async (_, why) => {
     expect(await whyFor(REPAY, why)).not.toBe(why);
   });
@@ -785,13 +788,14 @@ describe('analyseAccount', () => {
     expect(await whyFor(REPAY, why)).toBe(why);
   });
 
-  const rankingFor = async (ranking?: unknown) => {
+  const BOTH = [
+    { id: REPAY, why: 'Repay first.' },
+    { id: 'reduce-concentration', why: 'Then spread out.' },
+  ];
+  const rankingFor = async (ranking?: unknown, picks: unknown = BOTH) => {
     const { llm } = fake([
       () => callAll,
-      () => ({
-        kind: 'final',
-        text: JSON.stringify({ picks: [{ id: REPAY, why: 'Repay first.' }], ranking }),
-      }),
+      () => ({ kind: 'final', text: JSON.stringify({ picks, ranking }) }),
     ]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
@@ -801,11 +805,10 @@ describe('analyseAccount', () => {
     expect(out.source).toBe('llm');
     return out.run?.ranking;
   };
+  const honest = 'The loan comes first: at health factor 1.37, repaying 33.125 USDt reaches 1.60.';
 
   it('shows the ranking sentence when its numbers come from the shown cards and the tools', async () => {
-    const ranking =
-      'The loan comes first: at health factor 1.37, repaying 33.125 USDt reaches 1.60.';
-    expect(await rankingFor(ranking)).toBe(ranking);
+    expect(await rankingFor(honest)).toBe(honest);
   });
 
   it.each([
@@ -815,6 +818,16 @@ describe('analyseAccount', () => {
     ['an empty sentence', ''],
   ])('drops the ranking sentence with %s and keeps the cards', async (_, ranking) => {
     expect(await rankingFor(ranking)).toBeNull();
+  });
+
+  it('drops the ranking sentence when code puts a skipped warning first', async () => {
+    expect(
+      await rankingFor(honest, [{ id: 'reduce-concentration', why: 'Spread out.' }]),
+    ).toBeNull();
+  });
+
+  it('drops the ranking sentence when there is only one card to order', async () => {
+    expect(await rankingFor(honest, [{ id: REPAY, why: 'Repay first.' }])).toBeNull();
   });
 
   it('works without a ranking sentence', async () => {

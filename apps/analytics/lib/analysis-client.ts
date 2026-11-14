@@ -85,7 +85,7 @@ const runSchema = z.object({
   ms: z.number(),
   read: readSchema,
   checks: checksSchema,
-  ranking: z.string().max(300).nullable().catch(null).default(null),
+  ranking: z.string().max(300).nullable().catch(null),
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;
