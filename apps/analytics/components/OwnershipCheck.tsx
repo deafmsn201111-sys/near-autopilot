@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { saveOwnershipProof } from '../app/account-actions';
 import { watchAccount } from '../lib/wallet';
 import { signOwnership } from '../lib/wallet-sign';
@@ -24,6 +24,7 @@ export function OwnershipCheck({
   const router = useRouter();
   const [connected, setConnected] = useState<string | null>(null);
   const [state, setState] = useState<'idle' | 'signing' | 'declined'>('idle');
+  const [checking, startChecking] = useTransition();
   useEffect(() => watchAccount(setConnected), []);
   useEffect(() => {
     if (!checkFailed) return;
@@ -44,8 +45,13 @@ export function OwnershipCheck({
       <div className="callout" style={{ margin: '16px 0' }}>
         <b>Heuristic analysis for now.</b> We couldn&apos;t check your signature: the network did
         not answer in time. You don&apos;t need to sign again.{' '}
-        <button type="button" className="btn secondary small" onClick={() => router.refresh()}>
-          Check again
+        <button
+          type="button"
+          className="btn secondary small"
+          disabled={checking}
+          onClick={() => startChecking(() => router.refresh())}
+        >
+          {checking ? 'Checking…' : 'Check again'}
         </button>
       </div>
     );
@@ -61,7 +67,7 @@ export function OwnershipCheck({
           <button
             type="button"
             className="btn primary small"
-            disabled={state === 'signing'}
+            disabled={state === 'signing' || checking}
             onClick={() => {
               setState('signing');
               void signOwnership(account).then(async (proof) => {
@@ -69,14 +75,18 @@ export function OwnershipCheck({
                 try {
                   await saveOwnershipProof(proof);
                   setState('idle');
-                  router.refresh();
+                  startChecking(() => router.refresh());
                 } catch {
                   setState('declined');
                 }
               });
             }}
           >
-            {state === 'signing' ? 'Waiting for the wallet…' : 'Verify ownership'}
+            {checking
+              ? 'Checking your signature…'
+              : state === 'signing'
+                ? 'Waiting for the wallet…'
+                : 'Verify ownership'}
           </button>
           {state === 'declined' && (
             <span className="muted-note"> Not signed: you keep the heuristic analysis.</span>
