@@ -107,5 +107,6 @@ describe('prepare swap output (#274)', () => {
   it('lets a token on our list through to the chain read', async () => {
     const res = await swapInto(USDC);
     expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({ error: 'could not prepare the transaction right now' });
   });
 });
