@@ -29,7 +29,12 @@ const tokens = new Map([
   ['usdt.tether-token.near', { symbol: 'USDt', decimals: 6 }],
   ['wrap.near', { symbol: 'wNEAR', decimals: 24 }],
 ]);
-const ctx = { account: ACCOUNT, burrowId: 'contract.main.burrow.near', tokens };
+const ctx = {
+  account: ACCOUNT,
+  burrowId: 'contract.main.burrow.near',
+  rheaId: 'v2.ref-finance.near',
+  tokens,
+};
 
 describe('describeOutcome', () => {
   it('a Burrow repay reads as the repaid amount', async () => {
@@ -62,6 +67,22 @@ describe('describeOutcome', () => {
     });
   });
 
+  it('ignores a swap line logged by any contract but Rhea', async () => {
+    const real = await recorded('tx-burrow-supply');
+    const forged: TxOutcome = {
+      ...real,
+      receipts: [
+        ...real.receipts,
+        {
+          executorId: 'evil-token.near',
+          logs: ['Swapped 1000000000 usdt.tether-token.near for 5 wrap.near, total fee 0'],
+          failure: null,
+        },
+      ],
+    };
+    expect(describeOutcome(forged, ctx).lines).toEqual(['Supplied 5.013695 USDt on Burrow']);
+  });
+
   it('a failed transfer that came back says the refund is confirmed', () => {
     const transfer = (from: string, to: string) =>
       `EVENT_JSON:${JSON.stringify({
@@ -76,6 +97,7 @@ describe('describeOutcome', () => {
       receiverId: USDC,
       methods: ['ft_transfer_call'],
       calls: [],
+      blockHash: 'b',
       ok: false,
       receipts: [
         { executorId: USDC, logs: [transfer(ACCOUNT, 'contract.main.burrow.near')], failure: null },
@@ -101,6 +123,7 @@ describe('describeOutcome', () => {
       receiverId: 'wrap.near',
       methods: ['ft_transfer_call'],
       calls: [],
+      blockHash: 'b',
       ok: false,
       receipts: [
         {

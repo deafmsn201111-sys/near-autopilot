@@ -16,6 +16,9 @@ const REPAY = '4qHuNteRioJ72yUvhdr9nC64qmCsqgjGzTWBWY5MdgGR';
 const FAILED = '8qw2aCaeCqfsEZQmG77vuzZPvLfhy8BV1wyUcgBFWt21';
 const MADE_UP = '8qw2aCaeCqfsEZQmG77vuzZPvLfhy8BV1wyUcgBFWt22';
 const NOW = new Date('2026-11-14T10:00:00Z');
+// The recorded transactions were included on 11 Nov; a cascade is prepared just before them.
+const INCLUDED = new Date('2026-11-11T17:55:52Z');
+const PREPARED = new Date('2026-11-11T17:55:00Z');
 
 // Real mainnet answers (packages/near-adapter/test/fixtures), read through the real reader.
 async function recorded(name: string): Promise<TxOutcome | null> {
@@ -63,10 +66,14 @@ const withdrawCall = {
   },
 };
 
-async function setup(override?: (o: TxOutcome) => TxOutcome, repay = repayCall()) {
+async function setup(
+  override?: (o: TxOutcome) => TxOutcome,
+  repay = repayCall(),
+  preparedAt = PREPARED,
+) {
   const events = new MemoryEventStore();
   await events.add({
-    at: NOW,
+    at: preparedAt,
     kind: 'prepare',
     accountId: ACCOUNT,
     source: 'server',
@@ -94,8 +101,10 @@ async function setup(override?: (o: TxOutcome) => TxOutcome, repay = repayCall()
         const out = await recorded(CHAIN[hash] ?? 'tx-unknown');
         return out && override ? override(out) : out;
       },
+      includedAt: async () => INCLUDED,
     },
     burrowId: 'contract.main.burrow.near',
+    rheaId: 'v2.ref-finance.near',
     tokens: async () => new Map([[USDC, { symbol: 'USDC', decimals: 6 }]]),
     now: () => NOW,
   });
@@ -171,6 +180,16 @@ describe('POST /v1/wallet/confirm', () => {
     const { confirm, signedRows } = await setup(undefined, repayCall('9000000'));
     const res = await confirm(REPAY);
     expect(res.statusCode).toBe(422);
+    expect(signedRows()).toHaveLength(0);
+  });
+
+  it('a transaction older than the prepared cascade writes nothing', async () => {
+    const { confirm, signedRows } = await setup(
+      undefined,
+      repayCall(),
+      new Date('2026-11-13T00:00:00Z'),
+    );
+    expect((await confirm(REPAY)).statusCode).toBe(422);
     expect(signedRows()).toHaveLength(0);
   });
 

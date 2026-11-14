@@ -427,7 +427,10 @@ the real wallet path did reached them, and the team could not count connects, an
 arguments); no limit changed. `POST /v1/wallet/confirm` is the single verifier: it reads the transaction from NEAR RPC
 (`tx`, `wait_until: FINAL`) and writes `signed` only when it is final and successful, signed by the account, and
 exactly a step of the stored cascade (receiver, and per action the method, args and deposit; gas is not compared
-because a wallet may change it). One row per tx hash. The browser asks after every step; a failed or unconfirmed step
+because a wallet may change it), included in a block no older than the prepare (60 s clock slack), so an older
+transaction with the same args does not count. One row per tx hash. If the server has no record of the cascade (the
+best-effort prepare row was not stored, or events are off), the step shows "sent, not checked" and the cascade goes
+on: a recording failure must not block the user's own cascade. The browser asks after every step; a failed or unconfirmed step
 stops the cascade. Activity is public per account for confirmed transactions only; analyses and unsigned cascades need
 the ownership proof. /policy is public: the account is cut to "ali…near", no amounts (intent amounts, preview and a
 wrapped NEAR deposit are left out, long numbers in check messages are cut). The collector's demo shadow loop keeps

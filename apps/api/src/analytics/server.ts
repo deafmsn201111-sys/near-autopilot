@@ -112,6 +112,7 @@ export function buildAnalyticsServer(
       events: deps.events,
       txs: new NearTransactionStatusReader(deps.mainnet.rpc),
       burrowId: deps.mainnet.burrowId,
+      rheaId: deps.mainnet.rheaId,
       tokens: async () =>
         new Map(
           (await deps.store.tokenMetadata()).map((t) => [

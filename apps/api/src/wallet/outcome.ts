@@ -8,6 +8,7 @@ import type { TxOutcome } from '@near-autopilot/near-adapter';
 export interface OutcomeContext {
   readonly account: string;
   readonly burrowId: string;
+  readonly rheaId: string;
   readonly tokens: ReadonlyMap<string, { readonly symbol: string; readonly decimals: number }>;
 }
 
@@ -138,12 +139,14 @@ export function describeOutcome(out: TxOutcome, ctx: OutcomeContext): OutcomeSum
   }
 
   const swaps = out.receipts.flatMap((r) =>
-    r.logs.flatMap((l) => {
-      const m = /^Swapped (\d{1,40}) (\S+) for (\d{1,40}) (\S+?),/.exec(l);
-      return m
-        ? [{ inRaw: BigInt(m[1]!), inToken: m[2]!, outRaw: BigInt(m[3]!), outToken: m[4]! }]
-        : [];
-    }),
+    r.executorId !== ctx.rheaId
+      ? []
+      : r.logs.flatMap((l) => {
+          const m = /^Swapped (\d{1,40}) (\S+) for (\d{1,40}) (\S+?),/.exec(l);
+          return m
+            ? [{ inRaw: BigInt(m[1]!), inToken: m[2]!, outRaw: BigInt(m[3]!), outToken: m[4]! }]
+            : [];
+        }),
   );
   const first = swaps[0];
   const last = swaps.at(-1);

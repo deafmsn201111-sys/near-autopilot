@@ -66,6 +66,30 @@ describe('NearTransactionStatusReader', () => {
     expect(failed?.[0]?.failure).toContain('Price oracle disabled');
   });
 
+  it('gives the block of a transaction and that block time', async () => {
+    const { txs } = reader(recorded('tx-burrow-repay'));
+    const out = await txs.status('4qHuNteRioJ72yUvhdr9nC64qmCsqgjGzTWBWY5MdgGR', 'x');
+    expect(out?.blockHash).toBe('9sGL3Yp7paz8YcL418SYTn2N14YM9jLiRTF8W7Ldorgf');
+    // Header of that block, recorded from mainnet (other fields trimmed).
+    const block = reader(recorded('block-of-burrow-repay'));
+    expect((await block.txs.includedAt(out?.blockHash ?? '')).toISOString()).toBe(
+      '2026-11-11T17:55:52.555Z',
+    );
+    expect(block.sent[0]).toMatchObject({
+      method: 'block',
+      params: { block_id: '9sGL3Yp7paz8YcL418SYTn2N14YM9jLiRTF8W7Ldorgf' },
+    });
+  });
+
+  it('returns null while the status is not final', async () => {
+    const final = recorded('tx-burrow-repay') as { result: Record<string, unknown> };
+    const { txs } = reader({
+      ...final,
+      result: { ...final.result, final_execution_status: 'EXECUTED_OPTIMISTIC' },
+    });
+    expect(await txs.status('4qHuNteRioJ72yUvhdr9nC64qmCsqgjGzTWBWY5MdgGR', 'x')).toBeNull();
+  });
+
   it('returns null for a hash the network does not know', async () => {
     const { txs } = reader(recorded('tx-unknown'));
     expect(await txs.status('8qw2aCaeCqfsEZQmG77vuzZPvLfhy8BV1wyUcgBFWt22', 'x')).toBeNull();

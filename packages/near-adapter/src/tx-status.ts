@@ -26,6 +26,8 @@ export interface TxOutcome {
   /** True only when the transaction and every one of its receipts succeeded. */
   readonly ok: boolean;
   readonly receipts: readonly TxReceipt[];
+  /** The block that included the transaction; `includedAt` gives its time. */
+  readonly blockHash: string;
 }
 
 const statusSchema = z.union([
@@ -45,6 +47,7 @@ const txSchema = z.object({
     receiver_id: z.string(),
     actions: z.array(z.unknown()),
   }),
+  transaction_outcome: z.object({ block_hash: z.string() }),
   receipts_outcome: z.array(
     z.object({
       outcome: z.object({
@@ -121,8 +124,10 @@ export class NearTransactionStatusReader {
     }
     const parsed = txSchema.safeParse(raw);
     if (!parsed.success) throw new UnexpectedResponseError(`tx:${hash}`, 'malformed response');
-    const { status, transaction, receipts_outcome } = parsed.data;
+    const { status, transaction, transaction_outcome, receipts_outcome } = parsed.data;
     if (status === 'Unknown' || (typeof status === 'object' && 'Unknown' in status)) return null;
+    const finality = parsed.data.final_execution_status;
+    if (finality !== undefined && finality !== 'FINAL') return null;
     const receipts = receipts_outcome.map(({ outcome }) => ({
       executorId: outcome.executor_id,
       logs: outcome.logs,
@@ -137,6 +142,18 @@ export class NearTransactionStatusReader {
       calls,
       ok: failureOf(status) === null && receipts.every((r) => r.failure === null),
       receipts,
+      blockHash: transaction_outcome.block_hash,
     };
+  }
+
+  /** When a block was produced (its header timestamp, nanoseconds since the epoch). */
+  async includedAt(blockHash: string): Promise<Date> {
+    const raw = await this.rpc.call('block', { block_id: blockHash });
+    const parsed = z
+      .object({ header: z.object({ timestamp_nanosec: z.string().regex(/^\d{1,25}$/) }) })
+      .safeParse(raw);
+    if (!parsed.success)
+      throw new UnexpectedResponseError(`block:${blockHash}`, 'malformed response');
+    return new Date(Number(BigInt(parsed.data.header.timestamp_nanosec) / 1_000_000n));
   }
 }

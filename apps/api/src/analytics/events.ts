@@ -138,7 +138,9 @@ export function activityTimeline(
 /** The public policy page names no account: "ali…near" for a named one, "1a2b3c…9f0e" for an implicit one. */
 export const shortAccount = (id: string) => {
   const dot = id.lastIndexOf('.');
-  return dot > 0 ? `${id.slice(0, 3)}…${id.slice(dot + 1)}` : `${id.slice(0, 6)}…${id.slice(-4)}`;
+  if (dot <= 0) return `${id.slice(0, 6)}…${id.slice(-4)}`;
+  // At most half of the name, so even a short name is not shown whole.
+  return `${id.slice(0, Math.min(3, Math.floor(dot / 2)))}…${id.slice(dot + 1)}`;
 };
 
 /** The public policy page shows which action on which tokens, never the amounts. */
@@ -156,7 +158,7 @@ const masked = (text: string, accountId: string) =>
   text
     .split(accountId)
     .join(shortAccount(accountId))
-    .replace(/\d{7,}/g, '…');
+    .replace(/\d{4,}/g, '…');
 
 const publicChecks = (checks: readonly unknown[] | null | undefined, accountId: string) =>
   z

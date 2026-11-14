@@ -9,18 +9,24 @@ import { describeOutcome, type OutcomeContext } from './outcome';
  * The single verifier of a signed step (#32): NEAR RPC, not the browser, says whether it happened. A `signed` row is
  * written only when the transaction is final and successful, its signer is the account, and it is exactly the step of
  * the cascade this server prepared: same receiver and, action by action, the same method, args and deposit (a wallet may adjust gas). An
- * older transaction of the account with the same contract and method therefore does not pass (its amounts differ).
+ * older transaction of the account does not pass: its amounts differ, or its block is older than the prepare.
  */
 export interface ConfirmDeps {
   readonly events: EventStore;
-  readonly txs: { status(hash: string, signerId: string): Promise<TxOutcome | null> };
+  readonly txs: {
+    status(hash: string, signerId: string): Promise<TxOutcome | null>;
+    includedAt(blockHash: string): Promise<Date>;
+  };
   readonly burrowId: string;
+  readonly rheaId: string;
   readonly tokens: () => Promise<OutcomeContext['tokens']>;
   readonly now: () => Date;
 }
 
 const NOT_OURS = 'this transaction is not a step of the prepared cascade';
 const UNKNOWN = 'unknown cascade';
+/** Clock slack between our server and the block producer when comparing a block time with the prepare time. */
+const CLOCK_SLACK_MS = 60_000;
 
 const stepSchema = z.object({
   intentId: z.string(),
@@ -97,10 +103,21 @@ export function registerConfirm(app: FastifyInstance, deps: ConfirmDeps) {
       out.receiverId === expected.receiverId &&
       sameCalls(out.calls, expected.calls);
     if (!sameStep) return reply.code(422).send({ error: NOT_OURS });
+    // An older transaction of the account with the same args is not a step of a cascade prepared after it.
+    let included: Date;
+    try {
+      included = await deps.txs.includedAt(out.blockHash);
+    } catch (err) {
+      req.log.warn({ err }, 'block time read failed');
+      return reply.code(502).send({ error: 'could not check the transaction right now' });
+    }
+    if (included.getTime() < prepared.at.getTime() - CLOCK_SLACK_MS)
+      return reply.code(422).send({ error: NOT_OURS });
 
     const summary = describeOutcome(out, {
       account,
       burrowId: deps.burrowId,
+      rheaId: deps.rheaId,
       tokens: await deps.tokens(),
     });
     if (!summary.ok) return { status: 'failed', ...summary };

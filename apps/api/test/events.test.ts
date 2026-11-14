@@ -1,6 +1,11 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { activityTimeline, registerEvents, type StoredEvent } from '../src/analytics/events';
+import {
+  activityTimeline,
+  registerEvents,
+  shortAccount,
+  type StoredEvent,
+} from '../src/analytics/events';
 import { MemoryEventStore } from './support/memory-events';
 
 const at = (min: number) => new Date(Date.UTC(2026, 10, 14, 10, min));
@@ -164,6 +169,15 @@ describe('POST /v1/events', () => {
       expect(res.json()).toEqual({ error: 'invalid event' });
     }
     expect(store.rows).toHaveLength(0);
+  });
+});
+
+describe('shortAccount', () => {
+  it('never shows a name whole, however short', () => {
+    expect(shortAccount('bob.near')).toBe('b…near');
+    expect(shortAccount('a.near')).toBe('…near');
+    expect(shortAccount('autopilot-test.near')).toBe('aut…near');
+    expect(shortAccount('a'.repeat(64))).toBe('aaaaaa…aaaa');
   });
 });
 
