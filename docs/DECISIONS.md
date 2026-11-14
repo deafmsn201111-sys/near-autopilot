@@ -545,3 +545,19 @@ Intelligence's second price source, D13); it no longer requires `oracle_call`.
 **Consequences:** No more `asset_ids` resolution on our side. If Burrow also disables Pyth (`enable_pyth_oracle`),
 the call panics "Pyth oracle disabled" on-chain and nothing moves but gas; not pre-checked, because that check
 would sit in deployment verification and also block supply and repay, which need no prices.
+
+## D30 — A strategy is the risks it accepts; it decides where idle money goes (#132)
+
+**Context:** #132. The presets only moved risk lines, so a wallet with idle stablecoins and no loan got the same card
+under all three. We are not traders and do not forecast yields.
+**Decision:** A preset is the set of risk types it accepts; within that set the code picks the highest yield it can
+compute from live protocol rates. Conservative: Burrow lending only (smart-contract and rate risk). Balanced: also a
+stablecoin liquidity pool when one pays clearly more (peg risk, small impermanent loss). Aggressive: also leverage, a
+same-asset Burrow loop at its target health factor 1.35 (`loopFor`). The supply card stays the only button: the app has
+no borrow action, so a loop that pays more after the gas of every round, and fits the market's free liquidity, is a
+line on the supply card (net APR, $ a year, break-even borrow rate, liquidation risk), not a card of its own. An AI supply card for the same token carries the same code-computed line; the prompt says which
+risks the preset takes and never to propose borrowing. Volatile-pair liquidity is not offered for idle money: a
+single-token wallet would have to swap half into a volatile token, and no stablecoin pair is in the collector's pools.
+**Consequences:** On a USDC-only wallet all three presets supply today (borrow 16.6% > supply 10.8% makes the loop lose)
+but each card says why in its own numbers. Balanced compares a stablecoin pool once one is collected (StableSwap pools
+are not ranked yet). The health-factor lines are unchanged (D22).

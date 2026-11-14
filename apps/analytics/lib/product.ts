@@ -21,7 +21,7 @@ export interface AccountRecommendation {
   title: string;
   why: string;
   intent: RecommendationIntent | null;
-  carry?: { text: string; provenance: 'calculated_estimate' };
+  carry?: { text: string; provenance: 'calculated_estimate' | 'protocol_reported' };
 }
 export interface Opportunity {
   id: string;

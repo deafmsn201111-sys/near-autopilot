@@ -104,7 +104,10 @@ const analysisSchema = z.object({
       why: z.string(),
       intent: intentSchema.nullable(),
       carry: z
-        .object({ text: z.string(), provenance: z.literal('calculated_estimate') })
+        .object({
+          text: z.string(),
+          provenance: z.enum(['calculated_estimate', 'protocol_reported']),
+        })
         .optional()
         .catch(undefined),
     }),

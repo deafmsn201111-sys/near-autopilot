@@ -307,7 +307,7 @@ export function walletAgentConfig(
 /** Our own enum and numbers only: safe to put in the prompt. */
 function strategyLine(id: StrategyId): string {
   const s = STRATEGIES[id];
-  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). A loan is not a problem by itself: when you suggest a repayment, the reason is the health factor, never the loan. Weigh the candidates for that strategy.`;
+  return `The owner chose the ${s.label} strategy: a loan is safe from health factor ${s.healthyAt} (repay back to ${s.targetHealthFactor}, urgent below ${s.warningBelow}); one non-stable token above ${s.concentrationInfoPct}% of the portfolio is a concentration risk (urgent above ${s.concentrationWarningPct}%). Idle money: ${s.idle.weighsLoop ? 'it may take leverage, so a supply card carries a line on the same-asset loop it weighed' : 'plain lending only'}; never propose borrowing. A loan is not a problem by itself: when you suggest a repayment, the reason is the health factor, never the loan. Weigh the candidates for that strategy.`;
 }
 
 const SYSTEM = [
@@ -492,8 +492,18 @@ function sizingFor(cards: readonly PortfolioRecommendation[], token: string) {
   return {};
 }
 
+/** The rule card's line on what the strategy weighed against plain supply of this token (#132). */
+const strategyWeighed = (checks: readonly PortfolioRecommendation[], token: string) => {
+  const carry = checks.find(
+    (c) =>
+      c.kind === 'put_idle_to_work' && c.intent?.action === 'supply' && c.intent.token === token,
+  )?.carry;
+  return carry ? { carry } : {};
+};
+
 function allocatorTool(
   obs: AgentObservation,
+  checks: readonly PortfolioRecommendation[],
   found: Map<string, PortfolioRecommendation>,
   steps: Steps,
 ): LoopTool {
@@ -544,6 +554,7 @@ function allocatorTool(
             approxUsd: view.approxUsd,
             amount: p.amount.toString(),
           },
+          ...strategyWeighed(checks, p.token),
         });
       }
       for (const c of candidates) found.set(c.id, c);
@@ -874,7 +885,7 @@ async function runModel(
   }
   const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
     guardianTool(obs, ctx.checks, ctx.loanCarry, strategy, found, steps),
-    allocatorTool(obs, found, steps),
+    allocatorTool(obs, ctx.checks, found, steps),
     marketTool(obs, steps),
     walletTool(
       'portfolio_concentration',
