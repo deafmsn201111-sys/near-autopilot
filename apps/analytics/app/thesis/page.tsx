@@ -1,7 +1,8 @@
 import { Dumbbell } from '../../components/Dumbbell';
 import { LineChart } from '../../components/LineChart';
 import { Pair, Token } from '../../components/Token';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { Chip, FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { pct, usdCompact } from '../../lib/format';
 
@@ -79,13 +80,11 @@ export default async function ThesisPage() {
         Math.abs(b.supplyAprEnd - b.supplyAprRealized) -
         Math.abs(a.supplyAprEnd - a.supplyAprRealized),
     );
-  const count = (h: boolean, label: string, sub: string) => (
-    <Tile
-      label={label}
-      value={<Status code={h ? 'OK' : 'FAILED'} label={h ? 'holds' : 'falsified'} />}
-      sub={sub}
-    />
-  );
+  const count = (h: boolean, label: string, sub: string) => ({
+    label,
+    value: <Status code={h ? 'OK' : 'FAILED'} label={h ? 'holds' : 'falsified'} />,
+    sub: sub,
+  });
   return (
     <>
       <PageHeader
@@ -100,24 +99,26 @@ export default async function ThesisPage() {
           </>
         }
       />
-      <div className="kpis">
-        <Tile hero label="Verdict" value={`${data.verdict.counts} / 3`} sub={data.verdict.text} />
-        {count(
-          data.verdict.h1,
-          'H1 · shown ≠ kept (Rhea)',
-          `${e.nominalAboveKept} of ${e.withNominal} pools: nominal above what an LP kept; ${e.within2pp} within ${(data.rules.closeEnoughPp * 100).toFixed(0)} pp`,
-        )}
-        {count(
-          data.verdict.h2,
-          'H2 · TVL does not rank outcome',
-          `Spearman ρ = ${e.rho === null ? 'n/a' : e.rho.toFixed(2)} (falsified at ≥ ${data.rules.strongRho})`,
-        )}
-        {count(
-          data.verdict.h3,
-          'H3 · shown ≠ accrued (Burrow)',
-          `${e.burrowMarkets - e.burrowWithin} of ${e.burrowMarkets} markets off by > ${(data.rules.burrowCloseEnoughPp * 100).toFixed(1)} pp; the weakest count`,
-        )}
-      </div>
+      <FactsStrip
+        items={[
+          { label: 'Verdict', value: `${data.verdict.counts} / 3`, sub: data.verdict.text },
+          count(
+            data.verdict.h1,
+            'H1 · shown ≠ kept (Rhea)',
+            `${e.nominalAboveKept} of ${e.withNominal} pools: nominal above what an LP kept; ${e.within2pp} within ${(data.rules.closeEnoughPp * 100).toFixed(0)} pp`,
+          ),
+          count(
+            data.verdict.h2,
+            'H2 · TVL does not rank outcome',
+            `Spearman ρ = ${e.rho === null ? 'n/a' : e.rho.toFixed(2)} (falsified at ≥ ${data.rules.strongRho})`,
+          ),
+          count(
+            data.verdict.h3,
+            'H3 · shown ≠ accrued (Burrow)',
+            `${e.burrowMarkets - e.burrowWithin} of ${e.burrowMarkets} markets off by > ${(data.rules.burrowCloseEnoughPp * 100).toFixed(1)} pp; the weakest count`,
+          ),
+        ]}
+      />
 
       <Section
         title="What the pool list shows vs what an LP kept"
@@ -205,13 +206,15 @@ export default async function ThesisPage() {
                   <td>
                     <b>#{p.pool}</b> <Pair tokens={[p.other, WNEAR]} />
                     {e.idle.includes(p.pool) && (
-                      <span
-                        className="chip"
-                        style={{ marginLeft: 6 }}
-                        data-tip="median daily nominal APR below 0.5%: reserves, almost no trading"
-                      >
-                        idle
-                      </span>
+                      <>
+                        {' '}
+                        <Chip
+                          tone="watch"
+                          tip="median daily nominal APR below 0.5%: reserves, almost no trading"
+                        >
+                          idle
+                        </Chip>
+                      </>
                     )}
                   </td>
                   <td className="num">{usdCompact(p.tvlUsdEnd)}</td>

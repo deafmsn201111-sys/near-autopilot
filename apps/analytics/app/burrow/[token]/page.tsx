@@ -1,6 +1,7 @@
 import { LineChart } from '../../../components/LineChart';
 import { Token } from '../../../components/Token';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../../components/ui';
+import { FactsStrip } from '../../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../../components/ui';
 import { tryApi } from '../../../lib/api';
 import { pct, ts, usd, usdCompact } from '../../../lib/format';
 
@@ -48,20 +49,22 @@ export default async function MarketPage({ params }: { params: Promise<{ token: 
         }
         meta={`${h.length} snapshots`}
       />
-      <div className="kpis">
-        <Tile
-          label="Supply APR"
-          value={pct(last?.supplyApr ?? null)}
-          sub={`reward ${pct(last?.rewardApr ?? null)}`}
-        />
-        <Tile label="Borrow APR" value={pct(last?.borrowApr ?? null)} />
-        <Tile label="Utilisation" value={pct(last?.utilization ?? null, 1)} />
-        <Tile
-          label="Available"
-          value={usdCompact(last?.availableUsd ?? null)}
-          sub={last ? <Status code={last.quality} /> : null}
-        />
-      </div>
+      <FactsStrip
+        items={[
+          {
+            label: 'Supply APR',
+            value: pct(last?.supplyApr ?? null),
+            sub: `reward ${pct(last?.rewardApr ?? null)}`,
+          },
+          { label: 'Borrow APR', value: pct(last?.borrowApr ?? null) },
+          { label: 'Utilisation', value: pct(last?.utilization ?? null, 1) },
+          {
+            label: 'Available',
+            value: usdCompact(last?.availableUsd ?? null),
+            sub: last ? <Status code={last.quality} /> : null,
+          },
+        ]}
+      />
       <Section title="Supply and borrow APR" note="Both in % a year, one axis.">
         <div className="card">
           <LineChart

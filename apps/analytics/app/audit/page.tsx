@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Env } from '../../components/Env';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { int, ts } from '../../lib/format';
 
@@ -57,34 +58,31 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
         lead="Every audit event is appended to a hash chain in Postgres: each entry commits to the one before it, so a changed, removed or reordered entry breaks the chain. After each collector cycle the head of every chain is signed with a key that is not in the database and written to a file outside it: a rewrite of the whole chain or a cut of its tail is caught too. Re-verified on every page load."
         meta={`${data.chains.length} chains`}
       />
-      <div className="kpis">
-        <Tile
-          label="Chains verified"
-          value={`${data.chains.length - broken.length} / ${data.chains.length}`}
-          sub={
-            broken.length === 0 ? (
-              <Status code="OK" label="no break found" />
-            ) : (
-              <Status code="FAILED" label={`${broken.length} broken`} />
-            )
-          }
-        />
-        <Tile
-          label="Chained entries"
-          value={int(data.chains.reduce((s, c) => s + c.entries, 0))}
-          sub="seq 1 to head, recomputed"
-        />
-        <Tile
-          label="Signed checkpoints"
-          value={
-            data.checkpoints
+      <FactsStrip
+        items={[
+          {
+            label: 'Chains verified',
+            value: `${data.chains.length - broken.length} / ${data.chains.length}`,
+            sub:
+              broken.length === 0 ? (
+                <Status code="OK" label="no break found" />
+              ) : (
+                <Status code="FAILED" label={`${broken.length} broken`} />
+              ),
+          },
+          {
+            label: 'Chained entries',
+            value: int(data.chains.reduce((s, c) => s + c.entries, 0)),
+            sub: 'seq 1 to head, recomputed',
+          },
+          {
+            label: 'Signed checkpoints',
+            value: data.checkpoints
               ? data.checkpoints.chains.every((c) => c.ok)
                 ? `${data.checkpoints.chains.length} chains anchored`
                 : 'Mismatch!'
-              : 'not configured'
-          }
-          sub={
-            data.checkpoints ? (
+              : 'not configured',
+            sub: data.checkpoints ? (
               data.checkpoints.chains.every((c) => c.ok) ? (
                 <Status code="OK" label="signatures and hashes match" />
               ) : (
@@ -95,15 +93,15 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
               )
             ) : (
               'set AUDIT_CHECKPOINT_PUBLIC_KEY'
-            )
-          }
-        />
-        <Tile
-          label="Before the chain"
-          value={int(data.unchainedRowsBeforeMigration0011)}
-          sub="older rows, kept unchanged, not covered"
-        />
-      </div>
+            ),
+          },
+          {
+            label: 'Before the chain',
+            value: int(data.unchainedRowsBeforeMigration0011),
+            sub: 'older rows, kept unchanged, not covered',
+          },
+        ]}
+      />
 
       <Section
         title="Chains"

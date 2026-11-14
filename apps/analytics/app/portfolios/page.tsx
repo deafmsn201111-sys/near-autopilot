@@ -1,6 +1,7 @@
 import { LineChart } from '../../components/LineChart';
 import { StressCurve } from '../../components/StressCurve';
-import { ApiError, PageHeader, Section, Status, TableWrap, Tile } from '../../components/ui';
+import { Chip, FactsStrip } from '../../components/primitives';
+import { ApiError, PageHeader, Section, Status, TableWrap } from '../../components/ui';
 import { tryApi } from '../../lib/api';
 import { splitOutcome, ts, usd2 } from '../../lib/format';
 import { riskReport, type RiskReport } from '../../lib/series';
@@ -56,27 +57,24 @@ function RiskSection({ risk }: { risk: RiskReport }) {
       title="Liquidation risk"
       note={`${risk.label} Health factor = risk-adjusted collateral / risk-adjusted debt; below 1.0 the position can be liquidated. Bands are the orchestrator's (critical < ${b.critical} not drawn: it sits on the liquidation line).`}
     >
-      <div className="kpis">
-        {list.map((p) => {
+      <FactsStrip
+        items={list.map((p) => {
           const drop = p.latest?.collateralDropToLiquidation ?? null;
-          return (
-            <Tile
-              key={p.portfolioId}
-              label={`${p.portfolioId} · health factor`}
-              value={p.latest?.healthFactor?.toFixed(3) ?? '—'}
-              sub={
-                <>
-                  <Status code={p.latest?.level ?? 'unknown'} /> LTV{' '}
-                  {p.latest?.ltvBps === null || p.latest?.ltvBps === undefined
-                    ? '—'
-                    : `${(p.latest.ltvBps / 100).toFixed(1)}%`}
-                  {drop !== null && ` · liquidatable after collateral −${(drop * 100).toFixed(1)}%`}
-                </>
-              }
-            />
-          );
+          return {
+            label: `${p.portfolioId} · health factor`,
+            value: p.latest?.healthFactor?.toFixed(3) ?? '—',
+            sub: (
+              <>
+                <Status code={p.latest?.level ?? 'unknown'} /> LTV{' '}
+                {p.latest?.ltvBps === null || p.latest?.ltvBps === undefined
+                  ? '—'
+                  : `${(p.latest.ltvBps / 100).toFixed(1)}%`}
+                {drop !== null && ` · liquidatable after collateral −${(drop * 100).toFixed(1)}%`}
+              </>
+            ),
+          };
         })}
-      </div>
+      />
       <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
         <div className="chart-card">
           <h3 className="card-title">If collateral prices fall</h3>
@@ -202,7 +200,7 @@ export default async function PortfoliosPage() {
                   <td key={a.portfolioId}>
                     {a.result.decision ? (
                       <>
-                        <span className="chip">{a.result.decision.outcome}</span>
+                        <Chip>{a.result.decision.outcome}</Chip>
                         <div className="wrap" style={{ marginTop: 4 }}>
                           {a.result.decision.reasons.join(', ')}
                         </div>

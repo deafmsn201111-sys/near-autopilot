@@ -1,6 +1,7 @@
 'use client';
 import { useActionState, type ReactNode } from 'react';
 import type { ActionState } from './actions';
+import { Button } from '../../components/primitives';
 
 export function ControlForm(p: {
   action: (state: ActionState, form: FormData) => Promise<ActionState>;
@@ -12,13 +13,9 @@ export function ControlForm(p: {
   return (
     <form action={action} className="field">
       {p.children}
-      <button
-        type="submit"
-        className={`btn ${p.danger ? 'primary' : 'secondary'}`}
-        disabled={pending}
-      >
+      <Button type="submit" variant={p.danger ? 'primary' : 'secondary'} disabled={pending}>
         {pending ? 'Saving…' : p.submit}
-      </button>
+      </Button>
       {state.error && <span role="alert">{state.error}</span>}
     </form>
   );

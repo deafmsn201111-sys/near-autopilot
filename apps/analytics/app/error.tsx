@@ -1,5 +1,6 @@
 'use client';
 import { useEffect } from 'react';
+import { Button } from '../components/primitives';
 
 /** A page crashed while rendering: say so plainly, keep the navigation, offer a retry. */
 export default function PageError({
@@ -25,9 +26,7 @@ export default function PageError({
         </p>
         {error.digest && <code className="state-code">reference {error.digest}</code>}
         <div style={{ marginTop: 10 }}>
-          <button type="button" className="btn secondary" onClick={() => reset()}>
-            Try again
-          </button>
+          <Button onClick={() => reset()}>Try again</Button>
         </div>
       </div>
     </div>
