@@ -12,6 +12,7 @@ import {
   type DepositQuote,
   type DepositQuoteRequest,
   type OneClickToken,
+  type SwapStatus,
 } from '../src/gateway/one-click-deposit';
 import type { ShieldIncident } from '../src/gateway/shield';
 
@@ -75,6 +76,7 @@ function setup(
     tokens?: OneClickToken[];
     solanaFees?: DepositDeps['solanaFees'];
     find?: DepositDeps['store']['find'];
+    status?: DepositDeps['oneClick']['status'];
   } = {},
 ) {
   const saved: StoredDepositQuote[] = [];
@@ -86,7 +88,7 @@ function setup(
         asked.push(r);
         return (o.quote ?? (async () => quoted()))();
       },
-      status: unused,
+      status: o.status ?? unused,
     },
     store: {
       save: async (q) => void saved.push(q),
@@ -538,8 +540,20 @@ describe('GET /v1/deposit/transfer/:id', () => {
     status: null as string | null,
     ...over,
   });
-  const get = (row: ReturnType<typeof stored> | null, id = 'dq_1') => {
-    const { app } = setup({ tokens, find: async () => row });
+  const live = (status: SwapStatus) => async () => ({
+    status,
+    depositedAmount: null,
+    amountOut: null,
+    refundedAmount: null,
+    refundReason: null,
+    nearTxHash: null,
+  });
+  const get = (
+    row: ReturnType<typeof stored> | null,
+    id = 'dq_1',
+    status: DepositDeps['oneClick']['status'] = live('PENDING_DEPOSIT'),
+  ) => {
+    const { app } = setup({ tokens, find: async () => row, status });
     return app.inject({
       method: 'GET',
       url: `/v1/deposit/transfer/${id}`,
@@ -607,5 +621,22 @@ describe('GET /v1/deposit/transfer/:id', () => {
       expect(res.statusCode).toBe(409);
       expect(typeof res.json<{ error: unknown }>().error).toBe('string');
     }
+  });
+
+  it('refuses when 1Click already sees a deposit, though ours still says unpaid (a retry after a send)', async () => {
+    for (const s of ['KNOWN_DEPOSIT_TX', 'PROCESSING', 'INCOMPLETE_DEPOSIT', 'UNKNOWN'] as const)
+      expect((await get(stored(), 'dq_1', live(s))).statusCode).toBe(409);
+  });
+
+  it('refuses when 1Click status cannot be read, or less than 2 minutes are left', async () => {
+    const down = async (): Promise<never> => {
+      throw new Error('1Click down');
+    };
+    expect((await get(stored(), 'dq_1', down)).statusCode).toBe(502);
+    const late = stored({ deadline: new Date(NOW.getTime() + 119_000) });
+    expect((await get(late)).statusCode).toBe(409);
+    expect((await get(stored({ deadline: new Date(NOW.getTime() + 121_000) }))).statusCode).toBe(
+      200,
+    );
   });
 });

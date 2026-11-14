@@ -635,8 +635,10 @@ Kit (D33) can ask the connected EVM or Solana wallet for a transfer. That is sig
 **Decision:** the user's own origin-chain wallet may be asked for exactly one kind of transaction: the transfer of a
 stored 1Click quote. `GET /v1/deposit/transfer/:id` rebuilds it from our `deposit_quotes` row, never from the browser:
 chain, token (native by its exact 1Click asset id, else the contract `paymentToken` names), `amountIn` in base units
-and the deposit address, which must be an address of that chain. It refuses (409) a quote past its deadline, one
-whose stored status is anything but unpaid, Bitcoin and any asset it cannot name. The browser refuses the answer
+and the deposit address, which must be an address of that chain. It refuses (409) a quote within 2 minutes of its
+deadline (a wallet prompt can stay open), one whose stored or freshly asked (never cached) 1Click status is anything
+but unpaid, so a retry after a send is refused once 1Click sees it, Bitcoin and any asset it cannot name; no 1Click
+status is a 502, never a transfer. The browser refuses the answer
 unless it is exactly the quote on screen (id, chain, asset, decimals, amount, deposit address), and `lib/hot-kit.ts`
 refuses again when the kit would read the token as another network or contract; only then does it call the kit's
 `wallet.transfer` (EVM: the kit switches the network and refuses to send on another one). The user signs in their

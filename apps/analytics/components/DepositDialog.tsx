@@ -193,6 +193,7 @@ function QuoteView({
   // The server's seconds-left, counted from when the answer arrived: the browser clock may be off.
   const [expiresAt] = useState(() => Date.now() + q.expiresInSeconds * 1000);
   const [addressOnly, setAddressOnly] = useState(false);
+  const [walletSend, setWalletSend] = useState<WalletSendState>('idle');
   const left = Math.max(0, Math.floor((expiresAt - now) / 1000));
   const expired = left === 0;
   const amount = formatUnits(q.amountIn, q.origin.decimals);
@@ -214,11 +215,11 @@ function QuoteView({
         </p>
       )}
       <StatusLine q={q} />
-      {!expired && <WalletSend q={q} wallets={wallets} send={send} />}
-      {!expired && walletChainOf(q.chain) && (
+      <WalletSend q={q} wallets={wallets} send={send} expired={expired} onState={setWalletSend} />
+      {!expired && walletSend === 'idle' && walletChainOf(q.chain) && (
         <p className="muted-note">Or send it manually from any wallet:</p>
       )}
-      {!expired && (
+      {!expired && walletSend === 'idle' && (
         <div className="deposit-address">
           <Qr
             text={link ?? q.depositAddress}
@@ -300,10 +301,17 @@ function QuoteView({
         </dd>
       </dl>
       <form method="dialog" className="modal-actions">
-        <button type="button" className="btn secondary" onClick={onBack}>
+        <button
+          type="button"
+          className="btn secondary"
+          disabled={walletSend === 'busy'}
+          onClick={onBack}
+        >
           New quote
         </button>
-        <button className="btn primary">Close</button>
+        <button className="btn primary" disabled={walletSend === 'busy'}>
+          Close
+        </button>
       </form>
     </>
   );
@@ -480,21 +488,29 @@ async function withKitPopup<T>(
   }
 }
 
+type WalletSendState = 'idle' | 'busy' | 'sent';
+
 /** Connect, send, wait: the one-click path when the user's wallet can send on the quoted chain. */
 function WalletSend({
   q,
   wallets,
   send,
+  expired,
+  onState,
 }: {
   q: DepositQuote;
   wallets: readonly OriginWallet[];
   send: string;
+  expired: boolean;
+  onState: (s: WalletSendState) => void;
 }) {
   const chain = walletChainOf(q.chain);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(null);
-  if (!chain) return null;
+  useEffect(() => onState(hash ? 'sent' : busy ? 'busy' : 'idle'), [hash, busy, onState]);
+  // Kept mounted past the deadline while the wallet is open or once it sent: a signed transfer is never lost.
+  if (!chain || (expired && !busy && !hash)) return null;
   const connected = wallets.find((w) => w.chain === chain);
 
   const run = async (dialog: HTMLDialogElement | null) => {
@@ -502,7 +518,8 @@ function WalletSend({
     setError(null);
     try {
       await withKitPopup(dialog, async () => {
-        if (!connected && !(await connectOriginWallet(chain))) return;
+        if (!connected && !(await connectOriginWallet(chain)))
+          return setError('No wallet was connected. Connect one, or send manually below.');
         const t = await loadDepositTransfer(q);
         if (!t.ok) return setError(t.error);
         setHash(await sendOriginTransfer(t.data));
@@ -510,7 +527,7 @@ function WalletSend({
     } catch (e) {
       const why = e instanceof Error ? e.message.slice(0, 200) : '';
       setError(
-        `Your wallet did not send it${why ? `: ${why}` : ''}. You can try again or send manually below.`,
+        `Your wallet reported an error${why ? `: ${why}` : ''}. If it shows the transfer as sent, do not send again: the status above follows the deposit.`,
       );
     } finally {
       setBusy(false);
