@@ -102,7 +102,14 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { formatUnits } from '@near-autopilot/financial-engine';
 import type { CollectorStore } from '../collector/store';
-import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
+import {
+  isSmall,
+  ratedHoldings,
+  valueAccount,
+  type AccountReads,
+  type Holding,
+  type TokenFacts,
+} from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, ratePct, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
@@ -503,10 +510,11 @@ export function portfolioMetrics(legs: readonly PortfolioLeg[]): PortfolioMetric
 export interface AccountPositions {
   readonly holdings: readonly Holding[];
   readonly staking: readonly Pick<StakingView, 'token' | 'symbol' | 'amount' | 'usd'>[];
-  readonly dclPositions: readonly Pick<
+  readonly dclPositions: readonly (Pick<
     DclPositionView,
     'lptId' | 'tokenX' | 'tokenY' | 'symbolX' | 'symbolY' | 'usdX' | 'usdY'
-  >[];
+  > &
+    Partial<Pick<DclPositionView, 'inRange'>>)[];
   readonly v1Positions: readonly Pick<
     V1PositionView,
     'poolId' | 'tokens' | 'symbols' | 'usdPerToken'
@@ -531,6 +539,8 @@ export interface PositionRow {
   /** True when any priced leg uses an indexer estimate. */
   readonly estimate: boolean;
   readonly small: boolean;
+  /** Rhea DCL only: whether the pool's price sits inside the position's range, so it earns fees. */
+  readonly inRange?: boolean;
 }
 
 /**
@@ -590,6 +600,7 @@ export function accountPortfolio(p: AccountPositions) {
         label: `${d.symbolX}/${d.symbolY}`,
         sub: 'Rhea concentrated liquidity',
         amount: null,
+        inRange: d.inRange,
       },
       [
         { token: d.tokenX, symbol: d.symbolX, usd: d.usdX },
@@ -2281,7 +2292,7 @@ export function registerAccountView(
       ...(deps.discovery && {
         discovery: { complete: found !== null && foundPools !== null && estimates !== null },
       }),
-      holdings: v.holdings,
+      holdings: ratedHoldings(v.holdings, rate),
       unpriced: v.unpriced,
       totals,
       positions,

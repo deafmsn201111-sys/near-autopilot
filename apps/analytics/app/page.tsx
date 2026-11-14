@@ -4,29 +4,6 @@ import Link from 'next/link';
 /** Below this idle amount every option is eaten by network fees: the page says so instead of listing losses. */
 const SMALL_IDLE_USD = 50;
 
-/** Rows shown before "Show all (N)". */
-const TOP_ROWS = 7;
-
-/** Behind "show small balances": the API's flag for a real account; a demo uses the same $1 rule. */
-const isSmall = (h: { amount: number | null; usd: number | null; small?: boolean }) =>
-  h.small ?? (h.usd !== null ? h.usd < 1 : h.amount !== null && h.amount < 0.005);
-
-/** Small amounts keep two significant digits (0.0042 BTC is not "0"); others two decimals. */
-const amountText = (n: number) =>
-  n > 0 && n < 0.01
-    ? n.toLocaleString('en-US', { maximumSignificantDigits: 2 })
-    : n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-
-/** A short "what kind of token" subtitle for the holdings table. */
-const TOKEN_KIND: Record<string, string> = {
-  NEAR: 'Native token',
-  WNEAR: 'Wrapped NEAR',
-  STNEAR: 'Liquid staking',
-  USDC: 'Stablecoin',
-  'USDC.E': 'Bridged stablecoin',
-  USDT: 'Stablecoin',
-};
-
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {
@@ -46,11 +23,11 @@ import { portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositButton } from '../components/DepositDialog';
 import { WithdrawDialog } from '../components/WithdrawDialog';
-import { TokenIcons } from '../components/TokenIcon';
 import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { StrategyPicker } from '../components/StrategyPicker';
 import { PortfolioSummary } from '../components/PortfolioSummary';
+import { HoldingsPanel } from '../components/Holdings';
 import {
   savedStrategy,
   STRATEGY_COOKIE,
@@ -62,106 +39,10 @@ export const dynamic = 'force-dynamic';
 
 type Search = Record<string, string | string[] | undefined>;
 
-const WHERE = {
-  wallet: 'In the wallet',
-  collateral: 'Deposited on Burrow (collateral)',
-  deposited: 'Deposited on Burrow',
-  borrowed: 'Borrowed from Burrow',
-} as const;
-
-interface Row {
-  key: string;
-  where: keyof typeof WHERE | 'position';
-  symbol: string;
-  logos: readonly { icon: string | null; symbol: string }[];
-  sub: string | null;
-  amount: number | null;
-  usd: number | null;
-  verified?: boolean;
-  estimate?: boolean;
-  small?: boolean;
-}
-
-function HoldingRow({ r, assetsTotal }: { r: Row; assetsTotal: number }) {
-  const isDebt = r.where === 'borrowed';
-  const kind =
-    r.sub ??
-    (r.where === 'wallet' || r.where === 'position'
-      ? (TOKEN_KIND[r.symbol.toUpperCase()] ?? 'Token')
-      : WHERE[r.where]);
-  const pct = isDebt ? 0 : (r.usd ?? 0) / assetsTotal;
-  return (
-    <div className="ht-row">
-      <div className="ht-asset">
-        <TokenIcons tokens={r.logos} size={38} />
-        <div>
-          <div className="nm">
-            {r.symbol}
-            {r.verified === false && <span className="ht-badge">Unverified</span>}
-          </div>
-          <div className="sub">
-            {kind}
-            {r.estimate && ' · price estimate'}
-            {r.usd === null && ' · no price'}
-          </div>
-        </div>
-      </div>
-      <div className="ht-qty num">{r.amount === null ? '—' : amountText(r.amount)}</div>
-      <div className="ht-alloc">
-        {isDebt ? (
-          <span className="muted-note">Borrowed</span>
-        ) : (
-          <>
-            <span className="track">
-              <span className="fill" style={{ width: `${Math.min(100, pct * 100)}%` }} />
-            </span>
-            <span className="pc num">{(pct * 100).toFixed(1)}%</span>
-          </>
-        )}
-      </div>
-      <div className={`ht-val num r ${isDebt ? 'neg' : ''}`}>
-        {isDebt ? '−' : ''}
-        {money(r.usd, false)}
-      </div>
-    </div>
-  );
-}
-
-/** The largest rows first; the rest behind a native disclosure, so a long list costs no client JS. */
-function HoldingsTable({
-  rows,
-  assetsTotal,
-  top = TOP_ROWS,
-}: {
-  rows: readonly Row[];
-  assetsTotal: number;
-  top?: number;
-}) {
-  const rest = rows.slice(top);
-  return (
-    <div className="holdings-table">
-      <div className="ht-head">
-        <span>Asset</span>
-        <span>Balance</span>
-        <span>Allocation</span>
-        <span className="r">Value</span>
-      </div>
-      {rows.slice(0, top).map((r) => (
-        <HoldingRow key={r.key} r={r} assetsTotal={assetsTotal} />
-      ))}
-      {rest.length > 0 && (
-        <details className="ht-more">
-          <summary>Show all ({rows.length})</summary>
-          {rest.map((r) => (
-            <HoldingRow key={r.key} r={r} assetsTotal={assetsTotal} />
-          ))}
-        </details>
-      )}
-    </div>
-  );
-}
-
-const allocBySymbol = (assets: readonly Row[], total: number) => {
+const allocBySymbol = (
+  assets: readonly { symbol: string; usd: number | null }[],
+  total: number,
+) => {
   const bySymbol = new Map<string, number>();
   for (const h of assets) bySymbol.set(h.symbol, (bySymbol.get(h.symbol) ?? 0) + (h.usd ?? 0));
   return [...bySymbol.entries()]
@@ -325,25 +206,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     icon: token && verified ? (icons[token] ?? null) : null,
     symbol,
   });
-  const allRows: Row[] = [
-    ...data.holdings.map((h) => ({
-      ...h,
-      key: `${h.where}-${h.token ?? h.symbol}`,
-      sub: null,
-      logos: [logo(tokenOf(h), h.symbol, h.verified !== false)],
-    })),
-    ...(data.positions ?? []).map((r) => ({
-      ...r,
-      where: 'position' as const,
-      symbol: r.label,
-      logos: r.tokens?.length
-        ? r.tokens.map((t) => logo(t.token, t.symbol, r.verified !== false))
-        : [logo(undefined, r.label)],
-    })),
-  ].sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
-  const rows = allRows.filter((h) => !isSmall(h) && h.verified !== false);
-  const unverifiedRows = allRows.filter((h) => !isSmall(h) && h.verified === false);
-  const smallRows = allRows.filter(isSmall);
   const assetsTotal = t.assetsUsd || 1;
   const unverified = new Set([
     ...data.holdings.flatMap((h) => (h.verified === false && h.token ? [h.token] : [])),
@@ -363,13 +225,14 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         };
       })
     : allocBySymbol(
-        allRows.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
+        data.holdings.filter((h) => h.where !== 'borrowed' && (h.usd ?? 0) > 0),
         assetsTotal,
       ).map((a) => {
         const token = curatedId(a.symbol);
         return { ...a, key: a.symbol, verified: true, icon: token ? (icons[token] ?? null) : null };
       });
   const signingEnabled = isAccount ? walletSigningEnabled() : false;
+  const own = isAccount && !!accountParam && accountParam === cookieAccount;
   const mode = portfolioMode({
     isAccount,
     account: accountParam,
@@ -431,9 +294,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         health={data.health}
         loanBy={isAccount ? 'your collateral' : 'NEAR'}
         actions={
-          isAccount &&
-          accountParam &&
-          accountParam === cookieAccount && (
+          own && (
             <>
               <DepositButton account={accountParam} label="Add funds" />
               <WithdrawDialog
@@ -473,48 +334,35 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         </section>
       )}
 
-      <section className="block">
-        <div className="block-head">
-          <h2>What you hold</h2>
-          <span className="muted-note">
-            {rows.length + unverifiedRows.length}{' '}
-            {rows.length + unverifiedRows.length === 1 ? 'asset' : 'assets'} ·{' '}
-            {isAccount ? 'read just now' : `updated ${ago(data.asOf)}`}
-          </span>
-        </div>
+      <HoldingsPanel
+        holdings={data.holdings.map((h) => ({
+          ...h,
+          logos: [logo(tokenOf(h), h.symbol, h.verified !== false)],
+        }))}
+        positions={(data.positions ?? []).map((r) => ({
+          ...r,
+          logos: r.tokens?.length
+            ? r.tokens.map((x) => logo(x.token, x.symbol, r.verified !== false))
+            : [logo(undefined, r.label)],
+        }))}
+        note={
+          isAccount ? 'read from NEAR mainnet just now' : `simulated · updated ${ago(data.asOf)}`
+        }
+        source={
+          isAccount
+            ? 'Non-custodial · balances read directly from the chain'
+            : 'Simulated balances valued at live NEAR prices'
+        }
+        flashScope={isAccount ? accountParam : undefined}
+        empty={own && <DepositButton account={accountParam} label="Add funds" />}
+      >
         {isAccount && data.discovery?.complete === false && (
-          <div className="callout warn" style={{ marginBottom: 12 }}>
+          <div className="callout warn hold-callout">
             A token or pool indexer did not answer, so only the tokens and pools on our list are
             shown. Reload in a minute to read the whole account.
           </div>
         )}
-        <HoldingsTable rows={rows} assetsTotal={assetsTotal} />
-        {unverifiedRows.length > 0 && (
-          <>
-            <div className="block-head" style={{ marginTop: 24 }}>
-              <h2>Unverified tokens</h2>
-              <span className="muted-note">
-                Not on our list: shown only, never used in a suggestion. Prices are estimates from
-                Rhea&apos;s indexer.
-              </span>
-            </div>
-            <HoldingsTable rows={unverifiedRows} assetsTotal={assetsTotal} />
-          </>
-        )}
-        {smallRows.length > 0 && (
-          <details className="ht-small">
-            <summary>Show small balances ({smallRows.length})</summary>
-            <HoldingsTable rows={smallRows} assetsTotal={assetsTotal} top={Infinity} />
-          </details>
-        )}
-        <div className="ht-foot">
-          <span className="muted-note">
-            {isAccount
-              ? 'Balances read directly from the NEAR mainnet · non-custodial'
-              : 'Simulated balances valued at live NEAR prices'}
-          </span>
-        </div>
-      </section>
+      </HoldingsPanel>
 
       {/* The connected wallet gets live, one-click recommendations above; this cost-ranked idle-cash analysis is
           shown for the illustrative demo portfolios. */}

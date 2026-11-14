@@ -8,6 +8,7 @@ import {
   type DemoPortfolioId,
 } from '../simulation/demo-portfolios';
 import { DemoLedgerStore } from '../simulation/ledger';
+import { ratedHoldings, type Holding } from './account';
 import { loopStrategies, type LoopMarket } from './looping';
 
 /**
@@ -147,21 +148,30 @@ export function buildPortfolioView(i: {
   const near = i.prices.get(NEAR_TOKEN) ?? null;
   const usdt = i.prices.get(USDT_TOKEN) ?? null;
   const amt = (raw: bigint, dec: number) => Number(raw / 10n ** BigInt(Math.max(0, dec - 6))) / 1e6;
-  const row = (where: string, symbol: string, amount: number, price: number | null) => ({
+  const row = (
+    where: Holding['where'],
+    token: string,
+    symbol: string,
+    amount: number,
+    price: number | null,
+  ) => ({
     where,
+    token,
     symbol,
     amount,
     usd: price === null ? null : amount * price,
   });
   const holdings = [
-    row('wallet', 'NEAR', amt(p.wallet.near, 24), near),
-    row('wallet', 'USDt', amt(p.wallet.usdt, 6), usdt),
-    row('collateral', 'NEAR', amt(p.collateral.near, 24), near),
-    ...(p.supplied.usdt > 0n ? [row('deposited', 'USDt', amt(p.supplied.usdt, 6), usdt)] : []),
-    ...((p.supplied.near ?? 0n) > 0n
-      ? [row('deposited', 'NEAR', amt(p.supplied.near ?? 0n, 24), near)]
+    row('wallet', NEAR_TOKEN, 'NEAR', amt(p.wallet.near, 24), near),
+    row('wallet', USDT_TOKEN, 'USDt', amt(p.wallet.usdt, 6), usdt),
+    row('collateral', NEAR_TOKEN, 'NEAR', amt(p.collateral.near, 24), near),
+    ...(p.supplied.usdt > 0n
+      ? [row('deposited', USDT_TOKEN, 'USDt', amt(p.supplied.usdt, 6), usdt)]
       : []),
-    row('borrowed', 'USDt', amt(p.borrowed.usdt, 6), usdt),
+    ...((p.supplied.near ?? 0n) > 0n
+      ? [row('deposited', NEAR_TOKEN, 'NEAR', amt(p.supplied.near ?? 0n, 24), near)]
+      : []),
+    row('borrowed', USDT_TOKEN, 'USDt', amt(p.borrowed.usdt, 6), usdt),
   ];
   const sum = (f: (h: (typeof holdings)[number]) => boolean) =>
     holdings.filter(f).reduce((s, h) => s + (h.usd ?? NaN), 0);
@@ -513,7 +523,8 @@ export function buildPortfolioView(i: {
     label: `$${p.grossUsd.toLocaleString('en-US')} demo portfolio`,
     simulated: true,
     asOf: i.analysis?.createdAt.toISOString() ?? null,
-    holdings,
+    // Demo rows name a symbol only; the UI picks the curated logo by it (curatedId).
+    holdings: ratedHoldings(holdings, rate).map(({ token: _token, ...h }) => h),
     totals: { assetsUsd, debtUsd, netWorthUsd: assetsUsd - debtUsd, idleUsd },
     health,
     earnings: {

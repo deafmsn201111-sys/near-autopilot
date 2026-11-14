@@ -126,6 +126,8 @@ export interface PortfolioView {
     verified?: boolean;
     estimate?: boolean;
     small?: boolean;
+    /** Burrow rows: today's supply (or, on a loan, borrow) rate in %; null when unrated. */
+    aprPct?: number | null;
   }[];
   totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
   health: {
@@ -153,6 +155,8 @@ export interface PortfolioView {
     verified?: boolean;
     estimate?: boolean;
     small?: boolean;
+    /** Rhea DCL: whether the pool price sits inside the position's range. */
+    inRange?: boolean;
   }[];
   /** A real account: false when an indexer was down and only the allowlisted tokens and pools were read. */
   discovery?: { complete: boolean };
