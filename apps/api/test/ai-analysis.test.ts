@@ -793,6 +793,40 @@ describe('analyseAccount', () => {
     expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
   });
 
+  it('skips an idle token under 1% a year, like the rule-based card', async () => {
+    let tools: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        tools = results;
+        return final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn.' }]);
+      },
+    ]);
+    const obs = observation();
+    const low: AgentObservation = {
+      ...obs,
+      snapshot: {
+        ...obs.snapshot,
+        walletBalances: [...obs.snapshot.walletBalances, { token: WNEAR, raw: near(10_000) }],
+      },
+      market: {
+        ...obs.market!,
+        estimatedYieldWad: new Map([
+          [USDT, 8n * 10n ** 16n],
+          [WNEAR, 5n * 10n ** 15n],
+        ]),
+      },
+    };
+    await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => low,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    expect(JSON.stringify(tools)).not.toContain('capital-allocator:supply:wrap.near');
+  });
+
   it('offers a supply for every idle token, most dollars a year first, with the yearly earnings', async () => {
     let tools: unknown;
     const { llm } = fake([

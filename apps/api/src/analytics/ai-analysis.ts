@@ -287,7 +287,7 @@ const SYSTEM = [
   'Call every tool once; they take no input. Each returns candidate actions whose numbers were computed by code.',
   'Rank the candidates by what matters most for this wallet: liquidation risk first, then concentration risk, then yield.',
   'Leave out candidates that are not worth the user’s attention.',
-  'Idle-token supplies come most dollars a year first; if you rank a later one above the first, its "why" says why.',
+  'Idle-token supplies come most dollars a year first. Rank a later one above the first only for a reason about this wallet or strategy, and give that reason in its "why".',
   'Reply with ONE JSON object and nothing else: {"picks":[{"id":"<candidate id>","why":"<one or two plain sentences>"}]}.',
   'Use only candidate ids that a tool returned. In "why" use only numbers that appear in the tool results; never compute new ones.',
   'Write "why" to the wallet owner about that one action; never mention tools, candidates or what other tools found.',
@@ -518,7 +518,7 @@ function allocatorTool(
       steps.set('capital_allocator', {
         none: lowRate ?? {
           text: supplyProposed
-            ? 'Idle tokens found, but no supply rate or price to size them'
+            ? 'Idle tokens found, but none is worth supplying: under $1, or no rate or price'
             : 'Nothing idle to put to work',
           provenance: null,
         },

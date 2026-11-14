@@ -9,6 +9,7 @@ import {
 } from '@near-autopilot/financial-engine';
 import type { ProposalAgent } from '../ports';
 import type { AgentObservation } from '../types';
+import { MAX_PROPOSALS_PER_OUTPUT } from '../proposals';
 import { envelope, noAction } from './envelope';
 
 /**
@@ -26,7 +27,11 @@ export class CapitalAllocatorAgent implements ProposalAgent {
     if (supplies.length === 0) return swap;
     // A real proposal makes the swap path's "no action" redundant; the engine ranks the rest by net benefit.
     const rest = swap.proposals.filter((p) => p['kind'] !== 'no_action');
-    return envelope(this.id, obs, [...supplies, ...rest]);
+    // The swap is at most one entry; the lowest earners drop out to stay within the envelope's cap.
+    return envelope(this.id, obs, [
+      ...supplies.slice(0, MAX_PROPOSALS_PER_OUTPUT - rest.length),
+      ...rest,
+    ]);
   }
 
   /**

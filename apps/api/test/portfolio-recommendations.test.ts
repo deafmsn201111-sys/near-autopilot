@@ -397,7 +397,7 @@ describe('portfolioRecommendations', () => {
     });
     expect(i?.title).toBe('$500 of USDt is sitting idle');
     expect(i?.why).toContain('about $40.00 a year');
-    expect(i?.why).toContain('$600 of USDC would earn about $12.00');
+    expect(i?.why).toContain('$600 of USDC would earn about $12.00 a year');
   });
 
   it('flags an out-of-range DCL position with a reposition intent', () => {
