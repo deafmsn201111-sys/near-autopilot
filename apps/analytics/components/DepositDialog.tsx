@@ -545,7 +545,11 @@ function WalletSend({
       const failure = sendFailure(e);
       if (failure === 'declined') setError('You declined in your wallet. Nothing was sent.');
       else if (failure === 'not-sent')
-        setError(`Your wallet could not send it: ${why}. Nothing was sent; check your balance.`);
+        setError(
+          `Nothing was sent: your wallet needs ${send} and a little ${
+            DEPOSIT_CHAINS.find((c) => c.id === q.chain)?.native ?? 'native coin'
+          } on ${q.chainName} for the network fee. Top it up and press the button again.`,
+        );
       else setUnsure(why);
     } finally {
       setBusy(false);
