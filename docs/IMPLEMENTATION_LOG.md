@@ -586,6 +586,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `/admin/1click` page and an admin nav (Spend · 1Click). Statuses are what the user's deposit screen last saw;
   server-side refresh is a separate issue.
 
+## 2026-11-14 — AI trace: ranking sentence (#110)
+
+- `apps/api`: `picksSchema` takes an optional `ranking` (1–300 chars; an invalid one drops only itself). It reaches
+  `run.ranking` only when every number in it appears in the code-built text of a card the user sees or in the tools'
+  shared context, there are ≥ 2 cards and no warning was put back; otherwise null. The prompt asks for it.
+- `apps/analytics`: `run.ranking` zod-checked (≤ 300, null on anything else), carried on `Pipeline`, shown under the
+  "ranked them" step as "Why this order: …" (React text only).
+
 ## 2026-11-14 — Priced Burrow actions via `execute_with_pyth` (#166)
 
 - `packages/burrow-adapter/src/builders.ts`: borrow, withdraw and repay from collateral build `execute_with_pyth`

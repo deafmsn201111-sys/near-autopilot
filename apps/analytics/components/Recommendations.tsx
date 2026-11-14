@@ -241,7 +241,7 @@ function AiTrace({
   /** Why the model was not asked, built by code from the agents' lines. */
   why?: string | null;
 }) {
-  const { model, read, asked, trace, turns, checks, stage } = pipeline;
+  const { model, read, asked, trace, turns, checks, stage, ranking } = pipeline;
   const live = startedAt !== null;
   if (!live && trace.length === 0) {
     if (calledTools.length === 0) return null;
@@ -357,6 +357,14 @@ function AiTrace({
             <span className="ai-step-note ai-in">
               {checks && `${plural(checks.picked, 'card')} picked and explained in `}
               {plural(turns, 'model turn')}
+            </span>
+          )}
+          {ranking && (
+            <span className="ai-step-note ai-in">
+              Why this order: {ranking}{' '}
+              <span className="ai-tag" title={PROVENANCE_TIER_INFO.calculated_estimate.describe}>
+                {PROVENANCE_TIER_INFO.calculated_estimate.label}
+              </span>
             </span>
           )}
         </Stage>

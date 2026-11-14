@@ -237,7 +237,10 @@ concentration share, positions out of range) and that number's provenance label,
 (its place in the AI ranking, kept by code when the model left out a loan warning, or left out by the AI), under a
 pipeline of the run: what was read on-chain, what each agent returned, what the model ranked, and what code checked
 before showing it (explanations whose numbers all came from the agents, explanations replaced, warnings put back,
-made-up actions dropped). The line is built on the server
+made-up actions dropped). The model may add one sentence (at most 300 characters) on why the cards are in this
+order; it is shown under the ranking step as "Why this order: …" only when every number in it appears on a card the
+user sees or in the tools' shared context, there are at least two cards, and code did not put back a warning the
+model left out (that changes the order); otherwise it is dropped. The line is built on the server
 from the tool output, so it shows the same number as the card. When Market Intelligence has no second price source
 it says so; it never reports "healthy" without a comparison.
 
