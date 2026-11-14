@@ -254,12 +254,14 @@ describe('NEAR wallet through HOT Kit', () => {
     expect(late).toEqual(['carol.near']);
   });
 
-  it('forgets a sign-in the wallet answers with its own error, not when the wallet list did not load', async () => {
+  it("forgets a sign-in HOT answers with 'Connect NEAR', keeps the session on any other failure", async () => {
     const m = await fresh();
     localStorage.setItem('selected-wallet', 'hot-wallet');
-    fake.state.accountError = 'No wallet selected';
-    expect(await m.currentAccount()).toBeNull();
-    expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');
+    for (const error of ['No wallet selected', 'Failed to fetch', 'Permission denied']) {
+      fake.state.accountError = error;
+      expect(await m.currentAccount()).toBeNull();
+      expect(localStorage.getItem('selected-wallet')).toBe('hot-wallet');
+    }
     fake.state.accountError = 'Connect NEAR';
     expect(await m.currentAccount()).toBeNull();
     expect(localStorage.getItem('selected-wallet')).toBeNull();

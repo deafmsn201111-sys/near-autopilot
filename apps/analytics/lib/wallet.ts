@@ -41,13 +41,11 @@ function forgetCancelledSignIn() {
   }
 }
 
-// near-connect 0.12's own errors when the wallet list or the wallet's frame did not load: the session may still be
-// valid. Anything else is the wallet's own answer that it has no account (HOT: "Connect NEAR").
-const couldNotAsk = (e: unknown) =>
-  e instanceof Error &&
-  /^(No wallet selected|Failed to load executor|Iframe not loaded|Invalid executor URL)/.test(
-    e.message,
-  );
+// Answers that mean "no account": near-connect's own, and HOT's after a cancelled sign-in (seen in a browser). Any
+// other failure (network, a wallet frame that did not load) keeps the key, so a valid session is never dropped.
+// ponytail: wallets with another wording keep loading the kit on each page; add their answer here when seen.
+const hasNoAccount = (e: unknown) =>
+  e instanceof Error && /^(No accounts found|Connect NEAR)/.test(e.message);
 
 let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
 function near() {
@@ -72,7 +70,7 @@ export async function currentAccount(): Promise<string | null> {
     if (!id) forgetCancelledSignIn();
     return id;
   } catch (e) {
-    if (!couldNotAsk(e)) forgetCancelledSignIn();
+    if (hasNoAccount(e)) forgetCancelledSignIn();
     return null;
   }
 }
