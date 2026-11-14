@@ -19,8 +19,6 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   `UPDATE orchestrator_control SET mode = 'normal' WHERE scope = '<scope>';` (scope = `demo-500` or `demo-5000`).
 - **The strategy preset is remembered per browser only** (one cookie for the last 20 accounts, #25). Another device or a cleared
   browser falls back to Balanced. → #100 (server-side per-account settings, written by the proven owner).
-- **Admin Funnel and LLM quality aggregate in memory** (#33): each page load reads 7 days of `events` funnel rows and
-  `llm_calls` rows (with input/output) into the API. Fine at today's traffic. → #177 (aggregate in SQL).
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence. → `T2.1`.
 - **No uniform provenance tagging** across all financial values. → `T1.1/T1.2`.
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
