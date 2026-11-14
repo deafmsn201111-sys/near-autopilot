@@ -492,6 +492,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   overlapping on LP rows), recommendation cards (the intent's tokens) and the deposit quote. The deposit form is now
   network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
   Enter, Esc back).
+
 ## 2026-11-14 — Both paths rank idle tokens by dollars a year (#139)
 
 - `packages/orchestrator/src/agents/capital-allocator.ts`: `proposeSupplies` proposes a supply for every idle
