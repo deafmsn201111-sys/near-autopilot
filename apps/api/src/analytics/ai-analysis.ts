@@ -1185,13 +1185,14 @@ async function runModel(
       why: p.why,
     })),
   };
-  if (recommendations.length === 0) return failed('empty', answered);
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>
       !recommendations.some((r) => r.kind === w.kind) &&
       warnings.findIndex((o) => o.kind === w.kind) === i,
   );
+  // A model that picked nothing still ran: a warning it left out is put back, and only no card at all is a fallback.
+  if (recommendations.length + missing.length === 0) return failed('empty', answered);
   recommendations.unshift(...missing);
   const kept = new Set(missing.map((m) => m.id));
   checks.restored = missing.length;
