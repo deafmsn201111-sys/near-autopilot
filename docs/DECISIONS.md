@@ -896,7 +896,8 @@ private.
 migration). A fresh 12-byte IV per write; `accountId/strategy` is the associated data, so a row moved to another
 account does not open. A row that is plaintext, under another key or tampered reads as "no saved analysis".
 `scripts/quickstart.sh` and `deploy/public/setup.sh` generate the key into `.env`; only `analytics-api` gets it.
-**Consequences:** a DB dump alone reveals only account id, strategy, time and page signature. The key is on the same
+**Consequences:** a DB dump alone reveals only account id, strategy, time, page signature and `analysis_key` (a hash
+of the public portfolio state). The key is on the same
 server, so the server operator can still decrypt; client-side encryption is out of scope. Losing or rotating the key
 drops the saved analyses (the next run saves a new one). Rows written before this change are never shown and the
 hourly purge deletes them.

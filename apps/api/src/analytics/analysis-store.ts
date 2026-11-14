@@ -18,8 +18,8 @@ const GCM = { authTagLength: 16 } as const;
 
 const sealedSchema = z.object({
   v: z.literal(1),
-  iv: z.string(),
-  tag: z.string(),
+  iv: z.string().length(16),
+  tag: z.string().length(24),
   ct: z.string(),
 });
 export type SealedAnalysis = z.infer<typeof sealedSchema>;
