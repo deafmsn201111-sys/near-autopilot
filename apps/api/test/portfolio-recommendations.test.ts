@@ -413,6 +413,73 @@ describe('portfolioRecommendations', () => {
     expect(i?.why).toContain('$600 of USDC would earn about $12.00 a year');
   });
 
+  describe('idle money after costs (#194)', () => {
+    it('says plainly when the yearly interest is not worth the network fee, instead of a cents card', () => {
+      const advice = portfolioAdvice(
+        ctx({ idleEarn: [{ token: 'usdc', symbol: 'USDC', usd: 3, aprPct: 10 }] }),
+        STRATEGIES.balanced,
+      );
+      expect(advice.recommendations.some((x) => x.kind === 'put_idle_to_work')).toBe(false);
+      expect(advice.skipped.join(' ')).toMatch(
+        /\$3\.00 of USDC would earn about \$0\.30 a year on Burrow: not worth the network fee/,
+      );
+    });
+
+    it('repays a loan in the same token instead when the loan costs more than supplying earns', () => {
+      const r = portfolioRecommendations(
+        ctx({
+          idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+          largestDebt: { ...demoDebt, usd: 150, amount: 150, borrowAprPct: 13.6 },
+          carry: { borrowAprPct: 30, loanMonthlyUsd: 1.7, depositsMonthlyUsd: 0 },
+        }),
+      );
+      const i = r.find((x) => x.kind === 'put_idle_to_work');
+      expect(i?.id).toBe('repay-with-idle');
+      expect(i?.intent).toEqual({ action: 'repay', token: USDC, approxUsd: 150 });
+      expect(i?.why).toMatch(/13\.6%.*8\.7%/);
+      expect(i?.why).toContain('The other $50 can then go to Burrow');
+    });
+
+    it('never lets a dust loan or a loan card already on the page replace the supply card', () => {
+      const idleEarn = [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }];
+      const dust = portfolioRecommendations(
+        ctx({
+          idleEarn,
+          loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 0.0004 },
+          largestDebt: { ...demoDebt, usd: 0.0004, amount: 0.0004, borrowAprPct: 13.6 },
+        }),
+      );
+      expect(dust.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+      const weak = portfolioRecommendations(
+        ctx({ idleEarn, loan: demoLoan, largestDebt: { ...demoDebt, borrowAprPct: 13.6 } }),
+      );
+      expect(weak.filter((x) => x.kind === 'improve_loan_safety')).toHaveLength(1);
+      expect(weak.find((x) => x.id === 'repay-with-idle')).toBeUndefined();
+    });
+
+    it('keeps supplying when the loan is in another token or costs less', () => {
+      const base = {
+        idleEarn: [{ token: USDC, symbol: 'USDC', usd: 200, aprPct: 8.7 }],
+        loan: { hasDebt: true, healthFactor: 3, collateralAdjUsd: 600, debtAdjUsd: 200 },
+      };
+      const other = portfolioRecommendations(
+        ctx({
+          ...base,
+          largestDebt: { ...demoDebt, token: 'usdt', symbol: 'USDt', borrowAprPct: 13.6 },
+        }),
+      );
+      const cheap = portfolioRecommendations(
+        ctx({
+          ...base,
+          largestDebt: { ...demoDebt, borrowAprPct: 5 },
+        }),
+      );
+      for (const r of [other, cheap])
+        expect(r.find((x) => x.kind === 'put_idle_to_work')?.intent?.action).toBe('supply');
+    });
+  });
+
   describe('the strategy decides where idle money goes (#132)', () => {
     const usdcMarket = (supplyApr: string, borrowApr: string, availableUsd = '1000000') => ({
       token: USDC,
@@ -471,8 +538,9 @@ describe('portfolioRecommendations', () => {
     });
 
     it('Aggressive does not promise a loop the fees eat on a small amount', () => {
-      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 5), 'aggressive');
-      expect(c?.carry?.text).toMatch(/would earn -539\.6% a year after fees .*so this supplies\.$/);
+      const c = card(idleUsdc(usdcMarket('0.10', '0.05'), 8), 'aggressive');
+      // $8: 30 days of 3.0168 x 10% - 2.0168 x 5% = $0.132, minus $2.30 of gas, annualised on $8 = -329.7%.
+      expect(c?.carry?.text).toMatch(/would earn -329\.7% a year after fees .*so this supplies\.$/);
     });
 
     it('Aggressive does not promise a loop Burrow has too little to lend for', () => {

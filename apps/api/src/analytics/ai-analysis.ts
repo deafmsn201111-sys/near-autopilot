@@ -37,6 +37,7 @@ import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
+import { yearWorthTheFee } from './portfolio-view';
 import { analysisKey } from './analysis-key';
 import type { WalletObservation } from './lp-recentre';
 
@@ -557,8 +558,15 @@ function allocatorTool(
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
       let lowRate: StepLine | null = null;
+      // The rule list already found the same token borrowed at a higher rate: repaying it beats supplying it (#194).
+      const repay = checks.find((c) => c.id === 'repay-with-idle');
+      const repaid = repay?.intent?.action === 'repay' ? repay.intent.token : null;
+      if (repay) {
+        candidates.push(repay);
+        byCandidate.set(repay.id, { text: repay.title, provenance: 'calculated_estimate' });
+      }
       for (const p of proposals) {
-        if (p.kind !== 'lending.supply') continue;
+        if (p.kind !== 'lending.supply' || p.token === repaid) continue;
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
@@ -572,7 +580,15 @@ function allocatorTool(
         }
         const aprPct = apr.toFixed(1);
         const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
-        const yearly = money((value * Number(yieldWad)) / 1e18);
+        const yearlyUsd = (value * Number(yieldWad)) / 1e18;
+        if (!yearWorthTheFee(yearlyUsd)) {
+          lowRate ??= {
+            text: `${view.symbol} would earn about ${money(yearlyUsd)} a year on Burrow: not worth the network fee`,
+            provenance: 'calculated_estimate',
+          };
+          continue;
+        }
+        const yearly = money(yearlyUsd);
         const id = `capital-allocator:supply:${p.token}`;
         byCandidate.set(id, {
           text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,

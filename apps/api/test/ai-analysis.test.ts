@@ -898,6 +898,62 @@ describe('analyseAccount', () => {
     });
   });
 
+  it('offers no supply the network fee would eat, and says so (#194)', async () => {
+    let seen = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => ((seen = JSON.stringify(results)), final([{ id: heuristic.id, why: 'Look.' }])),
+    ]);
+    const tiny = async () => {
+      const o = observation();
+      const snapshot = {
+        ...o.snapshot,
+        walletBalances: [{ token: USDT, raw: usdt(3) }],
+        lending: { ...o.snapshot.lending!, borrowed: [] },
+      };
+      return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: tiny,
+      heuristics: [heuristic],
+      checks: [heuristic],
+      ownerVerified: true,
+    });
+    expect(seen).not.toContain('capital-allocator:supply');
+    expect(out.trace.find((t) => t.tool === 'capital_allocator')?.text).toMatch(
+      /not worth the network fee/,
+    );
+  });
+
+  it("offers the rule card's repay-with-idle instead of supplying the same token (#194)", async () => {
+    const repayIdle: PortfolioRecommendation = {
+      id: 'repay-with-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: 'Use your idle USDt to repay your USDt loan',
+      why: 'The loan costs more than supplying earns.',
+      intent: { action: 'repay', token: USDT, approxUsd: 100 },
+    };
+    let seen = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => (
+        (seen = JSON.stringify(results)),
+        final([{ id: 'repay-with-idle', why: 'Cheaper.' }])
+      ),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [repayIdle],
+      checks: [repayIdle],
+    });
+    expect(seen).not.toContain('capital-allocator:supply:usdt');
+    expect(seen).toContain('repay-with-idle');
+    expect(out.recommendations.some((r) => r.id === 'repay-with-idle')).toBe(true);
+  });
+
   it("carries the rule card's line on what the strategy weighed onto the AI supply card (#132)", async () => {
     const { llm } = fake([
       () => callAll,
