@@ -58,18 +58,13 @@ export function Recommendations({
   hasLp: boolean;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(() =>
-    restore(saved),
-  );
-  const [error, setError] = useState<string | null>(null);
+  // Kept per strategy instead of remounting on a switch, which would drop the focus off the strategy control (#288);
+  // a run that ends after a switch lands under the strategy it started with.
+  const [runs, setRuns] = useState<Partial<Record<StrategyId, AiRun>>>({});
+  const [errors, setErrors] = useState<Partial<Record<StrategyId, string>>>({});
   const [live, setLive] = useState<Pipeline | null>(null);
-  // Reset here instead of remounting on a strategy switch, which would drop the focus off the strategy control (#288).
-  const [shownFor, setShownFor] = useState(strategy);
-  if (shownFor !== strategy) {
-    setShownFor(strategy);
-    setAi(restore(saved));
-    setError(null);
-  }
+  const ai = runs[strategy] ?? restore(saved);
+  const error = errors[strategy] ?? null;
   const running = startedAt !== null;
   const signature = portfolioSignature(initial, holdings);
   const analysis = ai?.signature === signature ? ai.analysis : null;
@@ -77,12 +72,14 @@ export function Recommendations({
   const recommendations = analysis?.recommendations ?? initial;
 
   async function analyse() {
+    const ranFor = strategy;
     setStartedAt(Date.now());
-    setError(null);
+    setErrors((e) => ({ ...e, [ranFor]: undefined }));
     setLive(null);
-    const r = await runAnalysis(account, strategy, setLive, signature);
-    if (r.ok) setAi({ analysis: r.analysis, signature, run: Date.now() });
-    else setError(r.error);
+    const r = await runAnalysis(account, ranFor, setLive, signature);
+    if (r.ok)
+      setRuns((all) => ({ ...all, [ranFor]: { analysis: r.analysis, signature, run: Date.now() } }));
+    else setErrors((e) => ({ ...e, [ranFor]: r.error }));
     setLive(null);
     setStartedAt(null);
   }
@@ -222,7 +219,13 @@ export function Recommendations({
   );
 }
 
-const restore = (saved: unknown) => {
+interface AiRun {
+  analysis: Analysis;
+  signature: string;
+  run: number;
+}
+
+const restore = (saved: unknown): AiRun | null => {
   const restored = parseSaved(saved);
   return restored && { ...restored, run: 0 };
 };
