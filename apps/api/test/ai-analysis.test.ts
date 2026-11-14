@@ -952,7 +952,7 @@ describe('analyseAccount', () => {
       'capital_allocator',
       'market_intelligence',
       'portfolio_concentration',
-      'liquidity_positions',
+      'lp_optimizer',
       'burrow_withdrawals',
     ]);
     expect(out.trace.every((t) => t.ok && t.pick === null)).toBe(true);
