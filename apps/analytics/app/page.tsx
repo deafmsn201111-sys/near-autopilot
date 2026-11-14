@@ -408,9 +408,6 @@ async function Portfolio({ sp }: { sp: Search }) {
         connected={cookieAccount}
       />
       {mode.kind !== 'mine' && <Intro />}
-      {isAccount && (
-        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
-      )}
 
       {!data.asOf && (
         <div className="callout" style={{ marginBottom: 16 }}>
@@ -460,6 +457,10 @@ async function Portfolio({ sp }: { sp: Search }) {
         />
       )}
 
+      {isAccount && !recs && (
+        <StrategyPicker account={accountParam} current={strategy} note={data.strategyNote} />
+      )}
+
       {isAccount && recs && (
         <section className="block">
           <Recommendations
@@ -472,6 +473,11 @@ async function Portfolio({ sp }: { sp: Search }) {
             saved={saved}
             icons={icons}
             signingEnabled={signingEnabled}
+            strategyNote={data.strategyNote}
+            aiAllowed={recs.ownerVerified === true || recs.ownerCheckFailed === true}
+            hasLoan={data.holdings.some((h) => h.where === 'borrowed')}
+            loanValued={data.health.healthFactor !== null}
+            hasLp={(data.positions ?? []).some((p) => p.key.startsWith('dcl-'))}
           />
         </section>
       )}
