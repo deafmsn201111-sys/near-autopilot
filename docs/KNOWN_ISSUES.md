@@ -29,6 +29,7 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
   Solana mints are read from `SOLANA_RPC_URL` (public mainnet RPC by default); while it has never answered, Solana
   tokens other than SOL are not offered.
 - **Duplicated risk logic:** 3 health-factor implementations (`financial-engine/lending.ts` float, `financial-engine/risk.ts` WAD, `burrow-adapter/risk.ts` USD18) + 2 guardians/2 rebalancers. Risk of divergence.
+- **Opportunity comparison** lacks a formal, documented, configurable score.
 - **Wallet button after a cancelled sign-in.** A cancelled NEAR sign-in leaves near-connect's `selected-wallet`, so
   the kit loads on every later page; a sign-in finished after the kit's list was closed shows the account but does not
   open the portfolio. → #236.

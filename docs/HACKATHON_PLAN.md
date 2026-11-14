@@ -85,7 +85,7 @@ Never cut (`never-cut`): security items, LLM core with fallback, spend tracking 
 ## Roadmap (README, not this hackathon)
 
 A backup LLM provider (e.g. Gemini) for NEAR AI Cloud outages, LLM-backed
-specialist agents, admin alerts. (1Click execution through an EVM wallet shipped in #126.)
+specialist agents, admin alerts. (Deposits from other chains' wallets shipped through HOT Kit's bridge popup, D42 / #260.)
 
 From the teammate's review on 12 Nov (issues filed without a milestone): positive-carry looping as a signable
 recommendation (#88), the NEAR / CONTROL design handoff (#89), swapping unverified wallet tokens into stablecoins with
