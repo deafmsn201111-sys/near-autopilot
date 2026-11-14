@@ -207,7 +207,7 @@ export function buildPortfolioView(i: {
       hf === null
         ? 'The health of the loan could not be computed from the latest data.'
         : drop !== null
-          ? `The loan stays safe unless NEAR falls ${(drop * 100).toFixed(0)}% from today's price.`
+          ? `The loan is liquidated if NEAR falls ${(drop * 100).toFixed(0)}% from today's price.`
           : 'The loan can be liquidated now.',
   };
 

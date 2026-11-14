@@ -1222,7 +1222,7 @@ export function loanHealth(
     label: safe ? 'Safe' : watch ? 'Needs watching' : 'At risk',
     sentence:
       loan.collateralDropToLiquidation !== null
-        ? `Health factor ${hf.toFixed(2)}: the loan stays safe unless your collateral loses ${(loan.collateralDropToLiquidation * 100).toFixed(0)}% of its value.`
+        ? `Health factor ${hf.toFixed(2)}: the loan is liquidated if your collateral loses ${(loan.collateralDropToLiquidation * 100).toFixed(0)}% of its value.`
         : 'The loan can be liquidated now.',
   } as const;
 }

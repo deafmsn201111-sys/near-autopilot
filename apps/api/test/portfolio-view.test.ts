@@ -55,6 +55,7 @@ describe('portfolio view (demo-5000)', () => {
       urgentBelow: STRATEGIES.balanced.warningBelow,
       safeFrom: STRATEGIES.balanced.healthyAt,
     });
+    expect(view(1.6, 0.73).health).toMatchObject({ level: 'high', label: 'At risk' });
   });
 
   it('values the simulated holdings at the given prices', () => {
