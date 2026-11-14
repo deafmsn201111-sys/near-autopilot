@@ -63,7 +63,8 @@ export async function confirmStep(
     if (res.status === 200 && (body['status'] === 'confirmed' || body['status'] === 'failed'))
       return body as unknown as StepResult;
     if (res.status === 202 || res.status === 502) continue;
-    if (typeof body['error'] === 'string') reason = `Could not confirm this step: ${body['error']}.`;
+    if (typeof body['error'] === 'string')
+      reason = `Could not confirm this step: ${body['error']}.`;
     return { status: 'unknown', reason };
   }
   return { status: 'unknown', reason };

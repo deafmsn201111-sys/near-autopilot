@@ -10,7 +10,7 @@ const recorded = (name: string): unknown =>
 function reader(body: unknown) {
   const sent: unknown[] = [];
   const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
-    sent.push(JSON.parse(String(init?.body)));
+    sent.push(JSON.parse(init?.body as string));
     return new Response(JSON.stringify(body));
   }) as typeof fetch;
   const rpc = new NearRpcClient({ url: 'http://rpc.invalid', fetchImpl, sleep: async () => {} });

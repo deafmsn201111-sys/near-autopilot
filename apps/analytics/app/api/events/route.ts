@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { type NextResponse } from 'next/server';
 import { forwardJson } from '../../../lib/json-proxy';
 
 /** The browser reports a wallet connect (stored as client-reported). Account id only; the visitor's IP is never sent. */

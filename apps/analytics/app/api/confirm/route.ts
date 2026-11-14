@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { type NextResponse } from 'next/server';
 import { forwardJson } from '../../../lib/json-proxy';
 
 /**
@@ -11,7 +11,12 @@ const LIMIT = { perVisitor: 60, overall: 1200, windowMs: 10 * 60_000 };
 
 export async function POST(req: Request): Promise<NextResponse> {
   return forwardJson(req, 'confirm', LIMIT, '/v1/wallet/confirm', (b) => {
-    const c = b as { account?: unknown; cascadeId?: unknown; step?: unknown; hash?: unknown } | null;
+    const c = b as {
+      account?: unknown;
+      cascadeId?: unknown;
+      step?: unknown;
+      hash?: unknown;
+    } | null;
     return c &&
       typeof c.account === 'string' &&
       typeof c.cascadeId === 'string' &&

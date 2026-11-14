@@ -81,7 +81,11 @@ export async function signCascade(
         return { ok: false, hashes, reason: 'The wallet did not return a transaction hash.' };
       hashes.push(hash);
       if (hooks.onSent && !(await hooks.onSent(step, hash)))
-        return { ok: false, hashes, reason: 'This step did not complete, so the next one was not offered.' };
+        return {
+          ok: false,
+          hashes,
+          reason: 'This step did not complete, so the next one was not offered.',
+        };
     }
     return { ok: true, hashes };
   } catch (e) {

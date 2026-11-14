@@ -26,7 +26,7 @@ interface CascadeVerdict {
     receivers: string[];
     methods: string[];
     gas: string;
-    deposit: string;
+    deposit: string | null;
   } | null;
   intent: { action?: string; token?: string; tokenOut?: string; poolId?: number } | null;
 }
@@ -154,7 +154,7 @@ export default async function PolicyPage({ searchParams }: { searchParams: Promi
                           <summary className="dim" style={{ cursor: 'pointer' }}>
                             {v.checks.length} checks
                             {v.summary &&
-                              ` · ${v.summary.receivers.length} receivers · ${gasToTgas(v.summary.gas)} · ${trimDecimals(yoctoToNear(v.summary.deposit))} NEAR attached`}
+                              ` · ${v.summary.receivers.length} receivers · ${gasToTgas(v.summary.gas)}${v.summary.deposit === null ? ' · wraps NEAR (amount not shown)' : ` · ${trimDecimals(yoctoToNear(v.summary.deposit))} NEAR attached`}`}
                           </summary>
                           <div className="checks" style={{ marginTop: 10 }}>
                             {v.checks.map((c) => (

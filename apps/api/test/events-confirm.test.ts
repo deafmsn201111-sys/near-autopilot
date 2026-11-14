@@ -25,7 +25,7 @@ async function recorded(name: string): Promise<TxOutcome | null> {
   );
   const rpc = new NearRpcClient({
     url: 'http://rpc.invalid',
-    fetchImpl: (async () => new Response(body)) as typeof fetch,
+    fetchImpl: async () => new Response(body),
   });
   return new NearTransactionStatusReader(rpc).status('h', ACCOUNT);
 }

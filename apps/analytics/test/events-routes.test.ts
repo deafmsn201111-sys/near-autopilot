@@ -5,10 +5,12 @@ vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
   headers: async () => new Map([['x-forwarded-for', forwardedFor]]),
 }));
-const apiPost = vi.fn(async (_path: string, _body: unknown) => ({
-  status: 404,
-  body: { error: 'unknown cascade' } as Record<string, unknown>,
-}));
+const apiPost = vi.fn(
+  async (_path: string, _body: unknown): Promise<{ status: number; body: object }> => ({
+    status: 404,
+    body: { error: 'unknown cascade' },
+  }),
+);
 vi.mock('../lib/api', () => ({ apiPost }));
 
 const post = (url: string, body: unknown, type = 'application/json') =>
@@ -74,7 +76,9 @@ describe('POST /api/events', () => {
 
   it('refuses any other kind', async () => {
     const { POST } = await import('../app/api/events/route');
-    expect((await POST(post('/api/events', { kind: 'signed', account: 'a.near' }))).status).toBe(400);
+    expect((await POST(post('/api/events', { kind: 'signed', account: 'a.near' }))).status).toBe(
+      400,
+    );
     expect(apiPost).not.toHaveBeenCalled();
   });
 });

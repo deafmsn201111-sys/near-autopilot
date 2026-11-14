@@ -181,4 +181,43 @@ describe('GET /v1/analytics/policy/cascades', () => {
       }),
     ]);
   });
+
+  it('names no account and no amount, also inside the summary and the check messages', async () => {
+    const store = new MemoryEventStore();
+    await store.add({
+      at: at(1),
+      kind: 'prepare_blocked',
+      accountId: 'autopilot-test.near',
+      source: 'server',
+      intent: { action: 'swap', token: 'wrap.near', approxUsd: 1234, amount: '99' },
+      verdict: 'BLOCK',
+      checks: [
+        {
+          rule: 'signer',
+          pass: false,
+          messages: ['swap: signer autopilot-test.near is not the connected account'],
+        },
+      ],
+      detail: {
+        summary: {
+          signer: 'autopilot-test.near',
+          receivers: ['wrap.near'],
+          methods: ['near_deposit'],
+          gas: '1',
+          deposit: '5000000000000000000000000',
+        },
+        preview: ['Wrap 5 NEAR'],
+      },
+    });
+    const app = Fastify();
+    registerEvents(app, store, () => at(2));
+    const body = (await app.inject({ url: '/v1/analytics/policy/cascades' })).body;
+    expect(body).not.toMatch(/autopilot-test\.near|1234|"99"|5000000000000000000000000|Wrap 5/);
+    expect((JSON.parse(body) as { verdicts: unknown[] }).verdicts[0]).toMatchObject({
+      account: 'aut…near',
+      intent: { action: 'swap', token: 'wrap.near' },
+      summary: { signer: 'aut…near', deposit: null },
+      checks: [{ messages: ['swap: signer aut…near is not the connected account'] }],
+    });
+  });
 });

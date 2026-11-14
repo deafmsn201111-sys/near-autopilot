@@ -12,7 +12,7 @@ function answers(...list: { status: number; body: unknown }[]) {
   let i = 0;
   const calls: unknown[] = [];
   const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
-    calls.push(JSON.parse(String(init?.body)));
+    calls.push(JSON.parse(init?.body as string));
     const a = list[Math.min(i++, list.length - 1)]!;
     return new Response(JSON.stringify(a.body), { status: a.status });
   }) as typeof fetch;
@@ -50,10 +50,14 @@ describe('confirmStep', () => {
   });
 
   it('stops at once on a refusal and says why', async () => {
-    const f = answers({ status: 422, body: { error: 'this transaction is not a step of the prepared cascade' } });
+    const f = answers({
+      status: 422,
+      body: { error: 'this transaction is not a step of the prepared cascade' },
+    });
     expect(await confirmStep(req, f)).toEqual({
       status: 'unknown',
-      reason: 'Could not confirm this step: this transaction is not a step of the prepared cascade.',
+      reason:
+        'Could not confirm this step: this transaction is not a step of the prepared cascade.',
     });
     expect(f.calls).toHaveLength(1);
   });

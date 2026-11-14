@@ -15,7 +15,7 @@ async function recorded(name: string): Promise<TxOutcome> {
   );
   const rpc = new NearRpcClient({
     url: 'http://rpc.invalid',
-    fetchImpl: (async () => new Response(body)) as typeof fetch,
+    fetchImpl: async () => new Response(body),
   });
   const out = await new NearTransactionStatusReader(rpc).status('h', 'autopilot-test.near');
   if (!out) throw new Error(`fixture ${name} has no outcome`);

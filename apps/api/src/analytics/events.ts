@@ -150,6 +150,36 @@ const publicIntent = (intent: Record<string, unknown> | null | undefined) =>
       )
     : null;
 
+const masked = (text: string, accountId: string) =>
+  text.split(accountId).join(shortAccount(accountId));
+
+const publicChecks = (checks: readonly unknown[] | null | undefined, accountId: string) =>
+  z
+    .array(z.object({ rule: z.string(), pass: z.boolean(), messages: z.array(z.string()) }))
+    .catch([])
+    .parse(checks ?? [])
+    .map((c) => ({ ...c, messages: c.messages.map((m) => masked(m, accountId)) }));
+
+/** What the checks saw, without the account and without the user's own NEAR when a step wraps it. */
+function publicSummary(summary: unknown, accountId: string) {
+  const s = z
+    .object({
+      receivers: z.array(z.string()),
+      methods: z.array(z.string()),
+      gas: z.string(),
+      deposit: z.string(),
+    })
+    .safeParse(summary);
+  if (!s.success) return null;
+  return {
+    signer: shortAccount(accountId),
+    receivers: s.data.receivers,
+    methods: s.data.methods,
+    gas: s.data.gas,
+    deposit: s.data.methods.includes('near_deposit') ? null : s.data.deposit,
+  };
+}
+
 const utcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 
 export function registerEvents(app: FastifyInstance, store: EventStore, now: () => Date) {
@@ -180,8 +210,8 @@ export function registerEvents(app: FastifyInstance, store: EventStore, now: () 
         action: typeof r.intent?.['action'] === 'string' ? r.intent['action'] : 'unknown',
         intent: publicIntent(r.intent),
         verdict: r.verdict ?? (r.kind === 'prepare' ? 'ALLOW' : 'BLOCK'),
-        checks: r.checks ?? [],
-        summary: r.detail?.['summary'] ?? null,
+        checks: publicChecks(r.checks, r.accountId),
+        summary: publicSummary(r.detail?.['summary'], r.accountId),
       })),
     };
   });
