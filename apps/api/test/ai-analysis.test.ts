@@ -825,6 +825,78 @@ describe('analyseAccount', () => {
     expect(card?.title).toBe('Put $507.42 of your idle USDt to work');
   });
 
+  it('skips an idle token under 1% a year, like the rule-based card', async () => {
+    let tools: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        tools = results;
+        return final([{ id: 'capital-allocator:supply:usdt.tether-token.near', why: 'Earn.' }]);
+      },
+    ]);
+    const obs = observation();
+    const low: AgentObservation = {
+      ...obs,
+      snapshot: {
+        ...obs.snapshot,
+        walletBalances: [...obs.snapshot.walletBalances, { token: WNEAR, raw: near(10_000) }],
+      },
+      market: {
+        ...obs.market!,
+        estimatedYieldWad: new Map([
+          [USDT, 8n * 10n ** 16n],
+          [WNEAR, 5n * 10n ** 15n],
+        ]),
+      },
+    };
+    await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => low,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    expect(JSON.stringify(tools)).not.toContain('capital-allocator:supply:wrap.near');
+  });
+
+  it('offers a supply for every idle token, most dollars a year first, with the yearly earnings', async () => {
+    let tools: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        tools = results;
+        return final([{ id: 'capital-allocator:supply:wrap.near', why: 'Earn on it.' }]);
+      },
+    ]);
+    const obs = observation();
+    const both: AgentObservation = {
+      ...obs,
+      market: {
+        ...obs.market!,
+        estimatedYieldWad: new Map([
+          [USDT, 8n * 10n ** 16n],
+          [WNEAR, 2n * 10n ** 16n],
+        ]),
+      },
+    };
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => both,
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    const shown = JSON.stringify(tools);
+    expect(shown.indexOf('capital-allocator:supply:usdt.tether-token.near')).toBeGreaterThan(-1);
+    expect(shown.indexOf('capital-allocator:supply:usdt.tether-token.near')).toBeLessThan(
+      shown.indexOf('capital-allocator:supply:wrap.near'),
+    );
+    expect(shown).toContain('about $8.00 a year');
+    expect(out.recommendations.find((r) => r.kind === 'put_idle_to_work')).toMatchObject({
+      intent: { action: 'supply', token: WNEAR },
+    });
+  });
+
   it.each([
     ['invalid JSON', (): LlmToolTurn => ({ kind: 'final', text: 'not json' })],
     ['a model error', (): Promise<LlmToolTurn> => Promise.reject(new Error('529'))],
@@ -2003,5 +2075,28 @@ describe('lp_optimizer tool', () => {
 
   it('keeps only the exit when nothing trades in the pool', async () => {
     expect((await lpCards(0)).map((r) => r.id)).toEqual([exit.id]);
+  });
+});
+
+describe('market intelligence volatility on the wallet path', () => {
+  it('a 24 h range above 15% is a volatility_spike the trace line names', async () => {
+    const base = observation();
+    const obs = {
+      ...base,
+      market: { ...base.market!, volatility24hBps: new Map([[WNEAR, 4000]]) },
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: async () => obs,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'market_intelligence')?.text).toBe(
+      'wNEAR: 24h realised volatility 4000 bps',
+    );
   });
 });

@@ -94,7 +94,7 @@ import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
-import { consensus } from './series';
+import { consensus, range24hBps } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
@@ -338,6 +338,7 @@ async function readDclPositions(
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
+const DAY_MS = 24 * 60 * 60 * 1000;
 /** `valueAccount` lists native NEAR under this pseudo token; the snapshot reads it as `nativeBalance`. */
 const NATIVE_HOLDING = 'near';
 
@@ -430,6 +431,7 @@ export interface PositionRow {
   readonly key: string;
   readonly label: string;
   readonly sub: string;
+  readonly tokens: readonly { readonly token: string; readonly symbol: string }[];
   readonly amount: number | null;
   /** Null when no leg has a price; then the row is listed but adds nothing to the totals. */
   readonly usd: number | null;
@@ -451,7 +453,7 @@ export function accountPortfolio(p: AccountPositions) {
   const positions: PositionRow[] = [];
   const trust = p.trust ?? (() => ({ verified: true, estimate: false }));
   const position = (
-    row: Omit<PositionRow, 'usd' | 'verified' | 'estimate' | 'small'>,
+    row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
     protocol: string,
   ) => {
@@ -464,7 +466,14 @@ export function accountPortfolio(p: AccountPositions) {
         estimate ||= trust(x.token).estimate;
       }
     const verified = parts.every((x) => trust(x.token).verified);
-    positions.push({ ...row, usd, verified, estimate, small: isSmall(usd, row.amount, verified) });
+    positions.push({
+      ...row,
+      tokens: parts.map((x) => ({ token: x.token, symbol: x.symbol })),
+      usd,
+      verified,
+      estimate,
+      small: isSmall(usd, row.amount, verified),
+    });
   };
   for (const h of p.holdings) {
     if (h.usd === null || h.usd <= 0) continue;
@@ -756,17 +765,23 @@ export function portfolioAdvice(
     }
   }
 
-  // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
+  // 3. Put idle cash to work: the wallet asset that earns the most dollars a year at its supply rate.
   const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
-  const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
+  const yearly = (a: (typeof earning)[number]) => (a.usd * a.aprPct) / 100;
+  const [idle, runnerUp] = earning
+    .filter((a) => a.usd >= MIN_ACTION_USD)
+    .sort((a, b) => yearly(b) - yearly(a));
   if (idle) {
+    const other = runnerUp
+      ? ` Your ${money0(runnerUp.usd)} of ${runnerUp.symbol} would earn about ${money2(yearly(runnerUp))} a year.`
+      : '';
     recs.push({
       id: 'put-idle-to-work',
       kind: 'put_idle_to_work',
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
-      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, and you can withdraw it any time.`,
+      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
     });
   } else if (earning[0] && earning[0].usd >= 0.1) {
@@ -1840,8 +1855,9 @@ export function registerAccountView(
   /**
    * What the orchestrator agents see for this wallet: a fresh Burrow snapshot priced with the same confirmed collector
    * prices as the account view (so the agents' numbers match the portfolio table), today's Burrow supply rates as the
-   * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
-   * recent price). The context is as old as the collector snapshot it was priced from.
+   * yield estimates, Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
+   * recent price), and each priced token's 24 h range from the collector's own stored prices (see range24hBps). The
+   * context is as old as the collector snapshot it was priced from; so is the 24 h window.
    */
   const dclAllowed = new Set(deps.dclPools ?? []);
   /** The wallet's DCL positions as the LP Optimizer sees them; empty when DCL or the allowlist is off. */
@@ -1888,6 +1904,7 @@ export function registerAccountView(
     id: AccountId,
     held: readonly TokenId[],
     strategy: StrategyId,
+    log: FastifyRequest['log'],
   ): Promise<WalletObservation> => {
     const [markets, meta, prices, collected] = await Promise.all([
       store.markets(),
@@ -1936,10 +1953,23 @@ export function registerAccountView(
       const apr = m?.status === 'OK' ? parseDecimal(m.netSupplyApr ?? m.supplyApr ?? '') : null;
       if (apr && apr.mantissa > 0n) estimatedYieldWad.set(token, toWad(apr));
     }
-    const [reference, lp] = await Promise.all([
+    const since = new Date(pricedAt.getTime() - DAY_MS);
+    const [reference, lp, ranges] = await Promise.all([
       burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
       readLp(id, prices, decimalsOf),
+      Promise.all(
+        priced.map(async (t) => {
+          try {
+            return [t, range24hBps(await store.priceHistory(t, since))] as const;
+          } catch (err) {
+            log.warn({ err, token: t }, 'price history read failed: no 24 h range');
+            return [t, null] as const;
+          }
+        }),
+      ),
     ]);
+    const volatility24hBps = new Map<TokenId, number>();
+    for (const [t, bps] of ranges) if (bps !== null) volatility24hBps.set(t, bps);
     return {
       now: clock.now(),
       accountId: id,
@@ -1948,7 +1978,7 @@ export function registerAccountView(
         asOf: pricedAt,
         estimatedYieldWad,
         referencePrices: reference.prices,
-        volatility24hBps: new Map(),
+        volatility24hBps,
         lpPositions: lp?.views ?? [],
         ...(lp && lp.notes.length > 0 && { notes: { lp: lp.notes.join('; ') } }),
       },
@@ -1979,6 +2009,7 @@ export function registerAccountView(
             ),
           ],
           strategy,
+          log,
         ),
       heuristics: view.body.recommendations,
       checks: view.forModel,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consensus, riskBands } from '../src/analytics/series';
+import { consensus, range24hBps, riskBands } from '../src/analytics/series';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import type { CollectorStore } from '../src/collector/store';
 
@@ -31,6 +31,39 @@ describe('consensus of one snapshot', () => {
       spreadBps: null,
       sources: 0,
     });
+  });
+});
+
+describe('24h range from the collector prices', () => {
+  const HOUR = 60 * 60 * 1000;
+  const snaps = (prices: readonly number[], stepMs = 2 * HOUR) =>
+    prices.flatMap((p, i) => {
+      const at = { snapshotId: `s${i}`, observedAt: new Date(i * stepMs) };
+      return [
+        { ...at, ...q('pyth', String(p)) },
+        { ...at, ...q('kraken', '1.00', 'stale') },
+      ];
+    });
+  it('is (high - low) / low of the per-snapshot consensus, in bps', () => {
+    expect(range24hBps(snaps([1, 1.2, ...Array<number>(10).fill(1.1), 1.4]))).toBe(4000);
+  });
+  it('needs 12 priced snapshots: fewer is not a 24h range', () => {
+    expect(range24hBps(snaps(Array<number>(11).fill(2)))).toBeNull();
+    expect(range24hBps(snaps(Array<number>(12).fill(2)))).toBe(0);
+  });
+  it('needs the snapshots to span 12 h: a fast collector after a restart is not a 24h range', () => {
+    expect(range24hBps(snaps(Array<number>(48).fill(2), 15 * 60 * 1000))).toBeNull();
+    expect(range24hBps(snaps(Array<number>(49).fill(2), 15 * 60 * 1000))).toBe(0);
+  });
+  it('an unpriced snapshot does not stretch the span', () => {
+    const unpriced = {
+      snapshotId: 'old',
+      observedAt: new Date(-23 * HOUR),
+      ...q('pyth', null, 'stale'),
+    };
+    expect(
+      range24hBps([unpriced, ...snaps([1, ...Array<number>(11).fill(1.3)], 60_000)]),
+    ).toBeNull();
   });
 });
 

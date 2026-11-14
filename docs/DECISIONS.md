@@ -139,7 +139,8 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the tokens the wallet holds (`SnapshotService`),
   priced with the collector's confirmed prices, the same ones the portfolio table uses. `priceoracle.near` returned no
   recent price on 11 Nov 2026, so it is only Market Intelligence's second source (empty when it has none). Yields
-  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus three
+  are today's Burrow supply rates. 24 h volatility is the high-low range of the collector's own stored consensus
+  prices (at least 12 snapshots spanning 12 h; #104). Plus three
   wallet checks: concentration and Burrow withdrawals (#64), and the `LpOptimizerAgent` on the wallet's DCL
   positions (D26, #63).
 - Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
@@ -402,7 +403,9 @@ user signs it. The policy engine's `maxActionUsd` on the dry-run autopilot path,
 are unchanged.
 **Consequences:** The AI and rule-based idle-supply cards name the same amount for the same token. Only the AI path
 turns `supplyIdle` on; if the dry-run autopilot ever does, a supply above the policy's `maxActionUsd` is rejected
-(fail-closed) instead of scaled down. The two paths can still pick different tokens when several are idle (#139).
+(fail-closed) instead of scaled down. When several tokens are idle, both paths rank them by dollars a year at the live
+Burrow rate, each at least $1 and 1% a year (#139): the rule-based card offers the top earner and names the runner-up;
+the AI path gets every such token as a candidate (at most 8) and the model may rank another first, saying why.
 
 ## D24 — The AI pipeline streams over Server-Sent Events through the site proxy
 
@@ -481,3 +484,16 @@ every wallet DCL position in an allowlisted pool.
 **Consequences:** The cost and fee numbers are estimates (volume persists, fixed time in range, no IL). A position too
 large for the pool's depth gets the card but prepare refuses it. If the add still fails, the tokens sit in the
 user's Rhea balance.
+
+## D27 — Token logos come only from the token contract, as checked data URIs
+
+**Context:** #124. Tokens were shown as bare symbols; other NEAR apps show logos.
+**Decision:** The logo is the token's own `ft_metadata.icon`, read by the API (view call) and kept only if it is a
+`data:image/(png|jpeg|webp|gif|svg+xml)` URI of at most 32 KB (`safeTokenIcon`, `packages/core`); the UI checks it
+again and renders it only through `<img>`, where an SVG cannot run scripts. Cached per process (500 tokens, a failed
+read is not cached). Native NEAR and wNEAR (no icon on chain) get one checked-in NEAR logo; every 1Click deposit asset
+is a `nep141:` NEAR token, so it uses that token's icon. The five deposit chains have checked-in logos
+(`apps/analytics/public/chains`). No external token list: no new host in the CSP, no third-party data. Any other
+token without an icon shows a letter placeholder.
+**Consequences:** A contract can still pick a misleading logo, as it can pick a misleading symbol; the "Unverified"
+badge stays the trust signal. Logos are inlined in the page (0.5–11 KB each today).

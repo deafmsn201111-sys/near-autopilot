@@ -24,6 +24,8 @@ _Known limitations and defects, honestly stated (brief §3.3, §23). Not a roadm
 - **Opportunity comparison** lacks a formal, documented, configurable score. → `T2.3`.
 - **UX flows** flagged by owner as "not usable" (beyond theme). → `T4.1`.
 - **Guard/contract absent** → autonomy hard-blocked. → `T5.1`.
+- **Wallet-path 24 h range has no outlier filter** (#104 → #159): one bad collector print in a snapshot can widen it past
+  15% and raise a `volatility_spike`. Fail-safe (it only defers discretionary trades).
 - **CI has no Rust/contract job** (will be needed once `contracts/` lands). → `T5.2`.
 
 ## Watch list (external)

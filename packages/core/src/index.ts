@@ -14,3 +14,4 @@ export * from './chain-identity';
 export * from './bounded-map';
 export * from './strategy';
 export * from './loan-math';
+export * from './token-icon';

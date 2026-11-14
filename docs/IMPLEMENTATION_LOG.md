@@ -474,6 +474,34 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `market.lpPositions`, prepare intent `recentre_dcl`; `validate-cascade.ts`: DCL `add_liquidity` allowlist (D26).
 - `apps/analytics`: "Prepare new range" button for `recentre_dcl`; the exit card reads as an exit.
 
+## 2026-11-14 — Market Intelligence: 24 h volatility on the wallet path (#104)
+
+- `apps/api/src/analytics/series.ts`: `range24hBps` — high-low range (bps) of an asset's per-snapshot consensus
+  price; null under 12 snapshots.
+- `apps/api/src/analytics/account-view.ts`: the wallet observation fills `volatility24hBps` for each priced held
+  token from the collector's last 24 h of `price_observations`; a failed read leaves the token without a range.
+- A range above 15% is a `volatility_spike` and the Market Intelligence trace line names it (D13 updated).
+
+## #124 — Token logos and a deposit picker
+
+- `packages/core/src/token-icon.ts`: `safeTokenIcon` (image data URIs only, 32 KB cap) (D27).
+- `apps/api/src/analytics/token-icons.ts`: `TokenIcons` (ft_metadata.icon, bounded cache, NEAR logo for
+  `near`/`wrap.near`) and `GET /v1/tokens/icons?ids=`; `/v1/deposit/assets` gives each token its `icon`; LP rows carry
+  their `tokens`.
+- `apps/analytics`: `TokenIcon` (img or letter placeholder, falls back on a load error) on holdings rows (two
+  overlapping on LP rows), recommendation cards (the intent's tokens) and the deposit quote. The deposit form is now
+  network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
+  Enter, Esc back).
+
+## 2026-11-14 — Both paths rank idle tokens by dollars a year (#139)
+
+- `packages/orchestrator/src/agents/capital-allocator.ts`: `proposeSupplies` proposes a supply for every idle
+  allocation asset, the most dollars a year (value × Burrow rate) first; the decision engine still ranks by net benefit.
+- `apps/api/src/analytics/ai-analysis.ts`: one supply candidate per idle token with its yearly earnings; the prompt
+  says a pick that skips the top earner explains why in its "why".
+- `apps/api/src/analytics/account-view.ts`: the rule-based idle card offers the top earner in dollars a year (not the
+  largest balance) and names the runner-up's yearly earnings.
+
 ## 2026-11-14 — "Nothing for the AI to rank" says why (#143)
 
 - On top of #119 (no model call when nothing to rank): `nothing_to_rank` carries `note` = the proposing agents' own
