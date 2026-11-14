@@ -740,3 +740,20 @@ export const events = pgTable(
     uniqueIndex('events_tx_hash_idx').on(t.txHash),
   ],
 );
+
+/** The last AI analysis per account and strategy (migration 0025, #190): shown again after a reload; kept 30 days. */
+export const accountAnalyses = pgTable(
+  'account_analyses',
+  {
+    accountId: text('account_id').notNull(),
+    strategy: text('strategy').notNull(),
+    analysisKey: text('analysis_key').notNull(),
+    signature: text('signature'),
+    at: ts('at').notNull(),
+    analysis: jsonb('analysis').$type<unknown>().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.accountId, t.strategy] }),
+    index('account_analyses_at_idx').on(t.at),
+  ],
+);

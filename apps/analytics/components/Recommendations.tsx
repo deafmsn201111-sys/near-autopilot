@@ -3,6 +3,7 @@ import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   modelName,
+  parseSaved,
   pipelineOf,
   runAnalysis,
   type Analysis,
@@ -29,6 +30,7 @@ export function Recommendations({
   recommendations: initial,
   skipped,
   holdings,
+  saved = null,
   icons = {},
   signingEnabled,
 }: {
@@ -37,11 +39,18 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
+  /** The owner's last saved analysis for this strategy, as the API sent it (#190). */
+  saved?: unknown;
   icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(null);
+  const [ai, setAi] = useState<{ analysis: Analysis; signature: string; run: number } | null>(
+    () => {
+      const restored = parseSaved(saved);
+      return restored && { ...restored, run: 0 };
+    },
+  );
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<Pipeline | null>(null);
   const running = startedAt !== null;
@@ -54,7 +63,7 @@ export function Recommendations({
     setStartedAt(Date.now());
     setError(null);
     setLive(null);
-    const r = await runAnalysis(account, strategy, setLive);
+    const r = await runAnalysis(account, strategy, setLive, signature);
     if (r.ok) setAi({ analysis: r.analysis, signature, run: Date.now() });
     else setError(r.error);
     setLive(null);
@@ -103,6 +112,12 @@ export function Recommendations({
                 : 'Heuristic (AI unavailable)'}
           </span>
           {analysis.note && !nothingToDo && <small> {analysis.note}</small>}
+        </p>
+      )}
+      {analysis?.cachedAt && !running && (
+        <p className="callout good" role="status">
+          ✓ Up to date — your portfolio hasn&apos;t changed since this analysis (
+          {ago(analysis.cachedAt)}).
         </p>
       )}
       {live ? (

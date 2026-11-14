@@ -121,6 +121,22 @@ export interface ToolLlmDeps {
   readonly maxTokens: number;
   readonly ledger: LlmLedger;
   readonly memo: AnalysisMemo;
+  /** The last result per account and strategy, kept across restarts (#190). */
+  readonly store?: AnalysisStore;
+}
+
+export interface SavedAnalysis {
+  /** The wallet state it was computed for (`analysisKey`). */
+  readonly key: string;
+  /** The page's portfolio signature at the time: tells the page whether the portfolio changed since. */
+  readonly signature: string | null;
+  readonly at: Date;
+  readonly analysis: Analysis;
+}
+
+export interface AnalysisStore {
+  latest(accountId: AccountId, strategy: StrategyId): Promise<SavedAnalysis | null>;
+  save(accountId: AccountId, strategy: StrategyId, saved: SavedAnalysis): Promise<void>;
 }
 
 const CACHE_MAX = 200;
@@ -229,6 +245,8 @@ export interface AnalysisContext {
   readonly concentration?: { readonly token: string; readonly pct: number } | null;
   /** The loan's cost against the deposits' earnings, for every loan card the guardian returns. */
   readonly loanCarry?: PortfolioRecommendation['carry'];
+  /** The page's portfolio signature, saved with the result; never read by the server. */
+  readonly signature?: string;
 }
 
 export interface Analysis {
@@ -1003,9 +1021,14 @@ async function runModel(
     ),
   ];
   const key = analysisKey(obs, ctx.heuristics, strategy);
-  const hit = ai.memo.results.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS)
-    return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  const hit = await reusable(ai, ctx.accountId, strategy, key, onError);
+  if (hit) return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  const keep = async (analysis: Analysis) => {
+    ai.memo.results.set(key, { at: Date.now(), analysis });
+    const saved = { key, signature: ctx.signature ?? null, at: new Date(), analysis };
+    await ai.store?.save(ctx.accountId, strategy, saved).catch(onError);
+    return analysis;
+  };
   const read = {
     tokens: heldTokens(obs).size,
     loan: (obs.snapshot.lending?.borrowed ?? []).some((b) => b.raw > 0n),
@@ -1019,7 +1042,8 @@ async function runModel(
     if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
       const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
       const trace = traceSteps(ran, checked, [], new Set());
-      return early({
+      settle();
+      return keep({
         ...fallback('nothing_to_rank'),
         note: trace
           .filter((t) => t.tool !== 'market_intelligence')
@@ -1242,8 +1266,25 @@ async function runModel(
     read,
     cachedAt: null,
   };
-  ai.memo.results.set(key, { at: Date.now(), analysis });
-  return analysis;
+  return keep(analysis);
+}
+
+/** This wallet state's result from the last 10 minutes: from this process, or saved before a restart. */
+async function reusable(
+  ai: ToolLlmDeps,
+  accountId: AccountId,
+  strategy: StrategyId,
+  key: string,
+  onError: (e: unknown) => void,
+): Promise<{ at: number; analysis: Analysis } | null> {
+  const fresh = (at: number) => Date.now() - at < CACHE_TTL_MS;
+  const hit = ai.memo.results.get(key);
+  if (hit && fresh(hit.at)) return hit;
+  const saved = await ai.store
+    ?.latest(accountId, strategy)
+    .catch((e: unknown) => (onError(e), null));
+  if (!saved || saved.key !== key || !fresh(saved.at.getTime())) return null;
+  return { at: saved.at.getTime(), analysis: saved.analysis };
 }
 
 /** Code reordered the list by putting a skipped warning first, or there is no order to explain: the sentence would not match. */

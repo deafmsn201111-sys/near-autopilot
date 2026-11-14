@@ -2430,6 +2430,9 @@ table.mini tr.total td {
 .callout.warn {
   border-left-color: var(--critical);
 }
+.callout.good {
+  border-left-color: var(--good);
+}
 .prepare-steps {
   margin: 0 0 4px;
   padding-left: 20px;

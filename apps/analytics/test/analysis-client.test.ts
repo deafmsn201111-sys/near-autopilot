@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { pipelineOf, runAnalysis, type Pipeline } from '../lib/analysis-client';
+import { parseSaved, pipelineOf, runAnalysis, type Pipeline } from '../lib/analysis-client';
 
 const reply = (body: unknown) =>
   vi.stubGlobal(
@@ -124,6 +124,17 @@ describe('runAnalysis', () => {
     expect(await runAnalysis('alice.near', 'balanced')).toEqual({
       ok: true,
       analysis: { ...base, calledTools: [], trace: [], run: null, read: null, cachedAt: null },
+    });
+  });
+
+  it('sends the portfolio signature with the run', async () => {
+    reply(base);
+    await runAnalysis('alice.near', 'balanced', () => {}, 'sig-1');
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect(JSON.parse(init?.body as string)).toEqual({
+      account: 'alice.near',
+      strategy: 'balanced',
+      signature: 'sig-1',
     });
   });
 
@@ -260,5 +271,23 @@ describe('runAnalysis as a stream', () => {
     expect(r).toEqual({ ok: false, error: 'analysis failed' });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(seen.at(-1)).toBeNull();
+  });
+});
+
+describe('parseSaved', () => {
+  it("reads the owner's saved analysis and its signature", () => {
+    const saved = parseSaved({
+      analysis: { ...base, cachedAt: '2026-11-14T10:00:00.000Z' },
+      signature: 'sig-1',
+    });
+    expect(saved?.signature).toBe('sig-1');
+    expect(saved?.analysis.cachedAt).toBe('2026-11-14T10:00:00.000Z');
+  });
+
+  it('reads nothing saved, a malformed reply or a missing signature as no saved analysis', () => {
+    expect(parseSaved(null)).toBeNull();
+    expect(parseSaved({ analysis: null, signature: null })).toBeNull();
+    expect(parseSaved({ analysis: { source: 'nope' }, signature: 's' })).toBeNull();
+    expect(parseSaved({ analysis: base, signature: null })).toBeNull();
   });
 });

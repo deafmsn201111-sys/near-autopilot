@@ -37,6 +37,7 @@ import {
   ago,
   money,
   portfolioView,
+  savedAnalysis,
   type PortfolioAction,
 } from '../lib/product';
 import { Recommendations } from '../components/Recommendations';
@@ -307,6 +308,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
   const recs = isAccount ? (await accountRecommendations(accountParam, strategy)).data : null;
+  const saved = recs?.ownerVerified ? await savedAnalysis(accountParam, strategy) : null;
   const tokenOf = (h: { token?: string; symbol: string }) => h.token ?? curatedId(h.symbol);
   const icons = await tokenIcons([
     ...data.holdings.flatMap((h) => tokenOf(h) ?? []),
@@ -472,6 +474,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             recommendations={recs.recommendations}
             skipped={recs.skipped ?? []}
             holdings={data.holdings}
+            saved={saved}
             icons={icons}
             signingEnabled={signingEnabled}
           />

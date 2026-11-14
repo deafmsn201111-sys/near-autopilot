@@ -3,6 +3,7 @@ import { OWNERSHIP_COOKIE } from '@near-autopilot/core/ownership';
 import { strategySchema } from '@near-autopilot/core/strategy';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { apiPost, apiPostStream } from '../../../lib/api';
 import { processWide } from '../../../lib/process-state';
 import { ACCOUNT_LIMIT, consume, MAX_TRACKED_KEYS, visitor } from '../../../lib/rate-limit';
@@ -38,18 +39,26 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
-  const fields = (body ?? {}) as { account?: unknown; strategy?: unknown };
+  const fields = (body ?? {}) as { account?: unknown; strategy?: unknown; signature?: unknown };
   const raw = fields.account;
   const account = accountIdSchema.safeParse(
     typeof raw === 'string' ? raw.trim().toLowerCase() : raw,
   );
   const strategy = strategySchema.safeParse(fields.strategy);
-  if (!account.success || !strategy.success) {
+  const signature = z.string().max(20_000).optional().safeParse(fields.signature);
+  if (!account.success || !strategy.success || !signature.success) {
     return NextResponse.json(
-      { error: 'body must be { account: <NEAR account id>, strategy?: <strategy name> }' },
+      {
+        error:
+          'body must be { account: <NEAR account id>, strategy?: <strategy name>, signature?: <string> }',
+      },
       { status: 400 },
     );
   }
+  const payload = {
+    strategy: strategy.data,
+    ...(signature.data !== undefined && { signature: signature.data }),
+  };
   const streamed = req.headers.get('accept')?.includes('text/event-stream') ?? false;
   const click = `${await visitor()}|${account.data}|${strategy.data}`;
   const paidAt = retries.get(click);
@@ -67,17 +76,9 @@ export async function POST(req: Request): Promise<Response> {
   const forward: Record<string, string> = proof ? { 'x-ownership-proof': proof } : {};
   if (streamed) {
     retries.set(click, Date.now());
-    return stream(
-      await apiPostStream(path, { strategy: strategy.data }, LLM_TIMEOUT_MS, forward, req.signal),
-    );
+    return stream(await apiPostStream(path, payload, LLM_TIMEOUT_MS, forward, req.signal));
   }
-  const { status, body: out } = await apiPost(
-    path,
-    { strategy: strategy.data },
-    LLM_TIMEOUT_MS,
-    forward,
-    req.signal,
-  );
+  const { status, body: out } = await apiPost(path, payload, LLM_TIMEOUT_MS, forward, req.signal);
   return NextResponse.json(out, { status: status || 502 });
 }
 
