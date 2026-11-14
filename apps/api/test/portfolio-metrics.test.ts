@@ -118,6 +118,11 @@ describe('accountPortfolio', () => {
         usd: 2,
       },
     ]);
+    const pair = [
+      { token: USDC, symbol: 'USDC' },
+      { token: 'wrap.near', symbol: 'wNEAR' },
+    ];
+    expect(p.positions.map((r) => r.tokens)).toEqual([pair, pair]);
     const held = [40, 6, 4, 10, 30];
     const rows = [...held, ...p.positions.map((r) => r.usd ?? 0)];
     expect(rows.reduce((a, b) => a + b, 0)).toBe(p.totals.assetsUsd);

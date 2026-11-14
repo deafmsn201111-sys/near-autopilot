@@ -481,3 +481,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `apps/api/src/analytics/account-view.ts`: the wallet observation fills `volatility24hBps` for each priced held
   token from the collector's last 24 h of `price_observations`; a failed read leaves the token without a range.
 - A range above 15% is a `volatility_spike` and the Market Intelligence trace line names it (D13 updated).
+
+## #124 — Token logos and a deposit picker
+
+- `packages/core/src/token-icon.ts`: `safeTokenIcon` (image data URIs only, 32 KB cap) (D27).
+- `apps/api/src/analytics/token-icons.ts`: `TokenIcons` (ft_metadata.icon, bounded cache, NEAR logo for
+  `near`/`wrap.near`) and `GET /v1/tokens/icons?ids=`; `/v1/deposit/assets` gives each token its `icon`; LP rows carry
+  their `tokens`.
+- `apps/analytics`: `TokenIcon` (img or letter placeholder, falls back on a load error) on holdings rows (two
+  overlapping on LP rows), recommendation cards (the intent's tokens) and the deposit quote. The deposit form is now
+  network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
+  Enter, Esc back).

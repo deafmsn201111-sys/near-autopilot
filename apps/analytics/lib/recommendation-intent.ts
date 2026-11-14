@@ -66,6 +66,24 @@ function swapTargetFor(from: string): string {
   return from === SWAP_STABLE ? WRAP_NEAR : SWAP_STABLE;
 }
 
+/** The tokens a card acts on, for its logos: the token, or both sides of a swap; none for advice or an LP move. */
+export function intentTokens(intent: RecommendationIntent | null): string[] {
+  if (!intent) return [];
+  switch (intent.action) {
+    case 'reposition_dcl':
+    case 'recentre_dcl':
+      return [];
+    case 'swap': {
+      const from = normalizeFrom(intent.fromToken);
+      return [from, swapTargetFor(from)];
+    }
+    case 'repay_with_collateral':
+      return [intent.collateralToken, intent.token];
+    default:
+      return [intent.token];
+  }
+}
+
 /**
  * Map a recommendation's intent to a concrete `prepare` request for `account`. Returns null for advice-only cards
  * (no intent), so the card shows the advice without a button. Burrow intents map straight through, with `amount`

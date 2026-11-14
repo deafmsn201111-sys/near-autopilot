@@ -3,6 +3,7 @@ import {
   SWAP_STABLE,
   WRAP_NEAR,
   actionLabel,
+  intentTokens,
   recommendationToPrepare,
   type RecommendationIntent,
 } from '../lib/recommendation-intent';
@@ -186,5 +187,45 @@ describe('recommendationToPrepare', () => {
     expect(
       actionLabel({ action: 'recentre_dcl', lptId: 'x', poolId: 'y', leftPoint: 0, rightPoint: 1 }),
     ).toMatch(/new range/i);
+  });
+});
+
+describe('intentTokens', () => {
+  it('names the token a card acts on, both sides for a swap, none for advice', () => {
+    expect(intentTokens({ action: 'supply', token: SWAP_STABLE, approxUsd: 5 })).toEqual([
+      SWAP_STABLE,
+    ]);
+    expect(intentTokens({ action: 'swap', fromToken: 'near', approxUsd: 5 })).toEqual([
+      WRAP_NEAR,
+      SWAP_STABLE,
+    ]);
+    expect(intentTokens({ action: 'reposition_dcl', lptId: 'x', poolId: 'y' })).toEqual([]);
+    expect(
+      intentTokens({
+        action: 'recentre_dcl',
+        lptId: 'x',
+        poolId: 'y',
+        leftPoint: 0,
+        rightPoint: 1,
+      }),
+    ).toEqual([]);
+    expect(
+      intentTokens({
+        action: 'repay_with_collateral',
+        token: SWAP_STABLE,
+        collateralToken: WRAP_NEAR,
+        approxUsd: 5,
+        amount: '1',
+        maxSlippageBps: 50,
+        plan: {
+          hfNow: 1.1,
+          hfAfterWithdraw: 1.05,
+          hfAfterRepay: 1.6,
+          floorHf: 1.05,
+          transactions: 3,
+        },
+      }),
+    ).toEqual([WRAP_NEAR, SWAP_STABLE]);
+    expect(intentTokens(null)).toEqual([]);
   });
 });

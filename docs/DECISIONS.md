@@ -482,3 +482,16 @@ every wallet DCL position in an allowlisted pool.
 **Consequences:** The cost and fee numbers are estimates (volume persists, fixed time in range, no IL). A position too
 large for the pool's depth gets the card but prepare refuses it. If the add still fails, the tokens sit in the
 user's Rhea balance.
+
+## D27 — Token logos come only from the token contract, as checked data URIs
+
+**Context:** #124. Tokens were shown as bare symbols; other NEAR apps show logos.
+**Decision:** The logo is the token's own `ft_metadata.icon`, read by the API (view call) and kept only if it is a
+`data:image/(png|jpeg|webp|gif|svg+xml)` URI of at most 32 KB (`safeTokenIcon`, `packages/core`); the UI checks it
+again and renders it only through `<img>`, where an SVG cannot run scripts. Cached per process (500 tokens, a failed
+read is not cached). Native NEAR and wNEAR (no icon on chain) get one checked-in NEAR logo; every 1Click deposit asset
+is a `nep141:` NEAR token, so it uses that token's icon. The five deposit chains have checked-in logos
+(`apps/analytics/public/chains`). No external token list: no new host in the CSP, no third-party data. Any other
+token without an icon shows a letter placeholder.
+**Consequences:** A contract can still pick a misleading logo, as it can pick a misleading symbol; the "Unverified"
+badge stays the trust signal. Logos are inlined in the page (0.5–11 KB each today).
