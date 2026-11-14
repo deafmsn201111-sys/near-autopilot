@@ -923,6 +923,28 @@ describe('analyseAccount', () => {
     expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
   });
 
+  it('keeps the code explanation when the model argues against its own pick', async () => {
+    const { llm } = fake([
+      () => callAll,
+      () =>
+        final([
+          {
+            id: 'reduce-concentration',
+            why: 'The funds earn a good rate, so it is better to keep them on Burrow.',
+          },
+        ]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => observation(),
+      heuristics: [heuristic],
+      checks: [heuristic],
+      ownerVerified: true,
+    });
+    expect(out.recommendations.find((r) => r.id === heuristic.id)?.why).toBe(heuristic.why);
+    expect(out.run?.checks.replaced).toBe(1);
+  });
+
   const whyFor = async (id: string, why: string) => {
     const { llm } = fake([() => callAll, () => final([{ id, why }])]);
     const out = await analyseAccount(ai(llm), {

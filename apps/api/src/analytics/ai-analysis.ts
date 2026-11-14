@@ -839,6 +839,10 @@ const NUMBER_WORDS =
  * words and any non-ASCII numeral ("１", "٣", "½") as is, so those too must appear in what the tools showed. A scale or multiplier suffix stays on its number
  * ("1.2k", "10x"): it is not the bare "1.2" a tool showed.
  */
+/** A "why" that talks the owner out of its own card ("better to keep it on Burrow") contradicts the card's verdict. */
+const ARGUES_AGAINST =
+  /\b(?:better|best|wiser|recommend(?:ed)?|should)\b[^.]{0,40}\b(?:keep|leave|stay|hold|not)\b|\bnot worth\b|\b(?:no need|don'?t need|do not need)\b|\b(?:keep|leave) (?:it|them|the funds|your funds)\b/i;
+
 const numbersIn = (text: string) => [
   ...(text.match(/(?:(?<![\w.])[-−])?\d[\d,]*(?:\.\d+)?(?:(?:k|m|bn|b|x)\b)?/gi) ?? []).map((n) => {
     const [, digits = n, scale = ''] = /^(.*?)([a-z]*)$/i.exec(n) ?? [];
@@ -1257,7 +1261,9 @@ async function runModel(
       continue;
     }
     const own = new Set(displayNumbers(candidate));
-    const honest = numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
+    const honest =
+      !ARGUES_AGAINST.test(pick.why) &&
+      numbersIn(pick.why).every((n) => own.has(n) || context.has(n));
     checks[honest ? 'explained' : 'replaced']++;
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
