@@ -166,6 +166,15 @@ export function Recommendations({
               symbol: holdings.find((h) => h.token === t)?.symbol ?? label(t, new Map()).symbol,
             }));
             const isTop = i === top;
+            const facts = accountFacts(r);
+            const tiers = [
+              ...new Set([
+                ...(r.carry ? [r.carry.provenance] : []),
+                ...facts.flatMap((f) =>
+                  f.provenance && f.provenance !== 'on_chain_verified' ? [f.provenance] : [],
+                ),
+              ]),
+            ];
             const actionProps = {
               label:
                 stage.kind === 'failed' ? 'Review again' : r.intent ? actionLabel(r.intent) : '',
@@ -186,7 +195,7 @@ export function Recommendations({
                 agent={r.agent}
                 logos={logos}
                 title={r.title}
-                facts={accountFacts(r.intent)}
+                facts={facts}
                 why={r.why}
                 stage={stage}
                 className={analysis ? 'rec-in' : undefined}
@@ -195,14 +204,15 @@ export function Recommendations({
                 tags={
                   <>
                     <ProvenanceMark kind="on_chain">On-chain balances</ProvenanceMark>
-                    {r.carry && (
+                    {tiers.map((tier) => (
                       <ProvenanceMark
+                        key={tier}
                         kind="estimate"
-                        title={PROVENANCE_TIER_INFO[r.carry.provenance].describe}
+                        title={PROVENANCE_TIER_INFO[tier].describe}
                       >
-                        {PROVENANCE_TIER_INFO[r.carry.provenance].label}
+                        {PROVENANCE_TIER_INFO[tier].label}
                       </ProvenanceMark>
-                    )}
+                    ))}
                   </>
                 }
                 actions={

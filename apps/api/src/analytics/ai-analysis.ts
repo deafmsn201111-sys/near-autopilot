@@ -39,7 +39,7 @@ import { costMicroUsd } from '../llm/pricing';
 import type { PrivacyCheck } from '../llm/tee-verifier';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
-import { ratePct, yearWorthTheFee } from './portfolio-view';
+import { loanFacts, ratePct, supplyFacts, yearWorthTheFee } from './portfolio-view';
 import { analysisKey } from './analysis-key';
 import type { WalletObservation } from './lp-recentre';
 
@@ -518,6 +518,7 @@ function guardianTool(
             ...sizingFor(loanCards, p.token),
           },
           ...(carry && { carry }),
+          ...(hf !== null && { facts: loanFacts(Number(hf), Number(after)) }),
         });
       }
       candidates.push(...fromCollateral);
@@ -634,6 +635,7 @@ function allocatorTool(
             amount: p.amount.toString(),
           },
           ...strategyWeighed(checks, p.token),
+          facts: supplyFacts(yearlyUsd, Number(yieldWad) / 1e16),
         });
       }
       for (const c of candidates) found.set(c.id, c);

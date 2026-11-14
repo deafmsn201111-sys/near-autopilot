@@ -1,3 +1,5 @@
+import { PROVENANCE_TIERS } from '@near-autopilot/core';
+import { z } from 'zod';
 import type { Fact } from '../components/primitives';
 import { money } from './format';
 import type { PortfolioAction } from './product';
@@ -56,8 +58,28 @@ export function demoFacts(a: PortfolioAction): Fact[] {
   return facts;
 }
 
-/** A real account's facts: only numbers the intent already carries (structured facts from the API: #284). */
-export function accountFacts(intent: RecommendationIntent | null): Fact[] {
+/** The facts strip the API computed for a card; untrusted input, so every field is bounded. */
+export const factsSchema = z
+  .array(
+    z.object({
+      label: z.string().max(40),
+      value: z.string().max(40),
+      sub: z.string().max(80).optional(),
+      good: z.boolean().optional(),
+      provenance: z.enum(PROVENANCE_TIERS),
+    }),
+  )
+  .max(6);
+export type ApiFact = z.infer<typeof factsSchema>[number];
+
+/** A real account's facts: the API's (#284), else only what the intent itself carries. */
+export function accountFacts(r: {
+  intent: RecommendationIntent | null;
+  facts?: unknown;
+}): (Fact & Partial<Pick<ApiFact, 'provenance'>>)[] {
+  const api = factsSchema.safeParse(r.facts);
+  if (api.success && api.data.length > 0) return api.data;
+  const { intent } = r;
   if (!intent || !('approxUsd' in intent)) return [];
   if ('sizing' in intent && intent.sizing) return [];
   return [{ label: 'Amount', value: `≈ ${money(intent.approxUsd)}` }];

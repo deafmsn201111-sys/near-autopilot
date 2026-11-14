@@ -113,7 +113,19 @@ import {
 } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
-import { hurdle, money, ratePct, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
+import {
+  gain,
+  hurdle,
+  loanFacts,
+  money,
+  networkFee,
+  rateFact,
+  ratePct,
+  supplyFacts,
+  yearWorthTheFee,
+  type CardFact,
+  type PortfolioAction,
+} from './portfolio-view';
 import type { WithdrawLookup } from './deposit';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
@@ -766,6 +778,8 @@ export interface PortfolioRecommendation {
     readonly text: string;
     readonly provenance: 'calculated_estimate' | 'protocol_reported';
   };
+  /** The card's facts strip: numbers this card already computed for its why, each with where it came from. */
+  readonly facts?: readonly CardFact[];
 }
 
 /** Today's rates on the Burrow position; a side's figure is null when one of its positions is unpriced or unrated. */
@@ -941,6 +955,16 @@ export function portfolioAdvice(
         title: `${c.pct.toFixed(0)}% of your portfolio is in ${c.symbol}`,
         why: `A ${c.pct.toFixed(0)}% position in ${c.symbol} means a fall in ${c.symbol} hits almost your whole portfolio. Moving about ${money0(target)} of it into other assets brings it down toward ${strategy.concentrationTargetPct}% of the portfolio.${where}`,
         intent: advice ? null : { action: 'swap', fromToken: c.token, approxUsd },
+        ...(!advice && {
+          facts: [
+            {
+              label: 'Moves',
+              value: `≈ ${money0(approxUsd)}`,
+              sub: `of ${c.symbol}`,
+              provenance: 'calculated_estimate',
+            },
+          ],
+        }),
       });
     }
   }
@@ -984,6 +1008,11 @@ export function portfolioAdvice(
         token: repays.token,
         approxUsd: Math.max(0.01, approxUsdOf(repayUsd)),
       },
+      facts: [
+        gain('Saves', saves),
+        rateFact(`${borrowPct.toFixed(1)}%`, 'the loan costs a year'),
+        networkFee(),
+      ],
     });
   }
   const idle = ctx.idleSwapRepay;
@@ -1023,6 +1052,14 @@ export function portfolioAdvice(
         tokens: batch.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
       },
       carry: idleRule(batch[0]!, strategy),
+      facts: [
+        gain(
+          'Earns',
+          batch.reduce((s, a) => s + yearly(a), 0),
+        ),
+        rateFact(rateRange(batch.map((a) => a.aprPct)), 'a year on Burrow'),
+        networkFee(batch.length),
+      ],
     });
     const left = worthy.slice(MAX_SUPPLY_ALL);
     if (left.length > 0)
@@ -1044,6 +1081,7 @@ export function portfolioAdvice(
       why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${ratePct(idle.aprPct)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
       carry: idleRule(idle, strategy),
+      facts: supplyFacts(yearly(idle), idle.aprPct),
     });
   } else if (supplyable[0]) {
     const idle = supplyable[0];
@@ -1074,6 +1112,15 @@ export function portfolioAdvice(
       title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
       why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.${oor.estimate ? ` A token of this pool has no confirmed price: its value here is only an estimate from Rhea's pools.` : ''}`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
+      facts: [
+        {
+          label: 'Value',
+          value: money2(oor.usd ?? 0),
+          sub: 'earning no fees',
+          provenance: 'calculated_estimate',
+        },
+        networkFee(),
+      ],
     });
   }
 
@@ -1083,6 +1130,11 @@ export function portfolioAdvice(
 
   return { recommendations: recs, skipped };
 }
+
+const rateRange = (pcts: readonly number[]) => {
+  const [lo, hi] = [Math.min(...pcts), Math.max(...pcts)];
+  return lo === hi ? `${ratePct(lo)}%` : `${ratePct(lo)}–${ratePct(hi)}%`;
+};
 
 const pct1 = (apr: number) => `${(apr * 100).toFixed(1)}%`;
 
@@ -1376,6 +1428,7 @@ function loanSafety(
         wholeDebt: maxTokens >= debt.amount,
       },
     },
+    facts: loanFacts(hf, after),
   };
 }
 
@@ -1437,6 +1490,16 @@ function idleSwapRepay(
         transactions: withdrawRaw ? 3 : 2,
       },
     },
+    facts: [
+      gain('Saves', saves),
+      rateFact(`${borrowPct.toFixed(1)}%`, 'the loan costs a year'),
+      {
+        label: 'Cost',
+        value: `≈ ${money2(lossUsd + GAS * (withdrawRaw ? 3 : 2))}`,
+        sub: `swap loss ${money2(lossUsd)} and network fees`,
+        provenance: 'calculated_estimate',
+      },
+    ],
   };
   return { card, fromWalletUsd: plan.fromWallet * swap.usdPerToken };
 }
@@ -1450,7 +1513,7 @@ function swapRepayCard(
   debt: NonNullable<RecommendationContext['largestDebt']>,
   strategy: Strategy,
   swap: NonNullable<RecommendationContext['swapRepay']>,
-): Pick<PortfolioRecommendation, 'why' | 'intent'> {
+): Pick<PortfolioRecommendation, 'why' | 'intent' | 'facts'> {
   const plan = swapRepayPlan({
     model: { collateralAdjUsd: loan.collateralAdjUsd, debtAdjUsd: loan.debtAdjUsd },
     collateral: swap,
@@ -1512,6 +1575,7 @@ function swapRepayCard(
         transactions,
       },
     },
+    facts: loanFacts(hf, plan.hfAfterRepay, transactions),
   };
 }
 
@@ -1567,6 +1631,16 @@ function withdrawable(
       approxUsd: Math.max(0.01, approxUsdOf(best.usd)),
       amount: raw.toString(),
     },
+    facts: [
+      {
+        label: 'Amount',
+        value: `≈ ${money0(best.usd)}`,
+        sub: `${tokenText(best.tokens)} ${b.symbol}`,
+        provenance: 'calculated_estimate',
+      },
+      ...(b.aprPct ? [rateFact(`${ratePct(b.aprPct)}%`, 'it stops earning a year')] : []),
+      networkFee(),
+    ],
   };
 }
 

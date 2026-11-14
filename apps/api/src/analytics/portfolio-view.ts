@@ -1,4 +1,4 @@
-import { DEFAULT_STRATEGY, STRATEGIES } from '@near-autopilot/core';
+import { DEFAULT_STRATEGY, STRATEGIES, type ProvenanceTier } from '@near-autopilot/core';
 import { orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -132,6 +132,52 @@ export function hurdle(
 }
 
 /** A standing move (a deposit, a repayment) is worth one network fee when a year of its benefit clears the hurdle. */
+export interface CardFact {
+  readonly label: string;
+  readonly value: string;
+  readonly sub?: string;
+  readonly good?: boolean;
+  readonly provenance: ProvenanceTier;
+}
+
+const cents = (usd: number) =>
+  `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const gain = (label: 'Earns' | 'Saves', yearlyUsd: number): CardFact => ({
+  label,
+  value: `+${cents(yearlyUsd)}`,
+  sub: 'a year',
+  good: true,
+  provenance: 'calculated_estimate',
+});
+export const rateFact = (value: string, sub: string): CardFact => ({
+  label: 'Rate',
+  value,
+  sub,
+  provenance: 'protocol_reported',
+});
+export const networkFee = (transactions = 1): CardFact => ({
+  label: 'Cost',
+  value: `≈ ${cents(GAS * transactions)}`,
+  sub: transactions === 1 ? 'network fee' : `network fees, ${transactions} transactions`,
+  provenance: 'calculated_estimate',
+});
+const bufferText = (hf: number) => `${Math.round(Math.max(0, 1 - 1 / hf) * 100)}%`;
+/** How far collateral prices may fall before liquidation, now and after the card's repayment. */
+export const loanFacts = (hfNow: number, hfAfter: number | null, transactions = 1): CardFact[] => [
+  {
+    label: 'Loan buffer',
+    value: `${bufferText(hfNow)} → ${hfAfter === null ? 'no loan' : bufferText(hfAfter)}`,
+    sub: `health factor ${hfNow.toFixed(2)} → ${hfAfter === null ? 'no debt' : hfAfter.toFixed(2)}`,
+    provenance: 'calculated_estimate',
+  },
+  networkFee(transactions),
+];
+export const supplyFacts = (yearlyUsd: number, aprPct: number): CardFact[] => [
+  gain('Earns', yearlyUsd),
+  rateFact(`${ratePct(aprPct)}%`, 'a year on Burrow'),
+  networkFee(),
+];
+
 export const yearWorthTheFee = (yearlyUsd: number): boolean =>
   hurdle(yearlyUsd - GAS, yearlyUsd, GAS).verdict === 'worth_it';
 
