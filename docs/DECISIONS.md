@@ -564,3 +564,19 @@ single-token wallet would have to swap half into a volatile token, and no stable
 **Consequences:** On a USDC-only wallet all three presets supply today (borrow 16.6% > supply 10.8% makes the loop lose)
 but each card says why in its own numbers. Balanced compares a stablecoin pool once one is collected (StableSwap pools
 are not ranked yet). The health-factor lines are unchanged (D22).
+
+## D31 — Stablecoins swap into each other through Rhea pool 4179 (#191)
+
+**Context:** #191. A loan in USDt or USDT.e with USDC in the wallet or as collateral got only an advisory card: the
+swap → repay builder needs an allowlisted route, and `rhea.pools` had only wNEAR/USDC (4512). Direct USDC/USDT.e
+simple pools are empty; RATED_SWAP pool 4179 holds USDt / USDC / USDT.e / USDC.e (~$105k, 2 bp fee; 1,000 USDC →
+1,000.5 USDT.e on 14 Nov).
+**Decision:** `config/market.json` lists pool 4179 three times as exact pairs: USDC↔USDt, USDC↔USDT.e, USDt↔USDT.e.
+This widens the swap routes the account view may quote and build (swap → repay, the Guardian), not any cap:
+`validateCascade` is unchanged (its pool allowlist only gates `add_liquidity`, which also refuses a non-SIMPLE pool),
+the swap keeps its slippage floor from a fresh `get_return` quote, and the policy token allowlist is untouched.
+Burrow's borrow rate is shown whenever Burrow reports it, no longer only when the supply side of that market passes
+its liquidity / price / freshness checks.
+**Consequences:** The same entries reach the collector (venue quotes, demo agents' routable pairs, the yield
+allowlist flag of pool 4179); the demo policy still blocks USDT.e, which is not in `policy.allowedTokens`. A loan in
+any of the three stablecoins can be repaid from either of the other two in one cascade.

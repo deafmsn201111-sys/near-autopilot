@@ -52,6 +52,21 @@
         "poolId": 4512,
         "tokenA": "wrap.near",
         "tokenB": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+      },
+      {
+        "poolId": 4179,
+        "tokenA": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "tokenB": "usdt.tether-token.near"
+      },
+      {
+        "poolId": 4179,
+        "tokenA": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1",
+        "tokenB": "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near"
+      },
+      {
+        "poolId": 4179,
+        "tokenA": "usdt.tether-token.near",
+        "tokenB": "dac17f958d2ee523a2206206994597c13d831ec7.factory.bridge.near"
       }
     ],
     "dclPools": [

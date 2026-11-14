@@ -891,6 +891,19 @@ export function carryLine(c: LoanCarry): NonNullable<PortfolioRecommendation['ca
   return { text: `${loan}; ${deposits}.`, provenance: 'calculated_estimate' };
 }
 
+/**
+ * A Burrow market's rate as a fraction. The supply rate needs the whole market to pass its checks (liquidity, price,
+ * freshness); the borrow rate is what Burrow charges whatever the supply side looks like, so only its presence counts.
+ */
+export function marketRate(
+  m: Omit<LoopMarket, 'token'> | undefined,
+  f: 'netSupplyApr' | 'borrowApr',
+): number | null {
+  const x =
+    f === 'borrowApr' ? m?.borrowApr : m?.status === 'OK' ? (m.netSupplyApr ?? m.supplyApr) : null;
+  return x === null || x === undefined ? null : Number(x);
+}
+
 /** A safe loan whose deposits earn more than it costs is the point of borrowing: nothing should offer to repay it. */
 export function keepsProfitableLoan(ctx: RecommendationContext, strategy: Strategy): boolean {
   const hf = ctx.loan?.healthFactor ?? null;
@@ -1549,11 +1562,7 @@ export function registerAccountView(
     const v = valueAccount(reads, facts);
     const market = (t: string) =>
       markets.find((m) => m.token === t)?.latest as (LoopMarket & { status?: string }) | undefined;
-    const rate = (t: string, f: 'netSupplyApr' | 'borrowApr') => {
-      const m = market(t);
-      const x = m?.status === 'OK' ? (m[f] ?? (f === 'netSupplyApr' ? m.supplyApr : null)) : null;
-      return x === null || x === undefined ? null : Number(x);
-    };
+    const rate = (t: string, f: 'netSupplyApr' | 'borrowApr') => marketRate(market(t), f);
     const sym = (t: string) => facts.get(t)?.symbol ?? t;
     const actions: PortfolioAction[] = [];
     const add = (

@@ -667,3 +667,10 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   Bridges: `poa` = `*.omft.near` assets, `hot` = `nep245:v2_1.omni.hot.tg:*` (SHIELD's docs name none); others ignored.
 - `GET /v1/deposit/incidents?origin=&destination=` (always 200, `{ incidents: [{ message }] }`), Next proxy, yellow
   banner over the form and the address screen. `SHIELD_URL` points it at a local stub. "Arrives in" reads "usually about N min".
+
+## 2026-11-14 — USDT.e / USDt loans: borrow rate kept, stable route through pool 4179 (#191)
+
+- `marketRate()`: the borrow rate is shown whenever Burrow reports it, not only when the supply side passes its
+  checks (that hid USDT.e's 6% as "Loan rate unavailable").
+- `config/market.json`: pool 4179 (RATED_SWAP USDt/USDC/USDT.e/USDC.e) as USDC↔USDt, USDC↔USDT.e, USDt↔USDT.e (D31),
+  so the existing swap → repay cascade finds a route for a stablecoin loan repaid from another stablecoin.
