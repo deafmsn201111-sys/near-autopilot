@@ -208,9 +208,9 @@ export default async function OpportunityPage({ params }: { params: Promise<{ id
           </div>
         </div>
         <p className="note">
-          The autopilot never acts on this list by itself: a proposal would still need to pass the
-          policy engine&apos;s 12 checks, and in shadow mode even an allowed plan is only simulated.{' '}
-          <Link href="/policy">See policy decisions →</Link>
+          Autopilot never acts on this list by itself: a move you prepare passes the safety checks
+          before you see it, and only you can sign it, in your own wallet.{' '}
+          <Link href="/policy">See the safety checks →</Link>
         </p>
       </Section>
 
