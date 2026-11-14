@@ -17,6 +17,11 @@ export type RecommendationIntent =
   | { readonly action: 'swap'; readonly fromToken: string; readonly approxUsd: number }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
   | {
+      /** Every idle token worth its fee, one Burrow supply each, signed together. */
+      readonly action: 'supply_all';
+      readonly tokens: readonly { readonly token: string; readonly approxUsd: number }[];
+    }
+  | {
       /** Withdraw another collateral token, swap it into the debt token, repay: separate transactions in order. */
       readonly action: 'repay_with_collateral';
       readonly token: string;
@@ -79,6 +84,8 @@ export function intentTokens(intent: RecommendationIntent | null): string[] {
     }
     case 'repay_with_collateral':
       return [intent.collateralToken, intent.token];
+    case 'supply_all':
+      return intent.tokens.map((t) => t.token);
     default:
       return [intent.token];
   }
@@ -124,6 +131,9 @@ export function recommendationToPrepare(
     case 'reposition_dcl':
       mapped = { action: 'reposition_dcl', lptId: intent.lptId };
       break;
+    case 'supply_all':
+      mapped = { action: 'supply_all', tokens: intent.tokens };
+      break;
     case 'repay_with_collateral':
       mapped = {
         action: 'repay_with_collateral',
@@ -162,6 +172,8 @@ export function actionLabel(intent: RecommendationIntent): string {
       return 'Prepare rebalance';
     case 'reposition_dcl':
       return 'Prepare exit to wallet';
+    case 'supply_all':
+      return `Prepare ${intent.tokens.length} deposits`;
     case 'repay_with_collateral':
       return `Prepare ${intent.plan.transactions} transactions to repay`;
     case 'recentre_dcl':

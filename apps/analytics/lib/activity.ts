@@ -23,6 +23,7 @@ const ACTIONS: Record<string, string> = {
   swap: 'Swap on Rhea',
   add_liquidity: 'Add liquidity on Rhea',
   reposition_dcl: 'Exit an out-of-range Rhea position',
+  supply_all: 'Supply idle tokens to Burrow',
   unwrap: 'Unwrap wNEAR to NEAR',
 };
 

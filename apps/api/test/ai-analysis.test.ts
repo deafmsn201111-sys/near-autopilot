@@ -954,6 +954,32 @@ describe('analyseAccount', () => {
     expect(out.recommendations.some((r) => r.id === 'repay-with-idle')).toBe(true);
   });
 
+  it("offers the rule card's supply-all-idle instead of one supply per token (#196)", async () => {
+    const all: PortfolioRecommendation = {
+      id: 'supply-all-idle',
+      kind: 'put_idle_to_work',
+      agent: 'Capital Allocator',
+      severity: 'info',
+      title: '$130 of USDt and wNEAR is sitting idle',
+      why: 'Both earn nothing in the wallet.',
+      intent: {
+        action: 'supply_all',
+        tokens: [
+          { token: USDT, approxUsd: 100 },
+          { token: WNEAR, approxUsd: 30 },
+        ],
+      },
+    };
+    let seen = '';
+    const { llm } = fake([
+      () => callAll,
+      (results) => ((seen = JSON.stringify(results)), final([{ id: all.id, why: 'One go.' }])),
+    ]);
+    const out = await analyseAccount(ai(llm), { ...ctx, heuristics: [all], checks: [all] });
+    expect(seen).not.toContain('capital-allocator:supply:');
+    expect(out.recommendations.some((r) => r.id === 'supply-all-idle')).toBe(true);
+  });
+
   it("carries the rule card's line on what the strategy weighed onto the AI supply card (#132)", async () => {
     const { llm } = fake([
       () => callAll,

@@ -102,6 +102,10 @@ export type PrepareRequestIntent =
     }
   | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly maxSlippageBps?: number }
   | {
+      readonly action: 'supply_all';
+      readonly tokens: readonly { readonly token: string; readonly approxUsd: number }[];
+    }
+  | {
       readonly action: 'repay_with_collateral';
       readonly token: string;
       readonly collateralToken: string;

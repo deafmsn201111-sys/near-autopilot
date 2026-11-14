@@ -558,15 +558,17 @@ function allocatorTool(
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
       let lowRate: StepLine | null = null;
-      // The rule list already found the same token borrowed at a higher rate: repaying it beats supplying it (#194).
-      const repay = checks.find((c) => c.id === 'repay-with-idle');
-      const repaid = repay?.intent?.action === 'repay' ? repay.intent.token : null;
-      if (repay) {
-        candidates.push(repay);
-        byCandidate.set(repay.id, { text: repay.title, provenance: 'calculated_estimate' });
+      // The rule list's own idle cards come first: repaying a dearer loan (#194), or every idle token at once (#196).
+      const covered = new Set<string>();
+      for (const c of checks) {
+        if (c.id !== 'repay-with-idle' && c.id !== 'supply-all-idle') continue;
+        candidates.push(c);
+        byCandidate.set(c.id, { text: c.title, provenance: 'calculated_estimate' });
+        if (c.intent?.action === 'repay') covered.add(c.intent.token);
+        if (c.intent?.action === 'supply_all') c.intent.tokens.forEach((t) => covered.add(t.token));
       }
       for (const p of proposals) {
-        if (p.kind !== 'lending.supply' || p.token === repaid) continue;
+        if (p.kind !== 'lending.supply' || covered.has(p.token)) continue;
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;

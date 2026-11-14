@@ -717,3 +717,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   3× the fee); below it, one honest line in `skipped` ("not worth the network fee") instead of a cents card.
 - With a loan in the same token that costs more than supplying earns, the card repays it instead (`repay` intent,
   sized to the smaller of the idle balance and the debt), saying both rates.
+
+## 2026-11-14 — All idle money in one cascade (#196)
+
+- New intent `supply_all` (2–5 distinct tokens): Burrow registration once if needed, then one verified
+  `ft_transfer_call` supply per token, each sized from the wallet like `supply`; signed as one cascade. A token with no
+  price or no balance refuses the whole request (409) rather than supplying the rest silently. `validateCascade`
+  receivers: Burrow + the named tokens; limits unchanged.
+- Card `supply-all-idle` when two or more idle tokens clear the fee hurdle (#194), else the single-token card; the AI
+  allocator offers it instead of one supply per token. UI: intent schema, mapping, logos, "Prepare N deposits".
