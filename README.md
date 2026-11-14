@@ -47,6 +47,11 @@ from the stored quote and you sign in your NEAR wallet.
 **Live site:** https://near-autopilot.tech. Live mainnet data, the two simulated demo portfolios, and your own
 account once you connect a wallet ([deploy/public](deploy/public/README.md)).
 
+**A real mainnet transaction built here:** [`2RknTv81…`](https://nearblocks.io/txns/2RknTv813PJ4LBUn4vv8HgKmCwa67bwVx2wtKSCDr7EP),
+`autopilot-test.near` repaying 35.61 USDC of its Burrow loan from collateral, built by the app and signed in the
+owner's wallet. Every transaction of that account is on
+[its Activity page](https://near-autopilot.tech/activity?account=autopilot-test.near).
+
 **Try without a wallet:** open the site and switch between the **$5,000 demo** and **$500 demo** portfolios. They are
 simulated and labelled so: holdings, loan safety and ranked options, computed by the rule-based agents. The AI analysis
 needs a connected wallet whose ownership you verify; there is no cached AI run for visitors yet (#24).
@@ -224,7 +229,8 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
 
 - The agents never act on their own: every mainnet transaction is one the user signed.
 - No new LP positions: the app exits or re-centres a DCL position you already hold, and never opens one.
-- No Chain Signatures and no cross-chain settlement.
+- No Chain Signatures. Money moves between chains only through NEAR Intents 1Click (withdrawals) and HOT Kit's
+  bridge (deposits), each transfer signed in your own wallet.
 
 ### Thesis track: the case for NEAR is the asset and real credit demand, not the displayed APR
 
