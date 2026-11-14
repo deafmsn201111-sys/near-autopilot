@@ -103,7 +103,7 @@ import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
-import { isKnownToken, modelTokenLabel, STABLES, tokenLabel } from '../thesis/labels';
+import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
  * YOUR ACCOUNT, read-only: any mainnet account id -> what it holds, how safe its Burrow loan is, and what could be done
@@ -359,6 +359,8 @@ const WNEAR = 'wrap.near' as TokenId;
 const MAX_UNLISTED_TOKENS = 30;
 /** Native NEAR left untouched for gas and storage when proposing to use the rest. */
 const NEAR_RESERVE = 1;
+/** 0.0125 NEAR: ten times a standard NEP-145 registration; an unknown token asking more is not registered by us. */
+const MAX_REGISTRATION_YOCTO = 12_500_000_000_000_000_000_000n;
 
 interface PortfolioLeg {
   readonly token: string;
@@ -1946,7 +1948,7 @@ export function registerAccountView(
       // An unverified token's ft_metadata symbol could read "USDC": it is named by its contract instead.
       dclOutOfRange: outOfRange(
         (d) =>
-          `${verified.has(d.tokenX) ? d.symbolX : tokenLabel(d.tokenX)}/${verified.has(d.tokenY) ? d.symbolY : tokenLabel(d.tokenY)}`,
+          `${verified.has(d.tokenX) ? d.symbolX : d.tokenX}/${verified.has(d.tokenY) ? d.symbolY : d.tokenY}`,
       ),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
@@ -2498,7 +2500,7 @@ export function registerAccountView(
         const metaOf = async (t: AccountId) =>
           meta.find((x) => x.token === t) ??
           (await tokens.getMetadata(t).then(
-            (m) => ({ symbol: tokenLabel(t), decimals: m.decimals }),
+            (m) => ({ symbol: t, decimals: m.decimals }),
             () => undefined,
           ));
         const [mX, mY] = await Promise.all([metaOf(tokX), metaOf(tokY)]);
@@ -2511,13 +2513,17 @@ export function registerAccountView(
         const hX = (Number(freed.x) / 10 ** decX).toFixed(Math.min(6, decX));
         const hY = (Number(freed.y) / 10 ** decY).toFixed(Math.min(6, decY));
 
-        const register = async (t: AccountId, sym: string): Promise<CascadeStep[]> => {
+        // The pool's token is any contract: it names its own storage price, so a price above a normal NEP-145 one is refused.
+        const register = async (t: AccountId, sym: string): Promise<CascadeStep[] | null> => {
           if (await tokens.isStorageRegistered(t, account)) return [];
-          const bounds = (await viewer.view(t, 'storage_balance_bounds', {})) as { min?: string };
-          const minDeposit = BigInt(bounds.min ?? '1250000000000000000000');
+          const bounds = z
+            .object({ min: z.string().regex(/^\d{1,30}$/) })
+            .safeParse(await viewer.view(t, 'storage_balance_bounds', {}));
+          const minDeposit = bounds.success ? BigInt(bounds.data.min) : MAX_REGISTRATION_YOCTO + 1n;
+          if (minDeposit > MAX_REGISTRATION_YOCTO) return null;
           return [
             {
-              intentId: `register-${sym}`,
+              intentId: `register-${t}`,
               tx: {
                 receiverId: t,
                 actions: [
@@ -2530,14 +2536,17 @@ export function registerAccountView(
                   },
                 ],
               },
-              preview: `Register to receive ${sym} — one-time, ${formatNear(minDeposit)} NEAR, refundable.`,
+              preview: `Register to receive ${sym} — one-time storage deposit of ${formatNear(minDeposit)} NEAR on that token's contract.`,
             },
           ];
         };
         // An unregistered wallet would bounce the withdrawal back into the DCL contract: register first.
-        const registrations = (
-          await Promise.all([register(tokX, symX), register(tokY, symY)])
-        ).flat();
+        const registering = await Promise.all([register(tokX, symX), register(tokY, symY)]);
+        if (registering.some((r) => r === null))
+          return reply.code(409).send({
+            error: `a token in this pool asks an unusual storage deposit; register on it yourself, then try again`,
+          });
+        const registrations = registering.flatMap((r) => r ?? []);
 
         const steps: CascadeStep[] = [
           ...registrations,
