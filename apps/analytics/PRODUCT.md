@@ -53,7 +53,7 @@ The core loop:
 4. Sign in the wallet (HOT Connector / HOT Kit).
 5. See the result and a re-check.
 
-Cross-chain deposit and withdrawal go through 1Click. With HOT Kit, EVM and Solana wallets connect for funding. Balances on other chains are shown but not analysed.
+Cross-chain deposit and withdrawal go through 1Click. With HOT Kit, EVM and Solana wallets connect for funding. Balances of the connected EVM / Solana / Tron / Bitcoin wallets and the HOT balance, as HOT Kit reads them, are shown on the user's own portfolio (wallet menu, summary line, holdings group) but never analysed or sent to our server; Bring to NEAR opens HOT's bridge with that token preselected.
 
 Three account contexts must never be confused:
 

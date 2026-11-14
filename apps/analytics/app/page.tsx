@@ -35,8 +35,7 @@ import { curatedId, tokenIcons } from '../lib/tokens';
 import { OwnershipCheck } from '../components/OwnershipCheck';
 import { signBlocked } from '../lib/sign-review';
 import { StrategyPicker } from '../components/StrategyPicker';
-import { PortfolioSummary } from '../components/PortfolioSummary';
-import { HoldingsPanel } from '../components/Holdings';
+import { LiveHoldings, LiveSummary } from '../components/OtherChains';
 import {
   savedStrategy,
   STRATEGY_COOKIE,
@@ -250,6 +249,8 @@ async function Portfolio({ sp }: { sp: Search }) {
     signingEnabled: serverSigning,
     stale,
   });
+  // Other-chain balances belong to whoever is connected here: shown on their own portfolio only.
+  const mine = isAccount && accountParam && accountParam === cookieAccount ? accountParam : null;
   return (
     <>
       {isAccount && accountParam && <AccountWatcher account={accountParam} />}
@@ -273,7 +274,8 @@ async function Portfolio({ sp }: { sp: Search }) {
           page fills in by itself.
         </div>
       )}
-      <PortfolioSummary
+      <LiveSummary
+        account={mine}
         key={`summary:${isAccount ? accountParam : id}`}
         netWorthUsd={t.netWorthUsd}
         assetsUsd={t.assetsUsd}
@@ -345,7 +347,8 @@ async function Portfolio({ sp }: { sp: Search }) {
         </section>
       )}
 
-      <HoldingsPanel
+      <LiveHoldings
+        account={mine}
         holdings={data.holdings.map((h) => ({
           ...h,
           logos: [logo(tokenOf(h), h.symbol, h.verified !== false)],
@@ -370,7 +373,7 @@ async function Portfolio({ sp }: { sp: Search }) {
             shown. Reload in a minute to read the whole account.
           </div>
         )}
-      </HoldingsPanel>
+      </LiveHoldings>
 
       {/* The connected wallet gets live, one-click recommendations above; this cost-ranked idle-cash analysis is
           shown for the illustrative demo portfolios. */}

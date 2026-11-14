@@ -1,4 +1,6 @@
 import type * as KitCore from '@hot-labs/kit/core';
+import type * as Mobx from 'mobx';
+import type { IObservableValue } from 'mobx';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Handler = () => void;
@@ -12,6 +14,8 @@ const fake = vi.hoisted(() => {
     pick: null as { type: number; address: string } | null,
     failLoad: false,
     senderProps: undefined as unknown,
+    tokens: undefined as unknown as IObservableValue<unknown[]>,
+    bridge: undefined as unknown,
   };
   class HotKit {
     router = {
@@ -25,6 +29,13 @@ const fake = vi.hoisted(() => {
     }
     get wallets() {
       return state.wallets;
+    }
+    get walletsTokens() {
+      return state.tokens.get();
+    }
+    setUIOptions() {}
+    async openBridge(options: unknown) {
+      state.bridge = options;
     }
     onConnect(h: Handler) {
       state.connected.push(h);
@@ -50,6 +61,8 @@ const fake = vi.hoisted(() => {
 
 vi.mock('@hot-labs/kit', () => ({
   HotKit: fake.HotKit,
+  Recipient: { fromAddress: async (chain: string, address: string) => ({ chain, address }) },
+  toOneClickChain: (id: unknown) => (id === 8453 ? 'base' : undefined),
 }));
 vi.mock('@hot-labs/near-connect', () => ({
   NearConnector: class {
@@ -67,8 +80,12 @@ const BTC = { type: -6, address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' };
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+// The module registry is reset per test, mobx with it: the fake kit's observables come from the instance lib/ sees.
+let mobx: typeof Mobx;
+
 async function fresh() {
   vi.resetModules();
+  mobx = await import('mobx');
   Object.assign(fake.state, {
     created: 0,
     options: undefined,
@@ -77,6 +94,8 @@ async function fresh() {
     disconnected: [],
     pick: null,
     failLoad: false,
+    tokens: mobx.observable.box([], { deep: false }),
+    bridge: undefined,
   });
   return import('../lib/hot-kit');
 }
@@ -205,5 +224,59 @@ describe('WalletConnect project id', () => {
       });
     }
     vi.unstubAllEnvs();
+  });
+});
+
+const usdc = (wallet: { type: number; address: string }, amount: number) => ({
+  wallet,
+  balance: BigInt(amount * 1e6),
+  token: {
+    id: '8453:usdc',
+    symbol: 'USDC',
+    chain: 8453,
+    chainName: 'Base',
+    icon: '',
+    usd: 1,
+    isOmni: false,
+    float: (b: bigint) => Number(b) / 1e6,
+  },
+});
+
+describe('other-chain balances', () => {
+  it('reports the kit balances now and on every change, until unsubscribed', async () => {
+    const m = await fresh();
+    const seen: number[][] = [];
+    const stop = m.watchOtherBalances((groups) => seen.push(groups.map((g) => g.usd)));
+    await vi.waitFor(() => expect(seen).toEqual([[]]));
+    mobx.runInAction(() => fake.state.tokens.set([usdc(EVM, 20)]));
+    mobx.runInAction(() => fake.state.tokens.set([]));
+    stop();
+    mobx.runInAction(() => fake.state.tokens.set([usdc(EVM, 5)]));
+    expect(seen).toEqual([[], [20], []]);
+  });
+
+  it('Bring to NEAR preselects the token and its wallet, recipient still locked', async () => {
+    const m = await fresh();
+    const entry = usdc(EVM, 20);
+    mobx.runInAction(() => fake.state.tokens.set([entry]));
+    await m.openDepositBridge('alice.near', '8453:usdc');
+    await flush();
+    expect(fake.state.bridge).toMatchObject({
+      setup: {
+        recipient: { chain: 'near', address: 'alice.near' },
+        lockRecipient: true,
+        from: entry.token,
+        sender: EVM,
+      },
+    });
+  });
+
+  it('opens without a preselected token when it is unknown or not a bridge source', async () => {
+    const m = await fresh();
+    await m.openDepositBridge('alice.near', 'hot:usdc');
+    await flush();
+    const setup = (fake.state.bridge as { setup: Record<string, unknown> }).setup;
+    expect(setup.from).toBeUndefined();
+    expect(setup.sender).toBeUndefined();
   });
 });

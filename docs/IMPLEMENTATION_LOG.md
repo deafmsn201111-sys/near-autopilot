@@ -1065,3 +1065,14 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   lost rate. The orchestrator's own wallet-repay and supply candidates on the AI path carry the same facts.
 - The UI validates them with zod (`factsSchema` in `apps/analytics/lib/suggestions.ts`) and falls back to the
   intent's amount; each non-on-chain provenance in the strip gets its own mark on the card.
+
+## 2026-11-14 — Other-chain balances from HOT Kit: shown, not analysed, Bring to NEAR (#265)
+
+- `lib/hot-kit.ts`: `otherBalances` groups the kit's `walletsTokens` by origin wallet plus one HOT (intents) balance
+  group, skips the NEAR wallet's own tokens and dust under $0.01; `watchOtherBalances` follows it with a mobx
+  `reaction` (mobx 6.15.0, the kit's own instance). `openDepositBridge(account, tokenId?)` preselects a bridgeable token
+  and its wallet; still the one `.openBridge(` call, recipient locked.
+- `components/OtherChains.tsx` fills the slots from #249/#250/#253 on the connected user's own portfolio only: the
+  wallet menu's USD per wallet, "+ $X on other chains" with Bring to NEAR for the largest bridgeable token, and a
+  holdings group per wallet with Bring to NEAR per row. Provenance "Estimate · HOT Kit". Nothing reaches our API.
+- D42 extended; KNOWN_ISSUES refund line updated (the HOT balance is shown, withdrawn in HOT Wallet).

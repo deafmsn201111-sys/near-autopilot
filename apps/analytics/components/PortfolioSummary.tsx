@@ -184,7 +184,8 @@ export function PortfolioSummary({
           <div className="sum-other">
             <TokenIcons tokens={other.tokens} size={16} />
             <span>
-              <b className="num">+ {money(other.usd, false)}</b> on other chains · not analysed
+              <b className="num">+ {money(other.usd, false)}</b> on other chains · not analysed{' '}
+              <ProvenanceMark kind="estimate">Estimate · HOT Kit</ProvenanceMark>
             </span>
             {other.action}
           </div>
