@@ -2,13 +2,13 @@
 
 **Your AI DeFi autopilot on NEAR. It does the analysis and builds the transactions. You keep the controls.**
 
-An AI DeFi analyst for NEAR mainnet. Agents read a wallet, its [Burrow](https://burrow.finance) lending position
+An AI DeFi analyst for NEAR mainnet. Agents read a wallet, its [Burrow](https://app.rhea.finance/lending) lending position
 and its [Rhea](https://rhea.finance) liquidity, rank what is worth doing with the numbers behind it (repay debt, put
 idle money to work, exit or re-centre an out-of-range pool), and build the exact transactions. `validateCascade`
 checks every transaction against fixed allowlists and caps, and only you sign, in your own wallet.
 
 > **The server never signs.** It holds no key. It builds an exact **unsigned** transaction cascade, checks it
-> against fixed caps (allowlisted contracts and methods, at most 0.15 NEAR per action and 0.3 NEAR per cascade) and
+> against fixed caps (allowlisted contracts and methods, at most 0.15 NEAR per action and 0.3 NEAR per cascade, except wrapping your own NEAR into wNEAR) and
 > hands it to your own wallet, where you sign it or not ([docs/security.md](docs/security.md)).
 >
 > **Status:** read-only mainnet analytics and wallet-signed cascades. No seed phrase, private key or wallet is needed
@@ -73,15 +73,15 @@ Every "try it" step below starts from the [Quick start](#quick-start): `./script
 
 **The security track's questions, answered**
 
-| Track topic             | Our answer                                                                                                                                         |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Spending limits         | `validateCascade`: at most 0.15 NEAR attached per action and 0.3 NEAR per cascade, a gas cap, allowlisted receivers and methods                    |
-| Policy engine           | 12 checks, ALLOW / WARN / BLOCK, on the demo portfolios; `validateCascade` on every cascade built for a connected wallet                           |
-| Sandboxed wallet        | The server holds no key and has no signer: the user's own wallet is the only place a transaction is signed                                         |
-| Function-call keys      | Not used, on purpose: they cannot attach the 1 yoctoNEAR every NEP-141 `ft_transfer_call` needs (below)                                            |
-| TEE attestation         | The AI runs in a NEAR AI Cloud TEE; every reply's signature is checked against the attested key (the hardware quote is left to NEAR AI's verifier) |
-| Scam detection          | Tokens outside our list are marked **Unverified**, kept out of totals and never swapped into (D44)                                                 |
-| Counterparty reputation | No                                                                                                                                                 |
+| Track topic             | Our answer                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Spending limits         | `validateCascade`: at most 0.15 NEAR attached per action and 0.3 NEAR per cascade (wrapping your own NEAR into wNEAR excluded), 300 Tgas per action, allowlisted receivers and methods |
+| Policy engine           | 12 checks, ALLOW / WARN / BLOCK, on the demo portfolios; `validateCascade` on every cascade built for a connected wallet                                                               |
+| Sandboxed wallet        | The server holds no key and has no signer: the user's own wallet is the only place a transaction is signed                                                                             |
+| Function-call keys      | Not used, on purpose: they cannot attach the 1 yoctoNEAR every NEP-141 `ft_transfer_call` needs (below)                                                                                |
+| TEE attestation         | The AI runs in a NEAR AI Cloud TEE; every reply's signature is checked against the attested key (the hardware quote is left to NEAR AI's verifier)                                     |
+| Scam detection          | Tokens outside our list are marked **Unverified**, kept out of totals and never swapped into (D44)                                                                                     |
+| Counterparty reputation | No                                                                                                                                                                                     |
 
 **Why the agent does not sign, not even with a function-call key**
 
@@ -187,7 +187,7 @@ to another chain (below), in a separate client; deposits are quoted by HOT Kit's
    - the options ranked after costs, each with its plan, costs and risks.
 2. Open `:3001/opportunities`, then a "USDC / wNEAR (concentrated …)" pool. You see a table for ±5/±15/±50 % ranges:
    fees, divergence loss and net result, plus what actually happened over the stored window.
-3. Open `:3001/routes`. You see Rhea compared with 1Click for an allowed plan, with `executed: false`.
+3. Open `:3001/routes`. You see Rhea compared with 1Click for an allowed plan, marked "Quotes only: nothing here was signed or sent".
 4. Press **Connect wallet** and sign in with a NEAR wallet (checked with HOT). You see your own mainnet account:
    holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
    them in your wallet or cancel.
@@ -584,12 +584,13 @@ pnpm verify                       # format, lint (incl. boundaries), typecheck, 
 
 Everything in containers, bound to `127.0.0.1` only. `.env` is git-ignored; the quickstart generates fresh secrets.
 
-| Service         | What it does                                                                                        | Port (127.0.0.1) |
-| --------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
-| `postgres`      | Database (volume `pgdata`)                                                                          | 5432             |
-| `analytics-api` | Applies the migrations, serves the stored data read-only, builds unsigned wallet cascades           | 4003             |
-| `collector`     | Reads mainnet on a schedule (view calls only), runs the agents on the two simulated demo portfolios | none             |
-| `analytics`     | The site                                                                                            | 3001             |
+| Service           | What it does                                                                                        | Port (127.0.0.1) |
+| ----------------- | --------------------------------------------------------------------------------------------------- | ---------------- |
+| `postgres`        | Database (volume `pgdata`)                                                                          | 5432             |
+| `analytics-api`   | Applies the migrations, serves the stored data read-only, builds unsigned wallet cascades           | 4003             |
+| `collector`       | Reads mainnet on a schedule (view calls only), runs the agents on the two simulated demo portfolios | none             |
+| `analytics`       | The site                                                                                            | 3001             |
+| `analytics-admin` | The admin page (`/admin`: AI spend, kill switch, cap)                                               | 3002             |
 
 ```bash
 docker compose ps                   # wait for (healthy)

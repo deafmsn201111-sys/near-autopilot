@@ -55,24 +55,24 @@ by the author personally.
 
 Open-source dependencies, as declared in the workspace's `package.json` files and pinned in `pnpm-lock.yaml`:
 
-| Area                 | Libraries                                                                                                                                                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Language and tooling | TypeScript ^5.7, pnpm workspaces, Turborepo ^2.3, ESLint ^9 (with typescript-eslint and eslint-config-prettier), Prettier ^3.4, Vitest ^2.1, tsx ^4.19, drizzle-kit ^0.30                                                        |
-| API and data         | Fastify ^5.2 (with its built-in pino logger), Zod ^3.24, Drizzle ORM ^0.38, `pg` ^8.13 (PostgreSQL)                                                                                                                              |
-| Dashboards           | Next.js ^15.1, React ^19                                                                                                                                                                                                         |
-| NEAR                 | `@near-js/crypto`, `@near-js/transactions`, `@near-js/utils` 2.5.1 (key handling and transaction encoding); `@hot-labs/near-connect` 0.12.0 (HOT Connector, wallet sign-in only); NEAR JSON-RPC called by our own `near-adapter` |
-| Audit checkpoints    | Node.js `crypto` (ed25519)                                                                                                                                                                                                       |
+| Area                 | Libraries                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Language and tooling | TypeScript ^5.7, pnpm workspaces, Turborepo ^2.3, ESLint ^9 (with typescript-eslint and eslint-config-prettier), Prettier ^3.4, Vitest ^2.1, tsx ^4.19, drizzle-kit ^0.30                                                                                                                                                       |
+| API and data         | Fastify ^5.2 (with its built-in pino logger), Zod ^3.24, Drizzle ORM ^0.38, `pg` ^8.13 (PostgreSQL)                                                                                                                                                                                                                             |
+| Dashboards           | Next.js ^15.1, React ^19                                                                                                                                                                                                                                                                                                        |
+| NEAR                 | `@near-js/crypto`, `@near-js/transactions`, `@near-js/utils` 2.5.1 (key handling and transaction encoding); `@hot-labs/near-connect` 0.12.0 (HOT Connector: wallet sign-in and signing in the user's wallet); `@hot-labs/kit` 2.0.0 (other-chain balances and the bridge popup); NEAR JSON-RPC called by our own `near-adapter` |
+| Audit checkpoints    | Node.js `crypto` (ed25519)                                                                                                                                                                                                                                                                                                      |
 
 Besides these, the workspace declares only type packages (`@types/*`), `globals` and `server-only`.
 
 External services:
 
-| Service                                                | Used for                                                                           |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| NEAR mainnet RPC (FastNEAR, public near.org, archival) | Chain state, view calls only.                                                      |
-| Rhea (Ref v1, DCL) and Burrow contracts                | Reading pools and markets.                                                         |
-| Pyth, DefiLlama, exchange tickers                      | Reference prices, cross-checked against each other.                                |
-| NEAR Intents 1Click API                                | **Dry quotes only.** `dry: true` is a constant in the client; no swap is executed. |
+| Service                                                | Used for                                                                                                                                                                            |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NEAR mainnet RPC (FastNEAR, public near.org, archival) | Chain state, view calls only.                                                                                                                                                       |
+| Rhea (Ref v1, DCL) and Burrow contracts                | Reading pools and markets.                                                                                                                                                          |
+| Pyth, DefiLlama, exchange tickers                      | Reference prices, cross-checked against each other.                                                                                                                                 |
+| NEAR Intents 1Click API                                | Dry quotes for route comparison (`dry: true` is a constant in that client); real quotes only for an inbound deposit from another chain, which the user sends from their own wallet. |
 
 The data collector makes no LLM API calls.
 
@@ -82,6 +82,6 @@ The data collector makes no LLM API calls.
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Builds and runs from a fresh clone | `./scripts/quickstart.sh`. On 2026-11-08 it took 6 min 13 s, with no manual edits.                                         |
 | Tests pass                         | `pnpm verify` (format, lint, boundaries, types, tests); CI runs it on every push.                                          |
-| Attacks are stopped                | `pnpm demo:attack`: 8 of 8 stopped, 2 controls allowed, `signed 0, broadcast 0`.                                           |
+| Attacks are stopped                | `pnpm demo:attack`: 19 of 19 stopped, 4 controls allowed, `signed 0, broadcast 0`.                                         |
 | Audit trail is intact              | `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify`: hash chains and ed25519 checkpoints `ok` |
 | Thesis is reproducible             | `pnpm thesis:rebuild && git diff --stat`: no changes.                                                                      |
