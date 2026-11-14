@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { refreshAccount } from '../app/account-actions';
 import { refreshPortfolio } from '../lib/portfolio-refresh';
+import { beginCascadeSigning } from '../lib/cascade-signing';
 import { prepareIntent } from '../lib/prepare-client';
 import {
   gasToTgas,
@@ -66,36 +67,45 @@ export function PrepareDialog({
   async function sign() {
     if (!cascade) return;
     const { cascadeId, transactions, preview } = cascade;
+    const releaseRefreshes = beginCascadeSigning(request.account);
     setState('signing');
     setProgress({ preview, steps: transactions.map(() => ({ kind: 'waiting' })) });
+    let sentStepsConfirmed = true;
     const setStep = (i: number, s: StepState) =>
       setProgress((p) => p && { ...p, steps: p.steps.map((x, j) => (j === i ? s : x)) });
     let at = 0;
-    const r = await signCascade(transactions, request.account, signingEnabled, {
-      onSigning: (i) => {
-        at = i;
-        setStep(i, { kind: 'signing' });
-      },
-      onSent: async (i, hash) => {
-        setStep(i, { kind: 'checking', hash });
-        const result = cascadeId
-          ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
-          : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
-        const next = stepAfterCheck(hash, result);
-        setStep(i, next);
-        return mayContinue(next);
-      },
-    });
-    if (!r.ok && r.hashes.length === at)
-      setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
-    if (r.ok) {
-      // The transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
-      // show the new state (the card updates or disappears).
-      setState('updating');
-      setCascade(null); // collapse the (now spent) preview; the user can prepare a fresh one if still suggested
-      await refreshPortfolio(request.account, refreshAccount, () => router.refresh());
+    try {
+      const r = await signCascade(transactions, request.account, signingEnabled, {
+        onSigning: (i) => {
+          at = i;
+          setStep(i, { kind: 'signing' });
+        },
+        onSent: async (i, hash) => {
+          setStep(i, { kind: 'checking', hash });
+          const result = cascadeId
+            ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
+            : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
+          sentStepsConfirmed &&= result.status === 'confirmed';
+          const next = stepAfterCheck(hash, result);
+          setStep(i, next);
+          return mayContinue(next);
+        },
+      });
+      if (!r.ok && r.hashes.length === at)
+        setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
+      if (r.hashes.length > 0) {
+        // Never offer the same prepared cascade again after any step was sent. Refresh only after the signing
+        // sequence has ended; the watcher and the 15 s page refresh are held off until this completes.
+        setCascade(null);
+        if (sentStepsConfirmed) {
+          setState('updating');
+          await refreshPortfolio(request.account, refreshAccount, () => router.refresh());
+        }
+      }
+    } finally {
+      releaseRefreshes();
+      setState('idle');
     }
-    setState('idle');
   }
 
   return (

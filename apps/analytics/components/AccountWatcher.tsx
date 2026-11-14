@@ -2,6 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
 import { refreshAccount } from '../app/account-actions';
+import { isCascadeSigning } from '../lib/cascade-signing';
 import { readAccount, watchStep, type Reading } from '../lib/account-signal';
 import { poll, POLL_FOR_MS, tabHidden } from '../lib/polling';
 import {
@@ -29,13 +30,16 @@ export function AccountWatcher({ account, seconds = 6 }: { account: string; seco
   useEffect(() => {
     let alive = true;
     let last: Reading | null = null;
-    const tick = () =>
+    const tick = () => {
+      if (isCascadeSigning(account)) return;
       void readAccount(account).then((reading) => {
-        if (!alive) return;
+        // A read may have started before signing; ignore it if a wallet prompt began meanwhile.
+        if (!alive || isCascadeSigning(account)) return;
         const step = watchStep(last, reading, recentlyRefreshed(account));
         last = step.last;
         if (step.fire) void refreshPortfolio(account, refreshAccount, () => router.refresh());
       });
+    };
     tick();
     const stop = poll(tick, { everyMs: seconds * 1000, forMs: POLL_FOR_MS, hidden: tabHidden });
     return () => {
