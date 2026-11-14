@@ -119,6 +119,8 @@ services:
       PUBLIC_ANALYSIS_ACCOUNT: ${PUBLIC_ANALYSIS_ACCOUNT:-}
       # The only token /v1/admin/* accepts. Held by analytics-admin too, never by the public site.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN in .env (>= 32 chars; setup.sh adds it)}
+      # Encrypts saved AI analyses at rest. Only this service gets it.
+      ANALYSIS_ENCRYPTION_KEY: ${ANALYSIS_ENCRYPTION_KEY:?set ANALYSIS_ENCRYPTION_KEY in .env (64 hex; setup.sh adds it)}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     volumes:
       - ./checkpoints:/checkpoints:ro

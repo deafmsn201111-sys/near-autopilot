@@ -885,3 +885,17 @@ visitor can cause a model call or a write. Amends D12 for that one account only;
 wallet `autopilot-test.near`.
 **Consequences:** the result is as old as the owner's last run (the page shows its time). A server-refreshed run on a
 spend cap is the post-hackathon version of #24.
+
+## D47 — Saved AI analyses are encrypted at rest with a server key (#278)
+
+**Context:** `account_analyses` (#190) keeps the full request sent to the model (positions, strategy) and its answer
+for 30 days. Stored as plain jsonb, anyone with a database dump or backup could read the advice the TEE model kept
+private.
+**Decision:** the API seals the analysis with AES-256-GCM (Node `crypto`) under `ANALYSIS_ENCRYPTION_KEY` (32 bytes,
+64 hex, zod; required at start) before it is written, and stores `{v, iv, tag, ct}` in the same jsonb column (no
+migration). A fresh 12-byte IV per write; `accountId/strategy` is the associated data, so a row moved to another
+account does not open. A row that is plaintext, under another key or tampered reads as "no saved analysis".
+`scripts/quickstart.sh` and `deploy/public/setup.sh` generate the key into `.env`; only `analytics-api` gets it.
+**Consequences:** a DB dump alone reveals only account id, strategy, time and page signature. The key is on the same
+server, so the server operator can still decrypt; client-side encryption is out of scope. Losing or rotating the key
+drops the saved analyses (the next run saves a new one); rows written before this change are no longer shown.

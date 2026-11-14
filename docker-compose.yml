@@ -81,6 +81,8 @@ services:
       PUBLIC_ANALYSIS_ACCOUNT: ${PUBLIC_ANALYSIS_ACCOUNT:-}
       # The only token /v1/admin/* accepts (quickstart.sh adds it). Empty = the admin routes answer 401.
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      # Encrypts saved AI analyses at rest (quickstart.sh adds it). Only this service gets it.
+      ANALYSIS_ENCRYPTION_KEY: ${ANALYSIS_ENCRYPTION_KEY:-}
       MARKET_CONFIG_FILE: /etc/near-autopilot/market.json
     ports:
       - '127.0.0.1:${ANALYTICS_API_HOST_PORT:-4003}:4000'
