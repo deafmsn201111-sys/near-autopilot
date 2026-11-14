@@ -307,11 +307,13 @@ the NVIDIA GPU evidence: that is what the official
 [nearai-cloud-verifier](https://github.com/nearai/nearai-cloud-verifier) does. So "signed in TEE" means "signed by
 the key NEAR AI's attestation names for this model", not "we verified the hardware quote ourselves".
 
-**What the AI saw** (#271). Under "How this was decided", the proven owner can open the exact input of that run: the
-system prompt with their strategy, the request, the tool descriptions and every tool result (their positions, prices
-and the candidate actions), captured where it is handed to the model client, not re-rendered. That is all the model
-gets: no account history, no other wallet, no IP. It is returned only with the owner's analysis (same NEP-413 gate)
-and kept only in the saved analysis (#190), never in `llm_calls` or the logs.
+**What the AI saw** (#271). Under "How this was decided", the proven owner can open the exact input of a run that
+answered: the body of its last request to NEAR AI Cloud as the client serialised it (`onRequest` in
+`apps/api/src/llm/near-ai-client.ts`), which holds the whole conversation: the system prompt with their strategy, the
+request, the model's own tool requests, every tool result as sent (their positions, prices and the candidate actions)
+and the tool list. Only the `model` field is removed (users never see the model name). That is all the model gets: no
+account id, no history, no IP. It comes only with the owner's analysis (same NEP-413 gate) and is kept only in the
+saved analysis (#190, 30 days), never in `llm_calls` or the logs.
 
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the

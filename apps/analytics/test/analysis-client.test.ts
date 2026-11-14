@@ -78,10 +78,33 @@ describe('runAnalysis', () => {
       ranking: 'The loan comes first: its health factor is 1.37.',
       privacy: { verified: true, reason: null, chatIds: ['c1', 'c2'], receipts: [] },
       input: {
-        system: 'You are the analyst.',
-        prompt: 'Analyse the connected wallet.',
-        tools: [{ name: 'liquidation_guardian', description: 'Checks the loan.' }],
-        results: [{ tool: 'liquidation_guardian', content: '{"healthFactor":"1.37"}' }],
+        max_tokens: 4096,
+        messages: [
+          { role: 'system', content: 'You are the analyst.' },
+          { role: 'user', content: 'Analyse the connected wallet.' },
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'liquidation_guardian', arguments: '{}' },
+              },
+            ],
+          },
+          { role: 'tool', tool_call_id: 'c1', content: '{"healthFactor":"1.37"}' },
+        ],
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'liquidation_guardian',
+              description: 'Checks the loan.',
+              parameters: {},
+            },
+          },
+        ],
       },
     };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });

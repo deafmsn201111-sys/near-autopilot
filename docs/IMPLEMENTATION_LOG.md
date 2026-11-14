@@ -941,8 +941,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 
 ## 2026-11-14 — "What the AI saw": the owner sees the exact model input (#271)
 
-- `runModel` records what it hands the model client (system prompt with the strategy, prompt, tool descriptions,
-  every tool result) in `run.input`, at the `metered` wrapper, so it is the object sent, not a re-render. A test
-  compares it with what a fake client received.
-- Only in the owner's analysis (same NEP-413 gate) and its saved copy (#190); not in `llm_calls`, not logged.
+- `ToolLlm.open` takes `onRequest`: the NEAR AI client reports the exact body of every request before posting it.
+  `run.input` is the last one (the whole conversation, tool results with their `Error: ` prefix, the tool list)
+  without `model`. A test drives the real client over a fake fetch and compares `run.input` with the posted bytes.
+  A first version rebuilt the input in the `metered` wrapper; review showed it missed the model's own turns, the
+  error prefix and the tool schemas, so it was replaced.
+- Only in the owner's analysis (same NEP-413 gate) and its saved copy (#190, 30 days); not in `llm_calls`, not
+  logged. A run that fell back shows none (no `run`).
 - The panel's "How this was decided" has a collapsible "What the AI saw" block (JSON re-indented, Copy all).

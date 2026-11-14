@@ -103,12 +103,42 @@ const privacySchema = z.object({
 });
 export type Privacy = z.infer<typeof privacySchema>;
 
-const modelInputSchema = z.object({
-  system: z.string(),
-  prompt: z.string(),
-  tools: z.array(z.object({ name: z.string(), description: z.string() })),
-  results: z.array(z.object({ tool: z.string(), content: z.string() })),
-});
+const modelInputSchema = z
+  .object({
+    messages: z
+      .array(
+        z
+          .object({
+            role: z.string(),
+            content: z.string().nullish(),
+            tool_call_id: z.string().optional(),
+            tool_calls: z
+              .array(
+                z
+                  .object({
+                    id: z.string(),
+                    function: z.object({ name: z.string() }).passthrough(),
+                  })
+                  .passthrough(),
+              )
+              .max(20)
+              .optional(),
+          })
+          .passthrough(),
+      )
+      .max(100),
+    tools: z
+      .array(
+        z
+          .object({
+            function: z.object({ name: z.string(), description: z.string() }).passthrough(),
+          })
+          .passthrough(),
+      )
+      .max(20)
+      .default([]),
+  })
+  .passthrough();
 export type ModelInput = z.infer<typeof modelInputSchema>;
 
 const runSchema = z.object({

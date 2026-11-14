@@ -397,25 +397,37 @@ function DecisionPipeline({
   );
 }
 
-/** The exact input of this run, as the API handed it to the model client; JSON is only re-indented. */
 function ModelInputView({ input }: { input: ModelInput }) {
+  const toolOf = new Map(
+    input.messages.flatMap((m) => (m.tool_calls ?? []).map((c) => [c.id, c.function.name])),
+  );
+  const heading = (m: ModelInput['messages'][number]) =>
+    m.role === 'tool'
+      ? `${toolOf.get(m.tool_call_id ?? '') ?? 'tool'} answered`
+      : m.tool_calls?.length
+        ? `The AI asked: ${m.tool_calls.map((c) => c.function.name).join(', ')}`
+        : m.role === 'system'
+          ? 'Instructions'
+          : m.role === 'user'
+            ? 'Request'
+            : 'The AI';
   return (
     <details className="an-saw">
       <summary>What the AI saw</summary>
       <p>
-        Everything the model received for this run, and nothing else. Only you see it.{' '}
-        <CopyButton text={JSON.stringify(input, null, 2)} label="Copy all" />
+        The last request sent to the model for this run, which holds the whole conversation. Only
+        you see it. <CopyButton text={JSON.stringify(input, null, 2)} label="Copy all" />
       </p>
-      <h4>Instructions</h4>
-      <pre>{`${input.system}\n\n${input.prompt}`}</pre>
-      <h4>Agents it could ask</h4>
-      <pre>{input.tools.map((t) => `${t.name}: ${t.description}`).join('\n')}</pre>
-      {input.results.map((r, i) => (
+      {input.messages.map((m, i) => (
         <Fragment key={i}>
-          <h4>{r.tool} answered</h4>
-          <pre>{indented(r.content)}</pre>
+          <h4>{heading(m)}</h4>
+          {m.content && <pre>{indented(m.content)}</pre>}
         </Fragment>
       ))}
+      <h4>Agents it could ask</h4>
+      <pre>
+        {input.tools.map((t) => `${t.function.name}: ${t.function.description}`).join('\n')}
+      </pre>
     </details>
   );
 }

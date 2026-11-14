@@ -294,16 +294,14 @@ export interface RunSummary {
   readonly ranking: string | null;
   /** Whether every reply was signed in the attested TEE; null when not checked. */
   readonly privacy: PrivacyCheck | null;
-  /** Everything the model client was given, captured as passed: only its owner sees it ("What the AI saw"). */
-  readonly input: ModelInput;
+  /**
+   * The last request body as sent, which holds the whole conversation, without `model` (#233): only its owner sees it
+   * ("What the AI saw"). Null when the provider reports no body, and in analyses saved before #271.
+   */
+  readonly input: ModelInput | null;
 }
 
-export interface ModelInput {
-  readonly system: string;
-  readonly prompt: string;
-  readonly tools: readonly { readonly name: string; readonly description: string }[];
-  readonly results: readonly { readonly tool: string; readonly content: string }[];
-}
+export type ModelInput = Readonly<Record<string, unknown>>;
 
 /** A called agent's key number as a short line built on the server; the raw tool output reaches only the owner, in `run.input`. */
 export interface TraceStep {
@@ -1105,23 +1103,15 @@ async function runModel(
     if (unreported) charge(worstCall);
     ended = true;
   };
-  const input: {
-    system: string;
-    prompt: string;
-    tools: ModelInput['tools'];
-    results: { tool: string; content: string }[];
-  } = { system: '', prompt: '', tools: [], results: [] };
-  const toolOf = new Map<string, string>();
+  let lastRequest: string | null = null;
   const metered: ToolLlm = {
     open: (request) => {
-      input.system = request.system;
-      input.prompt = request.prompt;
-      input.tools = request.tools.map(({ name, description }) => ({ name, description }));
       let nextInput =
         REQUEST_OVERHEAD_TOKENS + tokenBound([request.system, request.prompt, request.tools]);
       const chat = ai.llm.open({
         ...request,
         onReply: (r) => replies.push(r),
+        onRequest: (body) => (lastRequest = body),
         onUsage: (u) => {
           if (ended) return;
           unreported = false;
@@ -1145,11 +1135,7 @@ async function runModel(
             if (abort.signal.aborted) throw new Error('aborted');
             usage.calls++;
             unreported = true;
-            for (const r of results ?? [])
-              input.results.push({ tool: toolOf.get(r.id) ?? '', content: r.content });
-            const turn = await chat.send(results);
-            if (turn.kind === 'tool_calls') for (const c of turn.calls) toolOf.set(c.id, c.name);
-            return turn;
+            return await chat.send(results);
           } finally {
             hold(-worstCall);
           }
@@ -1310,12 +1296,17 @@ async function runModel(
       checks,
       ranking: honestRanking,
       privacy,
-      input,
+      input: lastRequest === null ? null : withoutModel(lastRequest),
     },
     read,
     cachedAt: null,
   };
   return keep(analysis);
+}
+
+function withoutModel(body: string): ModelInput {
+  const { model: _, ...rest } = JSON.parse(body) as Record<string, unknown>;
+  return rest;
 }
 
 /** This wallet state's result from the last 10 minutes: from this process, or saved before a restart. */

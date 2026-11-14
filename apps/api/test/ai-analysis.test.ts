@@ -29,6 +29,7 @@ import {
 } from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
 import { lpObservation, type WalletObservation } from '../src/analytics/lp-recentre';
+import { NearAiToolLlm } from '../src/llm/near-ai-client';
 
 const ALICE = accountId('alice.near');
 const WNEAR = accountId('wrap.near');
@@ -223,46 +224,51 @@ describe('analyseAccount', () => {
     expect(off.recommendations).toEqual([shown]);
   });
 
-  it('returns the exact input the model client was given, for "What the AI saw"', async () => {
-    const given: { system: string; prompt: string; tools: unknown[]; results: unknown[] } = {
-      system: '',
-      prompt: '',
-      tools: [],
-      results: [],
-    };
-    const { llm: inner } = fake([() => callAll, () => final([{ id: REPAY, why: 'Repay first.' }])]);
-    const llm: ToolLlm = {
-      open(req) {
-        Object.assign(given, {
-          system: req.system,
-          prompt: req.prompt,
-          tools: req.tools.map((t) => ({ name: t.name, description: t.description })),
-        });
-        const chat = inner.open(req);
-        return {
-          send: (results) => (results && given.results.push(...results), chat.send(results)),
-        };
-      },
-    };
+  it('returns the exact last request the model got, without the model name, for "What the AI saw"', async () => {
+    const answer = (message: Record<string, unknown>) =>
+      new Response(
+        JSON.stringify({
+          id: 'chat-1',
+          choices: [{ finish_reason: 'stop', message }],
+          usage: { prompt_tokens: 10, completion_tokens: 2 },
+        }),
+      );
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        answer({
+          content: null,
+          tool_calls:
+            callAll.kind === 'tool_calls'
+              ? callAll.calls.map((c) => ({
+                  id: c.id,
+                  type: 'function',
+                  function: { name: c.name, arguments: '{}' },
+                }))
+              : [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        answer({ content: JSON.stringify({ picks: [{ id: REPAY, why: 'Repay first.' }] }) }),
+      );
+    const llm = new NearAiToolLlm(fetch, {
+      apiKey: 'k',
+      model: 'z-ai/glm-5.3-flash',
+      maxTokens: 4096,
+    });
     const out = await analyseAccount(ai(llm), {
       ...ctx,
       heuristics: [heuristic],
       checks: [heuristic],
     });
-    const names = Object.fromEntries(
-      callAll.kind === 'tool_calls' ? callAll.calls.map((c) => [c.id, c.name]) : [],
-    );
-    expect(out.run?.input).toEqual({
-      system: given.system,
-      prompt: given.prompt,
-      tools: given.tools,
-      results: (given.results as ToolResult[]).map((r) => ({
-        tool: names[r.id],
-        content: r.content,
-      })),
-    });
-    expect(out.run?.input.system).toContain('Balanced');
-    expect(out.run?.input.results).toHaveLength(5);
+    const { model, ...sent } = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(model).toBe('z-ai/glm-5.3-flash');
+    expect(out.run?.input).toEqual(sent);
+    expect(JSON.stringify(out.run?.input)).not.toContain('glm');
+    expect(JSON.stringify(out.run?.input)).toContain('Balanced');
   });
 
   it('offers the three orchestrator agents and the three wallet checks as tools', async () => {
@@ -829,7 +835,7 @@ describe('analyseAccount', () => {
       checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
       ranking: null,
       privacy: null,
-      input: expect.objectContaining({ prompt: 'Analyse the connected wallet.' }) as unknown,
+      input: null,
     });
     const off = await analyseAccount(null, {
       ...ctx,

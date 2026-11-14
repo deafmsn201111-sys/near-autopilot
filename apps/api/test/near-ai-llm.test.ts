@@ -29,6 +29,28 @@ const sentBody = (fetch: ReturnType<typeof fakeFetch>, n: number) =>
   JSON.parse(fetch.mock.calls[n]?.[1]?.body as string) as Record<string, unknown>;
 
 describe('NearAiToolLlm', () => {
+  it('reports the exact body of every request it posts, the last one with the whole conversation', async () => {
+    const fetch = fakeFetch(
+      reply('tool_calls', { role: 'assistant', content: null, tool_calls: [call('c1')] }),
+      reply('stop', { role: 'assistant', content: '{"picks":[]}' }),
+    );
+    const bodies: string[] = [];
+    const chat = new NearAiToolLlm(fetch, config).open({
+      system: 'sys',
+      prompt: 'go',
+      tools: [tool],
+      onRequest: (b) => bodies.push(b),
+    });
+    await chat.send(null);
+    await chat.send([{ id: 'c1', content: '{"x":1}', isError: true }]);
+    expect(bodies).toEqual(fetch.mock.calls.map(([, init]) => init?.body));
+    expect((JSON.parse(bodies[1]!) as { messages: unknown[] }).messages.at(-1)).toEqual({
+      role: 'tool',
+      tool_call_id: 'c1',
+      content: 'Error: {"x":1}',
+    });
+  });
+
   it('posts system, prompt and tools to the gateway with the canonical model and no aliasing', async () => {
     const fetch = fakeFetch(reply('stop', { role: 'assistant', content: '{"picks":[]}' }));
     const turn = await new NearAiToolLlm(fetch, config)
