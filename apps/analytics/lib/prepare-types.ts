@@ -100,7 +100,23 @@ export type PrepareRequestIntent =
       readonly poolId: number;
       readonly approxUsd: number;
     }
-  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly maxSlippageBps?: number };
+  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly maxSlippageBps?: number }
+  | {
+      readonly action: 'repay_with_collateral';
+      readonly token: string;
+      readonly collateralToken: string;
+      readonly approxUsd: number;
+      readonly amount: string;
+      readonly withdraw?: string;
+      readonly maxSlippageBps: number;
+    }
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
+      readonly maxSlippageBps?: number;
+    };
 
 export interface PrepareRequest {
   readonly account: string;

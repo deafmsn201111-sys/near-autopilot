@@ -25,6 +25,7 @@ import {
   type ToolLlmDeps,
 } from '../src/analytics/ai-analysis';
 import type { PortfolioRecommendation } from '../src/analytics/account-view';
+import { lpObservation, type WalletObservation } from '../src/analytics/lp-recentre';
 
 const ALICE = accountId('alice.near');
 const WNEAR = accountId('wrap.near');
@@ -153,7 +154,7 @@ const callAll: LlmToolTurn = {
     { id: '2', name: 'capital_allocator', input: {} },
     { id: '3', name: 'market_intelligence', input: {} },
     { id: '4', name: 'portfolio_concentration', input: {} },
-    { id: '5', name: 'liquidity_positions', input: {} },
+    { id: '5', name: 'lp_optimizer', input: {} },
   ],
 };
 const REPAY = 'liquidation-guardian:repay:usdt.tether-token.near';
@@ -225,7 +226,7 @@ describe('analyseAccount', () => {
       'capital_allocator',
       'market_intelligence',
       'portfolio_concentration',
-      'liquidity_positions',
+      'lp_optimizer',
       'burrow_withdrawals',
     ]);
   });
@@ -270,6 +271,60 @@ describe('analyseAccount', () => {
     expect(out.recommendations.map((r) => r.intent?.action)).toEqual(['repay_from_collateral']);
   });
 
+  it('the guardian offers withdraw -> swap -> repay with another collateral, with the HF after each step', async () => {
+    const swapRepay: PortfolioRecommendation = {
+      id: 'improve-loan-safety',
+      kind: 'improve_loan_safety',
+      agent: 'Liquidation Guardian',
+      severity: 'warning',
+      title: "Your loan's health factor is 1.37",
+      why: 'This repays it with your wNEAR in three transactions.',
+      intent: {
+        action: 'repay_with_collateral',
+        token: USDT,
+        collateralToken: 'wrap.near',
+        approxUsd: 56,
+        amount: '19000000000000000000000000',
+        withdraw: '19000000000000000000000000',
+        maxSlippageBps: 50,
+        plan: {
+          hfNow: 1.37,
+          hfAfterWithdraw: 1.24,
+          hfAfterRepay: 1.6,
+          floorHf: 1.15,
+          transactions: 3,
+        },
+      },
+    };
+    const o = observation();
+    const noWalletUsdt: AgentObservation = {
+      ...o,
+      snapshot: {
+        ...o.snapshot,
+        walletBalances: o.snapshot.walletBalances.filter((b) => b.token !== USDT),
+      },
+    };
+    let guardianOutput: unknown;
+    const { llm } = fake([
+      () => callAll,
+      (results) => {
+        guardianOutput = JSON.parse(results?.[0]?.content ?? 'null');
+        return final([{ id: 'improve-loan-safety', why: 'Swap collateral and repay.' }]);
+      },
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => noWalletUsdt,
+      heuristics: [swapRepay],
+      checks: [swapRepay],
+      ownerVerified: true,
+    });
+    expect(guardianOutput).toMatchObject({ candidates: [{ id: 'improve-loan-safety' }] });
+    expect(out.source).toBe('llm');
+    expect(out.recommendations.map((r) => r.intent?.action)).toEqual(['repay_with_collateral']);
+    expect(JSON.stringify(out.trace)).toContain('1.24 after withdrawing collateral');
+  });
+
   it('builds the ranked list from tool candidates in the model order, numbers from code only', async () => {
     const { llm } = fake([
       () => callAll,
@@ -293,7 +348,7 @@ describe('analyseAccount', () => {
       'capital_allocator',
       'market_intelligence',
       'portfolio_concentration',
-      'liquidity_positions',
+      'lp_optimizer',
     ]);
     expect(out.recommendations.map((r) => r.id)).toEqual([
       'reduce-concentration',
@@ -370,7 +425,7 @@ describe('analyseAccount', () => {
         rank: 3,
       },
       {
-        tool: 'liquidity_positions',
+        tool: 'lp_optimizer',
         agent: 'Liquidity Optimizer',
         ok: true,
         text: 'No position out of range; nothing to do',
@@ -451,46 +506,19 @@ describe('analyseAccount', () => {
     return { ...o, snapshot, risk: assessRisk(snapshot, o.config) };
   };
 
-  const checkAll: LlmToolTurn = {
-    kind: 'tool_calls',
-    calls: [...callAll.calls, { id: '6', name: 'burrow_withdrawals', input: {} }],
-  };
-
-  it('labels a run with nothing to act on as an AI result, not a fallback', async () => {
-    const { llm } = fake([() => checkAll, () => final([])]);
+  it('shows what each agent checked on a wallet with nothing to act on, without a model call', async () => {
+    const { llm, tools } = fake([() => callAll, () => final([])]);
     const out = await analyseAccount(ai(llm), {
       ...ctx,
       observe: healthy,
       heuristics: [],
       checks: [],
     });
-    expect(out.source).toBe('llm');
-    expect(out.fallback).toBeNull();
-    expect(out.recommendations).toEqual([]);
-    expect(out.note).toBeNull();
-    expect(out.calledTools.length).toBeGreaterThan(0);
-  });
-
-  it('still falls back when the model calls no tool and ranks nothing', async () => {
-    const { llm } = fake([() => final([])]);
-    const out = await analyseAccount(ai(llm), {
-      ...ctx,
-      observe: healthy,
-      heuristics: [],
-      checks: [],
-    });
-    expect(out.fallback).toBe('empty');
-  });
-
-  it('still falls back when the model skipped a check', async () => {
-    const { llm } = fake([() => callAll, () => final([])]);
-    const out = await analyseAccount(ai(llm), {
-      ...ctx,
-      observe: healthy,
-      heuristics: [],
-      checks: [],
-    });
-    expect(out.fallback).toBe('empty');
+    expect(tools).toEqual([]);
+    expect(out).toMatchObject({ fallback: 'nothing_to_rank', recommendations: [], run: null });
+    expect(out.trace.find((t) => t.tool === 'liquidation_guardian')?.text).toBe(
+      'No Burrow loan; nothing to do',
+    );
   });
 
   it('still falls back when the model drops every real candidate', async () => {
@@ -903,30 +931,76 @@ describe('analyseAccount', () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it('does not offer agent actions worth less than $1', async () => {
+  it('with no action worth $1 calls no model, records no spend and says there is nothing to rank', async () => {
     const dust = observation();
-    const snapshot = {
-      ...dust.snapshot,
-      walletBalances: [{ token: USDT, raw: usdt(0.5) }],
-    };
-    let candidates: unknown[] = [];
-    const { llm } = fake([
-      () => callAll,
-      (results) => {
-        candidates = (results ?? []).flatMap(
-          (r) => (JSON.parse(r.content) as { candidates?: unknown[] }).candidates ?? [],
-        );
-        return final([]);
-      },
-    ]);
-    await analyseAccount(ai(llm), {
+    const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
+    const l = ledger();
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm, l), {
       accountId: ALICE,
       observe: async () => ({ ...dust, snapshot }),
       heuristics: [],
       checks: [],
       ownerVerified: true,
     });
-    expect(candidates).toEqual([]);
+    expect(tools).toEqual([]);
+    expect(l.rows).toEqual([]);
+    expect(out).toMatchObject({ source: 'heuristic', fallback: 'nothing_to_rank', run: null });
+    expect(out.note).toMatch(/^Nothing to rank/);
+    expect(out.trace.map((t) => t.tool)).toEqual([
+      'liquidation_guardian',
+      'capital_allocator',
+      'market_intelligence',
+      'portfolio_concentration',
+      'lp_optimizer',
+      'burrow_withdrawals',
+    ]);
+    expect(out.trace.every((t) => t.ok && t.pick === null)).toBe(true);
+  });
+
+  it('does not offer a supply under 1% a year, the same floor as the rule-based card', async () => {
+    const base = observation();
+    const snapshot = {
+      ...base.snapshot,
+      walletBalances: [{ token: WNEAR, raw: near(1) }],
+      lending: null,
+    };
+    const l = ledger();
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm, l), {
+      accountId: ALICE,
+      observe: async () => ({
+        ...base,
+        snapshot,
+        risk: assessRisk(snapshot, base.config),
+        market: { ...base.market!, estimatedYieldWad: new Map([[WNEAR, 3n * 10n ** 15n]]) },
+      }),
+      heuristics: [],
+      checks: [],
+      ownerVerified: true,
+    });
+    expect(tools).toEqual([]);
+    expect(l.rows).toEqual([]);
+    expect(out.fallback).toBe('nothing_to_rank');
+    expect(out.trace.find((s) => s.tool === 'capital_allocator')?.text).toBe(
+      'wNEAR earns about 0.30% a year on Burrow, under the 1% worth suggesting',
+    );
+  });
+
+  it('still asks the model when the page shows a card the agents did not offer', async () => {
+    const dust = observation();
+    const snapshot = { ...dust.snapshot, walletBalances: [{ token: USDT, raw: usdt(0.5) }] };
+    const warning: PortfolioRecommendation = { ...heuristic, severity: 'warning', intent: null };
+    const { llm, tools } = fake([() => callAll, () => final([])]);
+    const out = await analyseAccount(ai(llm), {
+      accountId: ALICE,
+      observe: async () => ({ ...dust, snapshot }),
+      heuristics: [warning],
+      checks: [warning],
+      ownerVerified: true,
+    });
+    expect(tools).toHaveLength(1);
+    expect(out.fallback).not.toBe('nothing_to_rank');
   });
 
   it('falls back when the model ranks nothing', async () => {
@@ -1387,7 +1461,7 @@ describe('analyseAccount', () => {
       expect([...row.tools].sort()).toEqual([
         'capital_allocator',
         'liquidation_guardian',
-        'liquidity_positions',
+        'lp_optimizer',
         'market_intelligence',
         'portfolio_concentration',
       ]);
@@ -1727,7 +1801,7 @@ describe('progress events', () => {
         { tool: 'capital_allocator', agent: 'Capital Allocator' },
         { tool: 'market_intelligence', agent: 'Market Intelligence' },
         { tool: 'portfolio_concentration', agent: 'Portfolio Intelligence' },
-        { tool: 'liquidity_positions', agent: 'Liquidity Optimizer' },
+        { tool: 'lp_optimizer', agent: 'Liquidity Optimizer' },
       ],
     });
     const agents = events.flatMap((e) => (e.type === 'agent' ? [e.step] : []));
@@ -1794,5 +1868,129 @@ describe('progress events', () => {
     await live(deps.llm, deps);
     expect((await live(deps.llm, deps)).events).toEqual([]);
     expect((await live(deps.llm, deps, { ownerVerified: false })).events).toEqual([]);
+  });
+});
+
+describe('lp_optimizer tool', () => {
+  const USDC = accountId('17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1');
+  const POOL_ID = `${USDC}|${WNEAR}|100`;
+  const CUR = 405_300;
+  const position = {
+    lpt_id: `${POOL_ID}#7`,
+    pool_id: POOL_ID,
+    left_point: 399_000,
+    right_point: 404_000,
+    amount: 100_000_000_000_000n,
+  };
+  const exit: PortfolioRecommendation = {
+    id: `reposition-dcl-${position.lpt_id}`,
+    kind: 'reposition_dcl_position',
+    agent: 'Liquidity Optimizer',
+    severity: 'info',
+    title: 'Your USDC/wNEAR liquidity is out of range: exit it to your wallet',
+    why: 'This concentrated-liquidity position has drifted outside its price range.',
+    intent: { action: 'reposition_dcl', lptId: position.lpt_id, poolId: POOL_ID },
+  };
+  const walletObservation = (volumeUsd: number | null): WalletObservation => {
+    const lp = lpObservation({
+      positions: [position],
+      pools: new Map([
+        [
+          POOL_ID,
+          {
+            pool_id: POOL_ID,
+            token_x: USDC,
+            token_y: WNEAR,
+            fee: 100,
+            point_delta: 1,
+            current_point: CUR,
+            state: 'Running',
+            liquidity: 50_000_000_000_000_000n,
+          },
+        ],
+      ]),
+      depths: new Map([
+        [
+          POOL_ID,
+          {
+            liquidities: {
+              a: { left_point: 395_000, right_point: 410_000, amount_l: 50_000_000_000_000_000n },
+            },
+            orders: {},
+          },
+        ],
+      ]),
+      allowedPools: new Set([POOL_ID]),
+      volumesUsd: volumeUsd === null ? null : new Map([[POOL_ID, volumeUsd]]),
+      priceUsd: (t) => ({ [USDC]: 1, [WNEAR]: 2.5 })[t],
+      decimals: (t) => ({ [USDC]: 6, [WNEAR]: 24 })[t],
+      label: (t) => (t === WNEAR ? 'wNEAR' : 'USDC'),
+    });
+    const base = observation();
+    return { ...base, market: { ...base.market!, lpPositions: lp.views }, lp: lp.meta };
+  };
+  let offered: PortfolioRecommendation[] = [];
+  const pickAll = (results: readonly ToolResult[] | null) => {
+    const lp = results?.find((r) => r.id === '5');
+    offered = (JSON.parse(lp?.content ?? '{}') as { candidates: PortfolioRecommendation[] })
+      .candidates;
+    return final(offered.map((c) => ({ id: c.id, why: 'Worth a look.' })));
+  };
+  const lpCards = async (volumeUsd: number | null) =>
+    (await run(volumeUsd)).recommendations.filter((r) => r.kind === 'reposition_dcl_position');
+  const run = (volumeUsd: number | null) =>
+    analyseAccount(ai(fake([() => callAll, pickAll]).llm), {
+      ...ctx,
+      observe: async () => walletObservation(volumeUsd),
+      heuristics: [exit],
+      checks: [exit],
+    });
+
+  it('turns a re-centre that pays back into a card with the new range and payback', async () => {
+    const cards = await lpCards(1_000_000);
+    expect(cards).toHaveLength(1);
+    const card = offered.find((r) => r.id.startsWith('lp-optimizer:recentre:'));
+    expect(cards[0]?.id).toBe(card?.id);
+    expect(card?.intent).toMatchObject({
+      action: 'recentre_dcl',
+      lptId: position.lpt_id,
+      poolId: POOL_ID,
+    });
+    const intent = card!.intent as { leftPoint: number; rightPoint: number };
+    expect(intent.leftPoint).toBeLessThanOrEqual(CUR);
+    expect(intent.rightPoint).toBeGreaterThan(CUR);
+    expect(card?.why).toMatch(/pays back in (about \d+ days?|less than a day)/);
+    expect(card?.why).toMatch(/wNEAR between [\d.]+ and [\d.]+ USDC/);
+  });
+
+  it('keeps only the exit when there is no 24 h volume', async () => {
+    expect((await lpCards(null)).map((r) => r.id)).toEqual([exit.id]);
+  });
+
+  it('keeps only the exit when nothing trades in the pool', async () => {
+    expect((await lpCards(0)).map((r) => r.id)).toEqual([exit.id]);
+  });
+});
+
+describe('market intelligence volatility on the wallet path', () => {
+  it('a 24 h range above 15% is a volatility_spike the trace line names', async () => {
+    const base = observation();
+    const obs = {
+      ...base,
+      market: { ...base.market!, volatility24hBps: new Map([[WNEAR, 4000]]) },
+    };
+    const { llm } = fake([
+      () => callAll,
+      () => final([{ id: heuristic.id, why: 'Worth a look.' }]),
+    ]);
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      observe: async () => obs,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    expect(out.trace.find((t) => t.tool === 'market_intelligence')?.text).toBe(
+      'wNEAR: 24h realised volatility 4000 bps',
+    );
   });
 });

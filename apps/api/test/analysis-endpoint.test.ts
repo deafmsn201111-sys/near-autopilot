@@ -8,6 +8,8 @@ import {
 } from '@near-autopilot/burrow-adapter';
 import type { NearRpcClient } from '@near-autopilot/near-adapter';
 import type { ToolLlm } from '@near-autopilot/orchestrator';
+import Fastify from 'fastify';
+import { registerAccountView } from '../src/analytics/account-view';
 import { buildAnalyticsServer } from '../src/analytics/server';
 import { MemoryEventStore } from './support/memory-events';
 import type { CollectorStore } from '../src/collector/store';
@@ -205,8 +207,13 @@ describe('POST /v1/analytics/account/:id/analysis', () => {
 
   it('calls the model for the owner of the account', async () => {
     const llm = countingLlm();
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
     const res = await analyse(
-      server(chain, store, llm),
+      server(listed, earning, llm),
       'alice.near',
       await proofHeader('alice.near'),
     );
@@ -311,8 +318,24 @@ describe('POST /v1/analytics/account/:id/analysis as a stream', () => {
         };
       });
 
+  it('streams one done and calls no model on a wallet with nothing to rank', async () => {
+    const llm = countingLlm();
+    const sent = frames(
+      (await stream(server(chain, store, llm), 'alice.near', await proofHeader('alice.near'))).body,
+    );
+    expect(sent).toEqual([
+      { event: 'done', data: expect.objectContaining({ fallback: 'nothing_to_rank' }) as unknown },
+    ]);
+    expect(llm.opened).toBe(0);
+  });
+
   it('sends the run as it goes and ends with the same analysis as the JSON reply', async () => {
-    const app = server(chain, store, countingLlm());
+    const listed = rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] });
+    const earning = {
+      ...store,
+      markets: async () => [{ token: USDT, latest: { status: 'OK', supplyApr: '0.05' } }],
+    } as unknown as CollectorStore;
+    const app = server(listed, earning, countingLlm());
     const proof = await proofHeader('alice.near');
     const res = await stream(app, 'alice.near', proof);
     expect(res.statusCode).toBe(200);
@@ -622,5 +645,44 @@ describe('prepare from the Burrow balance (repay from collateral, withdraw)', ()
         ],
       },
     });
+  });
+});
+
+describe('wallet observation for Market Intelligence', () => {
+  const observed = async (collector: CollectorStore) => {
+    const { analysisInputs } = registerAccountView(Fastify(), collector, {
+      rpc: rpc({ [`${BURROW}#get_assets_paged_detailed`]: () => [usdtAsset] }),
+      burrowId: BURROW,
+      rheaId: 'v2.ref-finance.near',
+      pools: [],
+    } as never);
+    const inputs = await analysisInputs('alice.near' as never, log as never);
+    if (!('observe' in inputs)) throw new Error('no observation');
+    return (await inputs.observe()).market?.volatility24hBps;
+  };
+  const warned: unknown[] = [];
+  const log = { warn: (...args: unknown[]) => warned.push(args), info: () => {}, error: () => {} };
+  const snapshot = (i: number, usd: string) => ({
+    snapshotId: `s${i}`,
+    observedAt: new Date(Date.now() - i * 2 * 60 * 60 * 1000),
+    source: 'pyth',
+    priceUsd: usd,
+    quoteCurrency: 'USD',
+    status: 'valid',
+  });
+
+  it("carries each held token's 24 h range from the collector's stored prices", async () => {
+    const day = Array.from({ length: 12 }, (_, i) => snapshot(i, i === 5 ? '1.2' : '1'));
+    const history = { ...store, priceHistory: async () => day } as unknown as CollectorStore;
+    expect(await observed(history)).toEqual(new Map([[USDT, 2000]]));
+  });
+
+  it('has no range, and logs it, when the price history cannot be read', async () => {
+    const failing = {
+      ...store,
+      priceHistory: async () => Promise.reject(new Error('db down')),
+    } as unknown as CollectorStore;
+    expect(await observed(failing)).toEqual(new Map());
+    expect(warned).toHaveLength(1);
   });
 });

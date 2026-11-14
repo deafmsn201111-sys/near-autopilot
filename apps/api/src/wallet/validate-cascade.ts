@@ -27,7 +27,7 @@ export const ALLOWED_METHODS = new Set([
   'ft_transfer_call',
   'add_liquidity',
   'execute',
-  // DCL (concentrated liquidity) reposition: exit an out-of-range position back to the wallet.
+  // DCL (concentrated liquidity): exit an out-of-range position, or re-centre it (remove, then add_liquidity).
   'remove_liquidity',
   'withdraw_asset',
   'burn_v_liquidity',
@@ -45,6 +45,8 @@ export interface CascadeValidationContext {
   readonly allowedReceivers: ReadonlySet<string>;
   /** Rhea v1 pools `add_liquidity` may target (config `rhea.pools`). Absent means no pool is allowed. */
   readonly allowedPools?: ReadonlySet<number> | undefined;
+  /** The DCL contract and the DCL pools (string ids, config `rhea.dclPools`) its `add_liquidity` may target. */
+  readonly dcl?: { readonly contract: string; readonly pools: ReadonlySet<string> } | undefined;
 }
 
 export const CASCADE_RULES = [
@@ -117,8 +119,11 @@ function checkAction(
   }
   if (a.methodName === 'add_liquidity') {
     const pool = a.args['pool_id'];
-    if (typeof pool !== 'number' || !ctx.allowedPools?.has(pool))
-      fail('arguments', `${where}: pool ${String(pool)} is not allowlisted`);
+    const allowed =
+      receiverId === ctx.dcl?.contract
+        ? typeof pool === 'string' && ctx.dcl.pools.has(pool)
+        : typeof pool === 'number' && ctx.allowedPools?.has(pool) === true;
+    if (!allowed) fail('arguments', `${where}: pool ${String(pool)} is not allowlisted`);
   }
   // A wrapping deposit is the user's own NEAR moving into their wNEAR balance; don't count it toward the cascade cap.
   return isWrap ? 0n : a.deposit;

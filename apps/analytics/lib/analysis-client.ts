@@ -34,6 +34,29 @@ const intentSchema = z.discriminatedUnion('action', [
   burrowIntent('withdraw'),
   z.object({ action: z.literal('swap'), fromToken: z.string(), approxUsd: z.number() }),
   z.object({ action: z.literal('reposition_dcl'), lptId: z.string(), poolId: z.string() }),
+  z.object({
+    action: z.literal('repay_with_collateral'),
+    token: z.string(),
+    collateralToken: z.string(),
+    approxUsd: z.number(),
+    amount: z.string().regex(/^\d+$/),
+    withdraw: z.string().regex(/^\d+$/).optional(),
+    maxSlippageBps: z.number().int(),
+    plan: z.object({
+      hfNow: z.number(),
+      hfAfterWithdraw: z.number(),
+      hfAfterRepay: z.number().nullable(),
+      floorHf: z.number(),
+      transactions: z.number().int(),
+    }),
+  }),
+  z.object({
+    action: z.literal('recentre_dcl'),
+    lptId: z.string(),
+    poolId: z.string(),
+    leftPoint: z.number().int(),
+    rightPoint: z.number().int(),
+  }),
 ]);
 
 const traceStepSchema = z.object({
@@ -68,6 +91,7 @@ export type TraceStep = z.infer<typeof traceStepSchema>;
 
 const analysisSchema = z.object({
   source: z.enum(['llm', 'heuristic']),
+  fallback: z.string().nullish(),
   note: z.string().nullable(),
   recommendations: z.array(
     z.object({
@@ -92,6 +116,7 @@ const analysisSchema = z.object({
 
 export type Analysis = {
   source: 'llm' | 'heuristic';
+  fallback?: string | null;
   note: string | null;
   recommendations: AccountRecommendation[];
   calledTools: string[];

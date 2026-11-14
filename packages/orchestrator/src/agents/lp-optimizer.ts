@@ -8,8 +8,8 @@ import { envelope, noAction } from './envelope';
 /**
  * Deterministic LP Optimizer. For each known concentrated-liquidity position it considers a range centred on the
  * current price and proposes moving there only if the ESTIMATED extra fees repay the move within the configured
- * number of days. Its proposals are advisory: no component in this repository can sign a liquidity-management
- * transaction, so the decision engine can recommend but never execute them.
+ * number of days. Its proposals are advisory: on a connected wallet they become a card whose cascade the user signs
+ * in their own wallet (D26); nothing in this repository signs it.
  */
 export class LpOptimizerAgent implements ProposalAgent {
   readonly id = 'lp-optimizer' as const;

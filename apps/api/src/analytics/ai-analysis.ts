@@ -14,7 +14,9 @@ import {
   afterRepay,
   buildLendingModel,
   CapitalAllocatorAgent,
+  evaluateLpReposition,
   LiquidationGuardianAgent,
+  LpOptimizerAgent,
   MarketIntelligenceAgent,
   orchestratorConfigSchema,
   heldTokens,
@@ -30,11 +32,13 @@ import {
   type ToolLlm,
   type ToolTraceEntry,
 } from '@near-autopilot/orchestrator';
+import { alignRange, pointToDecimalPrice } from '@near-autopilot/rhea-dcl-adapter';
 import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
 import { analysisKey } from './analysis-key';
+import type { WalletObservation } from './lp-recentre';
 
 /** One turn per tool plus the answer, in case the model does not call the tools in parallel; the deadline bounds time. */
 export const MAX_TURNS = 6;
@@ -42,6 +46,8 @@ export const MAX_TURNS = 6;
 /** Smallest rule-based card or deposit; a repay sizes from the health factor, so only dust is dropped. */
 export const MIN_ACTION_USD = 1;
 const MIN_REPAY_USD = 1;
+/** A supply rate below this is not worth a card, on either path. */
+export const MIN_SUPPLY_APR_PCT = 1;
 /** Below the site's 60 s proxy timeout, so the user gets the labelled fallback rather than a 502. */
 export const DEADLINE_MS = 45_000;
 
@@ -55,12 +61,13 @@ export type FallbackCode =
   | 'model_error'
   | 'invalid_output'
   | 'empty'
+  | 'nothing_to_rank'
   | 'deadline'
   | 'loop_limit';
 
-/** A run that reached the model ends in one of these; `off`, `kill_switch`, `not_owner` and `busy` never reach it. */
+/** A run that reached the model ends in one of these; the excluded codes never reach it. */
 export type CallOutcome =
-  'ok' | Exclude<FallbackCode, 'off' | 'kill_switch' | 'not_owner' | 'busy'>;
+  'ok' | Exclude<FallbackCode, 'off' | 'kill_switch' | 'not_owner' | 'busy' | 'nothing_to_rank'>;
 
 /** One analysis that reached the model (table llm_calls). No IP, no visitor key. */
 export interface LlmCallRecord {
@@ -147,7 +154,7 @@ class BudgetReached extends Error {
 export interface AnalysisContext {
   readonly accountId: AccountId;
   /** Reads the wallet for the agents; called only when a model is configured. */
-  readonly observe: () => Promise<AgentObservation>;
+  readonly observe: () => Promise<WalletObservation>;
   /** The account view's rule-based list, as the user sees it: the fallback. */
   readonly heuristics: readonly PortfolioRecommendation[];
   /** The same list with token names from our own labels only: what the two wallet tools return to the model. */
@@ -237,7 +244,7 @@ const KINDS: Readonly<Record<string, PortfolioRecommendation['kind']>> = {
   liquidation_guardian: 'improve_loan_safety',
   capital_allocator: 'put_idle_to_work',
   portfolio_concentration: 'reduce_concentration',
-  liquidity_positions: 'reposition_dcl_position',
+  lp_optimizer: 'reposition_dcl_position',
   burrow_withdrawals: 'withdraw_from_burrow',
 };
 
@@ -246,7 +253,7 @@ const AGENTS: Readonly<Record<string, string>> = {
   capital_allocator: 'Capital Allocator',
   market_intelligence: 'Market Intelligence',
   portfolio_concentration: 'Portfolio Intelligence',
-  liquidity_positions: 'Liquidity Optimizer',
+  lp_optimizer: 'Liquidity Optimizer',
   burrow_withdrawals: 'Liquidation Guardian',
 };
 
@@ -347,7 +354,7 @@ function guardianTool(
     spec: {
       name: 'liquidation_guardian',
       description:
-        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment that restores the target, from the wallet or, when the wallet holds too little, from the collateral of the same token.',
+        'Orchestrator Liquidation Guardian: checks the Burrow loan health factor and sizes the smallest repayment that restores the target, from the wallet or, when the wallet holds too little, from the collateral of the same token, or by withdrawing another collateral token, swapping it and repaying (the health factor stays above 1.15 after every step).',
       inputSchema: noInputSchema,
     },
     input: noInput,
@@ -357,8 +364,22 @@ function guardianTool(
       const model = buildLendingModel(obs.snapshot);
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
-      const fromCollateral = loanCards.filter((c) => c.intent?.action === 'repay_from_collateral');
+      // A loan card the wallet cannot pay replaces the wallet repay: same-token collateral, or another collateral
+      // swapped into the debt token (#69).
+      const fromCollateral = loanCards.filter(
+        (c) =>
+          c.intent?.action === 'repay_from_collateral' ||
+          c.intent?.action === 'repay_with_collateral',
+      );
       for (const c of fromCollateral) {
+        if (c.intent?.action === 'repay_with_collateral') {
+          const { plan } = c.intent;
+          byCandidate.set(c.id, {
+            text: `Health factor ${plan.hfNow.toFixed(2)}${plan.transactions === 3 ? ` → ${plan.hfAfterWithdraw.toFixed(2)} after withdrawing collateral` : ''} → ${plan.hfAfterRepay === null ? 'no debt' : plan.hfAfterRepay.toFixed(2)} after swapping ${plan.transactions === 3 ? 'it' : 'collateral from the wallet'} and repaying`,
+            provenance: 'calculated_estimate',
+          });
+          continue;
+        }
         const s = c.intent && 'sizing' in c.intent ? c.intent.sizing : undefined;
         const after = s && hfAfterRepay(s, s.safeTokens, 'collateral');
         if (s)
@@ -454,12 +475,21 @@ function allocatorTool(
       const proposals = await propose(new CapitalAllocatorAgent(), obs);
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
+      let lowRate: StepLine | null = null;
       for (const p of proposals) {
         if (p.kind !== 'lending.supply') continue;
         const view = tokenView(obs, p.token, p.amount, MIN_ACTION_USD);
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
-        const aprPct = (Number(yieldWad / 10n ** 14n) / 100).toFixed(1);
+        const apr = Number(yieldWad / 10n ** 14n) / 100;
+        if (apr < MIN_SUPPLY_APR_PCT) {
+          lowRate ??= {
+            text: `${view.symbol} earns about ${apr.toFixed(2)}% a year on Burrow, under the ${MIN_SUPPLY_APR_PCT}% worth suggesting`,
+            provenance: 'protocol_reported',
+          };
+          continue;
+        }
+        const aprPct = apr.toFixed(1);
         const id = `capital-allocator:supply:${p.token}`;
         byCandidate.set(id, {
           text: `Supply ${view.amount} ${view.symbol} at about ${aprPct}% a year`,
@@ -483,7 +513,7 @@ function allocatorTool(
       for (const c of candidates) found.set(c.id, c);
       const supplyProposed = proposals.some((p) => p.kind === 'lending.supply');
       steps.set('capital_allocator', {
-        none: {
+        none: lowRate ?? {
           text: supplyProposed
             ? 'Idle tokens found, but no supply rate or price to size them'
             : 'Nothing idle to put to work',
@@ -548,6 +578,100 @@ function marketTool(obs: AgentObservation, steps: Steps): LoopTool {
   };
 }
 
+const sig = (n: number) => n.toLocaleString('en-US', { maximumSignificantDigits: 4 });
+
+/**
+ * The LP Optimizer on the wallet: for each out-of-range DCL position it proposes a range around the price only if the
+ * extra fees repay the move in time (re-checked here with the same arithmetic). Positions it does not move keep the
+ * rule-based exit card. The range shown is the one prepare builds: the agent's ticks aligned to the pool's points.
+ */
+function lpTool(
+  obs: WalletObservation,
+  heuristics: readonly PortfolioRecommendation[],
+  found: Map<string, PortfolioRecommendation>,
+  steps: Steps,
+): LoopTool {
+  return {
+    spec: {
+      name: 'lp_optimizer',
+      description:
+        'Orchestrator LP Optimizer: Rhea DCL liquidity positions that drifted out of range; proposes a new range around the price when the extra fees repay the move, else the exit to the wallet.',
+      inputSchema: noInputSchema,
+    },
+    input: noInput,
+    run: async () => {
+      const proposals = await propose(new LpOptimizerAgent(), obs);
+      const candidates: PortfolioRecommendation[] = [];
+      const byCandidate = new Map<string, StepLine>();
+      const usdOf = (raw: bigint, meta: { decimalsY: number; priceYUsd: number }) =>
+        (Number(raw) / 10 ** meta.decimalsY) * meta.priceYUsd;
+      for (const p of proposals) {
+        if (p.kind !== 'lp.reposition') continue;
+        const meta = obs.lp?.get(p.positionId);
+        const view = obs.market?.lpPositions.find((v) => v.id === p.positionId);
+        if (!meta || !view || meta.inRange) continue;
+        let range;
+        try {
+          range = alignRange(p.tickLower, p.tickUpper, meta.pointDelta, meta.currentPoint);
+        } catch {
+          continue;
+        }
+        const ev = evaluateLpReposition(view, range.leftPoint, range.rightPoint, obs.config);
+        if (!ev.ok) continue;
+        const yIn = (point: number) =>
+          sig(1 / pointToDecimalPrice(point, meta.decimalsX, meta.decimalsY));
+        const rangeText = `${meta.symbolY} between ${yIn(range.rightPoint)} and ${yIn(range.leftPoint)} ${meta.symbolX}`;
+        const days =
+          ev.paybackDays === 0n
+            ? 'less than a day'
+            : `about ${ev.paybackDays} day${ev.paybackDays === 1n ? '' : 's'}`;
+        const cost = money(usdOf(ev.costQuote, meta));
+        const perDay = money(usdOf(ev.extraFeesPerDayQuote, meta));
+        const id = `lp-optimizer:recentre:${p.positionId}`;
+        byCandidate.set(id, {
+          text: `Move ${meta.pair} to ${rangeText}: pays back in ${days}`,
+          provenance: 'calculated_estimate',
+        });
+        candidates.push({
+          id,
+          kind: 'reposition_dcl_position',
+          agent: 'Liquidity Optimizer',
+          severity: 'info',
+          title: `Move your ${meta.pair} liquidity back around the current price`,
+          why: `This position is out of range and earns no fees. Moving it to ${rangeText} costs about ${cost} and should earn about ${perDay} a day more in fees, so it pays back in ${days}. This is an estimate from the last 24 hours of trading.`,
+          intent: {
+            action: 'recentre_dcl',
+            lptId: p.positionId,
+            poolId: meta.poolId,
+            ...range,
+          },
+        });
+      }
+      const moved = new Set(
+        candidates.flatMap((c) => (c.intent?.action === 'recentre_dcl' ? [c.intent.lptId] : [])),
+      );
+      for (const h of heuristics)
+        if (h.intent?.action === 'reposition_dcl' && !moved.has(h.intent.lptId)) {
+          candidates.push(h);
+          const { lptId } = h.intent;
+          const costed = obs.market?.lpPositions.some((v) => v.id === lptId);
+          byCandidate.set(h.id, {
+            text: costed
+              ? 'Out of range; a new range would not pay back in time, so exit to the wallet'
+              : 'Out of range; no data to cost a new range, so exit to the wallet',
+            provenance: 'on_chain_verified',
+          });
+        }
+      for (const c of candidates) found.set(c.id, c);
+      steps.set('lp_optimizer', {
+        none: { text: 'No position out of range; nothing to do', provenance: null },
+        byCandidate,
+      });
+      return { candidates, notes: rationales(proposals) };
+    },
+  };
+}
+
 function walletTool(
   name: string,
   description: string,
@@ -596,9 +720,6 @@ function displayNumbers(value: unknown, key = ''): string[] {
   return [];
 }
 
-/** Every tool that can propose a card; market_intelligence only reads. */
-const PROPOSING_TOOLS = Object.keys(AGENTS).filter((t) => t !== 'market_intelligence');
-
 const NOTES: Record<FallbackCode, string> = {
   off: 'AI analysis is off on this server; showing the rule-based list.',
   kill_switch: 'AI analysis is paused by the operator; showing the rule-based list.',
@@ -609,6 +730,7 @@ const NOTES: Record<FallbackCode, string> = {
   model_error: 'AI analysis failed; showing the rule-based list.',
   invalid_output: 'AI analysis failed; showing the rule-based list.',
   empty: 'The AI ranked nothing; showing the rule-based list.',
+  nothing_to_rank: `Nothing to rank: the agents found no action worth $${MIN_ACTION_USD} or more on this portfolio.`,
   deadline: 'AI analysis took too long; showing the rule-based list.',
   loop_limit: 'AI analysis failed; showing the rule-based list.',
 };
@@ -626,9 +748,8 @@ const parseJson = (text: string): unknown => {
  * candidates and words the "why". Every number and every intent comes from code; an id the tools did not return is
  * dropped, and a "why" with a number its card or the tools' context does not show is replaced by the code's own
  * text. A loan warning is never left
- * out. An empty answer counts as an AI result only when every proposing tool ran and neither they nor the rules
- * found anything. No model, any
- * other empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
+ * out. With no card from the rules or the tools (run first as plain code), no model is called: the agents' lines are
+ * returned under `nothing_to_rank`. No model, an empty answer, or any failure (model error, bad JSON, too many turns, deadline) returns the
  * rule-based list, labelled. An AI result is reused for 10 minutes while the wallet state is unchanged; only runs that
  * reach the model count against the global limit.
  */
@@ -684,17 +805,66 @@ export async function analyseAccount(
   });
   const early = (out: Analysis) => (clearTimeout(timer), out);
 
-  let obs: AgentObservation;
+  let obs: WalletObservation;
   try {
     obs = await Promise.race([ctx.observe(), deadline]);
   } catch (e) {
     onError(e);
     return early(fallback(abort.signal.aborted ? 'deadline' : 'model_error'));
   }
+  const toolsFor = (found: Map<string, PortfolioRecommendation>, steps: Steps) => [
+    guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
+    allocatorTool(obs, found, steps),
+    marketTool(obs, steps),
+    walletTool(
+      'portfolio_concentration',
+      'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
+      'reduce_concentration',
+      ctx.checks,
+      found,
+      steps,
+      ([top]) => {
+        const c = ctx.concentration;
+        if (top) return { text: top.title, provenance: 'calculated_estimate' };
+        if (!c) return { text: 'No priced token to measure', provenance: null };
+        return {
+          text: `${c.pct.toFixed(0)}% of your portfolio is in ${modelTokenLabel(c.token)}; no swap from the wallet suggested`,
+          provenance: 'calculated_estimate',
+        };
+      },
+    ),
+    lpTool(obs, ctx.checks, found, steps),
+    walletTool(
+      'burrow_withdrawals',
+      'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
+      'withdraw_from_burrow',
+      ctx.checks,
+      found,
+      steps,
+      ([top]) =>
+        top
+          ? { text: top.title, provenance: 'calculated_estimate' }
+          : { text: 'Nothing on Burrow to move to the wallet', provenance: null },
+    ),
+  ];
   const key = analysisKey(obs, ctx.heuristics, strategy);
   const hit = ai.memo.results.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS)
     return early({ ...hit.analysis, cachedAt: new Date(hit.at).toISOString() });
+  // The tools are plain code: with no card from them and none on the page, a model call would cost for nothing.
+  if (ctx.heuristics.length === 0) {
+    const offered = new Map<string, PortfolioRecommendation>();
+    const checked: Steps = new Map();
+    const tools = toolsFor(offered, checked);
+    const dryRun = await Promise.allSettled(tools.map((t) => t.run({})));
+    if (offered.size === 0 && dryRun.every((r) => r.status === 'fulfilled')) {
+      const ran = tools.map((t) => ({ tool: t.spec.name, ok: true, output: null }));
+      return early({
+        ...fallback('nothing_to_rank'),
+        trace: traceSteps(ran, checked, [], new Set()),
+      });
+    }
+  }
   if (!(await affordable(worstCall))) return early(fallback('cap'));
   if (abort.signal.aborted) return early(fallback('deadline'));
   if (!admit(ai.memo)) return early(fallback('busy'));
@@ -811,67 +981,17 @@ export async function analyseAccount(
       .map((tool) => ({ tool, agent: AGENTS[tool]! }));
     if (agents.length > 0) onEvent({ type: 'asked', agents });
   };
-  const run = async () => {
-    const tools = [
-      guardianTool(obs, ctx.checks, ctx.loanCarry, found, steps),
-      allocatorTool(obs, found, steps),
-      marketTool(obs, steps),
-      walletTool(
-        'portfolio_concentration',
-        'Wallet check: how much of the portfolio sits in one token, and how much to move out of it.',
-        'reduce_concentration',
-        ctx.checks,
-        found,
-        steps,
-        ([top]) => {
-          const c = ctx.concentration;
-          if (top) return { text: top.title, provenance: 'calculated_estimate' };
-          if (!c) return { text: 'No priced token to measure', provenance: null };
-          return {
-            text: `${c.pct.toFixed(0)}% of your portfolio is in ${modelTokenLabel(c.token)}; no swap from the wallet suggested`,
-            provenance: 'calculated_estimate',
-          };
-        },
-      ),
-      walletTool(
-        'liquidity_positions',
-        'Wallet check: Rhea DCL liquidity positions that drifted out of range and earn no fees.',
-        'reposition_dcl_position',
-        ctx.checks,
-        found,
-        steps,
-        ({ length: n }) =>
-          n > 0
-            ? {
-                text: `${n} position${n === 1 ? '' : 's'} out of range`,
-                provenance: 'on_chain_verified',
-              }
-            : { text: 'No position out of range; nothing to do', provenance: null },
-      ),
-      walletTool(
-        'burrow_withdrawals',
-        'Wallet check: Burrow supply that can move to the wallet while the loan stays at the target health factor.',
-        'withdraw_from_burrow',
-        ctx.checks,
-        found,
-        steps,
-        ([top]) =>
-          top
-            ? { text: top.title, provenance: 'calculated_estimate' }
-            : { text: 'Nothing on Burrow to move to the wallet', provenance: null },
-      ),
-    ].map(counted);
-    return runToolLoop({
+  const run = () =>
+    runToolLoop({
       llm: metered,
       system: `${SYSTEM}\n${strategyLine(strategy)}`,
       prompt: 'Analyse the connected wallet.',
-      tools,
+      tools: toolsFor(found, steps).map(counted),
       maxTurns: MAX_TURNS,
       signal: abort.signal,
       onCalls: asked,
       onResult: report,
     });
-  };
   let reply: Awaited<ReturnType<typeof runToolLoop>>;
   try {
     reply = await Promise.race([run(), deadline]).finally(() => {
@@ -913,11 +1033,7 @@ export async function analyseAccount(
     recommendations.push(honest ? { ...candidate, why: pick.why } : candidate);
   }
   checks.picked = recommendations.length;
-  const nothingToActOn =
-    found.size === 0 &&
-    ctx.heuristics.length === 0 &&
-    PROPOSING_TOOLS.every((name) => trace.some((t) => t.ok && t.tool === name));
-  if (recommendations.length === 0 && !nothingToActOn) return failed('empty');
+  if (recommendations.length === 0) return failed('empty');
   const warnings = [...found.values(), ...ctx.checks].filter((r) => r.severity === 'warning');
   const missing = warnings.filter(
     (w, i) =>

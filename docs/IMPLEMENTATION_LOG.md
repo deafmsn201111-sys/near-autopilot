@@ -431,6 +431,68 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   running clock on the button and the header, the old cards dimmed during the run and the new ones fading in,
   `cachedAt` → "from a run N min ago"; no motion under `prefers-reduced-motion`.
 
+## 2026-11-13 — Repay a loan with another collateral token (#69)
+
+- `packages/core/src/loan-math.ts`: `swapRepayPlan` sizes withdraw → swap → repay (wallet tokens first, then plain
+  Burrow supply, then collateral) to the preset's target HF without the HF after the withdraw going under
+  `SWAP_REPAY_FLOOR_HF` (1.15); reasons `floor`, `no_gain`, `nothing` when it cannot.
+- `apps/api/src/analytics/account-view.ts`: the account read picks the largest collateral token with an allowlisted
+  pool to the largest debt and quotes it once (only for a loan under the strictest safe line with no same-token
+  collateral); the loan card becomes `repay_with_collateral` with the HF after each step in its text and `plan`.
+- `apps/api/src/wallet/swap-repay.ts` + `POST /v1/wallet/prepare`: re-reads, re-quotes, refuses a withdrawal under the
+  floor, builds register? → withdraw → register? → swap → repay, "Transaction k of n" previews with the HF after each
+  step; `validateCascade` with the oracle, Burrow, Rhea and the two tokens.
+- `apps/api/src/analytics/ai-analysis.ts`: the guardian tool returns that card on the AI path, with the HF steps in
+  the trace. `apps/analytics`: the new intent in the zod schema, the prepare mapping and the button label.
+- `packages/rhea-adapter/src/planner.ts`: `buildRheaSwap`, the one instant-swap builder the planner, the prepare swap
+  and the swap-repay cascade share.
+- D25 in `docs/DECISIONS.md`.
+
+## 2026-11-14 — Local runs can sign (#30)
+
+- `.env.example` sets `MAINNET_WALLET_SIGNING=1`; `docker-compose.yml` defaults to `${MAINNET_WALLET_SIGNING-1}`, so a
+  fresh quick start shows "Sign", while an existing `.env` with an empty value stays off (D9, caps unchanged).
+- README: the "no transaction has ever been submitted" bullet now says the user's wallet signs and sends; the
+  nearblocks link to the first live tx follows the owner's run.
+
+## #119 — No model call when there is nothing to rank
+
+- `analyseAccount` runs the agent tools as plain code before the model; with no card offered it returns fallback
+  `nothing_to_rank` (no model call, no `llm_calls` row) and the UI badge says "Nothing for the AI to rank" instead of
+  "AI unavailable". It still lists each agent's line under "What the agents checked". This replaces #130's model call
+  for the same case (owner's choice, 14 Nov): a supply under 1% a year is no longer offered to the model either.
+
+## 2026-11-14 — LP Optimizer on the wallet path: DCL re-centre (#63)
+
+- `packages/rhea-dcl-adapter/src/recentre.ts`: `alignRange` (agent ticks → DCL points) and `recentreSwap` (surplus to
+  swap for a range's ratio), on the contract's own deposit math.
+- `apps/api/src/analytics/lp-recentre.ts`: `lpObservation` builds an `LpPositionView` per wallet DCL position
+  (liquidity converted to CLMM units, market depth as segments, 24 h volume and gas in token Y); `recentreSteps`
+  builds the cascade.
+- `apps/api/src/analytics/discovery.ts`: `dclVolumes24hUsd` from Rhea's indexer.
+- `ai-analysis.ts`: `lp_optimizer` tool replaces `liquidity_positions`; `account-view.ts`: `observe()` fills
+  `market.lpPositions`, prepare intent `recentre_dcl`; `validate-cascade.ts`: DCL `add_liquidity` allowlist (D26).
+- `apps/analytics`: "Prepare new range" button for `recentre_dcl`; the exit card reads as an exit.
+
+## 2026-11-14 — Market Intelligence: 24 h volatility on the wallet path (#104)
+
+- `apps/api/src/analytics/series.ts`: `range24hBps` — high-low range (bps) of an asset's per-snapshot consensus
+  price; null under 12 snapshots.
+- `apps/api/src/analytics/account-view.ts`: the wallet observation fills `volatility24hBps` for each priced held
+  token from the collector's last 24 h of `price_observations`; a failed read leaves the token without a range.
+- A range above 15% is a `volatility_spike` and the Market Intelligence trace line names it (D13 updated).
+
+## #124 — Token logos and a deposit picker
+
+- `packages/core/src/token-icon.ts`: `safeTokenIcon` (image data URIs only, 32 KB cap) (D27).
+- `apps/api/src/analytics/token-icons.ts`: `TokenIcons` (ft_metadata.icon, bounded cache, NEAR logo for
+  `near`/`wrap.near`) and `GET /v1/tokens/icons?ids=`; `/v1/deposit/assets` gives each token its `icon`; LP rows carry
+  their `tokens`.
+- `apps/analytics`: `TokenIcon` (img or letter placeholder, falls back on a load error) on holdings rows (two
+  overlapping on LP rows), recommendation cards (the intent's tokens) and the deposit quote. The deposit form is now
+  network chips + Send/Receive token buttons + a token picker inside the dialog (search, popular chips, arrow keys,
+  Enter, Esc back).
+
 ## 2026-11-14 — Real activity on an events table (#32)
 
 - `packages/db`: migration 0021 `events` (unique tx hash, 30-day purge in `analytics/main.ts`).
@@ -438,7 +500,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   mainnet answers (`test/fixtures/tx-*.json`: Burrow repay/supply, Rhea swaps, a failed oracle call, unknown hash).
 - `apps/api/src/wallet/validate-cascade.ts`: per-rule checks and a summary; `wallet/seal.ts` stores every prepare's
   verdict; `wallet/outcome.ts` turns receipts' logs into "Repaid 5.01 USDC on Burrow" and, on failure, the contract,
-  its error and the funds' fate; `wallet/confirm.ts` is `POST /v1/wallet/confirm` (D25).
+  its error and the funds' fate; `wallet/confirm.ts` is `POST /v1/wallet/confirm` (D28).
 - `apps/api/src/analytics/events.ts`: `POST /v1/events` (connect), `GET /v1/analytics/account/:id/events`, `GET
 /v1/analytics/policy/cascades`; analyse, verified and 1Click quote writers. `/v1/analytics/agent-activity` removed.
 - `apps/analytics`: `/api/events` and `/api/confirm` (JSON only, rate-limited); the sign dialog shows each step ⏳ → ✓/✗

@@ -33,6 +33,22 @@ docker compose down             # stops the local site
 git checkout main && git pull   # back to main
 ```
 
+### Two local stacks at once (parallel worktrees)
+
+Each checkout gets its own containers, data and images: Compose names them after the folder, and
+`quickstart.sh` tags the images with the folder name too, so a rebuild in one worktree never changes what another
+runs. Give the second stack free ports in its `.env` (or the shell):
+
+```bash
+ANALYTICS_DASHBOARD_PORT=3011 ANALYTICS_ADMIN_PORT=3012 ANALYTICS_API_HOST_PORT=4013 POSTGRES_HOST_PORT=5442 \
+  ./scripts/quickstart.sh
+```
+
+- Plain `docker compose up` (without `quickstart.sh`) uses the shared `:local` tag; run it with
+  `IMAGE_TAG=<folder name>` to keep the stack's own images.
+- Cookies for `127.0.0.1` are shared across ports: a wallet connection and ownership proof made on one local stack
+  show up on every other. Disconnect, or use a separate browser profile, when that matters.
+
 ## When code reaches near-autopilot.tech
 
 Only after a deploy: merge alone changes nothing on the site. Deploy with `/deploy` in Claude Code (from the main

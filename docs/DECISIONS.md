@@ -72,7 +72,8 @@ Signing).
 cascade caps in `apps/api/src/wallet/validate-cascade.ts` stay as they are: 0.15 NEAR per action, 0.3 NEAR per
 cascade, plus the signer, receiver and method allowlists and the gas cap.
 **Consequences:** A visitor can sign a validated cascade for their own account in their own wallet. The server still
-holds no key. Raising a cap needs a new entry here.
+holds no key. Raising a cap needs a new entry here. The local `docker-compose.yml` defaults to signing on too
+(`${MAINNET_WALLET_SIGNING-1}`, `.env.example` sets `1`; an empty value in `.env` keeps it off), with the same caps.
 
 ## D10 — Rate limits on the public site and the account read cache
 
@@ -138,12 +139,15 @@ Allocator and LP Optimizer had no inputs, and the concentration and DCL checks e
   and `MarketIntelligenceAgent`, run on a fresh Burrow snapshot of the tokens the wallet holds (`SnapshotService`),
   priced with the collector's confirmed prices, the same ones the portfolio table uses. `priceoracle.near` returned no
   recent price on 11 Nov 2026, so it is only Market Intelligence's second source (empty when it has none). Yields
-  are today's Burrow supply rates; there is no 24 h volatility on this path. Plus three
-  wallet checks: concentration, DCL out of range and Burrow withdrawals (#64). The LP Optimizer waits for a 24 h volume source (separate issue).
+  are today's Burrow supply rates. 24 h volatility is the high-low range of the collector's own stored consensus
+  prices (at least 12 snapshots spanning 12 h; #104). Plus three
+  wallet checks: concentration and Burrow withdrawals (#64), and the `LpOptimizerAgent` on the wallet's DCL
+  positions (D26, #63).
 - Only `lending.repay` (guardian) and `lending.supply` (allocator) worth at least $1 become recommendations; the
   repay text states the health factor the repayment actually reaches. When the account view's loan card repays from
   collateral (the wallet cannot reach the target), the guardian tool returns that card instead of the agent's wallet
-  repay, so the AI path never offers a repay the wallet cannot pay (#64). Repayments are sized to HF 1.6, never the
+  repay, so the AI path never offers a repay the wallet cannot pay (#64). The same holds for the card that withdraws
+  another collateral token, swaps it and repays (D25, #69). Repayments are sized to HF 1.6, never the
   whole debt by default; the user can pick another amount. Allocator swaps (they would
   move the whole wallet into the highest-yield token) and collateral top-ups (prepare's supply is not collateral) are
   dropped.
@@ -196,8 +200,8 @@ makes up to 6 model calls per analysis (`MAX_TURNS`).
 - `llm_calls`: one row per analysis that reached the model, numbers only (account id, model, tokens, cost in
   micro-USD, latency, tools, outcome code); no IP, no visitor key, no model or tool text. Deleted after 7 days by the
   analytics API (on start, then hourly).
-- Fallback codes (`off`, `kill_switch` and `not_owner` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
-  `deadline`, `loop_limit` (too many turns or tool calls).
+- Fallback codes (`off`, `kill_switch`, `not_owner`, `busy` and `nothing_to_rank` never reach the model, so never in `llm_calls`): `off`, `kill_switch` (D16), `not_owner`, `cap`, `model_error`, `invalid_output` (bad JSON or schema), `empty`,
+  `nothing_to_rank` (the agent tools, run as code first, offered no card), `deadline`, `loop_limit` (too many turns or tool calls).
 
 ## D15 — Leaked secrets are rotated, history is not rewritten
 
@@ -416,7 +420,83 @@ global limit and the 45 s deadline are the same code path. The Next.js route pas
 **Consequences:** If a stream breaks before `done`, the browser repeats the request as JSON, which may make a second
 model call (it counts against the same limits). A client that leaves keeps the server run going; its result is cached.
 
-## D25 — Real activity: one `events` table, RPC is the only judge of "signed"
+## D25 — Repay a loan with another collateral token (withdraw → swap → repay)
+
+**Context:** #69. wNEAR collateral, USDC debt and no USDC in the wallet left the guardian without a button. The first
+step (withdraw) lowers the health factor, and the user may stop after any step.
+**Decision:** (grill, 13 Nov)
+
+- The loan card offers `repay_with_collateral` when the wallet cannot cover the repay and no collateral is the debt
+  token: the largest Burrow collateral token with an allowlisted Rhea v1 pool to the debt token. It swaps the
+  collateral token already in the wallet first and withdraws only the rest, so a run stopped after step 1 comes back
+  as swap → repay on the next read (no separate "continue").
+- Floor: the health factor after the withdraw (and the swap, which does not touch Burrow) stays at or above **1.15**,
+  the agents' danger line (1.10) plus 0.05 for prices moving between the steps. If no withdrawal keeps it there, the
+  card has no button and says why. The swap is sized to reach the preset's target HF, or the most the floor allows;
+  the card plans 0.02 above the floor so a small price tick before the click does not make prepare refuse it.
+- The card sizes from a live Rhea quote at 0.5% slippage; prepare re-reads the account, re-quotes, sizes the repay
+  from the swap's minimum output plus the debt token already in the wallet (capped at the debt + 0.1%), refuses a
+  withdrawal that breaks the floor at the fresh read (409), and writes the HF after each step into the preview.
+- Separate transactions signed in order (register on a token if needed, Burrow `oracle_call` withdraw, Rhea swap,
+  Burrow repay). No new method, receiver or cap: `validateCascade` allows the oracle, Burrow, Rhea and the two tokens.
+- No amount picker on this card; the AI path gets the same card from the guardian tool (no new orchestrator proposal
+  kind).
+- Not for a wNEAR debt: Rhea may pay a swap into wNEAR out as native NEAR, and the repay step needs the token. The
+  candidate token may sit on Burrow or only in the wallet; the quote runs only when the wallet cannot repay to the
+  strictest preset's target.
+  **Consequences:** one extra Rhea quote per account read, only for a loan under the strictest preset's safe line with
+  no same-token collateral. Prices can still move between the steps; the floor is the margin.
+
+## D26 — The LP Optimizer re-centres an out-of-range DCL position (#63)
+
+**Context:** An out-of-range DCL position earns nothing, and the only offer was the exit to the wallet.
+**Decision:** The `lp_optimizer` tool replaces the `liquidity_positions` wallet check and runs `LpOptimizerAgent` on
+every wallet DCL position in an allowlisted pool.
+
+- **24 h volume:** Rhea's indexer `list-pools?type=dcl&sort=tvl&limit=100` (`volume_24h`, USD), zod-parsed, cached
+  5 min, converted to the pool's token Y at the confirmed price. A pool with no row, or an indexer error, gives the
+  agent no view of that position (`insufficient_data`), never a guessed number. Chosen over two of our own on-chain
+  readings 24 h apart, which a fresh deploy or a local run does not have.
+- **Units:** DCL liquidity counts Y per point; the CLMM formulas count per unit of sqrt price. Every DCL liquidity
+  (position, pool, market depth) is multiplied by `1 / (sqrt(1.0001) - 1)` before the agent sees it (tested against
+  the contract math). Gas is an estimate of 0.1 NEAR for the whole cascade.
+- **Range:** the agent's ticks (`±halfWidthTicks`, agent config) are widened outward to multiples of the pool's
+  `point_delta` and clamped to the contract bounds; the result must hold the current point. Only out-of-range
+  positions get a card.
+- **Cascade** (`recentre_dcl`): reads the position and pool fresh, then remove liquidity → withdraw both tokens →
+  swap the surplus token to the new range's ratio (only when it is above 0.5 % of the position; min-out = the
+  contract's `quote` minus slippage) → deposit both → `add_liquidity`. Every amount is sized from guaranteed minimums
+  (the removal's minimums, the swap's min-out), and the add's minimums follow the same slippage. Stopping halfway
+  leaves the tokens in the wallet, the same state as the exit.
+- **`validateCascade`:** `add_liquidity` sent to the DCL contract needs a string `pool_id` in the DCL allowlist
+  (`rhea.dclPools` in `config/market.json`: the two USDC/wNEAR pools, fees 100 and 2000). Any other receiver keeps the
+  v1 rule (numeric `pool_id` in `rhea.pools`). Caps are unchanged.
+- **One card per position:** the re-centre when it pays back within `maxPaybackDays` (14), else the exit, now titled
+  as an exit.
+- **Our own swap moves the pool** before the add: the add's minimums allow for the move implied by the quote, and a
+  move larger than the slippage refuses the re-centre (409) rather than loosening the minimums. Prepare also refuses
+  a position back in range, a paused pool, and a range at the top point bound or wider than 200 000 points.
+- **wNEAR stays wNEAR:** the DCL contract pays withdrawals and swap output with `ft_transfer` (ref-ui passes no unwrap
+  flag to `withdraw_asset`; no `near_withdraw` in 100 recent mainnet receipts), so the later wNEAR deposit is funded.
+
+**Consequences:** The cost and fee numbers are estimates (volume persists, fixed time in range, no IL). A position too
+large for the pool's depth gets the card but prepare refuses it. If the add still fails, the tokens sit in the
+user's Rhea balance.
+
+## D27 — Token logos come only from the token contract, as checked data URIs
+
+**Context:** #124. Tokens were shown as bare symbols; other NEAR apps show logos.
+**Decision:** The logo is the token's own `ft_metadata.icon`, read by the API (view call) and kept only if it is a
+`data:image/(png|jpeg|webp|gif|svg+xml)` URI of at most 32 KB (`safeTokenIcon`, `packages/core`); the UI checks it
+again and renders it only through `<img>`, where an SVG cannot run scripts. Cached per process (500 tokens, a failed
+read is not cached). Native NEAR and wNEAR (no icon on chain) get one checked-in NEAR logo; every 1Click deposit asset
+is a `nep141:` NEAR token, so it uses that token's icon. The five deposit chains have checked-in logos
+(`apps/analytics/public/chains`). No external token list: no new host in the CSP, no third-party data. Any other
+token without an icon shows a letter placeholder.
+**Consequences:** A contract can still pick a misleading logo, as it can pick a misleading symbol; the "Unverified"
+badge stays the trust signal. Logos are inlined in the page (0.5–11 KB each today).
+
+## D28 — Real activity: one `events` table, RPC is the only judge of "signed"
 
 **Context:** #32. Activity and /policy showed only the collector's shadow decisions over the demo portfolios; nothing
 the real wallet path did reached them, and the team could not count connects, analyses, prepares and signatures.

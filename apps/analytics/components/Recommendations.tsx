@@ -12,7 +12,9 @@ import {
 import { portfolioSignature } from '../lib/portfolio-signature';
 import type { AccountRecommendation, PortfolioView } from '../lib/product';
 import type { StrategyId } from '@near-autopilot/core/strategy';
-import { actionLabel, recommendationToPrepare } from '../lib/recommendation-intent';
+import { actionLabel, intentTokens, recommendationToPrepare } from '../lib/recommendation-intent';
+import { label } from '../lib/token-label';
+import { TokenIcons } from './TokenIcon';
 import { PrepareDialog } from './PrepareDialog';
 import { RepayPicker } from './RepayPicker';
 
@@ -27,6 +29,7 @@ export function Recommendations({
   recommendations: initial,
   skipped,
   holdings,
+  icons = {},
   signingEnabled,
 }: {
   account: string;
@@ -34,6 +37,7 @@ export function Recommendations({
   recommendations: readonly AccountRecommendation[];
   skipped: readonly string[];
   holdings: PortfolioView['holdings'];
+  icons?: Readonly<Record<string, string | null>>;
   signingEnabled: boolean;
 }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -78,12 +82,18 @@ export function Recommendations({
       {analysis && !running && (
         <p className="muted-note">
           <span className={`badge ${analysis.source === 'llm' ? 'good' : 'neutral'}`}>
-            <i aria-hidden="true">{analysis.source === 'llm' ? '✓' : '!'}</i>
-            {analysis.source === 'heuristic'
-              ? 'Heuristic (AI unavailable)'
-              : analysis.recommendations.length
-                ? 'AI-ranked'
-                : 'AI-checked · nothing to act on'}
+            <i aria-hidden="true">
+              {analysis.source === 'llm'
+                ? '✓'
+                : analysis.fallback === 'nothing_to_rank'
+                  ? 'i'
+                  : '!'}
+            </i>
+            {analysis.source === 'llm'
+              ? 'AI-ranked'
+              : analysis.fallback === 'nothing_to_rank'
+                ? 'Nothing for the AI to rank'
+                : 'Heuristic (AI unavailable)'}
           </span>
           {analysis.note && <small> {analysis.note}</small>}
         </p>
@@ -128,6 +138,10 @@ export function Recommendations({
         >
           {recommendations.map((r, i) => {
             const request = recommendationToPrepare(r.intent, account);
+            const logos = intentTokens(r.intent).map((t) => ({
+              icon: icons[t] ?? null,
+              symbol: holdings.find((h) => h.token === t)?.symbol ?? label(t, new Map()).symbol,
+            }));
             return (
               <article
                 className={`rec sev-${r.severity}${analysis ? ' rec-in' : ''}`}
@@ -139,6 +153,7 @@ export function Recommendations({
                   {r.agent}
                 </span>
                 <div className="rec-head">
+                  {logos.length > 0 && <TokenIcons tokens={logos} size={28} />}
                   <h3>{r.title}</h3>
                 </div>
                 <p className="rec-why">{r.why}</p>
@@ -221,6 +236,19 @@ function AiTrace({
     if (calledTools.length === 0) return null;
     return <p className="muted-note">Agents called: {calledTools.join(', ')}</p>;
   }
+  if (!live && !model)
+    return (
+      <section className="ai-trace" aria-label="What the agents checked">
+        <header>
+          <h3>What the agents checked</h3>
+        </header>
+        <ul className="ai-agents">
+          {trace.map((step, i) => (
+            <AgentRow key={step.tool} agent={step.agent} step={step} index={i} />
+          ))}
+        </ul>
+      </section>
+    );
   const who = model ? modelName(model) : 'The AI';
   const waiting = asked.filter((a) => !trace.some((t) => t.tool === a.tool));
   const current = !live

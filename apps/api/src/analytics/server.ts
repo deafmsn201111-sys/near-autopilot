@@ -8,6 +8,7 @@ import type { CollectorStore } from '../collector/store';
 import type { EvidenceStore } from '../evidence/store';
 import { registerAdmin, type AdminDeps } from './admin';
 import { registerDeposit, type DepositDeps } from './deposit';
+import { registerTokenIcons, type TokenIcons } from './token-icons';
 import { registerEvidence } from './evidence';
 import { registerSeries } from './series';
 import { registerActivity } from './activity';
@@ -43,6 +44,7 @@ export interface AnalyticsDeps {
   readonly deposit?: DepositDeps;
   /** What real users did (#32). Absent: nothing is recorded and /v1/events, /v1/wallet/confirm are not served. */
   readonly events?: EventStore;
+  readonly icons?: TokenIcons;
 }
 
 const ORCH_SWAP = orchestratorConfigSchema.parse({}).swap;
@@ -122,6 +124,7 @@ export function buildAnalyticsServer(
         ),
       now,
     });
+  if (deps.icons) registerTokenIcons(app, deps.icons);
 
   /** How old the stored data is, for the header of every page (cheap: the last few cycles only). */
   app.get('/v1/analytics/freshness', async () => {

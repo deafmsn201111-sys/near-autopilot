@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { llmEnvSchema, oneClickEnvSchema } from '@near-autopilot/config';
 import { accountId } from '@near-autopilot/core';
-import { NearRpcClient } from '@near-autopilot/near-adapter';
+import { NearContractViewer, NearRpcClient } from '@near-autopilot/near-adapter';
 import { createDatabase, runMigrations } from '@near-autopilot/db';
 import { z } from 'zod';
 import { CollectorStore } from '../collector/store';
@@ -15,6 +15,7 @@ import { DrizzleEventStore } from './events-store';
 import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
+import { TokenIcons } from './token-icons';
 
 /**
  * Read-only analytics API (Postgres only). It needs no RPC, no price API and no key other than the shared API token;
@@ -53,7 +54,7 @@ const toolLlm = anthropicToolLlmFromEnv(llmEnv);
 // The allowlisted pools are the execution allowlist of the shadow config: the only swaps an action may assume.
 const market = env.MARKET_CONFIG_FILE
   ? (JSON.parse(readFileSync(env.MARKET_CONFIG_FILE, 'utf8')) as {
-      rhea?: { pools?: { poolId: number; tokenA: string; tokenB: string }[] };
+      rhea?: { pools?: { poolId: number; tokenA: string; tokenB: string }[]; dclPools?: string[] };
       policy?: { allowedTokens?: string[] };
     })
   : {};
@@ -81,6 +82,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
         tokenA: accountId(p.tokenA),
         tokenB: accountId(p.tokenB),
       })),
+      dclPools: market.rhea?.dclPools ?? [],
       discovery: httpDiscovery(),
       ai: toolLlm
         ? {
@@ -93,6 +95,7 @@ const mainnet = env.MAINNET_READ_RPC_URL
         : null,
     }
   : undefined;
+const icons = mainnet ? new TokenIcons(new NearContractViewer(mainnet.rpc)) : undefined;
 const app = buildAnalyticsServer(
   {
     apiToken: env.API_TOKEN,
@@ -101,6 +104,7 @@ const app = buildAnalyticsServer(
     events,
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
     ...(mainnet ? { mainnet } : {}),
+    ...(icons ? { icons } : {}),
     ...(env.ADMIN_API_TOKEN
       ? {
           admin: {
@@ -120,6 +124,7 @@ const app = buildAnalyticsServer(
             }),
             store: depositQuotes,
             destinationTokens,
+            ...(icons ? { icon: (t: string) => icons.get(t) } : {}),
           },
         }
       : {}),

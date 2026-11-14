@@ -154,7 +154,7 @@ export default async function PolicyPage({ searchParams }: { searchParams: Promi
                           <summary className="dim" style={{ cursor: 'pointer' }}>
                             {v.checks.length} checks
                             {v.summary &&
-                              ` · ${v.summary.receivers.length} receivers · ${gasToTgas(v.summary.gas)}${v.summary.deposit === null ? ' · wraps NEAR (amount not shown)' : ` · ${trimDecimals(yoctoToNear(v.summary.deposit))} NEAR attached`}`}
+                              ` · ${v.summary.receivers.length} ${v.summary.receivers.length === 1 ? 'receiver' : 'receivers'} · ${gasToTgas(v.summary.gas)}${v.summary.deposit === null ? ' · wraps NEAR (amount not shown)' : ` · ${trimDecimals(yoctoToNear(v.summary.deposit))} NEAR attached`}`}
                           </summary>
                           <div className="checks" style={{ marginTop: 10 }}>
                             {v.checks.map((c) => (

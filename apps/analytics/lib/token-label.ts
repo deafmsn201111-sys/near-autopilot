@@ -1,3 +1,5 @@
+import { safeTokenIcon } from '@near-autopilot/core';
+
 /**
  * Token labels. The symbol a token contract reports (`ft_metadata`) is UNTRUSTED: any contract can call itself "USDC".
  * So only the contracts below are marked verified (curated by this project, mainnet ids checked by hand). A token
@@ -97,6 +99,22 @@ export function label(id: string, onChain: ReadonlyMap<string, string>): TokenLa
     impersonates: CURATED_SYMBOLS.has(clean.toUpperCase()),
     unknown: false,
   };
+}
+
+/** Demo holdings name a symbol only: the curated contract with that symbol stands in for its logo. */
+export function curatedId(symbol: string): string | undefined {
+  if (symbol.toUpperCase() === 'NEAR') return 'near';
+  return Object.entries(CURATED).find(([, c]) => c.symbol === symbol)?.[0];
+}
+
+/** A token's logo as an image when it is a checked data URI that loaded, else a round first-letter placeholder. */
+export function iconView(
+  icon: string | null | undefined,
+  symbol: string,
+  broken = false,
+): { src: string } | { letter: string } {
+  const src = broken ? null : safeTokenIcon(icon);
+  return src ? { src } : { letter: ([...symbol.trim()][0] ?? '?').toUpperCase() };
 }
 
 export const nearblocks = (id: string) => `https://nearblocks.io/token/${encodeURIComponent(id)}`;

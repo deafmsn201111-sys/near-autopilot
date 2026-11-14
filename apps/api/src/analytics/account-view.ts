@@ -6,6 +6,8 @@ import {
   MissingPriceError,
   DEFAULT_STRATEGY,
   repayToReach,
+  SWAP_REPAY_FLOOR_HF,
+  swapRepayPlan,
   withdrawableToKeep,
   type RepaySizing,
   type RepaySource,
@@ -43,6 +45,7 @@ import {
 import type { CascadeValidationContext } from '../wallet/validate-cascade';
 import { sealCascade } from '../wallet/seal';
 import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
+import { prepareSwapRepay } from '../wallet/swap-repay';
 import { OWNERSHIP_HEADER, proofFromHeader, verifyOwnership } from '../wallet/ownership';
 import { z } from 'zod';
 import {
@@ -52,11 +55,7 @@ import {
   NearTokenReader,
   type NearRpcClient,
 } from '@near-autopilot/near-adapter';
-import {
-  assessRisk,
-  orchestratorConfigSchema,
-  type AgentObservation,
-} from '@near-autopilot/orchestrator';
+import { assessRisk, orchestratorConfigSchema } from '@near-autopilot/orchestrator';
 import type { PriceOracle, UnitPrice } from '@near-autopilot/core';
 import { parseDecimal, toUnitPrice } from '../market-data/decimal';
 import { SnapshotService } from '../services/snapshot';
@@ -65,6 +64,7 @@ import {
   analyseAccount,
   type AnalysisEvent,
   MIN_ACTION_USD,
+  MIN_SUPPLY_APR_PCT,
   approxUsdOf,
   walletAgentConfig,
   type AnalysisContext,
@@ -76,6 +76,7 @@ import {
   StaticPoolRegistry,
   buildExchangeDeposit,
   buildExchangeStorageDeposit,
+  buildRheaSwap,
   buildV1AddLiquidity,
 } from '@near-autopilot/rhea-adapter';
 import {
@@ -84,16 +85,23 @@ import {
   buildRemoveLiquidity,
   buildWithdrawAssets,
   parsePoolId,
+  type DclMarketDepth,
   type DclPool,
   type DclPosition,
 } from '@near-autopilot/rhea-dcl-adapter';
+import {
+  RecentreRefused,
+  lpObservation,
+  recentreSteps,
+  type WalletObservation,
+} from './lp-recentre';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopStrategies, type LoopMarket } from './looping';
 import { hurdle, money, type PortfolioAction } from './portfolio-view';
-import { consensus } from './series';
+import { consensus, range24hBps } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
 
 /**
@@ -110,6 +118,8 @@ export interface MainnetReadDeps {
   readonly pools: readonly { poolId: number; tokenA: TokenId; tokenB: TokenId }[];
   /** Rhea DCL (concentrated liquidity) contract, for reading the account's LP positions. Null disables that read. */
   readonly dclId?: AccountId | null;
+  /** Reviewed DCL pools (config `rhea.dclPools`): the only pools a re-centre may add liquidity to. */
+  readonly dclPools?: readonly string[];
   /** Indexers that find what the account holds outside the allowlists. Null or absent: only the allowlists are read. */
   readonly discovery?: AccountDiscovery | null;
   /** The central LLM and its spend ledger for `POST …/analysis`. Null or absent: that route answers with the rule-based list. */
@@ -335,6 +345,7 @@ async function readDclPositions(
 /** Canonical wrapped-NEAR contract (mainnet). Swapping "NEAR" means swapping this NEP-141, wrapping native first. */
 const WRAP_NEAR_ID = accountIdSchema.parse('wrap.near');
 const ORACLE_ID = accountIdSchema.parse('priceoracle.near');
+const DAY_MS = 24 * 60 * 60 * 1000;
 /** `valueAccount` lists native NEAR under this pseudo token; the snapshot reads it as `nativeBalance`. */
 const NATIVE_HOLDING = 'near';
 
@@ -427,6 +438,7 @@ export interface PositionRow {
   readonly key: string;
   readonly label: string;
   readonly sub: string;
+  readonly tokens: readonly { readonly token: string; readonly symbol: string }[];
   readonly amount: number | null;
   /** Null when no leg has a price; then the row is listed but adds nothing to the totals. */
   readonly usd: number | null;
@@ -448,7 +460,7 @@ export function accountPortfolio(p: AccountPositions) {
   const positions: PositionRow[] = [];
   const trust = p.trust ?? (() => ({ verified: true, estimate: false }));
   const position = (
-    row: Omit<PositionRow, 'usd' | 'verified' | 'estimate' | 'small'>,
+    row: Omit<PositionRow, 'tokens' | 'usd' | 'verified' | 'estimate' | 'small'>,
     parts: readonly { token: string; symbol: string; usd: number | null | undefined }[],
     protocol: string,
   ) => {
@@ -461,7 +473,14 @@ export function accountPortfolio(p: AccountPositions) {
         estimate ||= trust(x.token).estimate;
       }
     const verified = parts.every((x) => trust(x.token).verified);
-    positions.push({ ...row, usd, verified, estimate, small: isSmall(usd, row.amount, verified) });
+    positions.push({
+      ...row,
+      tokens: parts.map((x) => ({ token: x.token, symbol: x.symbol })),
+      usd,
+      verified,
+      estimate,
+      small: isSmall(usd, row.amount, verified),
+    });
   };
   for (const h of p.holdings) {
     if (h.usd === null || h.usd <= 0) continue;
@@ -538,7 +557,43 @@ export type RecommendationIntent =
       /** Repay cards only: what the amount picker needs to recompute the health factor as the user changes it. */
       readonly sizing?: RepaySizing;
     }
-  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string };
+  | { readonly action: 'reposition_dcl'; readonly lptId: string; readonly poolId: string }
+  | SwapRepayIntent
+  | {
+      readonly action: 'recentre_dcl';
+      readonly lptId: string;
+      readonly poolId: string;
+      readonly leftPoint: number;
+      readonly rightPoint: number;
+    };
+
+/**
+ * Repay a debt with another collateral token: withdraw it from Burrow (only what the wallet lacks), swap it on Rhea,
+ * repay with the swap's minimum output plus any of the debt token already in the wallet. Separate transactions,
+ * signed in order; the health factor never drops below SWAP_REPAY_FLOOR_HF after any of them (#69).
+ */
+export interface SwapRepayIntent {
+  readonly action: 'repay_with_collateral';
+  /** The debt token repaid. */
+  readonly token: string;
+  /** The collateral token withdrawn and swapped. */
+  readonly collateralToken: string;
+  /** USD of the repayment at the swap's minimum output. */
+  readonly approxUsd: number;
+  /** Collateral token to swap, base units (wallet first, then the withdrawal). */
+  readonly amount: string;
+  /** Collateral token to withdraw from Burrow, base units; absent when the wallet already holds enough. */
+  readonly withdraw?: string;
+  readonly maxSlippageBps: number;
+  /** The card's estimate of the health factor after each step; prepare recomputes it from a fresh read. */
+  readonly plan: {
+    readonly hfNow: number;
+    readonly hfAfterWithdraw: number;
+    readonly hfAfterRepay: number | null;
+    readonly floorHf: number;
+    readonly transactions: 2 | 3;
+  };
+}
 
 export interface PortfolioRecommendation {
   readonly id: string;
@@ -604,6 +659,19 @@ export interface RecommendationContext {
   })[];
   /** borrowAprPct is the debts' rate weighted by their USD value. */
   readonly carry?: LoanCarry;
+  /**
+   * Another Burrow token that can repay the largest debt through an allowlisted Rhea pool (whole tokens), with the
+   * swap rate at its minimum output from a live quote. Null without one.
+   */
+  readonly swapRepay?:
+    | (BurrowTokenFacts & {
+        readonly deposited: number;
+        readonly collateral: number;
+        readonly wallet: number;
+        readonly outPerIn: number;
+        readonly slippageBps: number;
+      })
+    | null;
   /** DCL LP positions currently out of range (earning no fees), largest USD first. */
   readonly dclOutOfRange: readonly {
     lptId: string;
@@ -665,7 +733,7 @@ export function portfolioAdvice(
     ctx.largestDebt.usd >= 0.01
   )
     recs.push({
-      ...loanSafety(ctx.loan, hf, ctx.largestDebt, strategy),
+      ...loanSafety(ctx.loan, hf, ctx.largestDebt, strategy, ctx.swapRepay ?? null),
       ...(ctx.carry && { carry: carryLine(ctx.carry) }),
     });
 
@@ -705,7 +773,7 @@ export function portfolioAdvice(
   }
 
   // 3. Put idle cash to work: the largest priced wallet asset that earns a meaningful supply rate.
-  const earning = ctx.idleEarn.filter((a) => a.aprPct >= 1);
+  const earning = ctx.idleEarn.filter((a) => a.aprPct >= MIN_SUPPLY_APR_PCT);
   const idle = earning.find((a) => a.usd >= MIN_ACTION_USD);
   if (idle) {
     recs.push({
@@ -732,8 +800,8 @@ export function portfolioAdvice(
       kind: 'reposition_dcl_position',
       agent: 'Liquidity Optimizer',
       severity: 'info',
-      title: `Your ${oor.pair} liquidity is out of range`,
-      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. Repositioning it around the current price puts it back to work.`,
+      title: `Your ${oor.pair} liquidity is out of range: exit it to your wallet`,
+      why: `This concentrated-liquidity position has drifted outside its price range, so it is earning no fees. This takes both tokens back to your wallet; you can add them to a new range later.`,
       intent: { action: 'reposition_dcl', lptId: oor.lptId, poolId: oor.poolId },
     });
   }
@@ -833,6 +901,11 @@ export function strategyNote(ctx: RecommendationContext, loan: LoanForHealth): s
   return `All three strategies give the same advice here: ${loanPart}, and ${tokenPart}. A strategy changes when a loan counts as safe and how much to repay, and from what share one token (${span((s) => s.concentrationInfoPct)}) needs rebalancing.`;
 }
 
+/** The swap-repay card's slippage limit: the prepare default. */
+const SWAP_REPAY_SLIPPAGE_BPS = 50;
+/** The card plans the withdraw this far above SWAP_REPAY_FLOOR_HF, which prepare enforces at a fresh read. */
+const CARD_FLOOR_MARGIN = 0.02;
+
 const tokenText = (n: number) => (n >= 1 ? n.toFixed(2) : n.toPrecision(3));
 
 /** Whole tokens -> base units at up to 6 decimals, rounded `up` or down; null when that is zero. */
@@ -852,6 +925,7 @@ function loanSafety(
   hf: number,
   debt: NonNullable<RecommendationContext['largestDebt']>,
   strategy: Strategy,
+  swap: NonNullable<RecommendationContext['swapRepay']> | null,
 ): PortfolioRecommendation {
   const targetHf = strategy.targetHealthFactor;
   const model = {
@@ -877,6 +951,11 @@ function loanSafety(
     severity: hf < strategy.warningBelow ? 'warning' : 'info',
     title: `Your loan's health factor is ${hf.toFixed(2)}`,
   } as const;
+  // The wallet cannot cover the repay and no collateral is the debt token: swap another collateral token instead.
+  if (swap && from !== 'collateral' && !(from === 'wallet' && debt.wallet >= walletNeed)) {
+    const swapCard = swapRepayCard(loan, hf, debt, strategy, swap);
+    if (swapCard.intent || !from) return { ...card, ...swapCard, why: `${near}${swapCard.why}` };
+  }
   const maxTokens = Math.min(from === 'wallet' ? debt.wallet : debt.collateral, debt.amount);
   const raw =
     from && rawOf(Math.min(repayToReach(model, targetHf, from), maxTokens), debt.decimals, true);
@@ -913,6 +992,80 @@ function loanSafety(
         safeTokens,
         maxTokens,
         wholeDebt: maxTokens >= debt.amount,
+      },
+    },
+  };
+}
+
+const ORDINAL = ['', 'one', 'two', 'three'] as const;
+
+/** The withdraw -> swap -> repay card (#69); its `why` continues the caller's first sentence. */
+function swapRepayCard(
+  loan: NonNullable<RecommendationContext['loan']>,
+  hf: number,
+  debt: NonNullable<RecommendationContext['largestDebt']>,
+  strategy: Strategy,
+  swap: NonNullable<RecommendationContext['swapRepay']>,
+): Pick<PortfolioRecommendation, 'why' | 'intent'> {
+  const plan = swapRepayPlan({
+    model: { collateralAdjUsd: loan.collateralAdjUsd, debtAdjUsd: loan.debtAdjUsd },
+    collateral: swap,
+    debt: { usdPerToken: debt.usdPerToken, vr: debt.vr, amount: debt.amount, wallet: debt.wallet },
+    outPerIn: swap.outPerIn,
+    target: strategy.targetHealthFactor,
+    // Sized a little above the floor prepare enforces, so a small price tick before the click does not refuse it.
+    floor: SWAP_REPAY_FLOOR_HF + CARD_FLOOR_MARGIN,
+  });
+  const lacks = `, and your wallet does not hold enough ${debt.symbol} to repay with`;
+  if (!plan.ok)
+    return {
+      why:
+        lacks +
+        (plan.reason === 'floor'
+          ? `. Repaying it with your ${swap.symbol} collateral would first withdraw some, which would take the health factor under ${SWAP_REPAY_FLOOR_HF.toFixed(2)}; add collateral or ${debt.symbol} to the wallet instead.`
+          : plan.reason === 'no_gain'
+            ? `. Swapping your ${swap.symbol} collateral into ${debt.symbol} to repay would not raise it at today's swap price.`
+            : `; none of your collateral can be swapped into ${debt.symbol} for it.`),
+      intent: null,
+    };
+  const swapRaw = rawOf(plan.swapIn, swap.decimals, false);
+  const withdrawRaw = plan.withdraw > 0 ? rawOf(plan.withdraw, swap.decimals, false) : null;
+  if (!swapRaw || plan.repay * debt.usdPerToken < 0.01)
+    return {
+      why: `${lacks}; the ${swap.symbol} swap that could repay it is too small.`,
+      intent: null,
+    };
+  const transactions = withdrawRaw ? 3 : 2;
+  const hf1 = plan.hfAfterWithdraw ?? hf;
+  const end =
+    plan.hfAfterRepay === null
+      ? 'repays the whole loan'
+      : `brings it to ${plan.hfAfterRepay.toFixed(2)}`;
+  const steps = [
+    ...(withdrawRaw
+      ? [
+          `withdraw ${tokenText(plan.withdraw)} ${swap.symbol} from your Burrow collateral (health factor ${hf.toFixed(2)} → ${hf1.toFixed(2)})`,
+        ]
+      : []),
+    `swap ${tokenText(plan.swapIn)} ${swap.symbol}${plan.fromWallet > 0 && withdrawRaw ? ` (${tokenText(plan.fromWallet)} of it already in your wallet)` : ''} for at least ${tokenText(plan.minOut)} ${debt.symbol} on Rhea`,
+    `repay ${tokenText(plan.repay)} ${debt.symbol}, which ${end}`,
+  ];
+  return {
+    why: `${lacks}. This repays it with your ${swap.symbol} in ${ORDINAL[transactions]} transactions, signed in order: ${steps.map((t, n) => `${n + 1}) ${t}`).join('; ')}. ${withdrawRaw ? `If you stop before the last one, the health factor stays at ${hf1.toFixed(2)}, never under ${SWAP_REPAY_FLOOR_HF.toFixed(2)}; prices can still move between the steps.` : `Nothing is withdrawn: if you stop after the swap, the health factor stays at ${hf.toFixed(2)}.`}`,
+    intent: {
+      action: 'repay_with_collateral',
+      token: debt.token,
+      collateralToken: swap.token,
+      approxUsd: Math.max(0.01, approxUsdOf(plan.repay * debt.usdPerToken)),
+      amount: swapRaw.toString(),
+      ...(withdrawRaw && { withdraw: withdrawRaw.toString() }),
+      maxSlippageBps: swap.slippageBps,
+      plan: {
+        hfNow: hf,
+        hfAfterWithdraw: hf1,
+        hfAfterRepay: plan.hfAfterRepay,
+        floorHf: SWAP_REPAY_FLOOR_HF,
+        transactions,
       },
     },
   };
@@ -1143,6 +1296,70 @@ export function registerAccountView(
       loanCarry: entry.checks.model.carry && carryLine(entry.checks.model.carry),
       concentration: entry.concentration,
     };
+  };
+
+  /**
+   * The Burrow-listed token that could repay the largest debt through an allowlisted Rhea pool (#69): on Burrow or
+   * already in the wallet (a run stopped after the withdraw continues from there), the largest one, with the swap
+   * rate at its minimum output from a live quote sized near the debt. Only for a loan under the strictest preset's
+   * safe line that the wallet cannot repay to the strictest target and that has no same-token collateral, so at
+   * most one quote per account read. Not for a wNEAR debt: Rhea may pay wNEAR out as native NEAR.
+   */
+  const swapRepayCandidate = async (
+    loan: NonNullable<RecommendationContext['loan']>,
+    debt: RecommendationContext['largestDebt'],
+    tokens: readonly (BurrowTokenFacts & {
+      readonly deposited: number;
+      readonly collateral: number;
+    })[],
+    walletOf: (token: string) => number,
+  ): Promise<RecommendationContext['swapRepay']> => {
+    const strictest = STRATEGY_IDS.map((id) => STRATEGIES[id]);
+    const safeAt = Math.max(...strictest.map((st) => st.healthyAt));
+    const target = Math.max(...strictest.map((st) => st.targetHealthFactor));
+    if (
+      !debt ||
+      debt.token === WNEAR ||
+      loan.healthFactor === null ||
+      loan.healthFactor >= safeAt ||
+      debt.collateral > 0
+    )
+      return null;
+    const walletNeed = repayToReach(
+      { ...loan, vr: debt.vr, usdPerToken: debt.usdPerToken },
+      target,
+      'wallet',
+    );
+    if (debt.wallet >= walletNeed) return null;
+    const routed = (t: string) =>
+      deps.pools.some(
+        (p) =>
+          (p.tokenA === t && p.tokenB === debt.token) ||
+          (p.tokenB === t && p.tokenA === debt.token),
+      );
+    const best = tokens
+      .filter((b) => b.token !== debt.token && routed(b.token) && b.usdPerToken > 0)
+      .map((b) => ({ ...b, wallet: walletOf(b.token) }))
+      .map((b) => ({ b, usd: (b.collateral + b.deposited + b.wallet) * b.usdPerToken }))
+      .filter((x) => x.usd >= MIN_ACTION_USD)
+      .sort((x, y) => y.usd - x.usd)[0]?.b;
+    if (!best) return null;
+    const tokensIn = Math.min(
+      best.collateral + best.deposited + best.wallet,
+      debt.usd / best.usdPerToken,
+    );
+    const amountIn = rawOf(tokensIn, best.decimals, false);
+    const tokenIn = accountIdSchema.safeParse(best.token);
+    const tokenOut = accountIdSchema.safeParse(debt.token);
+    if (!amountIn || !tokenIn.success || !tokenOut.success) return null;
+    const quote = await quoter
+      .quote({ tokenIn: tokenIn.data, tokenOut: tokenOut.data, amountIn })
+      .catch(() => null);
+    if (!quote || quote.amountOut <= 0n) return null;
+    const slippageBps = SWAP_REPAY_SLIPPAGE_BPS;
+    const out = Number(quote.amountOut) / 10 ** debt.decimals;
+    const inTokens = Number(amountIn) / 10 ** best.decimals;
+    return { ...best, outPerIn: ((out / inTokens) * (10_000 - slippageBps)) / 10_000, slippageBps };
   };
 
   const readAccount = async (
@@ -1566,6 +1783,21 @@ export function registerAccountView(
       collateralAdjUsd: v.loan.collateralAdjUsd,
       debtAdjUsd: v.loan.debtAdjUsd,
     };
+    // Burrow-listed tokens that sit only in the wallet can be swapped too (e.g. after a stopped withdraw).
+    const walletOnly = [
+      ...new Set(v.holdings.filter((h) => h.where === 'wallet' && h.verified).map((h) => h.token)),
+    ]
+      .filter((t) => !burrowBalances.some((b) => b.token === t))
+      .flatMap((t) => {
+        const f = burrowFacts(t);
+        return f ? [{ ...f, deposited: 0, collateral: 0 }] : [];
+      });
+    const swapRepay = await swapRepayCandidate(
+      loan,
+      largestDebt,
+      [...burrowBalances, ...walletOnly],
+      (t) => held('wallet', t),
+    );
     // A NEAR swap wraps native NEAR first, so NEAR and wNEAR in the wallet are one liquid amount.
     const nearLike = new Set<string>([NATIVE_HOLDING, WNEAR]);
     const sameAsset = (t: string) =>
@@ -1581,6 +1813,7 @@ export function registerAccountView(
       largestDebt,
       burrowBalances,
       carry,
+      swapRepay,
       dclOutOfRange: outOfRange((d) => `${d.symbolX}/${d.symbolY}`),
     };
     // The same list as the model sees it: ft_metadata symbols are untrusted text, so only our own labels.
@@ -1603,6 +1836,7 @@ export function registerAccountView(
       largestDebt: largestDebt && labelled(largestDebt),
       burrowBalances: burrowBalances.map(labelled),
       carry,
+      swapRepay: swapRepay && labelled(swapRepay),
       dclOutOfRange: outOfRange((d) => `${modelTokenLabel(d.tokenX)}/${modelTokenLabel(d.tokenY)}`),
     };
 
@@ -1655,14 +1889,57 @@ export function registerAccountView(
   /**
    * What the orchestrator agents see for this wallet: a fresh Burrow snapshot priced with the same confirmed collector
    * prices as the account view (so the agents' numbers match the portfolio table), today's Burrow supply rates as the
-   * yield estimates, and Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
-   * recent price). The context is as old as the collector snapshot it was priced from.
+   * yield estimates, Burrow's own oracle as the second price source for Market Intelligence (empty when it has no
+   * recent price), and each priced token's 24 h range from the collector's own stored prices (see range24hBps). The
+   * context is as old as the collector snapshot it was priced from; so is the 24 h window.
    */
+  const dclAllowed = new Set(deps.dclPools ?? []);
+  /** The wallet's DCL positions as the LP Optimizer sees them; empty when DCL or the allowlist is off. */
+  const readLp = async (
+    id: AccountId,
+    prices: ReadonlyMap<string, number>,
+    decimals: (t: string) => number | undefined,
+  ) => {
+    if (!dcl || dclAllowed.size === 0) return null;
+    const positions = await dcl.listPositions(id).catch(() => []);
+    const poolIds = [...new Set(positions.map((p) => p.pool_id))].filter((p) => dclAllowed.has(p));
+    if (poolIds.length === 0) return null;
+    const [volumesUsd, reads] = await Promise.all([
+      deps.discovery?.dclVolumes24hUsd() ?? null,
+      Promise.all(
+        poolIds.map(async (pid) => {
+          const [pool, depth] = await Promise.all([
+            dcl.getPool(pid).catch(() => null),
+            dcl.getMarketDepth(pid).catch(() => null),
+          ]);
+          return { pid, pool, depth };
+        }),
+      ),
+    ]);
+    const pools = new Map<string, DclPool>();
+    const depths = new Map<string, DclMarketDepth>();
+    for (const r of reads) {
+      if (r.pool) pools.set(r.pid, r.pool);
+      if (r.depth) depths.set(r.pid, r.depth);
+    }
+    return lpObservation({
+      positions,
+      pools,
+      depths,
+      allowedPools: dclAllowed,
+      volumesUsd,
+      priceUsd: (t) => prices.get(t),
+      decimals,
+      label: modelTokenLabel,
+    });
+  };
+
   const observe = async (
     id: AccountId,
     held: readonly TokenId[],
     strategy: StrategyId,
-  ): Promise<AgentObservation> => {
+    log: FastifyRequest['log'],
+  ): Promise<WalletObservation> => {
     const [markets, meta, prices, collected] = await Promise.all([
       store.markets(),
       store.tokenMetadata(),
@@ -1710,9 +1987,23 @@ export function registerAccountView(
       const apr = m?.status === 'OK' ? parseDecimal(m.netSupplyApr ?? m.supplyApr ?? '') : null;
       if (apr && apr.mantissa > 0n) estimatedYieldWad.set(token, toWad(apr));
     }
-    const reference = await burrowOracle
-      .getPrices(priced)
-      .catch(() => ({ prices: new Map<TokenId, UnitPrice>() }));
+    const since = new Date(pricedAt.getTime() - DAY_MS);
+    const [reference, lp, ranges] = await Promise.all([
+      burrowOracle.getPrices(priced).catch(() => ({ prices: new Map<TokenId, UnitPrice>() })),
+      readLp(id, prices, decimalsOf),
+      Promise.all(
+        priced.map(async (t) => {
+          try {
+            return [t, range24hBps(await store.priceHistory(t, since))] as const;
+          } catch (err) {
+            log.warn({ err, token: t }, 'price history read failed: no 24 h range');
+            return [t, null] as const;
+          }
+        }),
+      ),
+    ]);
+    const volatility24hBps = new Map<TokenId, number>();
+    for (const [t, bps] of ranges) if (bps !== null) volatility24hBps.set(t, bps);
     return {
       now: clock.now(),
       accountId: id,
@@ -1721,11 +2012,13 @@ export function registerAccountView(
         asOf: pricedAt,
         estimatedYieldWad,
         referencePrices: reference.prices,
-        volatility24hBps: new Map(),
-        lpPositions: [],
+        volatility24hBps,
+        lpPositions: lp?.views ?? [],
+        ...(lp && lp.notes.length > 0 && { notes: { lp: lp.notes.join('; ') } }),
       },
       risk: assessRisk(snapshot, config),
       config,
+      ...(lp && { lp: lp.meta }),
     };
   };
 
@@ -1750,6 +2043,7 @@ export function registerAccountView(
             ),
           ],
           strategy,
+          log,
         ),
       heuristics: view.body.recommendations,
       checks: view.forModel,
@@ -1858,6 +2152,14 @@ export function registerAccountView(
             lptId: z.string().min(1),
             maxSlippageBps: slip,
           }),
+          // recentre_dcl: move a DCL position to a new range around the price (remove -> swap? -> add).
+          z.object({
+            action: z.literal('recentre_dcl'),
+            lptId: z.string().min(1).max(300),
+            leftPoint: z.number().int(),
+            rightPoint: z.number().int(),
+            maxSlippageBps: slip,
+          }),
           // unwrap: wNEAR -> native NEAR.
           z.object({ action: z.literal('unwrap'), approxUsd: usd }),
           // Burrow borrow / withdraw / repay from collateral — priced through the oracle.
@@ -1873,6 +2175,16 @@ export function registerAccountView(
             token: accountIdSchema,
             approxUsd: usd,
             amount,
+          }),
+          // Repay a debt with another collateral token: withdraw -> swap -> repay (#69).
+          z.object({
+            action: z.literal('repay_with_collateral'),
+            token: accountIdSchema,
+            collateralToken: accountIdSchema,
+            approxUsd: usd,
+            amount: amount.unwrap(),
+            withdraw: amount,
+            maxSlippageBps: slip,
           }),
         ]),
       })
@@ -2087,6 +2399,74 @@ export function registerAccountView(
       }
     }
 
+    // recentre_dcl — the LP Optimizer found a range around the current price whose extra fees repay the move. The
+    // position and pool are read fresh; the range must still hold the price, and the pool must be allowlisted.
+    if (intent.action === 'recentre_dcl') {
+      const dclId = deps.dclId;
+      if (!dcl || !dclId) return reply.code(409).send({ error: 'DCL is not configured' });
+      try {
+        const pos = (await dcl.listPositions(account)).find((p) => p.lpt_id === intent.lptId);
+        if (!pos)
+          return reply
+            .code(409)
+            .send({ error: `${account} does not own DCL position ${intent.lptId}` });
+        if (!dclAllowed.has(pos.pool_id))
+          return reply.code(409).send({ error: `pool ${pos.pool_id} is not allowlisted` });
+        if ((pos.v_liquidity ?? 0n) > 0n)
+          return reply.code(409).send({
+            error: `position ${intent.lptId} is staked in a farm; unstake it there before re-centring`,
+          });
+        if (pos.amount <= 0n)
+          return reply.code(409).send({ error: `position ${intent.lptId} is already empty` });
+        const pool = await dcl.getPool(pos.pool_id);
+        if (!pool) return reply.code(409).send({ error: `pool ${pos.pool_id} not found` });
+        const tokenX = accountIdSchema.parse(pool.token_x);
+        const tokenY = accountIdSchema.parse(pool.token_y);
+        // The withdraw and the swap pay out to the wallet: an unregistered token would stop the cascade halfway.
+        const registered = await Promise.all(
+          [tokenX, tokenY].map((t) => tokens.isStorageRegistered(t, account)),
+        );
+        if (registered.includes(false))
+          return reply.code(409).send({
+            error: `register ${account} with both pool tokens before re-centring`,
+          });
+        const built = await recentreSteps({
+          dcl: dclId,
+          position: pos,
+          pool,
+          leftPoint: intent.leftPoint,
+          rightPoint: intent.rightPoint,
+          maxSlippageBps: intent.maxSlippageBps,
+          tokenX,
+          tokenY,
+          symbolX: modelTokenLabel(tokenX),
+          symbolY: modelTokenLabel(tokenY),
+          quote: async (inputToken, outputToken, inputAmount) =>
+            (await dcl.quote({ poolIds: [pos.pool_id], inputToken, outputToken, inputAmount }))
+              .amount,
+        });
+        const cascade = assembleCascade(account, built.steps);
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([dclId, tokenX, tokenY]),
+            dcl: { contract: dclId, pools: dclAllowed },
+          },
+          {
+            position: { lptId: pos.lpt_id, poolId: pos.pool_id },
+            range: { leftPoint: intent.leftPoint, rightPoint: intent.rightPoint },
+          },
+        );
+      } catch (e) {
+        if (e instanceof RecentreRefused) return reply.code(409).send({ error: e.message });
+        return prepareFailure(req, reply, e);
+      }
+    }
+
     // unwrap — wNEAR back to native NEAR (a utility, e.g. after a swap left wNEAR in the wallet).
     if (intent.action === 'unwrap') {
       const WRAP = accountIdSchema.parse('wrap.near');
@@ -2126,6 +2506,204 @@ export function registerAccountView(
           },
           {
             amount: { raw: rawAmount.toString(), human: humanAmount, symbol: 'wNEAR' },
+          },
+        );
+      } catch (e) {
+        return prepareFailure(req, reply, e);
+      }
+    }
+
+    if (intent.action === 'repay_with_collateral') {
+      try {
+        const [prices, meta, acct, deployment, assets] = await Promise.all([
+          latestPrices(),
+          store.tokenMetadata(),
+          burrow.getAccount(account),
+          burrowVerifier.verifyDeployment(),
+          burrow.listAssets(),
+        ]);
+        if (!acct) return reply.code(409).send({ error: `${account} has no Burrow account` });
+        const metaOf = (t: string) => meta.find((x) => x.token === t);
+        const assetOf = (t: string) => assets.find((a) => a.tokenId === t);
+        const facts = (t: string) => {
+          const a = assetOf(t);
+          const price = prices.get(t);
+          return a && price !== undefined && price > 0
+            ? {
+                decimals: metaOf(t)?.decimals ?? (t === WNEAR ? 24 : 18),
+                symbol: metaOf(t)?.symbol ?? t.slice(0, 10),
+                usdPerToken: price,
+                vr: a.volatilityRatioBps / 10_000,
+                extraDecimals: a.extraDecimals,
+                extra: 10n ** BigInt(a.extraDecimals),
+              }
+            : null;
+        };
+        // The health factor's two sides at the latest confirmed prices, as the account view computes them.
+        const inPosition = [...acct.supplied, ...acct.collateral, ...acct.borrowed];
+        const missing = inPosition.find((b) => !facts(b.tokenId));
+        if (missing)
+          return reply
+            .code(409)
+            .send({ error: `no confirmed price or risk data for ${missing.tokenId}` });
+        const tokenFacts = new Map<string, TokenFacts>(
+          inPosition.flatMap((b) => {
+            const f = facts(b.tokenId);
+            return f
+              ? [
+                  [
+                    b.tokenId,
+                    {
+                      decimals: f.decimals,
+                      symbol: f.symbol,
+                      usd: f.usdPerToken,
+                      extraDecimals: f.extraDecimals,
+                      vr: f.vr,
+                    },
+                  ] as const,
+                ]
+              : [];
+          }),
+        );
+        const side = (list: readonly { tokenId: string; inner: bigint }[]) =>
+          list.map((b) => ({ token: b.tokenId as TokenId, inner: b.inner }));
+        const { loan: fresh } = valueAccount(
+          {
+            accountId: account,
+            nativeYocto: 0n,
+            wallet: new Map(),
+            burrow: {
+              supplied: side(acct.supplied),
+              collateral: side(acct.collateral),
+              borrowed: side(acct.borrowed),
+            },
+          },
+          tokenFacts,
+        );
+        if (fresh.riskDataMissing)
+          return reply
+            .code(409)
+            .send({ error: 'the loan could not be valued: a price is missing' });
+        const { collateralAdjUsd, debtAdjUsd } = fresh;
+        const c = facts(intent.collateralToken);
+        const d = facts(intent.token);
+        if (!c || !d)
+          return reply
+            .code(409)
+            .send({ error: 'no confirmed price for the collateral or the debt token' });
+        const rawOn = (
+          list: readonly { tokenId: string; inner: bigint }[],
+          t: string,
+          extra: bigint,
+        ) => list.filter((b) => b.tokenId === t).reduce((sum, b) => sum + b.inner, 0n) / extra;
+        const storageMin = async (t: AccountId) =>
+          (await tokens.isStorageRegistered(t, account))
+            ? null
+            : BigInt(
+                ((await viewer.view(t, 'storage_balance_bounds', {})) as { min?: string }).min ??
+                  '1250000000000000000000',
+              );
+        const [vColl, vDebt, collWallet, debtWallet, collStorage, debtStorage] = await Promise.all([
+          burrowVerifier.verifyToken(deployment, intent.collateralToken, 'withdraw'),
+          burrowVerifier.verifyToken(deployment, intent.token, 'repay'),
+          tokens.getBalance(intent.collateralToken, account).catch(() => 0n),
+          tokens.getBalance(intent.token, account).catch(() => 0n),
+          storageMin(intent.collateralToken),
+          storageMin(intent.token),
+        ]);
+        const assetIds = [
+          ...new Set<string>([
+            intent.collateralToken,
+            intent.token,
+            ...acct.collateral.map((b) => b.tokenId),
+            ...acct.borrowed.map((b) => b.tokenId),
+          ]),
+        ];
+        const now = clock.now();
+        const prepared = await prepareSwapRepay({
+          account,
+          rheaId: deps.rheaId,
+          requested: {
+            swapInRaw: BigInt(intent.amount),
+            withdrawRaw: BigInt(intent.withdraw ?? '0'),
+          },
+          collateral: {
+            token: intent.collateralToken,
+            symbol: c.symbol,
+            decimals: c.decimals,
+            usdPerToken: c.usdPerToken,
+            vr: c.vr,
+            walletRaw: collWallet,
+            suppliedRaw: rawOn(acct.supplied, intent.collateralToken, c.extra),
+            collateralRaw: rawOn(acct.collateral, intent.collateralToken, c.extra),
+            storageMin: collStorage,
+          },
+          debt: {
+            token: intent.token,
+            symbol: d.symbol,
+            decimals: d.decimals,
+            usdPerToken: d.usdPerToken,
+            vr: d.vr,
+            walletRaw: debtWallet,
+            debtRaw: rawOn(acct.borrowed, intent.token, d.extra),
+            storageMin: debtStorage,
+          },
+          model: { collateralAdjUsd, debtAdjUsd },
+          slippageBps: intent.maxSlippageBps,
+          floor: SWAP_REPAY_FLOOR_HF,
+          quote: (amountIn) =>
+            quoter.quote({ tokenIn: intent.collateralToken, tokenOut: intent.token, amountIn }),
+          withdrawTx: (rawAmount, fromCollateralRaw) =>
+            buildWithdraw({
+              deployment,
+              token: vColl,
+              now,
+              rawAmount,
+              fromCollateralRaw,
+              assetIds,
+            }),
+          repayTx: (rawAmount) => buildRepay({ deployment, token: vDebt, now, rawAmount }),
+        });
+        if (!prepared.ok) return reply.code(409).send({ error: prepared.error });
+        const cascade = assembleCascade(account, prepared.steps);
+        const totalGas = cascade.transactions.reduce(
+          (sum, t) => sum + t.actions.reduce((g, a) => g + a.gas, 0n),
+          0n,
+        );
+        const { amounts } = prepared;
+        const of = (raw: bigint, f: { decimals: number; symbol: string }) => ({
+          raw: raw.toString(),
+          human: Number(raw) / 10 ** f.decimals,
+          symbol: f.symbol,
+        });
+        return seal(
+          reply,
+          account,
+          intent,
+          cascade,
+          {
+            signerId: account,
+            allowedReceivers: new Set<string>([
+              deployment.oracleId,
+              deps.burrowId,
+              deps.rheaId,
+              intent.collateralToken,
+              intent.token,
+            ]),
+          },
+          {
+            amount: of(amounts.repayRaw, d),
+            cost: {
+              networkFeeMaxNear:
+                Number((totalGas * 100_000_000n) / 1_000_000_000_000_000_000n) / 1e6,
+              swap: {
+                slippageBps: intent.maxSlippageBps,
+                estReceived: of(amounts.estOutRaw, d),
+                minReceived: of(amounts.minOutRaw, d),
+                priceImpactPct: null,
+              },
+            },
+            healthFactor: prepared.hf,
           },
         );
       } catch (e) {
@@ -2382,28 +2960,16 @@ export function registerAccountView(
             deposit: wrapShortfall,
           });
         }
-        swapActions.push({
-          type: 'FunctionCall',
-          methodName: 'ft_transfer_call',
-          args: {
-            receiver_id: deps.rheaId,
-            amount: swapRawAmount.toString(),
-            msg: JSON.stringify({
-              force: 0,
-              actions: [
-                {
-                  pool_id: quote.poolId,
-                  token_in: intent.token,
-                  token_out: tokenOut,
-                  amount_in: swapRawAmount.toString(),
-                  min_amount_out: minOut.toString(),
-                },
-              ],
-            }),
-          },
-          gas: 180_000_000_000_000n,
-          deposit: 1n,
-        });
+        swapActions.push(
+          ...buildRheaSwap({
+            contractId: deps.rheaId,
+            poolId: quote.poolId,
+            tokenIn: intent.token,
+            tokenOut,
+            amountIn: swapRawAmount,
+            minAmountOut: minOut,
+          }).actions,
+        );
         const wrapNote =
           wrapShortfall > 0n ? `Wrap ${(Number(wrapShortfall) / 1e24).toFixed(6)} NEAR, then ` : '';
         steps.push({
