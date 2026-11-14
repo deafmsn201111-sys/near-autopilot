@@ -695,3 +695,13 @@ the user gets a new quote.
 **Consequences:** A withdrawal is signed in the NEAR wallet like any cascade and confirmed step by step. Its status is
 the deposit status path (#29); the recipient address is kept in the `oneclick_quote` event, not in `deposit_quotes`.
 Native NEAR (needs a wrap first), Bitcoin and other chains are not offered yet.
+
+## D37 — Leaving the analysis view inside the app does not stop the AI run (#168)
+
+**Context:** #168 asked to abort the run when the owner opens another page in the app, as closing the tab does
+(#151). Since #190 the API saves every finished analysis, and the home page reads the saved one on each visit.
+**Decision:** In-app navigation keeps the run going: the browser keeps its request open, the run finishes and is
+saved, and the owner finds it on return. Closing or reloading the tab still cancels the run (#151). A click on
+"Run AI analysis" while the run is still going joins it (one run per account and strategy), so it costs nothing extra.
+**Consequences:** No model spend is lost to a cancel the owner did not ask for. Coming back mid-run shows the last saved
+analysis and the button, not the live progress; showing "Analysing…" on return is #239.
