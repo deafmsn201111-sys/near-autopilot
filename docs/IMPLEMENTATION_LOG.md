@@ -648,6 +648,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   joined within `LEAVE_GRACE_MS` (2 s; 5 s let a typical 3–4 s run finish for nobody), so a broken stream's JSON retry still gets the same run.
 - `POST /v1/analytics/account/:id/analysis` aborts on `reply.raw` close before the response finished; the Next proxy
   passes `req.signal` to the upstream fetch (`AbortSignal.any` with the 60 s timeout).
+
 ## 2026-11-14 — Deposit QR with amount, token and network (#128)
 
 - `apps/analytics/lib/payment-uri.ts`: BIP21 / EIP-681 (always `@chainId`, wei and base units as plain integers) /
