@@ -58,6 +58,36 @@ export function consensus(quotes: readonly Quote[]): {
   return { price, spreadBps: valid.length > 1 ? spread : null, sources: valid.length };
 }
 
+/** Same floors as the DefiLlama hourly range: under half a day of points is not a 24 h range. */
+const MIN_RANGE_SNAPSHOTS = 12;
+const MIN_RANGE_SPAN_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * High-low range (bps of the low) of one asset's per-snapshot consensus price over the rows given (the caller picks
+ * the 24 h window). Null under 12 priced snapshots or when they span less than 12 h.
+ * ponytail: one bad print can widen the range; that only raises a caution signal, add an outlier filter if it misfires.
+ */
+export function range24hBps(
+  rows: readonly (Quote & { snapshotId: string; observedAt: Date })[],
+): number | null {
+  const bySnapshot = new Map<string, { at: number; quotes: Quote[] }>();
+  for (const r of rows) {
+    const s = bySnapshot.get(r.snapshotId);
+    if (s) s.quotes.push(r);
+    else bySnapshot.set(r.snapshotId, { at: r.observedAt.getTime(), quotes: [r] });
+  }
+  const priced = [...bySnapshot.values()].flatMap((s) => {
+    const price = consensus(s.quotes).price;
+    return price === null ? [] : [{ at: s.at, price }];
+  });
+  if (priced.length < MIN_RANGE_SNAPSHOTS) return null;
+  const times = priced.map((p) => p.at);
+  if (Math.max(...times) - Math.min(...times) < MIN_RANGE_SPAN_MS) return null;
+  const prices = priced.map((p) => p.price);
+  const lo = Math.min(...prices);
+  return Math.round(((Math.max(...prices) - lo) * 10_000) / lo);
+}
+
 /** HF bands the orchestrator classifies risk with (config.orchestrator.risk; its defaults when not overridden). */
 export function riskBands(override?: unknown) {
   const r = orchestratorConfigSchema.parse(override ? { risk: override } : {}).risk;
