@@ -150,8 +150,12 @@ const publicIntent = (intent: Record<string, unknown> | null | undefined) =>
       )
     : null;
 
+/** Check messages are built by our validator from our own cascades; the account and any amount are still cut out. */
 const masked = (text: string, accountId: string) =>
-  text.split(accountId).join(shortAccount(accountId));
+  text
+    .split(accountId)
+    .join(shortAccount(accountId))
+    .replace(/\d{7,}/g, '…');
 
 const publicChecks = (checks: readonly unknown[] | null | undefined, accountId: string) =>
   z
