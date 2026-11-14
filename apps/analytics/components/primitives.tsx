@@ -235,7 +235,7 @@ export function LoanGauge({
         <span className="ds-mk ds-mk-up" style={{ left: onAxis(urgent) }}>
           <em>urgent {urgent}%</em>
         </span>
-        <span className="ds-mk" style={{ left: onAxis(safe) }}>
+        <span className="ds-mk ds-mk-safe" style={{ left: onAxis(safe) }}>
           <em>safe {safe}%</em>
         </span>
         <span className="ds-gauge-you" style={{ left: onAxis(bufferPct(healthFactor)) }} />

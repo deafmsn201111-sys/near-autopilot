@@ -128,7 +128,7 @@ from and withdrawals to another chain (below), in a separate client.
    holdings, Burrow position, options. A recommendation's button builds the exact unsigned transactions; you sign
    them in your wallet or cancel.
 
-5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
+5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Add funds**
    on the portfolio: it opens HOT Kit's bridge popup with your
    NEAR account locked as the recipient: you connect the wallet you send from (MetaMask, Phantom, a Tron or Bitcoin
    wallet, or a mobile one by WalletConnect QR when `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is set at build), see its
