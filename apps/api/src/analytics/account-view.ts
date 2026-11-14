@@ -958,10 +958,11 @@ export function portfolioAdvice(
           facts: [
             {
               label: 'Moves',
-              value: `≈ ${money0(approxUsd)}`,
+              value: `≈ ${money0(Math.min(target, liquid))}`,
               sub: `of ${c.symbol}`,
               provenance: 'calculated_estimate',
             },
+            networkFee(),
           ],
         }),
       });

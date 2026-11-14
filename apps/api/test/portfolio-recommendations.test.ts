@@ -1252,6 +1252,17 @@ describe('facts strip from computed numbers (#284)', () => {
     expect(fact(w, 'Rate')).toMatchObject({ value: '4.2%', sub: 'it stops earning a year' });
   });
 
+  it('a concentration swap moves the amount its text names, unrounded by the intent', () => {
+    const r = portfolioRecommendations(
+      ctx({
+        metrics: metrics({ concentration: { token: 'wrap.near', symbol: 'wNEAR', pct: 60.0499 } }),
+        concentrationLiquidUsd: 10_000,
+      }),
+    ).find((x) => x.kind === 'reduce_concentration');
+    expect(fact(r, 'Moves')?.value).toBe('≈ $100');
+    expect(r?.why).toContain('about $100 of it');
+  });
+
   it('every number of an earnings or savings fact is in the card text; advice without a button has none', () => {
     const cards = portfolioRecommendations(
       ctx({
