@@ -223,6 +223,48 @@ describe('analyseAccount', () => {
     expect(off.recommendations).toEqual([shown]);
   });
 
+  it('returns the exact input the model client was given, for "What the AI saw"', async () => {
+    const given: { system: string; prompt: string; tools: unknown[]; results: unknown[] } = {
+      system: '',
+      prompt: '',
+      tools: [],
+      results: [],
+    };
+    const { llm: inner } = fake([() => callAll, () => final([{ id: REPAY, why: 'Repay first.' }])]);
+    const llm: ToolLlm = {
+      open(req) {
+        Object.assign(given, {
+          system: req.system,
+          prompt: req.prompt,
+          tools: req.tools.map((t) => ({ name: t.name, description: t.description })),
+        });
+        const chat = inner.open(req);
+        return {
+          send: (results) => (results && given.results.push(...results), chat.send(results)),
+        };
+      },
+    };
+    const out = await analyseAccount(ai(llm), {
+      ...ctx,
+      heuristics: [heuristic],
+      checks: [heuristic],
+    });
+    const names = Object.fromEntries(
+      callAll.kind === 'tool_calls' ? callAll.calls.map((c) => [c.id, c.name]) : [],
+    );
+    expect(out.run?.input).toEqual({
+      system: given.system,
+      prompt: given.prompt,
+      tools: given.tools,
+      results: (given.results as ToolResult[]).map((r) => ({
+        tool: names[r.id],
+        content: r.content,
+      })),
+    });
+    expect(out.run?.input.system).toContain('Balanced');
+    expect(out.run?.input.results).toHaveLength(5);
+  });
+
   it('offers the three orchestrator agents and the three wallet checks as tools', async () => {
     const { llm, tools } = fake([() => final([])]);
     await analyseAccount(ai(llm), {
@@ -787,6 +829,7 @@ describe('analyseAccount', () => {
       checks: { picked: 1, explained: 1, replaced: 0, restored: 1, dropped: 0 },
       ranking: null,
       privacy: null,
+      input: expect.objectContaining({ prompt: 'Analyse the connected wallet.' }) as unknown,
     });
     const off = await analyseAccount(null, {
       ...ctx,

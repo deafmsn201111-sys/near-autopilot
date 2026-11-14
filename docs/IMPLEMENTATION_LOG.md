@@ -938,3 +938,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   unless the model really got the token, under our label only, and the forged pick is dropped).
 - The deposit-rebuild scenario from the issue was replaced: D42 removed that endpoint (HOT Kit builds deposits).
 - `pnpm demo:attack`: 19/19 attacks stopped, 4 controls allowed, signed 0, broadcast 0; log regenerated.
+
+## 2026-11-14 — "What the AI saw": the owner sees the exact model input (#271)
+
+- `runModel` records what it hands the model client (system prompt with the strategy, prompt, tool descriptions,
+  every tool result) in `run.input`, at the `metered` wrapper, so it is the object sent, not a re-render. A test
+  compares it with what a fake client received.
+- Only in the owner's analysis (same NEP-413 gate) and its saved copy (#190); not in `llm_calls`, not logged.
+- The panel's "How this was decided" has a collapsible "What the AI saw" block (JSON re-indented, Copy all).

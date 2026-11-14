@@ -77,6 +77,12 @@ describe('runAnalysis', () => {
       checks: { picked: 2, explained: 2, replaced: 0, restored: 1, dropped: 0 },
       ranking: 'The loan comes first: its health factor is 1.37.',
       privacy: { verified: true, reason: null, chatIds: ['c1', 'c2'], receipts: [] },
+      input: {
+        system: 'You are the analyst.',
+        prompt: 'Analyse the connected wallet.',
+        tools: [{ name: 'liquidation_guardian', description: 'Checks the loan.' }],
+        results: [{ tool: 'liquidation_guardian', content: '{"healthFactor":"1.37"}' }],
+      },
     };
     reply({ ...base, calledTools: ['liquidation_guardian', 'capital_allocator'], trace, run });
     const r = await runAnalysis('alice.near', 'balanced');

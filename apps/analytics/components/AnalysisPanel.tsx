@@ -1,8 +1,14 @@
 'use client';
 import { PROVENANCE_TIER_INFO } from '@near-autopilot/core';
 import type { StrategyId } from '@near-autopilot/core/strategy';
-import { useEffect, useState, type ReactNode } from 'react';
-import { pipelineOf, privacyMark, type Analysis, type Pipeline } from '../lib/analysis-client';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import {
+  pipelineOf,
+  privacyMark,
+  type Analysis,
+  type ModelInput,
+  type Pipeline,
+} from '../lib/analysis-client';
 import { CopyButton } from './CopyButton';
 import { findingsOf, verdictOf, type Finding } from '../lib/analysis-view';
 import { ago } from '../lib/format';
@@ -378,6 +384,7 @@ function DecisionPipeline({
           <CopyButton text={mark.replies.map((r) => r.id).join('\n')} label="Copy ids" />
         </p>
       )}
+      {!running && analysis?.run?.input && <ModelInputView input={analysis.run.input} />}
       {ranking && (
         <p className="an-ranking">
           Why this order: {ranking}{' '}
@@ -389,6 +396,37 @@ function DecisionPipeline({
     </div>
   );
 }
+
+/** The exact input of this run, as the API handed it to the model client; JSON is only re-indented. */
+function ModelInputView({ input }: { input: ModelInput }) {
+  return (
+    <details className="an-saw">
+      <summary>What the AI saw</summary>
+      <p>
+        Everything the model received for this run, and nothing else. Only you see it.{' '}
+        <CopyButton text={JSON.stringify(input, null, 2)} label="Copy all" />
+      </p>
+      <h4>Instructions</h4>
+      <pre>{`${input.system}\n\n${input.prompt}`}</pre>
+      <h4>Agents it could ask</h4>
+      <pre>{input.tools.map((t) => `${t.name}: ${t.description}`).join('\n')}</pre>
+      {input.results.map((r, i) => (
+        <Fragment key={i}>
+          <h4>{r.tool} answered</h4>
+          <pre>{indented(r.content)}</pre>
+        </Fragment>
+      ))}
+    </details>
+  );
+}
+
+const indented = (json: string) => {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch {
+    return json;
+  }
+};
 
 function Updated({ iso }: { iso: string }) {
   const now = useNow();

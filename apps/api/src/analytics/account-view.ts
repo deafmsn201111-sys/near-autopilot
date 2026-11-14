@@ -2569,7 +2569,7 @@ export function registerAccountView(
       return analysis;
     };
     if (!req.headers.accept?.includes('text/event-stream')) return run();
-    // Live pipeline (#113): server-built lines only, never raw tool output; the last frame is the same JSON reply.
+    // Live pipeline (#113): server-built lines while it runs; the last frame is the same JSON reply.
     const out = new PassThrough();
     // ponytail: a tool that returns after the deadline would write after `done`.
     const send = (event: string, data: unknown) =>

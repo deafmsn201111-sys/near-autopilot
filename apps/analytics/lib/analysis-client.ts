@@ -103,6 +103,14 @@ const privacySchema = z.object({
 });
 export type Privacy = z.infer<typeof privacySchema>;
 
+const modelInputSchema = z.object({
+  system: z.string(),
+  prompt: z.string(),
+  tools: z.array(z.object({ name: z.string(), description: z.string() })),
+  results: z.array(z.object({ tool: z.string(), content: z.string() })),
+});
+export type ModelInput = z.infer<typeof modelInputSchema>;
+
 const runSchema = z.object({
   model: z.string(),
   turns: z.number(),
@@ -112,6 +120,8 @@ const runSchema = z.object({
   checks: checksSchema,
   ranking: z.string().max(300).nullable().catch(null),
   privacy: privacySchema.nullable().catch(null).default(null),
+  /** Only in the owner's own AI result; absent from analyses saved before #271. */
+  input: modelInputSchema.nullable().catch(null).default(null),
 });
 
 export type TraceStep = z.infer<typeof traceStepSchema>;
