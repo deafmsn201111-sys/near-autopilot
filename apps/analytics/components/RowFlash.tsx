@@ -30,9 +30,9 @@ export function RowFlash({
           ?.animate(FLASH, { duration: 1600, easing: 'cubic-bezier(.16,1,.3,1)' });
     };
     const sheet = document.querySelector('dialog[open]');
-    if (!sheet) return flash();
-    sheet.addEventListener('close', flash, { once: true });
-    return () => sheet.removeEventListener('close', flash);
+    // Not removed on a re-render: a second refresh while the sheet is open must not cancel this diff.
+    if (sheet) sheet.addEventListener('close', flash, { once: true });
+    else flash();
   }, [scope, signature]);
   return null;
 }

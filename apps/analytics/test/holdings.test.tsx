@@ -23,6 +23,7 @@ const holdings: HoldingInput[] = [
 const positions = [
   {
     key: 'dcl-1',
+    kind: 'dcl' as const,
     label: 'USDC/wNEAR',
     sub: 'Rhea concentrated liquidity',
     amount: null,
@@ -31,13 +32,21 @@ const positions = [
   },
   {
     key: 'dcl-2',
+    kind: 'dcl' as const,
     label: 'USDC/USDt',
     sub: 'Rhea concentrated liquidity',
     amount: null,
     usd: 9,
     inRange: false,
   },
-  { key: 'staking-linear', label: 'LiNEAR', sub: 'Liquid staking', amount: 2, usd: 5 },
+  {
+    key: 'staking-linear',
+    kind: 'staking' as const,
+    label: 'LiNEAR',
+    sub: 'Liquid staking',
+    amount: 2,
+    usd: 5,
+  },
 ];
 
 const html = (props: Partial<Parameters<typeof HoldingsPanel>[0]> = {}) =>
@@ -45,7 +54,7 @@ const html = (props: Partial<Parameters<typeof HoldingsPanel>[0]> = {}) =>
     <HoldingsPanel
       holdings={holdings}
       positions={positions}
-      note="read just now"
+      provenance={{ kind: 'on_chain', age: 'just now' }}
       source="Non-custodial · balances read directly from the chain"
       {...props}
     />,
@@ -82,6 +91,35 @@ describe('holdingGroups', () => {
     expect(status('USDt', 'Stablecoin')).toEqual({ label: 'Idle', tone: 'watch', icon: 'minus' });
     expect(status('USDC/wNEAR')).toEqual({ label: 'In range', icon: 'up' });
     expect(status('USDC/USDt')).toEqual({ label: 'Out of range', tone: 'watch', icon: 'alert' });
+  });
+
+  it('keeps a demo NEAR under the fee reserve as fees, without a token id', () => {
+    const rows = holdingGroups([h('wallet', '', 'NEAR', 0.5, 2, { token: undefined })], [])
+      .groups[0]!.rows;
+    expect(rows[0]!.status).toEqual({ label: 'Kept for fees' });
+  });
+
+  it('shows "—" for a limit order and "LP share" only for liquidity', () => {
+    const out = renderToStaticMarkup(
+      <HoldingsPanel
+        holdings={[]}
+        positions={[
+          {
+            key: 'order-1',
+            kind: 'order',
+            label: 'USDC → NEAR',
+            sub: 'Rhea limit order',
+            amount: null,
+            usd: 5,
+          },
+          ...positions,
+        ]}
+        provenance={{ kind: 'on_chain', age: 'just now' }}
+        source="s"
+      />,
+    );
+    expect(out).toMatch(/USDC → NEAR.*?hold-amt">—</);
+    expect(out).toMatch(/USDC\/wNEAR.*?hold-amt">LP share</);
   });
 
   it('calls NEAR above the 1 NEAR fee reserve idle', () => {
@@ -125,9 +163,8 @@ describe('HoldingsPanel', () => {
   });
 
   it('shows an empty wallet state instead of an empty table', () => {
-    const out = html({ holdings: [], positions: [], empty: 'Add funds' });
+    const out = html({ holdings: [], positions: [] });
     expect(out).not.toContain('<table');
     expect(out).toContain('This wallet holds nothing yet');
-    expect(out).toContain('Add funds');
   });
 });

@@ -871,3 +871,16 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   switching views never animates.
 - Old layered `.hero*` / `.alloc-*` CSS removed. The gauge's "safe" label now starts at its mark so it no longer
   runs into "liquidation" on the Aggressive strategy.
+
+## 2026-11-14 — Holdings table (#253)
+
+- `components/Holdings.tsx`: "What you hold" is a real `<table>` grouped by where the money sits (Burrow · lending,
+  Liquidity, Limit orders, Staking, Wallet) with group totals (assets − loans), 56px rows, two-line rows on phone and
+  a provenance mark. Status chips: neutral for Earning X% / Collateral / Kept for fees (wallet NEAR up to the 1 NEAR
+  fee reserve) / In range; tinted only for Idle, Costs X% and Out of range. The allocation column is gone.
+- Unverified tokens and balances under $1 moved into the footer as native disclosures; an empty wallet gets a sentence
+  instead of an empty table. An other-chain group slot (dashed, "shown only, not analysed") renders only with data;
+  #265 fills it.
+- `components/RowFlash.tsx`: rows whose amount changed flash once after a refresh, after any open sign sheet closes.
+- API: Burrow holdings carry `aprPct` (supply rate, or borrow rate on a loan), positions carry `kind` and DCL
+  positions `inRange`, on both the account and the demo portfolio views.

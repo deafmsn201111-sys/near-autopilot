@@ -345,8 +345,10 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             ? r.tokens.map((x) => logo(x.token, x.symbol, r.verified !== false))
             : [logo(undefined, r.label)],
         }))}
-        note={
-          isAccount ? 'read from NEAR mainnet just now' : `simulated · updated ${ago(data.asOf)}`
+        provenance={
+          isAccount
+            ? { kind: 'on_chain', age: 'just now' }
+            : { kind: 'simulated', age: ago(data.asOf) }
         }
         source={
           isAccount
@@ -354,7 +356,6 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             : 'Simulated balances valued at live NEAR prices'
         }
         flashScope={isAccount ? accountParam : undefined}
-        empty={own && <DepositButton account={accountParam} label="Add funds" />}
       >
         {isAccount && data.discovery?.complete === false && (
           <div className="callout warn hold-callout">

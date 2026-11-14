@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { money } from '../lib/format';
 import { ALERT, MINUS, TREND_DOWN, TREND_UP } from './icons';
-import { Chip } from './primitives';
+import { Chip, ProvenanceMark } from './primitives';
 import { RowFlash } from './RowFlash';
 import { TokenIcons } from './TokenIcon';
 
@@ -29,6 +29,7 @@ export interface PositionInput {
   verified?: boolean;
   estimate?: boolean;
   small?: boolean;
+  kind?: 'v1' | 'dcl' | 'staking' | 'unstaking' | 'order';
   inRange?: boolean;
   logos?: readonly Logo[];
 }
@@ -45,12 +46,11 @@ export interface HoldingRowView {
   sub: string;
   logos: readonly Logo[];
   amount: number | null;
-  /** Signed: a loan is negative. */
+  lpShare?: boolean;
   usd: number | null;
   status: Status;
 }
 
-/** Balances on another chain (HOT Kit): shown, not analysed (#265 fills it). */
 export interface OtherChainGroup {
   key: string;
   label: string;
@@ -65,8 +65,13 @@ export interface OtherChainGroup {
   action: ReactNode;
 }
 
-/** Kept in the wallet for network fees; the API's NEAR_RESERVE. */
+// ponytail: mirrors the API's NEAR_RESERVE; send a flag from the API if the two ever diverge
 const NEAR_FEE_RESERVE = 1;
+
+const keptForFees = (h: HoldingInput) =>
+  h.where === 'wallet' &&
+  (h.token ?? h.symbol.toLowerCase()) === 'near' &&
+  h.amount <= NEAR_FEE_RESERVE;
 
 const TOKEN_KIND: Record<string, string> = {
   NEAR: 'Native token',
@@ -100,28 +105,34 @@ function holdingStatus(h: HoldingInput): Status {
   if (apr > 0) return { label: `Earning ${rate(apr)}`, icon: 'up' };
   if (h.where === 'collateral') return { label: 'Collateral' };
   if (h.where === 'deposited') return { label: 'Deposit' };
-  if (h.token === 'near' && h.amount <= NEAR_FEE_RESERVE) return { label: 'Kept for fees' };
-  return IDLE;
+  return keptForFees(h) ? { label: 'Kept for fees' } : IDLE;
 }
 
 function positionStatus(p: PositionInput): [GroupKey, Status] {
-  if (p.key.startsWith('dcl-'))
-    return [
-      'liquidity',
-      p.inRange === false
-        ? { label: 'Out of range', tone: 'watch', icon: 'alert' }
-        : { label: 'In range', icon: 'up' },
-    ];
-  if (p.key.startsWith('v1-')) return ['liquidity', { label: 'Earning fees', icon: 'up' }];
-  if (p.key.startsWith('order-')) return ['orders', { label: 'Limit order' }];
-  if (p.key.startsWith('unstaking-')) return ['staking', { label: 'Unstaking' }];
-  return ['staking', { label: 'Staking', icon: 'up' }];
+  switch (p.kind) {
+    case 'dcl':
+      return [
+        'liquidity',
+        p.inRange === false
+          ? { label: 'Out of range', tone: 'watch', icon: 'alert' }
+          : { label: 'In range', icon: 'up' },
+      ];
+    case 'v1':
+      return ['liquidity', { label: 'Earning fees', icon: 'up' }];
+    case 'order':
+      return ['orders', { label: 'Limit order' }];
+    case 'unstaking':
+      return ['staking', { label: 'Unstaking' }];
+    case 'staking':
+      return ['staking', { label: 'Staking', icon: 'up' }];
+    default:
+      return ['wallet', { label: 'Position' }];
+  }
 }
 
 const suffix = (r: { estimate?: boolean; usd: number | null }) =>
   `${r.estimate ? ' · price estimate' : ''}${r.usd === null ? ' · no price' : ''}`;
 
-/** Where the money sits, in a fixed order; unverified tokens and balances under $1 go to the footer. */
 export function holdingGroups(
   holdings: readonly HoldingInput[],
   positions: readonly PositionInput[],
@@ -129,14 +140,13 @@ export function holdingGroups(
   type Entry = HoldingRowView & { group: GroupKey; verified: boolean; small: boolean };
   const all: Entry[] = [
     ...holdings.map((h): Entry => {
-      const fees = h.where === 'wallet' && h.token === 'near' && h.amount <= NEAR_FEE_RESERVE;
       return {
         key: `${h.where}-${h.token ?? h.symbol}`,
         group: h.where === 'wallet' ? 'wallet' : 'burrow',
         symbol: h.symbol,
         sub:
           (h.where === 'wallet'
-            ? `${TOKEN_KIND[h.symbol.toUpperCase()] ?? 'Token'}${fees ? ' · gas' : ''}`
+            ? `${TOKEN_KIND[h.symbol.toUpperCase()] ?? 'Token'}${keptForFees(h) ? ' · gas' : ''}`
             : BURROW_SUB[h.where]) + suffix(h),
         logos: h.logos ?? [],
         amount: h.amount,
@@ -155,6 +165,7 @@ export function holdingGroups(
         sub: p.sub + suffix(p),
         logos: p.logos ?? [],
         amount: p.amount,
+        lpShare: p.kind === 'v1' || p.kind === 'dcl',
         usd: p.usd,
         status,
         verified: p.verified !== false,
@@ -194,7 +205,9 @@ function Row({ r, status }: { r: Omit<HoldingRowView, 'status'>; status: ReactNo
           </div>
         </div>
       </th>
-      <td className="r num hold-amt">{r.amount === null ? 'LP share' : amountText(r.amount)}</td>
+      <td className="r num hold-amt">
+        {r.amount !== null ? amountText(r.amount) : r.lpShare ? 'LP share' : '—'}
+      </td>
       <td className="hold-status">{status}</td>
       <td className="r num hold-usd">
         <b>{usdText(r.usd)}</b>
@@ -252,20 +265,17 @@ function FootRows({ label, rows }: { label: string; rows: readonly HoldingRowVie
 export function HoldingsPanel({
   holdings,
   positions,
-  note,
+  provenance,
   source,
   other,
-  empty,
   flashScope,
   children,
 }: {
   holdings: readonly HoldingInput[];
   positions: readonly PositionInput[];
-  note: string;
+  provenance: { kind: 'on_chain' | 'simulated'; age: string };
   source: string;
   other?: readonly OtherChainGroup[];
-  /** The action under the empty-wallet state (Add funds), when the wallet is the visitor's own. */
-  empty?: ReactNode;
   /** Changed rows flash once after a refresh within this scope (an account); absent for a demo. */
   flashScope?: string;
   children?: ReactNode;
@@ -275,10 +285,8 @@ export function HoldingsPanel({
   const head = (
     <div className="hold-head">
       <h2 id="hold-h">What you hold</h2>
-      <span>
-        {count > 0 && `${plural(count, 'position', 'positions')} · `}
-        {note}
-      </span>
+      {count > 0 && <span>{plural(count, 'position', 'positions')}</span>}
+      <ProvenanceMark kind={provenance.kind} age={provenance.age} />
     </div>
   );
   if (groups.length + unverified.length + small.length === 0 && !other?.length)
@@ -291,7 +299,6 @@ export function HoldingsPanel({
             <b>This wallet holds nothing yet.</b> Once tokens arrive on NEAR they show here, grouped
             by where they sit, with what each one earns or costs.
           </p>
-          {empty}
         </div>
       </section>
     );

@@ -21,4 +21,3 @@ export const ALERT_CIRCLE = icon(
   </>,
 );
 export const MINUS = icon('minus', <path d="M5 12h14" />);
-export const ARROW_IN = icon('in', <path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14" />);

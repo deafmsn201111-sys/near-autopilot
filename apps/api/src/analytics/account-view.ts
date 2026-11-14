@@ -539,6 +539,7 @@ export interface PositionRow {
   /** True when any priced leg uses an indexer estimate. */
   readonly estimate: boolean;
   readonly small: boolean;
+  readonly kind: 'v1' | 'dcl' | 'staking' | 'unstaking' | 'order';
   /** Rhea DCL only: whether the pool's price sits inside the position's range, so it earns fees. */
   readonly inRange?: boolean;
 }
@@ -589,7 +590,13 @@ export function accountPortfolio(p: AccountPositions) {
   }
   for (const v of p.v1Positions)
     position(
-      { key: `v1-${v.poolId}`, label: v.symbols.join('/'), sub: 'Rhea liquidity', amount: null },
+      {
+        key: `v1-${v.poolId}`,
+        kind: 'v1',
+        label: v.symbols.join('/'),
+        sub: 'Rhea liquidity',
+        amount: null,
+      },
       v.tokens.map((t, i) => ({ token: t, symbol: v.symbols[i] ?? t, usd: v.usdPerToken[i] })),
       'Rhea v1',
     );
@@ -597,6 +604,7 @@ export function accountPortfolio(p: AccountPositions) {
     position(
       {
         key: `dcl-${d.lptId}`,
+        kind: 'dcl',
         label: `${d.symbolX}/${d.symbolY}`,
         sub: 'Rhea concentrated liquidity',
         amount: null,
@@ -611,7 +619,13 @@ export function accountPortfolio(p: AccountPositions) {
   const inWallet = new Set(p.holdings.filter((h) => h.where === 'wallet').map((h) => h.token));
   for (const s of p.staking.filter((x) => !inWallet.has(x.token)))
     position(
-      { key: `staking-${s.token}`, label: s.symbol, sub: 'Liquid staking', amount: s.amount },
+      {
+        key: `staking-${s.token}`,
+        kind: 'staking',
+        label: s.symbol,
+        sub: 'Liquid staking',
+        amount: s.amount,
+      },
       [s],
       'Staking',
     );
@@ -619,6 +633,7 @@ export function accountPortfolio(p: AccountPositions) {
     position(
       {
         key: `${s.kind}-${s.pool}`,
+        kind: s.kind === 'staked' ? 'staking' : 'unstaking',
         label: 'NEAR',
         sub: s.kind === 'staked' ? `Staked with ${s.pool}` : `Unstaking from ${s.pool}`,
         amount: s.amount,
@@ -630,6 +645,7 @@ export function accountPortfolio(p: AccountPositions) {
     position(
       {
         key: `order-${o.orderId}`,
+        kind: 'order',
         label: `${o.sellSymbol} → ${o.buySymbol}`,
         sub:
           o.remaining > 0
