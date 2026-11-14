@@ -395,6 +395,11 @@ describe('the saved analysis (#190)', () => {
       expect(r).toMatchObject({ analysis: { run: { input: { messages: ['secret'] } } } });
     });
 
+    it("hides what the AI saw from a visitor holding another account's proof", async () => {
+      const r: unknown = (await latest(publicServer().app, await proofHeader('bob.near'))).json();
+      expect(r).toMatchObject({ analysis: { run: { input: null } } });
+    });
+
     it('opens no other account', async () => {
       const r = await latest(publicServer().app, undefined, 'balanced', 'bob.near');
       expect(r.json()).toEqual({ analysis: null, signature: null });
