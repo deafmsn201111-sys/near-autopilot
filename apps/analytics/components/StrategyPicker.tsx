@@ -1,6 +1,6 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useOptimistic, useTransition } from 'react';
 import { STRATEGIES, STRATEGY_IDS, type StrategyId } from '@near-autopilot/core/strategy';
 import { saveStrategy } from '../app/account-actions';
 import { Segmented } from './primitives';
@@ -17,21 +17,15 @@ export function StrategyPicker({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [chosen, setChosen] = useState(current);
-  const [landed, setLanded] = useState(current);
-  if (landed !== current) {
-    setLanded(current);
-    setChosen(current);
-  }
+  const [chosen, setChosen] = useOptimistic(current);
   const s = STRATEGIES[chosen];
 
-  const choose = (id: StrategyId) => {
-    setChosen(id);
+  const choose = (id: StrategyId) =>
     startTransition(async () => {
+      setChosen(id);
       await saveStrategy(account, id);
       router.push(`/?p=account&account=${encodeURIComponent(account)}&strategy=${id}`);
     });
-  };
 
   return (
     <div className="strategy-picker" aria-busy={pending}>
