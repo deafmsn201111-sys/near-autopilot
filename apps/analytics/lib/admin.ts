@@ -27,6 +27,27 @@ export interface Spend {
   } | null;
 }
 
+export type DepositState = 'waiting' | 'processing' | 'success' | 'refunded' | 'failed' | 'expired';
+
+export interface AdminDeposits {
+  counts: Record<DepositState, number>;
+  quotes: {
+    id: string;
+    createdAt: string;
+    accountId: string;
+    chain: string | null;
+    asset: string;
+    amount: string;
+    depositAddress: string;
+    refundTo: string;
+    deadline: string;
+    feeBps: number | null;
+    status: string | null;
+    state: DepositState;
+    statusAt: string | null;
+  }[];
+}
+
 /** Calls /v1/admin/* with ADMIN_API_TOKEN; 404 outside the admin container. */
 export async function adminApi<T>(path: string, body?: unknown): Promise<T> {
   const token = getEnv().ADMIN_API_TOKEN;

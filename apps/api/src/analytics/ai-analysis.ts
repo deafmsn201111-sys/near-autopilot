@@ -129,6 +129,7 @@ const MAX_RUNS_PER_WINDOW = 60;
 /** In-process state of the analytics API (one process): AI results by wallet state, and the global run window. */
 export interface AnalysisMemo {
   readonly results: BoundedMap<string, { readonly at: number; readonly analysis: Analysis }>;
+  readonly running: Map<string, Promise<Analysis>>;
   /** Start times of the runs that reached the model in the last window. */
   readonly runs: number[];
   readonly maxRuns: number;
@@ -136,6 +137,7 @@ export interface AnalysisMemo {
 
 export const analysisMemo = (maxRuns = MAX_RUNS_PER_WINDOW): AnalysisMemo => ({
   results: new BoundedMap(CACHE_MAX),
+  running: new Map(),
   runs: [],
   maxRuns,
 });
@@ -806,7 +808,28 @@ export async function analyseAccount(
   // An unreadable switch counts as off: fail closed. Checked before the cache, so no AI result is served while off.
   const enabled = await ai.ledger.enabled().catch((e: unknown) => (onError(e), false));
   if (!enabled) return fallback('kill_switch');
+  // A retry while this account's run is still going (a broken stream's JSON fallback) waits for it: one click, one run.
+  const key = `${ctx.accountId}|${strategy}`;
+  const running = ai.memo.running.get(key);
+  if (running) return running;
+  const run = runModel(ai, ctx, strategy, fallback, onError, deadlineMs, onEvent);
+  ai.memo.running.set(key, run);
+  try {
+    return await run;
+  } finally {
+    ai.memo.running.delete(key);
+  }
+}
 
+async function runModel(
+  ai: ToolLlmDeps,
+  ctx: AnalysisContext,
+  strategy: StrategyId,
+  fallback: (code: FallbackCode) => Analysis,
+  onError: (e: unknown) => void,
+  deadlineMs: number,
+  onEvent: (e: AnalysisEvent) => void,
+): Promise<Analysis> {
   const startedAt = new Date();
   const usage = { inputTokens: 0, outputTokens: 0, costMicroUsd: 0n, calls: 0 };
   const worstCall = costMicroUsd(ai.model, {

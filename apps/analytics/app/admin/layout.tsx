@@ -9,6 +9,7 @@ const SCREENS = [
   { href: '/admin', label: 'Spend & controls' },
   { href: '/admin/funnel', label: 'Funnel' },
   { href: '/admin/llm', label: 'LLM quality' },
+  { href: '/admin/1click', label: '1Click' },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

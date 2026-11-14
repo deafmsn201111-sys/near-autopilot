@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { AdminDepositDeps } from './admin-deposits';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_DAYS = 7;
@@ -58,6 +59,8 @@ export interface AdminDeps {
   readonly defaultCapMicro: bigint;
   /** Funnel steps from the events table; absent = the funnel is empty. */
   readonly events?: { since(at: Date): Promise<FunnelEvent[]> };
+  /** The 1Click screen; absent = no /v1/admin/deposits. */
+  readonly deposits?: AdminDepositDeps;
 }
 
 const usd = (micro: bigint) => Number(micro) / 1e6;
