@@ -14,6 +14,10 @@ const USDT = accountId('usdt.tether-token.near');
 const ctx = {
   signerId: ALICE,
   allowedReceivers: new Set<string>([EX, WNEAR, USDT]),
+  roles: new Map([
+    [EX, 'rhea'],
+    [WNEAR, 'wrap'],
+  ] as const),
   allowedPools: new Set([3879]),
 };
 
@@ -142,7 +146,11 @@ describe('validateCascade', () => {
         ],
       },
     ];
-    const burrowCtx = { signerId: ALICE, allowedReceivers: new Set<string>([BURROW]) };
+    const burrowCtx = {
+      signerId: ALICE,
+      allowedReceivers: new Set<string>([BURROW]),
+      roles: new Map([[BURROW, 'burrow']] as const),
+    };
 
     it('accepts one yocto and an actions list at the gas ceiling', () => {
       expect(validateCascade(priced(), burrowCtx)).toMatchObject({ ok: true, reasons: [] });
@@ -220,7 +228,11 @@ describe('validateCascade', () => {
 
 describe('validateCascade — DCL reposition (exit) cascade', () => {
   const DCL = accountId('dclv2.ref-labs.near');
-  const dclCtx = { signerId: ALICE, allowedReceivers: new Set<string>([DCL]) };
+  const dclCtx = {
+    signerId: ALICE,
+    allowedReceivers: new Set<string>([DCL]),
+    roles: new Map([[DCL, 'dcl']] as const),
+  };
 
   it('accepts remove_liquidity + withdraw_asset on the DCL contract', () => {
     const cascade: PlannedTransaction[] = [
@@ -291,6 +303,10 @@ describe('validateCascade — DCL add_liquidity (re-centre)', () => {
   const dclCtx = {
     signerId: ALICE,
     allowedReceivers: new Set<string>([DCL, EX]),
+    roles: new Map([
+      [DCL, 'dcl'],
+      [EX, 'rhea'],
+    ] as const),
     allowedPools: new Set([3879]),
     dcl: { contract: DCL, pools: new Set([POOL]) },
   };
@@ -322,7 +338,14 @@ describe('validateCascade — DCL add_liquidity (re-centre)', () => {
 describe('validateCascade — near_deposit (wrap) exemption', () => {
   const WRAP = accountId('wrap.near');
   const EXCH = accountId('v2.ref-finance.near');
-  const wrapCtx = { signerId: ALICE, allowedReceivers: new Set<string>([WRAP, EXCH]) };
+  const wrapCtx = {
+    signerId: ALICE,
+    allowedReceivers: new Set<string>([WRAP, EXCH]),
+    roles: new Map([
+      [WRAP, 'wrap'],
+      [EXCH, 'rhea'],
+    ] as const),
+  };
 
   const wrapTx = (deposit: bigint): PlannedTransaction => ({
     intentId: 'wrap',
@@ -379,6 +402,46 @@ describe('validateCascade — near_deposit (wrap) exemption', () => {
       wrapCtx,
     );
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('validateCascade — methods per receiver role', () => {
+  const call = (
+    receiverId: string,
+    methodName: string,
+    args: Record<string, unknown> = {},
+    deposit = 1n,
+  ): PlannedTransaction => ({
+    intentId: 'probe',
+    signerId: ALICE,
+    receiverId: accountId(receiverId),
+    actions: [{ type: 'FunctionCall', methodName, args, gas: 30_000_000_000_000n, deposit }],
+  });
+
+  it('rejects near_deposit on a token that is not the wrap contract', () => {
+    const r = validateCascade([call(USDT, 'near_deposit', {}, 10n ** 24n)], ctx);
+    expect(r.checks.find((c) => c.rule === 'methods')?.pass).toBe(false);
+  });
+
+  it('rejects near_withdraw on a token that is not the wrap contract', () => {
+    const r = validateCascade([call(USDT, 'near_withdraw', { amount: '1' })], ctx);
+    expect(r.checks.find((c) => c.rule === 'methods')?.pass).toBe(false);
+  });
+
+  it('rejects a protocol method called on a token', () => {
+    const r = validateCascade([call(USDT, 'execute', { actions: [] })], ctx);
+    expect(r.checks.find((c) => c.rule === 'methods')?.pass).toBe(false);
+  });
+
+  it('rejects a method of another protocol on the exchange', () => {
+    const r = validateCascade([call(EX, 'remove_liquidity', { lpt_id: 'x' }, 0n)], ctx);
+    expect(r.checks.find((c) => c.rule === 'methods')?.pass).toBe(false);
+  });
+
+  it('rejects ft_transfer_call addressed to a token id instead of a protocol', () => {
+    const transfer = call(WNEAR, 'ft_transfer_call', { receiver_id: USDT, amount: '1', msg: '' });
+    const r = validateCascade([transfer], ctx);
+    expect(r.checks.find((c) => c.rule === 'receivers')?.pass).toBe(false);
   });
 });
 

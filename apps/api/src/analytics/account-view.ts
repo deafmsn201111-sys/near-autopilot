@@ -49,7 +49,7 @@ import {
   type CascadeStep,
   type PreparedCascade,
 } from '../wallet/cascade';
-import type { CascadeValidationContext } from '../wallet/validate-cascade';
+import type { CascadeValidationContext, ReceiverRole } from '../wallet/validate-cascade';
 import { sealCascade } from '../wallet/seal';
 import { buildWithdrawTransfer, withdrawValidation } from '../wallet/withdraw';
 import { activityTimeline, eventRecorder, utcDay, type EventStore } from './events';
@@ -2713,6 +2713,13 @@ export function registerAccountView(
       .send(out);
   });
 
+  const roles = new Map<string, ReceiverRole>([
+    [deps.burrowId, 'burrow'],
+    [deps.rheaId, 'rhea'],
+    [WRAP_NEAR_ID, 'wrap'],
+    ...(deps.dclId ? [[deps.dclId, 'dcl'] as const] : []),
+  ]);
+
   /**
    * Prepare a recommendation intent as an UNSIGNED transaction cascade the user signs in their own wallet. Read-only
    * on the server: verifies the Burrow deployment/token, resolves the exact amount, prepends registration if needed,
@@ -2998,6 +3005,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([deps.rheaId, token0, token1]),
             allowedPools,
           },
@@ -3125,6 +3133,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([
               dclId,
               ...registrations.map((r) => r.tx.receiverId),
@@ -3197,6 +3206,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([dclId, tokenX, tokenY]),
             dcl: { contract: dclId, pools: dclAllowed },
           },
@@ -3245,6 +3255,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([WRAP]),
           },
           {
@@ -3417,6 +3428,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([
               deps.burrowId,
               deps.rheaId,
@@ -3537,6 +3549,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([deps.burrowId]),
           },
           {
@@ -3611,6 +3624,7 @@ export function registerAccountView(
           cascade,
           {
             signerId: account,
+            roles,
             allowedReceivers: new Set<string>([
               deps.burrowId,
               ...intent.tokens.map((t) => t.token),
@@ -3817,6 +3831,7 @@ export function registerAccountView(
         cascade,
         {
           signerId: account,
+          roles,
           allowedReceivers: allowed,
         },
         {

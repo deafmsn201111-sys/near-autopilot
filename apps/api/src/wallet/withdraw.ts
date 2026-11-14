@@ -47,5 +47,6 @@ export const withdrawValidation = (
 ): CascadeValidationContext => ({
   signerId,
   allowedReceivers: new Set([w.token]),
+  roles: new Map([['wrap.near', 'wrap']]),
   transferTo: w.receiver,
 });

@@ -289,6 +289,7 @@ function cascadeAttacks(): WalletAttackEntry[] {
   const ctx: CascadeValidationContext = {
     signerId: ACCOUNT,
     allowedReceivers: new Set([USDT, BURROW]),
+    roles: new Map([[BURROW, 'burrow']]),
   };
   const tx = (receiverId: string, action: Partial<FunctionCallAction>): PlannedTransaction => ({
     intentId: 'fixture',

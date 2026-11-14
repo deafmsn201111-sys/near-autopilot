@@ -166,6 +166,7 @@ describe('recentreSteps', () => {
       validateCascade(cascade.transactions, {
         signerId: ALICE,
         allowedReceivers: new Set<string>([DCL, USDC, WNEAR]),
+        roles: new Map([[DCL, 'dcl']]),
         dcl: { contract: DCL, pools: new Set([POOL_ID]) },
       }),
     ).toMatchObject({ ok: true, reasons: [] });
