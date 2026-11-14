@@ -10,6 +10,7 @@ import {
 } from '../gateway/one-click-deposit';
 import { incidentsFor, type ShieldClient, type ShieldIncident } from '../gateway/shield';
 import { DEPOSIT_CHAINS, isRefundAddress, type DepositChain } from '../gateway/refund-address';
+import type { SolanaTransferFees } from '../gateway/solana-transfer-fee';
 import { eventRecorder, type EventStore } from './events';
 
 /**
@@ -62,6 +63,8 @@ export interface DepositDeps {
   readonly refreshEveryMs?: number;
   /** 1Click SHIELD incidents, shown as a warning. Absent (no SHIELD_JWT): never an incident. */
   readonly shield?: Pick<ShieldClient, 'incidents'>;
+  /** Solana mints with a transfer fee arrive short of the quote and are refunded, so they are never offered. */
+  readonly solanaFees?: Pick<SolanaTransferFees, 'unsafe'>;
 }
 
 const CHAIN_NAMES: Record<DepositChain, string> = {
@@ -154,6 +157,19 @@ export function paymentToken(chain: DepositChain, t: OneClickToken): PaymentToke
   return { contract: c };
 }
 
+// The assetIds of Solana tokens whose mint takes a transfer fee or cannot be checked; native SOL has no mint.
+async function solanaUnsafe(
+  fees: Pick<SolanaTransferFees, 'unsafe'>,
+  tokens: readonly OneClickToken[],
+): Promise<Set<string>> {
+  const spl = tokens.filter((t) => t.blockchain === 'sol' && t.assetId !== NATIVE_ASSETS.sol);
+  const mints = spl.flatMap((t) => (t.contractAddress ? [t.contractAddress] : []));
+  const charging = await fees.unsafe(mints);
+  return new Set(
+    spl.filter((t) => !t.contractAddress || charging.has(t.contractAddress)).map((t) => t.assetId),
+  );
+}
+
 const quoteBody = z
   .object({
     account: accountIdSchema,
@@ -186,8 +202,9 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
 
   const lists = async () => {
     const tokens = await deps.oneClick.tokens();
+    const unsafe = deps.solanaFees ? await solanaUnsafe(deps.solanaFees, tokens) : new Set();
     const origins = tokens
-      .filter((t) => isDepositChain(t.blockchain))
+      .filter((t) => isDepositChain(t.blockchain) && !unsafe.has(t.assetId))
       .sort((a, b) => rank(a.symbol) - rank(b.symbol) || a.symbol.localeCompare(b.symbol));
     const destinations = deps.destinationTokens.flatMap((id) => {
       const t = tokens.find((x) => x.blockchain === 'near' && x.contractAddress === id);

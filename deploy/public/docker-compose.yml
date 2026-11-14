@@ -102,6 +102,7 @@ services:
       ONE_CLICK_JWT: ${ONE_CLICK_JWT:-}
       # SHIELD incident warning in the deposit dialog: only this service gets the key. Empty = off.
       SHIELD_JWT: ${SHIELD_JWT:-}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
       # Server LLM: only this service gets the key. Empty = LLM off, heuristics only.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-5-5}

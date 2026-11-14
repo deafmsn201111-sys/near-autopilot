@@ -304,6 +304,11 @@ export const oneClickEnvSchema = z.object({
       .max(4096)
       .optional(),
   ),
+  /** Read-only Solana RPC: deposit origins whose mint takes a transfer fee are not offered (#185). */
+  SOLANA_RPC_URL: z.preprocess(
+    unsetIfEmpty,
+    z.string().url().startsWith('https://').default('https://api.mainnet-beta.solana.com'),
+  ),
 });
 export type OneClickEnv = z.output<typeof oneClickEnvSchema>;
 

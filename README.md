@@ -127,7 +127,8 @@ from another chain (below), in a separate client.
 
 5. **Fund from another chain.** Connected, press **Deposit** (next to your account) or **Fund from another chain**
    on the portfolio. Pick the network you send from (Ethereum, Base, Arbitrum, Solana or Bitcoin), then the token
-   (search by symbol, popular ones first, every token with its logo), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
+   (search by symbol, popular ones first, every token with its logo; a Solana token whose mint, read from the chain, takes a fee on
+   every transfer or can block one, is not offered, since it would arrive short and be refunded), the amount, what you receive on NEAR (wNEAR, USDC or USDT) and your own refund address on that chain. The server
    checks the refund address, asks 1Click for a real quote, verifies it against what you asked and only then shows
    a one-time deposit address with a QR code, the deadline 1Click sets and the fee 1Click reports in the quote (an optional
    partner key, `ONE_CLICK_JWT`, gives the partner schedule). The QR is a payment link that fills in the address,

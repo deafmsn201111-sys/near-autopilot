@@ -680,3 +680,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `unlistedByValue()`: tokens beyond Burrow's list are ranked by balance × indexer price (decimals from the same
   indexer answer, `AccountDiscovery.decimals()`), then capped at 30 `ft_metadata` reads. A $92 iMEME no longer loses
   its place to 40 priced dust tokens that FastNEAR happened to list first.
+
+## 2026-11-14 — Solana tokens that can change a transfer are not deposit origins (#185)
+
+- `apps/api/src/gateway/solana-transfer-fee.ts`: reads each listed mint (`getMultipleAccounts`, jsonParsed, 100 per
+  call); offered only when every Token-2022 extension is harmless (a transfer fee must be 0). 10-minute cache answered
+  at once and refreshed in the background, one shared read, last answer kept and a minute's pause after an error.
+- `apps/api/src/analytics/deposit.ts`: `lists()` drops unsafe or unreadable Solana tokens, so neither the asset list
+  nor a quote offers them (D32). New env `SOLANA_RPC_URL`.

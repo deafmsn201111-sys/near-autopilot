@@ -18,6 +18,7 @@ import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
 import { TokenIcons } from './token-icons';
+import { SolanaTransferFees } from '../gateway/solana-transfer-fee';
 
 /**
  * Read-only analytics API (Postgres only). It needs no RPC, no price API and no key other than the shared API token;
@@ -61,7 +62,7 @@ const market = env.MARKET_CONFIG_FILE
     })
   : {};
 const pools = market.rhea?.pools ?? [];
-const { ONE_CLICK_JWT } = oneClickEnvSchema.parse(process.env);
+const { ONE_CLICK_JWT, SOLANA_RPC_URL } = oneClickEnvSchema.parse(process.env);
 const depositQuotes = new DrizzleDepositQuoteStore(database.db);
 // No retry: every real quote mints a new deposit address, and the user must see exactly one.
 const oneClick = new OneClickDepositClient({
@@ -78,6 +79,11 @@ const shield = SHIELD_JWT
       onError: (err) => log.warn('SHIELD incident feed unavailable', { err: String(err) }),
     })
   : undefined;
+const solanaFees = new SolanaTransferFees({
+  http: new HttpJsonClient({ maxRetries: 0, timeoutMs: 5_000 }),
+  url: SOLANA_RPC_URL,
+  onError: (err) => app.log.warn({ err }, 'Solana mint read failed; unread mints are not offered'),
+});
 const events = new DrizzleEventStore(database.db);
 // The tokens a deposit may arrive as: our own allowlist, never user input.
 const destinationTokens = market.policy?.allowedTokens ?? [];
@@ -141,6 +147,7 @@ const app = buildAnalyticsServer(
             destinationTokens,
             refreshEveryMs: 60_000,
             ...(shield ? { shield } : {}),
+            solanaFees,
             ...(icons ? { icon: (t: string) => icons.get(t) } : {}),
           },
         }
