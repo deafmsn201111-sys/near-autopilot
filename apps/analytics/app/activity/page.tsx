@@ -69,7 +69,7 @@ function Item({ item }: { item: TimelineItem }) {
 export default async function ActivityPage({ searchParams }: { searchParams: Promise<Search> }) {
   const raw =
     one((await searchParams).account) || ((await cookies()).get('np_account')?.value ?? '');
-  const account = accountIdSchema.safeParse(decodeURIComponent(raw).trim().toLowerCase());
+  const account = accountIdSchema.safeParse(raw.trim().toLowerCase());
   const title = (
     <div className="page-title">
       <h1>Activity</h1>
