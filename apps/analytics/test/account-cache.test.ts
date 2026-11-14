@@ -71,13 +71,18 @@ describe('account read cache', () => {
     });
   });
 
-  it('an ownership check that could not run is read again on the next render; a plain "not the owner" is cached', async () => {
+  it('an ownership check that could not run is read again a second later; a plain "not the owner" is cached', async () => {
+    vi.useFakeTimers();
     const p = await load();
     ownerCookie = 'eyJwcm9vZiI6MX0';
     ownerCheckFailed = true;
     await p.accountView('alice.near');
+    await p.accountRecommendations('alice.near');
+    expect(reads).toHaveBeenCalledTimes(1);
     ownerCheckFailed = undefined;
+    vi.advanceTimersByTime(1_000);
     await p.accountView('alice.near');
+    vi.advanceTimersByTime(30_000);
     await p.accountView('alice.near');
     expect(reads).toHaveBeenCalledTimes(2);
   });

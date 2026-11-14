@@ -465,6 +465,13 @@ describe('what the model is sent', () => {
 });
 
 describe('GET /v1/analytics/account/:id ownership', () => {
+  const flaky = {
+    call: async (method: string, params: Record<string, unknown>) => {
+      if (params['request_type'] === 'view_access_key')
+        throw new RpcError('RPC query timed out', true, { kind: 'timeout' });
+      return chain.call(method, params);
+    },
+  } as unknown as NearRpcClient;
   const read = async (node: NearRpcClient, proof: string) => {
     const res = await server(node, store).inject({
       method: 'GET',
@@ -475,17 +482,19 @@ describe('GET /v1/analytics/account/:id ownership', () => {
   };
 
   it('a key read that could not run says so instead of "not the owner"', async () => {
-    const flaky = {
-      call: async (method: string, params: Record<string, unknown>) => {
-        if (params['request_type'] === 'view_access_key')
-          throw new RpcError('RPC query timed out', true, { kind: 'timeout' });
-        return chain.call(method, params);
-      },
-    } as unknown as NearRpcClient;
-    expect(await read(flaky, await proofHeader('alice.near'))).toMatchObject({
+    const proof = await proofHeader('alice.near');
+    expect(await read(flaky, proof)).toMatchObject({
       ownerVerified: false,
       ownerCheckFailed: true,
     });
+    const analysis = await server(flaky, store, countingLlm()).inject({
+      method: 'POST',
+      url: '/v1/analytics/account/alice.near/analysis',
+      headers: { ...headers, 'x-ownership-proof': proof },
+      payload: {},
+    });
+    expect(analysis.statusCode).toBe(503);
+    expect(analysis.body).not.toContain('only for the owner');
   });
 
   it('a signature by a key the account does not have is still "not the owner"', async () => {

@@ -19,7 +19,6 @@ export function OwnershipCheck({
 }: {
   account: string;
   verified: boolean;
-  /** The signature is saved but the server could not read the account's keys just now. */
   checkFailed: boolean;
 }) {
   const router = useRouter();
@@ -43,8 +42,8 @@ export function OwnershipCheck({
   if (checkFailed)
     return (
       <div className="callout" style={{ margin: '16px 0' }}>
-        <b>Couldn&apos;t check your signature right now.</b> The network did not answer in time; you
-        don&apos;t need to sign again.{' '}
+        <b>Heuristic analysis for now.</b> We couldn&apos;t check your signature: the network did
+        not answer in time. You don&apos;t need to sign again.{' '}
         <button type="button" className="btn secondary small" onClick={() => router.refresh()}>
           Check again
         </button>

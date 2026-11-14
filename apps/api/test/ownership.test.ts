@@ -82,8 +82,24 @@ describe('NEP-413 ownership proof', () => {
   it('a key read that could not run is not an answer: it throws instead of saying "not the owner"', async () => {
     const flaky = {
       ...deps,
-      isFullAccessKey: () => Promise.reject(new RpcError('RPC query timed out', true)),
+      isFullAccessKey: () =>
+        Promise.reject(new RpcError('RPC query timed out', true, { kind: 'timeout' })),
     };
     await expect(verifyOwnership(await sign(), owner, flaky)).rejects.toThrow('timed out');
+    const rejectedKey = {
+      ...deps,
+      isFullAccessKey: () =>
+        Promise.reject(new RpcError('RPC query returned HTTP 403', false, { kind: 'http_error' })),
+    };
+    await expect(verifyOwnership(await sign(), owner, rejectedKey)).rejects.toThrow('403');
+  });
+
+  it('a key the node does not know is "not the owner"', async () => {
+    const unknownKey = {
+      ...deps,
+      isFullAccessKey: () =>
+        Promise.reject(new RpcError('RPC query failed: UNKNOWN_ACCESS_KEY', false)),
+    };
+    expect(await verifyOwnership(await sign(), owner, unknownKey)).toBe(false);
   });
 });
