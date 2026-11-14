@@ -26,7 +26,6 @@ function rememberAccount(id: string | null): boolean {
  */
 export function WalletButton() {
   const [account, setAccount] = useState<string | null>(null);
-  // No "connecting" state: in kit 2.0.0 a closed nested wallet list may never settle, so the button stays clickable.
   const [state, setState] = useState<'idle' | 'opening'>('idle');
   const router = useRouter();
 

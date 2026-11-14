@@ -16,6 +16,7 @@ const fake = vi.hoisted(() => {
     kitWallets: [] as { type: number; address: string }[],
     disconnected: [] as number[],
     pick: null as { type: number; address: string } | null,
+    nearSignedOut: false,
   };
   const events = new Map<string, Set<Listener>>();
   const emit = (name: string, payload: unknown) => {
@@ -40,6 +41,8 @@ const fake = vi.hoisted(() => {
       return baseWallet;
     }
     async disconnect() {
+      await Promise.resolve();
+      state.nearSignedOut = true;
       state.account = null;
       emit('wallet:signOut', { success: true });
     }
@@ -83,7 +86,7 @@ const fake = vi.hoisted(() => {
     async disconnect(w: { type: number }) {
       state.disconnected.push(w.type);
       state.kitWallets = state.kitWallets.filter((x) => x !== w);
-      if (w.type === NEAR) await new NearConnector({}).disconnect();
+      if (w.type === NEAR) void new NearConnector({}).disconnect();
     }
   }
   return { state, events, emit, HotKit, NearConnector };
@@ -118,6 +121,7 @@ async function fresh({ session = null as string | null } = {}) {
     kitWallets: session ? [{ type: NEAR, address: session }] : [],
     disconnected: [],
     pick: null,
+    nearSignedOut: false,
   });
   localStorage.clear();
   if (session) localStorage.setItem('selected-wallet', 'hot-wallet');
@@ -188,6 +192,15 @@ describe('NEAR wallet through HOT Kit', () => {
     expect(await m.connect()).toBeNull();
   });
 
+  it('only the latest of several open connect clicks gets the account', async () => {
+    const m = await fresh();
+    const first = m.connect();
+    await flush();
+    fake.state.pick = { type: NEAR, address: 'carol.near' };
+    const second = m.connect();
+    expect(await Promise.all([first, second])).toEqual([null, 'carol.near']);
+  });
+
   it('disconnect signs out of every connected wallet', async () => {
     const m = await fresh({ session: 'alice.near' });
     fake.state.kitWallets = [...fake.state.kitWallets, { type: EVM, address: '0xabc' }];
@@ -195,7 +208,8 @@ describe('NEAR wallet through HOT Kit', () => {
     m.watchAccount((id) => seen.push(id));
     await vi.waitFor(() => expect(seen).toEqual(['alice.near']));
     await m.disconnect();
-    expect(fake.state.disconnected.sort()).toEqual([EVM, NEAR].sort());
+    expect(fake.state.nearSignedOut).toBe(true);
+    expect(fake.state.disconnected).toEqual([EVM]);
     expect(seen.at(-1)).toBeNull();
   });
 

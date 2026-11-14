@@ -21,7 +21,13 @@ const emit = (id: string | null) => {
 };
 
 // near-connect's session key: without it there is nothing to restore, so the kit is not loaded on page load.
-const hasSession = () => localStorage.getItem('selected-wallet') !== null;
+function hasSession(): boolean {
+  try {
+    return localStorage.getItem('selected-wallet') !== null;
+  } catch {
+    return false;
+  }
+}
 
 let subscribed: Promise<Awaited<ReturnType<typeof loadKit>>> | null = null;
 function near() {
@@ -59,9 +65,12 @@ export function watchAccount(onChange: (accountId: string | null) => void): () =
 /**
  * Opens the kit's wallet list (NEAR, EVM, Solana). Resolves with the NEAR account signed in there; null when the list
  * was closed or only another chain's wallet was connected. A NEAR sign-in also settles it: in kit 2.0.0 the list may
- * never settle after its nested chain list is closed.
+ * never settle after its nested chain list is closed, so a later click opens it again; only the latest click gets the
+ * account.
  */
+let attempt = 0;
 export async function connect(): Promise<string | null> {
+  const mine = ++attempt;
   const { kit, near: connector } = await near();
   const signedIn = new Promise<string | null>((resolve) =>
     connector.once('wallet:signIn', (t) => resolve(t.accounts[0]?.accountId ?? null)),
@@ -70,7 +79,8 @@ export async function connect(): Promise<string | null> {
     (w) => (Number(w.type) === NEAR_WALLET_TYPE ? w.address : null),
     () => null,
   );
-  return Promise.race([signedIn, picked]);
+  const id = await Promise.race([signedIn, picked]);
+  return mine === attempt ? id : null;
 }
 
 /** The wallet the user connected (for lib/wallet-sign.ts only); throws when none is connected. */
@@ -82,8 +92,14 @@ export async function connectedWallet() {
 export async function disconnect(): Promise<void> {
   try {
     if (!subscribed && !hasSession()) return;
-    const { kit } = await near();
-    await Promise.allSettled(kit.wallets.map((w) => kit.disconnect(w)));
+    const { kit, near: connector } = await near();
+    // The NEAR sign-out goes to near-connect itself: the kit's NEAR connector does not await it.
+    await Promise.allSettled([
+      connector.disconnect(),
+      ...kit.wallets
+        .filter((w) => Number(w.type) !== NEAR_WALLET_TYPE)
+        .map((w) => kit.disconnect(w)),
+    ]);
   } finally {
     emit(null);
   }
