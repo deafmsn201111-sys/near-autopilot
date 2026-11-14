@@ -979,3 +979,9 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   test are removed and `loadKit` uses the kit's default endpoints (D42).
 - `www.` still gets 403 from hex-api: Caddy now redirects any `www.` host to the bare one (301, path and query kept).
 - Local bridge checks run on `http://localhost:3001` (127.0.0.1 is refused by HOT).
+
+## 2026-11-14 — Unverified tokens out of the totals, never a swap output (#274)
+
+- `accountPortfolio` leaves unverified legs out of every total and allocation; their estimate goes to
+  `totals.unverifiedUsd`. `prepare` refuses a swap into a token outside our list or Burrow's (fail closed). D44.
+- UI: unverified rows read "Not counted"; the "Unverified tokens" note shows the estimate kept out of the total.

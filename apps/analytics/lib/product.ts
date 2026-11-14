@@ -127,7 +127,14 @@ export interface PortfolioView {
     estimate?: boolean;
     small?: boolean;
   }[];
-  totals: { assetsUsd: number; debtUsd: number; netWorthUsd: number; idleUsd: number };
+  totals: {
+    assetsUsd: number;
+    debtUsd: number;
+    netWorthUsd: number;
+    idleUsd: number;
+    /** Estimated value of unverified tokens, kept out of the other totals; absent on demo data. */
+    unverifiedUsd?: number;
+  };
   health: {
     healthFactor: number | null;
     /** The health factors the API judged `level` by; the gauge draws these lines. Absent when there is no loan. */
