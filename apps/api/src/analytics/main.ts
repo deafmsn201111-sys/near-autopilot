@@ -11,6 +11,7 @@ import { HttpJsonClient } from '../market-data/http';
 import { anthropicToolLlmFromEnv } from '../llm/anthropic-client';
 import { analysisMemo } from './ai-analysis';
 import { DrizzleDepositQuoteStore } from './deposit-store';
+import { DrizzleEventStore } from './events-store';
 import { httpDiscovery } from './discovery';
 import { DrizzleLlmLedger } from './llm-ledger';
 import { buildAnalyticsServer } from './server';
@@ -60,6 +61,7 @@ const market = env.MARKET_CONFIG_FILE
 const pools = market.rhea?.pools ?? [];
 const { ONE_CLICK_JWT } = oneClickEnvSchema.parse(process.env);
 const depositQuotes = new DrizzleDepositQuoteStore(database.db);
+const events = new DrizzleEventStore(database.db);
 // The tokens a deposit may arrive as: our own allowlist, never user input.
 const destinationTokens = market.policy?.allowedTokens ?? [];
 const mainnet = env.MAINNET_READ_RPC_URL
@@ -99,6 +101,7 @@ const app = buildAnalyticsServer(
     apiToken: env.API_TOKEN,
     store: new CollectorStore(database.db),
     evidence: new EvidenceStore(database.db),
+    events,
     intervalSeconds: env.SHADOW_CYCLE_INTERVAL_SECONDS,
     ...(mainnet ? { mainnet } : {}),
     ...(icons ? { icons } : {}),
@@ -142,6 +145,7 @@ const purge = () =>
     depositQuotes
       .purge()
       .catch((err: unknown) => app.log.warn({ err }, 'deposit_quotes purge failed')),
+    events.purge().catch((err: unknown) => app.log.warn({ err }, 'events purge failed')),
   ]);
 await purge();
 const purgeTimer = setInterval(() => void purge(), 60 * 60 * 1000);

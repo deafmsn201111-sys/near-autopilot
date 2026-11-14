@@ -497,3 +497,28 @@ is a `nep141:` NEAR token, so it uses that token's icon. The five deposit chains
 token without an icon shows a letter placeholder.
 **Consequences:** A contract can still pick a misleading logo, as it can pick a misleading symbol; the "Unverified"
 badge stays the trust signal. Logos are inlined in the page (0.5–11 KB each today).
+
+## D28 — Real activity: one `events` table, RPC is the only judge of "signed"
+
+**Context:** #32. Activity and /policy showed only the collector's shadow decisions over the demo portfolios; nothing
+the real wallet path did reached them, and the team could not count connects, analyses, prepares and signatures.
+**Decision:** One `events` table (migration 0021; account id only, no IP; 30 days). Kinds: `connect` (browser-reported,
+`source: client`, once per account per UTC day), `verified` (ownership proof passed), `analyse` (AI / rule-based),
+`prepare` / `prepare_blocked` (with the `validateCascade` verdict, a per-rule check list and the exact steps),
+`signed`, `oneclick_quote`. `validateCascade` returns the result per rule (signer, receivers, methods, gas, deposit,
+arguments); no limit changed. `POST /v1/wallet/confirm` is the single verifier: it reads the transaction from NEAR RPC
+(`tx`, `wait_until: FINAL`) and writes `signed` only when it is final and successful, signed by the account, and
+exactly a step of the stored cascade (receiver, and per action the method, args and deposit; gas is not compared
+because a wallet may change it), included in a block no older than the prepare (60 s clock slack), so an older
+transaction with the same args does not count. One row per tx hash. If the server has no record of the cascade (the
+best-effort prepare row was not stored, or events are off), the step shows "sent, not checked" and the cascade goes
+on: a recording failure must not block the user's own cascade. The browser asks after every step; a failed or unconfirmed step
+stops the cascade. Activity is public per account for confirmed transactions only; analyses and unsigned cascades need
+the ownership proof. /policy is public: the account is cut to "ali…near", no amounts (intent amounts, preview and a
+wrapped NEAR deposit are left out, long numbers in check messages are cut). The collector's demo shadow loop keeps
+running for Home's demo portfolios; only its UI (Activity feed, demo verdicts, `/v1/analytics/agent-activity`) is
+removed. `/v1/analytics/policy/verdicts` stays as the audit-evidence API (replay), unused by the site.
+**Consequences:** A `connect` count is a claim, not proof. A signed transaction whose confirm never ran (tab closed
+before the check) is not counted; the owner can reopen nothing to fix it (no indexer, after the hackathon). A failed
+step is shown in the dialog but not stored. Old transactions stop being readable on the non-archival RPC after ~2
+days, which is far longer than the confirm window.

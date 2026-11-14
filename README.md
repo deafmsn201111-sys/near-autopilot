@@ -81,11 +81,12 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
    - The attacks: two prompt injections, a foreign recipient, an extra Withdraw, a stale price, a thin pool, a forged
      approval and a full-access key.
    - The log is in `docs/evidence/demo-attack.log.jsonl`.
-2. Open `:3001/activity`. You see what the agents proposed for a demo portfolio each cycle, the policy's answer, and
-   that nothing was signed or sent.
+2. Open `:3001/activity?account=autopilot-test.near`. You see the transactions that account signed through the app,
+   each confirmed by NEAR RPC, with what really happened ("Repaid 5.01 USDC on Burrow") and an explorer link.
 3. Run `docker compose exec analytics-api node --import tsx src/evidence/cli.ts verify`. You see every audit chain
    `ok` and `"checkpoints":"ok"`. `:3001/audit` shows the same.
-4. Open `:3001/policy`. You see stored verdicts, each check with its inputs.
+4. Open `:3001/policy`. You see the safety verdict of every cascade built for a real account (ALLOW or BLOCK, each
+   check), and the attack demo labelled as fixtures.
 5. Run `pnpm --filter @near-autopilot/analytics test`. You see `signing-lock.test.ts` pass. It fails if any site
    source other than `lib/wallet-sign.ts` calls a wallet's signing method.
 
@@ -251,7 +252,11 @@ page shows the rule-based list with "daily AI budget reached". Every fallback ca
 `cap`, `model_error`, `invalid_output`, `empty`, `nothing_to_rank`, `deadline`, `loop_limit`). **What we log:** one `llm_calls` row per
 analysis that reached the model, with the account id, model, input/output tokens, cost in USD, latency, tools
 called and the outcome code. No IP address, no visitor key, no text from the model or the tools. Rows older than 7
-days are deleted (on start, then hourly).
+days are deleted (on start, then hourly). One `events` row per wallet connect (reported by the browser, marked
+client-reported, at most once per account per UTC day), ownership proof, analysis (AI or rule-based), prepared
+cascade with its `validateCascade` verdict and per-check result (also a blocked one), signed transaction (the tx hash,
+written only after NEAR RPC shows it final and successful, signed by the account, and exactly a step the server
+prepared) and 1Click deposit quote. Account id only, no IP address; rows older than 30 days are deleted.
 
 **Admin (server only).** A separate loopback-only admin (`/admin`, reached through an SSH tunnel; the public site
 answers 404) shows AI spend against the cap and has a kill switch and the cap field
@@ -333,16 +338,20 @@ healthy containers, with no manual edits, and `pnpm verify` passed (measured bef
 
 Four pages for a person, and one area for reviewers.
 
-| Page              | What you see and do                                                                                                                                                                                                                        |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision |
-| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                       |
-| **Activity**      | Every decision of the autopilot for the portfolio, in plain words: what each agent saw, what was proposed, what the safety policy said and why. Identical checks in a row are grouped                                                      |
-| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                    |
-| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                        |
+| Page              | What you see and do                                                                                                                                                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Portfolio**     | Net worth, monthly result, loan safety in words; what the portfolio holds; **what you could do with the idle money**, best result after every cost first, each with its plan, costs, risks and the autopilot's own view; the last decision                             |
+| **Opportunities** | Every Rhea pool, Burrow market and same-asset loop with usable data, ranked by result after costs, risk and data confidence together                                                                                                                                   |
+| **Activity**      | What you did through the app for your account, newest first: each prepared cascade with what NEAR says really happened for every signed step, confirmed by RPC. Anyone sees the confirmed transactions; analyses and unsigned cascades only after you verify ownership |
+| **Research**      | The investment thesis in four findings and one table: advertised APR vs what people kept, by pool type, with survivors and shrunk pools                                                                                                                                |
+| For reviewers     | The technical evidence: safety policy checks, audit trail with signed checkpoints, execution routes, system health, raw markets, prices, simulations, collector log                                                                                                    |
 
-**Shadow mode.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two portfolios ($500 and
-$5,000) are simulated and labelled as such.
+**Live data, simulated demo.** Prices, pools and rates are read live from NEAR mainnet (view calls). The two demo
+portfolios ($500 and $5,000) on Home are simulated and labelled as such.
+
+- **Signing progress.** After you sign, each step shows ⏳ while it executes and ✓ or ✗ when the server has asked
+  NEAR RPC for its final status. A failed step names the contract, its error and what happened to your funds (refund
+  confirmed, or nothing left your wallet); the next step is not offered.
 
 - **Connect wallet** (HOT Connector): no access key added. It opens your own mainnet account with ranked
   recommendations; a recommendation's button builds the unsigned cascade and your wallet asks you to sign it.
