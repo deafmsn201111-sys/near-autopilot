@@ -831,3 +831,13 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - `test/design-tokens.test.ts` guards it: colour literals only in the token blocks, no hex in components (except the
   theme-color in `lib/theme.ts`), weights ≤ 600. D41: first visit dark, Geist via `next/font`, CSP without Google.
 - Lands `apps/analytics/DESIGN.md`, `PRODUCT.md` and `docs/design/portfolio-ux-prototype.html`.
+
+## 2026-11-14 — Deposit through HOT Kit's bridge popup (#260)
+
+- **Deposit** shows one line on HOT's fee, then `openDepositBridge(account)`: `kit.openBridge` with the NEAR account as
+  locked recipient, NEAR-only destination and `isBridgeSource` (1Click EVM chains, Solana, Tron, Bitcoin; never NEAR
+  or a HOT balance). Kit gets a Tron connector and a theme read from the page's design tokens (D42).
+- Removed: the deposit form, QR / payment links (`lib/payment-uri.ts`, `qrcode-generator`), the origin-wallet send
+  and its error parsing, the deposit quote / incidents / transfer proxies, `GET /v1/deposit/transfer/:id` and
+  `issueTransfer`'s `retry`. Withdraw keeps the status line, token picker and wallet address fill.
+- `test/signing-lock.test.ts`: no source asks an origin wallet to send; `.openBridge(` only in `lib/hot-kit.ts`.

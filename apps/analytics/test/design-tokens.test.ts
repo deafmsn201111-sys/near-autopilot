@@ -28,10 +28,10 @@ describe('design tokens', () => {
     expect(css.replace(TOKEN_BLOCKS, '').match(COLOUR) ?? []).toEqual([]);
   });
 
-  it('keeps colour literals out of components (theme-color meta and QR excepted)', () => {
+  it('keeps colour literals out of components (theme-color meta excepted)', () => {
     const offenders = ['app', 'components', 'lib']
       .flatMap((dir) => sourceFiles(join(root, dir)))
-      .filter((file) => !/(lib\/theme\.ts|DepositDialog\.tsx)$/.test(file))
+      .filter((file) => !/lib\/theme\.ts$/.test(file))
       .filter((file) =>
         /(?:fill|stroke|color|background)\w*[=:]\s*\{?['"`]#[0-9a-f]{3,8}/i.test(
           readFileSync(file, 'utf8'),

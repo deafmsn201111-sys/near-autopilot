@@ -629,6 +629,8 @@ kit adds no signing path in this step; #126 decides where the origin-chain trans
 
 ## D34 — A deposit may be sent from the user's own EVM / Solana wallet, built from the stored quote (#126)
 
+**Replaced by D42 for deposits (#260):** `GET /v1/deposit/transfer/:id` and the dialog's wallet send are gone.
+
 **Context:** #126. Sending a 1Click deposit by hand (copy the address, type the amount) is where money gets lost. HOT
 Kit (D33) can ask the connected EVM or Solana wallet for a transfer. That is signing on a non-NEAR chain, which the
 "signing only in the user's wallet" rule did not cover, and `validateCascade` checks NEAR cascades only.
@@ -786,3 +788,22 @@ can cost more than that, so the gas would then need pricing from the live NEAR p
 longer allows Google Fonts.
 **Consequences:** A user with a light OS sees dark until they toggle. Old variable names were renamed onto the new
 roles, so the legacy accent is violet on screens #248–#256 have not redone yet.
+
+## D42 — A deposit goes through HOT Kit's bridge popup, recipient locked to the user's NEAR account (#260)
+
+**Context:** #260. Our deposit dialog (D34) made the user type an amount with no balance in sight, over five chains.
+HOT Kit (D35) ships a bridge popup on the same 1Click with the source wallet's balance, MAX, a token picker and many
+more chains.
+**Decision:** **Deposit** opens `kit.openBridge` (`openDepositBridge` in `lib/hot-kit.ts`, the only `.openBridge(` call,
+held by `test/signing-lock.test.ts`). The recipient is `Recipient.fromAddress('near', account)` with
+`lockRecipient: true`, and only after `currentAccount()` matches the account the page shows. Destination filter:
+NEAR tokens only. Source filter (`isBridgeSource`): an EVM chain with a 1Click `blockchain` (`toOneClickChain`), Solana,
+Tron or Bitcoin; never `near` or a HOT balance (`hot`, `hot_v1`, `hotcraft`, `hypercore`), so the bridge can never ask
+for a NEAR signature that goes around `validateCascade`. HOT builds and re-checks the origin-chain transfer in the
+browser; the user signs it in their own wallet. HOT's app fee (`intents.tg`: 0.4% swaps, 0.01% stable↔stable, 0 for
+the same token) is said in one line before the popup opens; the popup shows the amount received.
+`GET /v1/deposit/transfer/:id`, its `retry` and the dialog's send are removed. The once-only flag
+(`transfer_issued_at`) stays: withdrawals claim it. No exchange (by-address) path: cut by the owner.
+**Consequences:** no new caps and no server code on the deposit path; our deposit quote endpoints have no UI any more.
+A failed non-1:1 swap may refund to the user's HOT balance, which the portfolio does not show (KNOWN_ISSUES). The kit
+popups take the page's design tokens at load (`pageTheme`).

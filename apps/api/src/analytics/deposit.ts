@@ -46,8 +46,8 @@ export interface DepositQuoteStore {
   saveStatus(id: string, status: SwapStatus, at: Date): Promise<void>;
   /** Quotes with no final status, except unpaid ones whose deadline is before `since`. */
   unfinished(since: Date): Promise<UnfinishedQuote[]>;
-  /** Marks the quote's wallet transfer as handed out; false when it already was, unless `retry`. Atomic. */
-  issueTransfer(id: string, at: Date, retry: boolean): Promise<boolean>;
+  /** Marks the quote's NEAR withdrawal transfer as handed out; false when it already was. Atomic. */
+  issueTransfer(id: string, at: Date): Promise<boolean>;
   /** Deletes quotes older than 30 days. */
   purge(): Promise<void>;
 }
@@ -102,9 +102,6 @@ const MAX_RECHECK_MS = 10 * 60_000;
 // A wallet prompt can stay open a while: a transfer must land well before 1Click's deadline.
 export const SEND_MARGIN_MS = 2 * 60_000;
 const ALREADY_SEEN = 'A deposit to this address was already seen. Do not send again.';
-const ALREADY_ISSUED =
-  'This transfer was already sent to a wallet, maybe from another tab. Check your wallet and do not send to this address again; if it shows nothing, get a new quote.';
-const MANUAL_ONLY = 'Send this deposit manually: your wallet cannot be asked for it here.';
 const UNAVAILABLE = 'Deposits from other chains are unavailable right now. Try again later.';
 
 /** "1.5" with 6 decimals -> 1500000n. Null unless a positive plain decimal with at most `decimals` places. */
@@ -265,8 +262,6 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
     return { origins, destinations };
   };
 
-  const transferQuery = z.object({ retry: z.literal('1').optional() }).catch({});
-
   const incidentQuery = z.object({
     origin: z.string().min(1).max(200),
     destination: z.string().min(1).max(200),
@@ -414,52 +409,6 @@ export function registerDeposit(app: FastifyInstance, deps: DepositDeps, now: ()
       req.log.warn({ err }, '1Click status failed');
       return reply.code(502).send({ error: STATUS_UNAVAILABLE });
     }
-  });
-
-  // What the user's own wallet on the origin chain is asked to send: rebuilt from the stored quote, never the browser.
-  app.get('/v1/deposit/transfer/:id', async (req, reply) => {
-    const id = quoteId.safeParse((req.params as { id?: unknown }).id);
-    if (!id.success) return reply.code(400).send({ error: 'Bad quote id.' });
-    const at = now();
-    let q;
-    let origins;
-    try {
-      [q, { origins }] = await Promise.all([deps.store.find(id.data), lists()]);
-    } catch (err) {
-      req.log.warn({ err }, 'deposit transfer unavailable');
-      return reply.code(502).send({ error: UNAVAILABLE });
-    }
-    if (!q) return reply.code(404).send({ error: 'Unknown deposit.' });
-    const refused = await sendRefusal(deps, q, at, (err) =>
-      req.log.warn({ err }, '1Click status failed before a wallet transfer'),
-    );
-    if (refused) return reply.code(refused.status).send({ error: refused.error });
-    const origin = origins.find((t) => t.assetId === q.originAsset);
-    const chain = origin?.blockchain ?? '';
-    const payment =
-      origin && isDepositChain(chain) && chain !== 'btc' ? paymentToken(chain, origin) : null;
-    if (!origin || !payment || !isRefundAddress(chain as DepositChain, q.depositAddress))
-      return reply.code(409).send({ error: MANUAL_ONLY });
-    // Two tabs on one quote must not both prompt a wallet; only a send the wallet rejected may ask again.
-    const retry = transferQuery.parse(req.query).retry === '1';
-    try {
-      if (!(await deps.store.issueTransfer(q.id, at, retry)))
-        return reply.code(409).send({ error: ALREADY_ISSUED });
-    } catch (err) {
-      req.log.warn({ err }, 'deposit transfer not marked');
-      return reply.code(502).send({ error: UNAVAILABLE });
-    }
-    return {
-      quoteId: q.id,
-      chain,
-      receiver: q.depositAddress,
-      amount: q.amountIn,
-      token: {
-        ...asset(origin),
-        blockchain: chain,
-        contractAddress: 'contract' in payment ? payment.contract : null,
-      },
-    };
   });
 
   type Leg = { readonly asset: OneClickToken; readonly chain: string; readonly chainName: string };
@@ -697,7 +646,7 @@ export function withdrawLookup(deps: DepositDeps, now: () => Date): WithdrawLook
       decimals: listed.decimals,
       receiver: q.depositAddress,
       amount: BigInt(q.amountIn),
-      claim: () => deps.store.issueTransfer(q.id, now(), false),
+      claim: () => deps.store.issueTransfer(q.id, now()),
     };
   };
 }

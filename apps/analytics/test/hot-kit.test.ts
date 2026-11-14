@@ -43,7 +43,9 @@ const fake = vi.hoisted(() => {
   return { state, HotKit };
 });
 
-vi.mock('@hot-labs/kit', () => ({ HotKit: fake.HotKit }));
+vi.mock('@hot-labs/kit', () => ({
+  HotKit: fake.HotKit,
+}));
 vi.mock('@hot-labs/near-connect', () => ({
   NearConnector: class {
     connect() {}
@@ -80,14 +82,14 @@ describe('HOT Kit origin wallets', () => {
     m = await fresh();
   });
 
-  it('creates the kit lazily, once, with the NEAR, EVM, Solana and Bitcoin connectors', async () => {
+  it('creates the kit lazily, once, with the NEAR, EVM, Solana, Tron and Bitcoin connectors', async () => {
     expect(fake.state.created).toBe(0);
     const stop1 = m.watchOriginWallets(() => undefined);
     const stop2 = m.watchOriginWallets(() => undefined);
     await m.connectOriginWallet('evm');
     await flush();
     expect(fake.state.created).toBe(1);
-    expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'utxo'] });
+    expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'tron', 'utxo'] });
     stop1();
     stop2();
   });
@@ -148,128 +150,6 @@ describe('kit wallet type numbers', () => {
   });
 });
 
-describe('sendOriginTransfer', () => {
-  const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
-  const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-  const transfer = (chain: string, contractAddress: string | null, decimals = 6) => ({
-    quoteId: 'dq_1',
-    chain,
-    receiver: 'DEPOSIT',
-    amount: '1000000',
-    token: { assetId: 'a', blockchain: chain, symbol: 'X', decimals, contractAddress },
-  });
-  type Sent = {
-    token: { chain: unknown; address: string; decimals: number };
-    receiver: string;
-    amount: bigint;
-  };
-  const wallet = (w: { type: number; address: string }, sent: Sent[]) => ({
-    ...w,
-    transfer: async (args: Sent) => {
-      sent.push(args);
-      return '0xhash';
-    },
-  });
-  const sentBy = async (t: ReturnType<typeof transfer>) => {
-    const m = await fresh();
-    const sent: Sent[] = [];
-    fake.state.wallets = [wallet(EVM, sent), wallet(SOL, sent)];
-    const hash = await m.sendOriginTransfer(t);
-    const [s] = sent;
-    return {
-      hash,
-      sent: sent.length,
-      chain: s?.token.chain,
-      address: s?.token.address,
-      receiver: s?.receiver,
-      amount: s?.amount,
-    };
-  };
-
-  it('asks the EVM wallet for an ERC-20 or a native transfer on the quoted network, in base units', async () => {
-    expect(await sentBy(transfer('base', BASE_USDC))).toEqual({
-      hash: '0xhash',
-      sent: 1,
-      chain: 8453,
-      address: BASE_USDC,
-      receiver: 'DEPOSIT',
-      amount: 1_000_000n,
-    });
-    expect(await sentBy(transfer('arb', null, 18))).toMatchObject({
-      chain: 42161,
-      address: 'native',
-    });
-    expect(await sentBy(transfer('eth', null, 18))).toMatchObject({ chain: 1, address: 'native' });
-  });
-
-  it('asks the Solana wallet for an SPL or a native SOL transfer', async () => {
-    expect(await sentBy(transfer('sol', SOL_USDC))).toMatchObject({
-      chain: 'sol',
-      address: SOL_USDC,
-    });
-    expect(await sentBy(transfer('sol', null, 9))).toMatchObject({
-      chain: 'sol',
-      address: 'native',
-    });
-  });
-
-  it('refuses without a connected wallet of that chain, and for Bitcoin', async () => {
-    const m = await fresh();
-    await expect(m.sendOriginTransfer(transfer('base', BASE_USDC))).rejects.toThrow(/Connect/);
-    await expect(m.sendOriginTransfer(transfer('btc', null, 8))).rejects.toThrow();
-    const sent: Sent[] = [];
-    fake.state.wallets = [wallet(BTC, sent)];
-    await expect(m.sendOriginTransfer(transfer('btc', null, 8))).rejects.toThrow(/manually/);
-    expect(sent).toEqual([]);
-  });
-});
-
-describe('sendFailure', () => {
-  it('is declined when the wallet says the user declined', async () => {
-    const m = await fresh();
-    expect(m.sendFailure({ code: 4001, message: 'x' })).toBe('declined');
-    expect(m.sendFailure(new Error('User rejected the request.'))).toBe('declined');
-    expect(m.sendFailure(new Error('Transaction cancelled by user'))).toBe('declined');
-    expect(m.sendFailure(new Error('User denied transaction signature'))).toBe('declined');
-  });
-
-  it('is no-gas when the native coin cannot pay the network fee (before any broadcast)', async () => {
-    const m = await fresh();
-    for (const text of [
-      'Execution reverted with reason: gas required exceeds allowance (0). Estimate Gas Arguments: from: 0x2865',
-      'insufficient funds for gas * price + value',
-      'Attempt to debit an account but found no record of a prior credit.',
-      'Transaction results in an account (0) with insufficient funds for rent',
-    ])
-      expect(m.sendFailure(new Error(text))).toBe('no-gas');
-  });
-
-  it('is no-token when the wallet holds less of the token than the quote', async () => {
-    const m = await fresh();
-    expect(
-      m.sendFailure(new Error('execution reverted: ERC20: transfer amount exceeds balance')),
-    ).toBe('no-token');
-    expect(m.sendFailure(new Error('Insufficient balance'))).toBe('no-token');
-    expect(m.sendFailure(new Error('custom program error: 0x1 (insufficient funds)'))).toBe(
-      'no-token',
-    );
-  });
-
-  it('is not-sent for another revert at gas estimate, also before any broadcast', async () => {
-    const m = await fresh();
-    expect(
-      m.sendFailure(new Error('execution reverted: Blacklistable: account is blacklisted')),
-    ).toBe('not-sent');
-  });
-
-  it('is unknown for anything else: the transfer may have gone out', async () => {
-    const m = await fresh();
-    expect(m.sendFailure(new Error('Request timed out'))).toBe('unknown');
-    expect(m.sendFailure(new Error('Transaction simulation failed'))).toBe('unknown');
-    expect(m.sendFailure('nope')).toBe('unknown');
-  });
-});
-
 describe('kit load failure', () => {
   it('connect resolves null and the next call retries the load', async () => {
     const m = await fresh();
@@ -301,7 +181,7 @@ describe('WalletConnect project id', () => {
       vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', value);
       const m = await fresh();
       await m.connectOriginWallet('evm');
-      expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'utxo'] });
+      expect(fake.state.options).toEqual({ connectors: ['near', 'evm', 'solana', 'tron', 'utxo'] });
     }
     vi.unstubAllEnvs();
   });

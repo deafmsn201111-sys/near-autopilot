@@ -30,13 +30,15 @@ describe('one-click signing lock (dashboard)', () => {
     expect(hits).toEqual([]);
   });
 
-  it('only lib/hot-kit.ts asks an origin-chain wallet to send, and only through transfer (D34)', () => {
+  it('no source asks an origin-chain wallet to send; only lib/hot-kit.ts opens the HOT bridge (D40)', () => {
     const HOT_KIT = join(ROOT, 'lib', 'hot-kit.ts');
     const send = /\.(transfer|sendTransaction|signIntents)\s*\(/;
-    const hits = sources.filter((f) => f !== HOT_KIT && send.test(readFileSync(f, 'utf8')));
-    expect(hits).toEqual([]);
-    const calls = readFileSync(HOT_KIT, 'utf8').match(new RegExp(send, 'g'));
-    expect(calls).toEqual(['.transfer(']);
+    expect(sources.filter((f) => send.test(readFileSync(f, 'utf8')))).toEqual([]);
+    const bridge = /\.openBridge\s*\(/;
+    expect(sources.filter((f) => f !== HOT_KIT && bridge.test(readFileSync(f, 'utf8')))).toEqual(
+      [],
+    );
+    expect(readFileSync(HOT_KIT, 'utf8').match(new RegExp(bridge, 'g'))).toEqual(['.openBridge(']);
   });
 
   it('the one signing file exists and declares its single-gate role', () => {

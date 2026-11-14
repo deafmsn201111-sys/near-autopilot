@@ -1,17 +1,17 @@
 'use client';
-import type { HotKit } from '@hot-labs/kit';
+import type { BridgeSetup, ChainId, HotKit, Recipient } from '@hot-labs/kit';
 import type { OmniWallet } from '@hot-labs/kit/core';
+import type { KitTheme } from '@hot-labs/kit/ui';
 import type { EventMap, NearConnector } from '@hot-labs/near-connect';
-import { walletChainOf, type DepositTransfer, type SendFailure } from './deposit';
 
 /**
- * EVERY WALLET THROUGH ONE HOT KIT (@hot-labs/kit): NEAR (lib/wallet.ts reads it), EVM, Solana and Bitcoin (the deposit
- * dialog). A Bitcoin wallet only gives its address; it is never asked to send (D34).
+ * EVERY WALLET THROUGH ONE HOT KIT (@hot-labs/kit): NEAR (lib/wallet.ts reads it), EVM, Solana, Tron and Bitcoin (the
+ * deposit bridge, and the address a withdrawal goes to).
  * The kit's NEAR connector runs on our own near-connect 0.12 instance, not the kit's bundled 0.8.2: only 0.12 passes the
  * CSP nonce to the wallet iframes (D11), and it connects without adding an access key. It keeps near-connect's
  * `selected-wallet` session, so a NEAR wallet connected before stays connected.
  * The kit (and every chain SDK it pulls in) is imported on first use, never on page load. Nothing here signs NEAR
- * transactions (lib/wallet-sign.ts does); the only send is the deposit transfer below (D34).
+ * transactions (lib/wallet-sign.ts does); the only send is the one HOT's bridge popup builds for a deposit (D42).
  */
 export type OriginChain = 'evm' | 'solana' | 'btc';
 export interface OriginWallet {
@@ -64,6 +64,7 @@ export function loadKit(): Promise<Loaded> {
         import('@near-autopilot/config'),
       ]);
     const near = nearConnector(nearConnect.NearConnector);
+    const theme = pageTheme();
     const projectId = walletConnectProjectIdSchema.safeParse(
       process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     ).data;
@@ -98,11 +99,17 @@ export function loadKit(): Promise<Loaded> {
           (m) => m.default(),
         ),
         lazyConnector(
+          'tron',
+          () => import('@hot-labs/kit/tron'),
+          (m) => m.default(),
+        ),
+        lazyConnector(
           'utxo',
           () => import('@hot-labs/kit/utxo'),
           (m) => m.default(),
         ),
       ],
+      ...(theme && { ui: { theme } }),
     });
     const emit = () => {
       const now = originWallets(k.wallets);
@@ -152,66 +159,76 @@ export async function connectOriginWallet(chain: OriginChain): Promise<OriginWal
   }
 }
 
-const EXPECTED_CHAIN: Record<string, number | string> = {
-  eth: 1,
-  base: 8453,
-  arb: 42161,
-  sol: 'sol',
-};
-
-/**
- * Asks the connected origin wallet to send exactly `t` (from loadDepositTransfer, already matched to the quote); the
- * wallet shows it and the user signs there. Resolves with the transaction hash. Throws before asking the wallet when
- * the kit would read the token as another network or contract than the transfer names.
- */
-export async function sendOriginTransfer(t: DepositTransfer): Promise<string> {
-  const chain = walletChainOf(t.chain);
-  if (!chain) throw new Error('Send this deposit manually.');
-  const [k, { Token }] = await Promise.all([load(), import('@hot-labs/kit/core')]);
-  const w = k.wallets.find((x) => CHAIN_BY_TYPE[x.type] === chain);
-  if (!w) throw new Error(`Connect your ${chain === 'evm' ? 'EVM' : 'Solana'} wallet first.`);
-  const token = new Token({
-    assetId: t.token.assetId,
-    blockchain: t.token.blockchain,
-    symbol: t.token.symbol,
-    decimals: t.token.decimals,
-    price: 0,
-    priceUpdatedAt: '',
-    ...(t.token.contractAddress && { contractAddress: t.token.contractAddress }),
-  });
-  if (
-    token.chain !== EXPECTED_CHAIN[t.chain] ||
-    token.address !== (t.token.contractAddress ?? 'native')
-  )
-    throw new Error('The wallet would send on another network. Send this deposit manually.');
-  return w.transfer({ token, receiver: t.receiver, amount: BigInt(t.amount) });
-}
-
-const NO_GAS =
-  /gas required exceeds|insufficient funds for (gas|rent|fee)|no record of a prior credit/i;
-const NO_TOKEN =
-  /exceeds balance|insufficient balance|custom program error: 0x1\b|insufficient funds/i;
-
-/**
- * Why a wallet send threw. `declined`: the user said no (EIP-1193 4001, or the wallet's words). `no-gas`: the native
- * coin cannot pay the network fee; `no-token`: less of the token than the quote; `not-sent`: another revert at the gas
- * estimate. All of these come before any broadcast. `unknown`: anything else may come after it, so the dialog never
- * offers to send that quote again.
- */
-export function sendFailure(e: unknown): SendFailure {
-  if (typeof e !== 'object' || e === null) return 'unknown';
-  const { code, message } = e as { code?: unknown; message?: unknown };
-  const text = typeof message === 'string' ? message : '';
-  if (code === 4001 || /user (rejected|denied|cancel)|cancell?ed by user/i.test(text))
-    return 'declined';
-  if (NO_GAS.test(text)) return 'no-gas';
-  if (NO_TOKEN.test(text)) return 'no-token';
-  if (/execution reverted/i.test(text)) return 'not-sent';
-  return 'unknown';
-}
-
 export async function disconnectOriginWallet(wallet: OriginWallet): Promise<void> {
   const k = await load();
   const w = k.wallets.find((x) => CHAIN_BY_TYPE[x.type] === wallet.chain);
   if (w) await k.disconnect(w);
+}
+
+/** The kit popups in the page's own colours, read from the design tokens of the theme on screen. */
+function pageTheme(): KitTheme | undefined {
+  if (typeof getComputedStyle !== 'function' || !document.documentElement) return undefined;
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string) => css.getPropertyValue(name).trim();
+  return {
+    colorScheme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
+    fontFamily: v('--font'),
+    colors: {
+      textPrimary: v('--text-1'),
+      textSecondary: v('--text-2'),
+      textTertiary: v('--text-3'),
+      textInverse: v('--sign-ink'),
+      accent: v('--accent'),
+      accentOn: v('--sign-ink'),
+      background: v('--bg-surface'),
+      surface: v('--bg-raised'),
+      surfaceLow: v('--bg-page'),
+      surfaceHigh: v('--bg-overlay'),
+      surfaceHighest: v('--bg-overlay'),
+      border: v('--line-strong'),
+      borderFocus: v('--accent'),
+      success: v('--safe'),
+      error: v('--liq'),
+      warning: v('--watch'),
+      overlay: v('--scrim'),
+    },
+    buttons: { primary: v('--sign'), primaryHover: v('--sign-hover') },
+  };
+}
+
+const SOURCE_CHAINS = new Set<ChainId>(['sol', 'tron', 'btc']);
+
+/**
+ * Where a deposit may come from: an EVM chain 1Click serves, Solana, Tron or Bitcoin. Never NEAR or a HOT balance
+ * (`hot`, `hotcraft`...): a send from there would be a NEAR signature around validateCascade (D42).
+ */
+export const isBridgeSource = (
+  chain: ChainId,
+  oneClickChain: (id: ChainId) => string | undefined,
+) => (typeof chain === 'number' ? oneClickChain(chain) !== undefined : SOURCE_CHAINS.has(chain));
+
+/** The bridge popup's setup for a deposit into `account`: that recipient, locked; NEAR tokens only on arrival. */
+export function bridgeSetup(
+  recipient: Recipient,
+  oneClickChain: (id: ChainId) => string | undefined,
+): BridgeSetup {
+  return {
+    title: 'Fund your NEAR account',
+    recipient,
+    lockRecipient: true,
+    tokenFilter: {
+      from: (t) => isBridgeSource(t.chain, oneClickChain),
+      to: (t) => t.chain === 'near',
+    },
+  };
+}
+
+/**
+ * Opens HOT's bridge popup to fund `account` from another chain: the account is the locked recipient, NEAR the only
+ * destination. HOT builds the transfer and the user signs it in the origin wallet (D42).
+ */
+export async function openDepositBridge(account: string): Promise<void> {
+  const [kit, k] = await Promise.all([import('@hot-labs/kit'), load()]);
+  const recipient = await kit.Recipient.fromAddress('near', account);
+  await k.openBridge({ setup: bridgeSetup(recipient, kit.toOneClickChain) });
 }
