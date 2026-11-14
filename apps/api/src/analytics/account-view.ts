@@ -105,7 +105,7 @@ import type { CollectorStore } from '../collector/store';
 import { isSmall, valueAccount, type AccountReads, type Holding, type TokenFacts } from './account';
 import { displaySymbol, type AccountDiscovery } from './discovery';
 import { loopFor, loopStrategies, type LoopMarket } from './looping';
-import { hurdle, money, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
+import { hurdle, money, ratePct, yearWorthTheFee, type PortfolioAction } from './portfolio-view';
 import type { WithdrawLookup } from './deposit';
 import { range24hBps, type SnapshotPrice, snapshotPrices } from './series';
 import { isKnownToken, modelTokenLabel, STABLES } from '../thesis/labels';
@@ -929,7 +929,7 @@ export function portfolioAdvice(
     const rest = repays.usd - repayUsd;
     const then =
       rest >= MIN_ACTION_USD
-        ? ` The other ${money0(rest)} can then go to Burrow at ${repays.aprPct.toFixed(1)}%.`
+        ? ` The other ${money0(rest)} can then go to Burrow at ${ratePct(repays.aprPct)}%.`
         : '';
     recs.push({
       id: 'repay-with-idle',
@@ -937,7 +937,7 @@ export function portfolioAdvice(
       agent: 'Capital Allocator',
       severity: 'info',
       title: `Use your idle ${repays.symbol} to repay your ${debt.symbol} loan`,
-      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${repays.symbol} on Burrow earns about ${repays.aprPct.toFixed(1)}%. Repaying ${money0(repayUsd)} saves about ${money2(saves)} a year, more than the ${money2((repayUsd * repays.aprPct) / 100)} supplying it would earn.${then}`,
+      why: `Your ${debt.symbol} loan costs about ${borrowPct.toFixed(1)}% a year, while supplying ${repays.symbol} on Burrow earns about ${ratePct(repays.aprPct)}%. Repaying ${money0(repayUsd)} saves about ${money2(saves)} a year, more than the ${money2((repayUsd * repays.aprPct) / 100)} supplying it would earn.${then}`,
       intent: {
         action: 'repay',
         token: repays.token,
@@ -976,7 +976,7 @@ export function portfolioAdvice(
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(total)} of ${list} is sitting idle`,
-      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(batch.reduce((s, a) => s + yearly(a), 0))} a year (${batch.map((a) => `${a.symbol} ${a.aprPct.toFixed(1)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
+      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(batch.reduce((s, a) => s + yearly(a), 0))} a year (${batch.map((a) => `${a.symbol} ${ratePct(a.aprPct)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
       intent: {
         action: 'supply_all',
         tokens: batch.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
@@ -1000,7 +1000,7 @@ export function portfolioAdvice(
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(idle.usd)} of ${idle.symbol} is sitting idle`,
-      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${idle.aprPct.toFixed(1)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
+      why: `${idle.symbol} in your wallet earns nothing. Supplying it on Burrow earns about ${ratePct(idle.aprPct)}% a year, about ${money2(yearly(idle))} a year, and you can withdraw it any time.${other}`,
       intent: { action: 'supply', token: idle.token, approxUsd: approxUsdOf(idle.usd) },
       carry: idleRule(idle, strategy),
     });
@@ -1012,7 +1012,7 @@ export function portfolioAdvice(
   } else if (!repays && ctx.idleEarn[0] && ctx.idleEarn[0].usd >= 0.1) {
     const small = ctx.idleEarn[0];
     skipped.push(
-      `${money2(small.usd)} of ${small.symbol} could earn about ${small.aprPct.toFixed(1)}% a year on Burrow, but that is ${UNDER_MIN}.`,
+      `${money2(small.usd)} of ${small.symbol} could earn about ${ratePct(small.aprPct)}% a year on Burrow, but that is ${UNDER_MIN}.`,
     );
   }
 
@@ -1051,7 +1051,7 @@ function idleRule(
   strategy: Strategy,
 ): NonNullable<PortfolioRecommendation['carry']> {
   const { label, idle: rule, targetHealthFactor: h } = strategy;
-  const supply = `${idle.aprPct.toFixed(1)}%`;
+  const supply = `${ratePct(idle.aprPct)}%`;
   if (!rule.weighsLoop)
     return {
       text: `${label}: Burrow supply at ${supply} a year; ${rule.rule}.`,
@@ -1501,9 +1501,7 @@ function withdrawable(
   if (!best || !raw) return null;
   const { b } = best;
   const amount = `${tokenText(best.tokens)} ${b.symbol}`;
-  const earns = b.aprPct
-    ? ` Withdrawn, it stops earning about ${b.aprPct.toFixed(1)}% a year.`
-    : '';
+  const earns = b.aprPct ? ` Withdrawn, it stops earning about ${ratePct(b.aprPct)}% a year.` : '';
   return {
     id: `withdraw-${b.token}`,
     kind: 'withdraw_from_burrow',

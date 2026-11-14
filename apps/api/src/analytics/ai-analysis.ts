@@ -37,7 +37,7 @@ import { z } from 'zod';
 import { costMicroUsd } from '../llm/pricing';
 import { modelTokenLabel } from '../thesis/labels';
 import type { PortfolioRecommendation } from './account-view';
-import { yearWorthTheFee } from './portfolio-view';
+import { ratePct, yearWorthTheFee } from './portfolio-view';
 import { analysisKey } from './analysis-key';
 import type { WalletObservation } from './lp-recentre';
 
@@ -573,7 +573,7 @@ function allocatorTool(
       const proposals = await propose(new CapitalAllocatorAgent(), obs);
       const candidates: PortfolioRecommendation[] = [];
       const byCandidate = new Map<string, StepLine>();
-      let lowRate: StepLine | null = null;
+      let notWorthFee: StepLine | null = null;
       // The rule list's own idle cards come first: repaying a dearer loan (#194), or every idle token at once (#196).
       const covered = new Set<string>();
       for (const c of checks) {
@@ -590,11 +590,11 @@ function allocatorTool(
         const yieldWad = obs.market?.estimatedYieldWad.get(p.token);
         if (!view || yieldWad === undefined) continue;
         const apr = Number(yieldWad / 10n ** 14n) / 100;
-        const aprPct = apr.toFixed(1);
+        const aprPct = ratePct(apr);
         const value = usd(tokenValueUsd(obs.snapshot.prices, p.token, p.amount));
         const yearlyUsd = (value * Number(yieldWad)) / 1e18;
         if (!yearWorthTheFee(yearlyUsd)) {
-          lowRate ??= {
+          notWorthFee ??= {
             text: `${view.symbol} would earn about ${money(yearlyUsd)} a year on Burrow: not worth the network fee`,
             provenance: 'calculated_estimate',
           };
@@ -625,7 +625,7 @@ function allocatorTool(
       for (const c of candidates) found.set(c.id, c);
       const supplyProposed = proposals.some((p) => p.kind === 'lending.supply');
       steps.set('capital_allocator', {
-        none: lowRate ?? {
+        none: notWorthFee ?? {
           text: supplyProposed
             ? 'Idle tokens found, but none is worth supplying: under $1, or no rate or price'
             : 'Nothing idle to put to work',

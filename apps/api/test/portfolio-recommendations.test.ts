@@ -501,6 +501,10 @@ describe('portfolioRecommendations', () => {
       expect(supplies(10_000, 0.32)).toBe(true);
       expect(supplies(1.47, 0.32)).toBe(false);
       expect(supplies(1.2, 5)).toBe(false);
+      const card = portfolioRecommendations(
+        ctx({ idleEarn: [{ token: 'wrap.near', symbol: 'NEAR', usd: 10_000, aprPct: 0.32 }] }),
+      ).find((x) => x.kind === 'put_idle_to_work');
+      expect(card?.why).toContain('about 0.32% a year, about $32.00 a year');
     });
 
     it('says plainly when the yearly interest is not worth the network fee, instead of a cents card', () => {
