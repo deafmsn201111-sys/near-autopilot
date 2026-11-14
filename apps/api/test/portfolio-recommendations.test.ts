@@ -567,7 +567,7 @@ describe('portfolioRecommendations', () => {
         slippageBps: 50,
       };
       const advice = (over: Partial<RecommendationContext>) =>
-        portfolioAdvice(ctx({ ...safe, swapRepay: usdc, ...over }));
+        portfolioAdvice(ctx({ ...safe, idleSwapRepay: usdc, ...over }));
       const card = (over: Partial<RecommendationContext>) =>
         advice(over).recommendations.find((x) => x.id === 'repay-with-idle');
 
@@ -582,11 +582,21 @@ describe('portfolioRecommendations', () => {
         expect(c?.why).toMatch(/13\.5%.*10\.8%/);
       });
 
+      it('leaves the USDC the swap does not take to the supply card', () => {
+        const recs = advice({
+          idleEarn: [{ token: USDC, symbol: 'USDC', usd: 1000, aprPct: 10.8 }],
+          idleSwapRepay: { ...usdc, wallet: 1000 },
+        }).recommendations;
+        expect(recs.find((x) => x.id === 'repay-with-idle')).toBeDefined();
+        const supply = recs.find((x) => x.intent?.action === 'supply');
+        expect(supply?.intent).toMatchObject({ token: USDC, approxUsd: 699.1 });
+      });
+
       it('withdraws only the plain USDC deposit, never the collateral', () => {
-        const all = card({ swapRepay: { ...usdc, wallet: 0, deposited: 400 } })?.intent;
+        const all = card({ idleSwapRepay: { ...usdc, wallet: 0, deposited: 400 } })?.intent;
         if (all?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
         expect(all.withdraw).toBe(all.amount);
-        const part = card({ swapRepay: { ...usdc, wallet: 0, deposited: 100 } })?.intent;
+        const part = card({ idleSwapRepay: { ...usdc, wallet: 0, deposited: 100 } })?.intent;
         if (part?.action !== 'repay_with_collateral') throw new Error('expected swap repay');
         expect(part.amount).toBe('100000000');
       });
@@ -598,9 +608,9 @@ describe('portfolioRecommendations', () => {
       });
 
       it('stays quiet when the swap loss eats the savings, the deposit earns more, or no route exists', () => {
-        expect(card({ swapRepay: { ...usdc, outPerIn: 0.95 } })).toBeUndefined();
-        expect(card({ swapRepay: { ...usdc, aprPct: 14 } })).toBeUndefined();
-        expect(card({ swapRepay: null })).toBeUndefined();
+        expect(card({ idleSwapRepay: { ...usdc, outPerIn: 0.95 } })).toBeUndefined();
+        expect(card({ idleSwapRepay: { ...usdc, aprPct: 14 } })).toBeUndefined();
+        expect(card({ idleSwapRepay: null })).toBeUndefined();
       });
 
       it('leaves an unsafe loan to the Liquidation Guardian card', () => {
