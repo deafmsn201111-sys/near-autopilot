@@ -1,5 +1,9 @@
 export const portfolioUrl = (id: string) => `/?p=account&account=${encodeURIComponent(id)}`;
 
+/** A demo opens only when chosen (or when there is no account at all): a connected wallet or a linked account wins. */
+export const isAccountView = (p: unknown, urlAccount: string, cookieAccount: string) =>
+  p === 'account' || (p === undefined && (urlAccount !== '' || cookieAccount !== ''));
+
 export interface PortfolioModeInput {
   isAccount: boolean;
   account: string;

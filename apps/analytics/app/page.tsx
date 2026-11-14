@@ -27,7 +27,7 @@ import { demoFacts, splitDemo } from '../lib/suggestions';
 import { intentTokens } from '../lib/recommendation-intent';
 import { AccountWatcher } from '../components/AccountWatcher';
 import { walletSigningEnabled } from '../lib/wallet-signing';
-import { portfolioMode } from '../lib/portfolio-mode';
+import { isAccountView, portfolioMode } from '../lib/portfolio-mode';
 import { AccountForm } from '../components/AccountForm';
 import { DepositButton } from '../components/DepositButton';
 import { WithdrawDialog } from '../components/WithdrawDialog';
@@ -131,11 +131,11 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
 }
 
 async function Portfolio({ sp }: { sp: Search }) {
-  const isAccount = sp.p === 'account';
-  // The account id can come from the URL (?account=) or, when navigating back to "Mainnet account" without it, from the
-  // cookie the wallet set on connect — otherwise the view would read empty until the wallet is reconnected.
+  // The account id can come from the URL (?account=) or, when navigating back without it, from the cookie the wallet
+  // set on connect — otherwise the view would read empty, or fall back to a demo, until the wallet is reconnected.
   const urlAccount = typeof sp.account === 'string' ? sp.account.trim().toLowerCase() : '';
   const cookieAccount = (await cookies()).get('np_account')?.value?.trim().toLowerCase() ?? '';
+  const isAccount = isAccountView(sp.p, urlAccount, cookieAccount);
   const accountParam = urlAccount || (isAccount ? cookieAccount : '');
   // The URL wins (a shared link shows its strategy), then the last choice for this account in this browser.
   const strategy = strategyOf(
@@ -200,7 +200,7 @@ async function Portfolio({ sp }: { sp: Search }) {
   // Holdings for the premium table (highest value first) and the hero allocation bar. A real account's bar, totals and
   // LP rows come from the API's one list of priced legs; a demo's bar is aggregated here by symbol.
   // For a connected wallet (a real mainnet account), the agents' recommendations with one-click intents.
-  // The API serves a saved analysis to the proven owner only, so it is asked in parallel and checked on its side.
+  // The API serves a saved analysis to the proven owner (or anyone, for its one public account): checked on its side.
   const [recsRead, saved] = isAccount
     ? await Promise.all([
         accountRecommendations(accountParam, strategy),

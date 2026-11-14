@@ -149,14 +149,15 @@ export function AnalysisPanel({
         </span>
         <div className="an-run">
           <span className="an-run-sub">
-            {aiAllowed ? (
-              running ? (
-                'Analysing…'
-              ) : ranAt ? (
+            {running ? (
+              'Analysing…'
+            ) : ranAt ? (
+              <>
+                {!aiAllowed && "The owner's AI run · "}
                 <Updated iso={ranAt} />
-              ) : (
-                'AI analysis not run yet.'
-              )
+              </>
+            ) : aiAllowed ? (
+              'AI analysis not run yet.'
             ) : (
               `AI analysis runs only for the verified owner of ${account}.`
             )}
@@ -185,7 +186,11 @@ export function AnalysisPanel({
         <p className="an-note">{analysis.note}</p>
       )}
       {portfolioChanged && (
-        <p className="an-note">Your portfolio changed — run the AI analysis again.</p>
+        <p className="an-note">
+          {aiAllowed
+            ? 'Your portfolio changed — run the AI analysis again.'
+            : "The portfolio changed since the owner's last AI run."}
+        </p>
       )}
       {failure && (
         <div className="an-fail" role="alert">

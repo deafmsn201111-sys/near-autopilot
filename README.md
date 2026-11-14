@@ -53,8 +53,11 @@ owner's wallet. Every transaction of that account is on
 [its Activity page](https://near-autopilot.tech/activity?account=autopilot-test.near).
 
 **Try without a wallet:** open the site and switch between the **$5,000 demo** and **$500 demo** portfolios. They are
-simulated and labelled so: holdings, loan safety and ranked options, computed by the rule-based agents. The AI analysis
-needs a connected wallet whose ownership you verify; there is no cached AI run for visitors yet (#24).
+simulated and labelled so: holdings, loan safety and ranked options, computed by the rule-based agents. To see the AI,
+open the real demo account
+[`autopilot-test.near`](https://near-autopilot.tech/?account=autopilot-test.near): it shows the owner's last saved AI
+analysis, marked "The owner's AI run · Updated … ago" (#24). Running a new AI analysis needs a connected wallet whose
+ownership you verify.
 
 Every "try it" step below starts from the [Quick start](#quick-start): `./scripts/quickstart.sh`, then the dashboard on
 `http://127.0.0.1:3001`.
@@ -144,7 +147,8 @@ you choose and the advice you get.
 - Every model reply's signature is checked against the key NEAR AI's attestation names, and the page shows
   **Private AI · signed in TEE** or **Private AI · signature not verified** with the reason (#233, D43).
 - Only the proven owner sees their analysis: a NEP-413 signed message (no transaction, no gas) gates the AI analysis,
-  the saved result and "What the AI saw".
+  the saved result and "What the AI saw". One exception, by the owner's choice: the saved result (never "What the AI
+  saw") of the public demo account `autopilot-test.near` is readable by anyone (`PUBLIC_ANALYSIS_ACCOUNT`, D46).
 - The model never gets the account id or a token's own symbol. We log no IP address. `llm_calls` keeps no prompt
   text, only tokens, cost, tools called, the outcome and the model's picks with their short "why" (and up to 2,000
   characters of a reply that failed to parse); its rows are kept 7 days, `events` rows 30 days.
@@ -732,7 +736,7 @@ except `POST /v1/wallet/prepare`, which builds an unsigned cascade and checks it
 - Sign a multi-step cascade with one wallet approval (`signAndSendTransactions`, #230).
 - A backup LLM provider for NEAR AI Cloud outages, LLM-backed specialist agents, admin alerts.
 - Cancel a Rhea limit order from the portfolio (#223).
-- A cached AI analysis of the demo portfolio for visitors without a wallet (#24).
+- A server-refreshed AI analysis of the demo account for visitors, on a spend cap (full #24).
 - Encrypt saved AI analyses at rest (#278).
 
 ## Known limitations

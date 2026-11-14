@@ -873,3 +873,15 @@ bigint. Only tightens; no cap changed.
 **Consequences:** a new builder must name its protocol's role, or its calls fail `methods`. A pool ratio move over
 0.5% between preview and signing makes `add_liquidity` revert; the deposited tokens stay in the user's Rhea exchange
 balance, withdrawable.
+
+## D46 — One owner-named account's saved AI analysis is public (#24)
+
+**Context:** Judges without a wallet could not see the AI at all: the saved analysis is served to the proven owner
+only (D12, #190).
+**Decision:** env `PUBLIC_ANALYSIS_ACCOUNT` (empty = off) names one account. `GET /v1/analytics/account/:id/analysis`
+serves that account's last saved result to anyone, read-only, without `run.input` ("What the AI saw"); the kill switch
+still hides it. Every other account, `POST …/analysis` (the model run) and the private timeline stay owner-only, so no
+visitor can cause a model call or a write. Amends D12 for that one account only; on the public site it is the demo
+wallet `autopilot-test.near`.
+**Consequences:** the result is as old as the owner's last run (the page shows its time). A server-refreshed run on a
+spend cap is the post-hackathon version of #24.

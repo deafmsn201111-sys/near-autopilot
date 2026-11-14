@@ -298,10 +298,9 @@ export const accountEvents = async (id: string) => {
 /** The owner's last AI analysis for this strategy (#190), unparsed: the client component validates it. */
 export const savedAnalysis = async (id: string, strategy: StrategyId): Promise<unknown> => {
   const proof = await ownershipProof();
-  if (!proof) return null;
   const r = await tryApi<unknown>(
     `/v1/analytics/account/${encodeURIComponent(id)}/analysis?strategy=${strategy}`,
-    { 'x-ownership-proof': proof },
+    proof ? { 'x-ownership-proof': proof } : undefined,
   );
   return r.data;
 };

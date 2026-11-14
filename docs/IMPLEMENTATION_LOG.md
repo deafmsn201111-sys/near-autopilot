@@ -1095,3 +1095,11 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `ft_transfer_call` only to a protocol (D45).
 - `deploy/public/setup.sh` checks the IP argument and stops instead of `chmod 777`; `scripts/start-issue.sh` takes a
   numeric issue only; D15 says when a key counts as rotated. Accepted items in KNOWN_ISSUES.
+
+## 2026-11-14 — The demo account's saved AI analysis for visitors without a wallet (#24, lite)
+
+- env `PUBLIC_ANALYSIS_ACCOUNT` (config `llmEnvSchema`, both compose files and `.env.example`s).
+- `GET /v1/analytics/account/:id/analysis` serves that one account's saved result to anyone, through
+  `AnalysisStore.latest`, with `run.input` nulled for non-owners; kill switch still applies. `POST` unchanged.
+- UI asks for the saved result without a proof too; the panel shows "The owner's AI run · Updated … ago" to a visitor.
+- D46. The server-refreshed version with a spend cap stays for after the hackathon.

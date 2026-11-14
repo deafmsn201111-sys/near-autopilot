@@ -232,7 +232,8 @@ shows `Fresh` only when the API answers and the collector's data is fresh, so th
 - **Update:** build a new bundle, unpack it next to the old one, copy `.env` and `checkpoints/` across, then run
   `./setup.sh`. The database volume is kept. Since #232 the AI reads `NEAR_AI_API_KEY` (and `LLM_MODEL`,
   `LLM_MAX_TOKENS`); `ANTHROPIC_*` lines are ignored. An `.env` from before that needs `NEAR_AI_API_KEY=` added, or the
-  AI analysis stays off (rule-based list only).
+  AI analysis stays off (rule-based list only). Since #24, `PUBLIC_ANALYSIS_ACCOUNT=autopilot-test.near` makes that
+  account's saved AI analysis readable without a wallet (D46); unset, it stays owner-only.
 - **Stop:** `docker compose down`. This keeps the data.
 - **Delete everything:** `docker compose down -v`. This erases the database and the certificates.
 - **Demo portfolio stuck in read-only:** the orchestrator switches a demo scope to `read_only` on its own (a crash
