@@ -118,6 +118,7 @@ import {
   hurdle,
   loanFacts,
   money,
+  money2,
   networkFee,
   rateFact,
   ratePct,
@@ -886,8 +887,6 @@ export function earningsSentence(
 
 const money0 = (usd: number) => `$${Math.round(usd).toLocaleString('en-US')}`;
 const sig = (n: number) => n.toLocaleString('en-US', { maximumSignificantDigits: 4 });
-const money2 = (usd: number) =>
-  `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
 const MIN_DCL_EXIT_USD = 0.1;
@@ -1058,7 +1057,10 @@ export function portfolioAdvice(
           batch.reduce((s, a) => s + yearly(a), 0),
         ),
         rateFact(rateRange(batch.map((a) => a.aprPct)), 'a year on Burrow'),
-        networkFee(batch.length),
+        networkFee(
+          batch.length,
+          `network fees, ${batch.length} transactions (one more to register on Burrow if you are new)`,
+        ),
       ],
     });
     const left = worthy.slice(MAX_SUPPLY_ALL);
@@ -1494,10 +1496,9 @@ function idleSwapRepay(
       gain('Saves', saves),
       rateFact(`${borrowPct.toFixed(1)}%`, 'the loan costs a year'),
       {
-        label: 'Cost',
+        ...networkFee(withdrawRaw ? 3 : 2),
         value: `≈ ${money2(lossUsd + GAS * (withdrawRaw ? 3 : 2))}`,
         sub: `swap loss ${money2(lossUsd)} and network fees`,
-        provenance: 'calculated_estimate',
       },
     ],
   };

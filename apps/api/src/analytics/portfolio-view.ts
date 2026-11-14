@@ -131,7 +131,6 @@ export function hurdle(
   };
 }
 
-/** A standing move (a deposit, a repayment) is worth one network fee when a year of its benefit clears the hurdle. */
 export interface CardFact {
   readonly label: string;
   readonly value: string;
@@ -140,11 +139,11 @@ export interface CardFact {
   readonly provenance: ProvenanceTier;
 }
 
-const cents = (usd: number) =>
+export const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const gain = (label: 'Earns' | 'Saves', yearlyUsd: number): CardFact => ({
   label,
-  value: `+${cents(yearlyUsd)}`,
+  value: `+${money2(yearlyUsd)}`,
   sub: 'a year',
   good: true,
   provenance: 'calculated_estimate',
@@ -155,10 +154,13 @@ export const rateFact = (value: string, sub: string): CardFact => ({
   sub,
   provenance: 'protocol_reported',
 });
-export const networkFee = (transactions = 1): CardFact => ({
+export const networkFee = (
+  transactions = 1,
+  sub = transactions === 1 ? 'network fee' : `network fees, ${transactions} transactions`,
+): CardFact => ({
   label: 'Cost',
-  value: `≈ ${cents(GAS * transactions)}`,
-  sub: transactions === 1 ? 'network fee' : `network fees, ${transactions} transactions`,
+  value: `≈ ${money2(GAS * transactions)}`,
+  sub,
   provenance: 'calculated_estimate',
 });
 const bufferText = (hf: number) => `${Math.round(Math.max(0, 1 - 1 / hf) * 100)}%`;
@@ -178,6 +180,7 @@ export const supplyFacts = (yearlyUsd: number, aprPct: number): CardFact[] => [
   networkFee(),
 ];
 
+/** A standing move (a deposit, a repayment) is worth one network fee when a year of its benefit clears the hurdle. */
 export const yearWorthTheFee = (yearlyUsd: number): boolean =>
   hurdle(yearlyUsd - GAS, yearlyUsd, GAS).verdict === 'worth_it';
 

@@ -1046,3 +1046,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   the rule-based result is shown, with Try again; an older AI ranking is dropped after a failed run.
 - "Add funds" and Connect that cannot open say so by the button; an unvalued loan gets a neutral "Unknown" chip.
 - Out: withdraw quote failure inside the sheet moved to #255.
+
+## 2026-11-14 — Account suggestion cards: structured facts from the API (#284)
+
+- Each account card now carries an optional `facts` list (label, value, sub, good, provenance) built from the numbers
+  its builder already computed: yearly earnings or savings (mint), the Burrow or loan rate, the network fee (and swap
+  loss), the loan buffer before → after with the health factors of the card's text, a DCL exit's value, a withdrawal's
+  lost rate. The orchestrator's own wallet-repay and supply candidates on the AI path carry the same facts.
+- The UI validates them with zod (`factsSchema` in `apps/analytics/lib/suggestions.ts`) and falls back to the
+  intent's amount; each non-on-chain provenance in the strip gets its own mark on the card.

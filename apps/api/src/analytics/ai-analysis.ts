@@ -408,6 +408,7 @@ const noInputSchema = { type: 'object', properties: {}, additionalProperties: fa
 const usd = (micro: bigint) => Number(micro) / 1e6;
 const money = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const hfOf = (wad: bigint) => Number(wad / 10n ** 14n) / 1e4;
 const hfText = (wad: bigint | null) =>
   wad === null ? null : (Number(wad / 10n ** 14n) / 1e4).toFixed(2);
 /** prepare takes at most $1M as the approximate size; the exact amount carries the real size. */
@@ -494,9 +495,10 @@ function guardianTool(
       for (const p of fromCollateral.length > 0 ? [] : proposals) {
         if (p.kind !== 'lending.repay' || !model.ok) continue;
         const view = tokenView(obs, p.token, p.amount, MIN_REPAY_USD);
-        const after = hfText(
-          assessLendingPosition(afterRepay(model.model, p.token, p.amount)).healthFactorWad,
-        );
+        const afterWad = assessLendingPosition(
+          afterRepay(model.model, p.token, p.amount),
+        ).healthFactorWad;
+        const after = hfText(afterWad);
         if (!view || !after) continue;
         const id = `liquidation-guardian:repay:${p.token}`;
         byCandidate.set(id, {
@@ -518,7 +520,10 @@ function guardianTool(
             ...sizingFor(loanCards, p.token),
           },
           ...(carry && { carry }),
-          ...(hf !== null && { facts: loanFacts(Number(hf), Number(after)) }),
+          ...(obs.risk.healthFactorWad !== null &&
+            afterWad !== null && {
+              facts: loanFacts(hfOf(obs.risk.healthFactorWad), hfOf(afterWad)),
+            }),
         });
       }
       candidates.push(...fromCollateral);
