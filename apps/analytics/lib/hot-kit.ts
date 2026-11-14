@@ -22,11 +22,26 @@ const listeners = new Set<(wallets: OriginWallet[]) => void>();
 
 function load(): Promise<HotKit> {
   kit ??= (async () => {
-    const [{ HotKit }, { lazyConnector }] = await Promise.all([
+    const [{ HotKit }, { lazyConnector }, { walletConnectProjectIdSchema }] = await Promise.all([
       import('@hot-labs/kit'),
       import('@hot-labs/kit/defaults'),
+      import('@near-autopilot/config'),
     ]);
+    const projectId = walletConnectProjectIdSchema.safeParse(
+      process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+    ).data;
     const k = new HotKit({
+      ...(projectId && {
+        walletConnect: {
+          projectId,
+          metadata: {
+            name: 'NEAR Autopilot',
+            description: 'AI DeFi analyst for NEAR: you sign every transaction in your own wallet.',
+            url: window.location.origin,
+            icons: [],
+          },
+        },
+      }),
       connectors: [
         lazyConnector(
           'evm',

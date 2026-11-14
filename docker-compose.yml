@@ -121,6 +121,8 @@ services:
     build:
       context: .
       dockerfile: docker/analytics.Dockerfile
+      args:
+        NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID:-}
     image: near-autopilot-analytics:${IMAGE_TAG:-local}
     restart: unless-stopped
     depends_on:

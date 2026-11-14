@@ -612,11 +612,14 @@ created `HotKit` with the EVM and Solana connectors only, imported on first use 
 load. The kit's NEAR connector is left out: its session restore reads near-connect's `selected-wallet` key, and the
 NEAR wallet stays in `lib/wallet.ts`. One picker per chain (`kit.connect(WalletType.EVM | SOLANA)`), because in 2.0.0
 the all-chains picker never settles when its nested chain picker is closed. While a kit popup is open the deposit
-`<dialog>` drops to non-modal, or the top layer makes the popup inert. No WalletConnect `projectId` (browser
-wallets only; it would be a build-time `NEXT_PUBLIC_` variable), no Next polyfills needed, no CSP change.
+`<dialog>` drops to non-modal, or the top layer makes the popup inert. WalletConnect (mobile wallets by QR) uses our
+Reown project id from `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`: public by design, inlined by Next at build time, so a
+Docker build arg (compose and `deploy/public/build-bundle.sh` read it from the local `.env`), checked by
+`walletConnectProjectIdSchema`; empty or malformed = browser wallets only. The Reown project must allow the site's
+domains. No Next polyfills needed, no CSP change (relay `wss:` and verify frame `https:` are already allowed).
 **What it calls:** by default only hex-api (`hex-api.app`: EVM/Solana RPC, prices and token lists, 1Click proxy;
 `mpc.hex-api.app`: intents relay) and public chain RPCs; connecting itself fetched only wallet icons
-(`storage.herewallet.app`, `tgapp.herewallet.app`). No telemetry. Our 1Click quote and status path stays ours.
+(`storage.herewallet.app`, `tgapp.herewallet.app`); with a project id, WalletConnect also talks to Reown's relay. No telemetry. Our 1Click quote and status path stays ours.
 **#172 finding:** Google login (`@hot-labs/kit/privy`) needs our own Privy app (`appId`) and gives a NEAR implicit
 account whose ed25519 key never leaves Privy's TEE; it can `signAndSendTransaction`, so Privy, not the user's device,
 holds the key.

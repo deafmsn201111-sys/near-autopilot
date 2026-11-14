@@ -10,9 +10,11 @@ const fake = vi.hoisted(() => {
     connected: [] as Handler[],
     disconnected: [] as Handler[],
     pick: null as { type: number; address: string } | null,
+    failLoad: false,
   };
   class HotKit {
     constructor(options: unknown) {
+      if (state.failLoad) throw new Error('chunk failed');
       state.created++;
       state.options = options;
     }
@@ -61,6 +63,7 @@ async function fresh() {
     connected: [],
     disconnected: [],
     pick: null,
+    failLoad: false,
   });
   return import('../lib/hot-kit');
 }
@@ -140,13 +143,36 @@ describe('kit wallet type numbers', () => {
 describe('kit load failure', () => {
   it('connect resolves null and the next call retries the load', async () => {
     const m = await fresh();
-    vi.doMock('@hot-labs/kit', () => {
-      throw new Error('chunk failed');
-    });
+    fake.state.failLoad = true;
     expect(await m.connectOriginWallet('evm')).toBeNull();
-    vi.doUnmock('@hot-labs/kit');
-    vi.doMock('@hot-labs/kit', () => ({ HotKit: fake.HotKit }));
+    fake.state.failLoad = false;
     fake.state.pick = EVM;
     expect(await m.connectOriginWallet('evm')).toEqual({ chain: 'evm', address: EVM.address });
+  });
+});
+
+describe('WalletConnect project id', () => {
+  const ID = 'a'.repeat(32);
+
+  it('is passed to the kit with the site metadata when the build set a valid one', async () => {
+    vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', ID);
+    vi.stubGlobal('window', { location: { origin: 'https://site.test' } });
+    const m = await fresh();
+    await m.connectOriginWallet('evm');
+    expect(fake.state.options).toMatchObject({
+      walletConnect: { projectId: ID, metadata: { url: 'https://site.test' } },
+    });
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('is left out when empty or malformed', async () => {
+    for (const value of ['', 'not-an-id']) {
+      vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', value);
+      const m = await fresh();
+      await m.connectOriginWallet('evm');
+      expect(fake.state.options).toEqual({ connectors: ['evm', 'solana'] });
+    }
+    vi.unstubAllEnvs();
   });
 });

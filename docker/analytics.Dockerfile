@@ -8,6 +8,8 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter "@near-autopilot/analytics..."
 ENV NEXT_TELEMETRY_DISABLED=1
+# Public Reown project id, inlined into the browser bundle by Next; empty = browser wallets only.
+ARG NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
 RUN pnpm --filter @near-autopilot/analytics build
 
 FROM node:22-alpine AS runtime

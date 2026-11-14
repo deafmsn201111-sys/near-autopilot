@@ -696,3 +696,5 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - Deposit dialog: **Connect EVM wallet** / **Connect Solana wallet**, address and **Disconnect**; the kit loads when the
   dialog first opens. The `<dialog>` goes non-modal while a kit popup is open (top-layer inertness).
 - Kit 2.0.0 bug worked around: the all-chains picker's promise never settles when the nested picker is closed.
+- WalletConnect: `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (zod-checked, Docker build arg via compose and
+  `build-bundle.sh`) adds WalletConnect to the kit's pickers with the site's metadata.
