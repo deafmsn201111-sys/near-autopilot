@@ -976,7 +976,7 @@ export function portfolioAdvice(
       agent: 'Capital Allocator',
       severity: 'info',
       title: `${money0(total)} of ${list} is sitting idle`,
-      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(batch.reduce((s, a) => s + yearly(a), 0))} a year (${batch.map((a) => `${a.symbol} ${ratePct(a.aprPct)}%`).join(', ')}), and you can withdraw any time. One signature, one transaction per token.`,
+      why: `${list} in your wallet earn nothing. Supplying them on Burrow earns about ${money2(batch.reduce((s, a) => s + yearly(a), 0))} a year (${batch.map((a) => `${a.symbol} ${ratePct(a.aprPct)}%`).join(', ')}), and you can withdraw any time. Your wallet asks you to approve each step: one per token, plus a one-time Burrow registration if you are new there.`,
       intent: {
         action: 'supply_all',
         tokens: batch.map((a) => ({ token: a.token, approxUsd: approxUsdOf(a.usd) })),
