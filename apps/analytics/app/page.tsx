@@ -27,7 +27,6 @@ const TOKEN_KIND: Record<string, string> = {
   USDT: 'Stablecoin',
 };
 
-/** The allocation palette (mint-forward, then blue/amber/grey) shared by the hero bar and its legend. */
 import { PortfolioSwitch, portfolioOf } from '../components/PortfolioSwitch';
 import { ErrorState } from '../components/states';
 import {

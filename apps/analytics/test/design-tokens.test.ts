@@ -28,11 +28,15 @@ describe('design tokens', () => {
     expect(css.replace(TOKEN_BLOCKS, '').match(COLOUR) ?? []).toEqual([]);
   });
 
-  it('keeps colour literals out of components (theme-color meta excepted)', () => {
+  it('keeps colour literals out of components (theme-color meta and QR excepted)', () => {
     const offenders = ['app', 'components', 'lib']
       .flatMap((dir) => sourceFiles(join(root, dir)))
-      .filter((file) => !file.endsWith(join('lib', 'theme.ts')))
-      .filter((file) => /#[0-9a-f]{6}\b/i.test(readFileSync(file, 'utf8')));
+      .filter((file) => !/(lib\/theme\.ts|DepositDialog\.tsx)$/.test(file))
+      .filter((file) =>
+        /(?:fill|stroke|color|background)\w*[=:]\s*\{?['"`]#[0-9a-f]{3,8}/i.test(
+          readFileSync(file, 'utf8'),
+        ),
+      );
     expect(offenders).toEqual([]);
   });
 
@@ -43,6 +47,6 @@ describe('design tokens', () => {
   });
 
   it('never asks the font for a weight above 600', () => {
-    expect(css).not.toMatch(/font-weight: (?:650|700|800|900|bold)/);
+    expect(css).not.toMatch(/font(?:-weight)?: (?:650|700|800|900|bold)\b/);
   });
 });

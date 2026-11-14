@@ -943,12 +943,6 @@ tr.detail details[open] {
 .btn.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--liq) 8%, var(--bg-surface));
 }
-.btn:focus-visible,
-.tab:focus-visible,
-.nav-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -2535,10 +2529,6 @@ table.mini tr.total td {
   color: var(--text-1);
   border-color: var(--line-strong);
 }
-.theme-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 
 /* ------------------------------------------------------------------ one-click prepare preview (Phase 5) */
 .prepare {
@@ -2740,7 +2730,7 @@ table.mini tr.total td {
   box-shadow: var(--elev-1);
 }
 
-/* Hero: tinted gradient, accent hairline, airy. */
+/* Hero: airy, flat. */
 .hero {
   position: relative;
   padding: 32px;
@@ -2748,13 +2738,6 @@ table.mini tr.total td {
   background: var(--bg-surface);
   box-shadow: var(--elev-1);
   overflow: hidden;
-}
-.hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), transparent 70%);
 }
 .hero-value {
   font-size: 52px;
@@ -2795,11 +2778,6 @@ table.mini tr.total td {
   transform: translateY(-1px);
   box-shadow: var(--pop-shadow);
   opacity: 1;
-}
-.prepare .btn.primary,
-.rec .btn.primary {
-  background: var(--accent);
-  color: var(--bg-page);
 }
 
 /* ================================================================== SIGNAL TERMINAL (dark-first premium) ====
@@ -2896,15 +2874,6 @@ main.page {
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: var(--elev-1);
-}
-.hero-main::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: linear-gradient(180deg, var(--accent), transparent 70%);
 }
 .hero-main::after {
   content: '';
@@ -3183,14 +3152,21 @@ main.page {
 .btn.primary,
 .prepare .btn.primary,
 .rec .btn.primary {
-  background: var(--accent);
-  color: var(--bg-page);
+  background: var(--neutral-solid);
+  color: var(--neutral-ink);
   border: 0;
+}
+.prepare-sign .btn.primary {
+  background: var(--sign);
+  color: var(--sign-ink);
 }
 .btn.primary:hover:not(:disabled),
 .prepare .btn.primary:hover:not(:disabled) {
   transform: translateY(-1px);
   opacity: 1;
+}
+.prepare-sign .btn.primary:hover:not(:disabled) {
+  background: var(--sign-hover);
 }
 .btn.primary:disabled {
   background: var(--bg-raised);
@@ -3244,11 +3220,7 @@ main.page {
   top: 34px;
   bottom: 2px;
   width: 2px;
-  background: linear-gradient(
-    180deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent) 30%, transparent)
-  );
+  background: var(--line-strong);
 }
 .step-idx {
   position: relative;

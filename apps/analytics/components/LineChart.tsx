@@ -8,7 +8,7 @@ import { useMemo, useRef, useState, type PointerEvent } from 'react';
  */
 export interface Series {
   readonly name: string;
-  /** Categorical slot 1-3 (fixed order: blue, orange, aqua). */
+  /** Series slot 1-3, drawn in `--series-<slot>`. */
   readonly slot: 1 | 2 | 3;
   readonly points: readonly { readonly t: number; readonly v: number | null }[];
 }

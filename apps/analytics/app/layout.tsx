@@ -27,7 +27,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content={THEME_COLOR.dark} />
+        <meta name="theme-color" content={THEME_COLOR.dark} suppressHydrationWarning />
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>
