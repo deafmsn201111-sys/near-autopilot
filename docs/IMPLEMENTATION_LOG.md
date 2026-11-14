@@ -905,3 +905,17 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
 - UI: "Private AI · signed in TEE" / "Private AI · signature not verified" in the trace header; a verified mark
   and each reply id open that reply in NEAR AI's Verification Center (`#receipt=`), plus a copy button; the steps say "The AI"; `modelName()` removed. README Privacy section, D43.
 - Live: one GLM 5.3 Flash reply verified in 735 ms.
+
+## 2026-11-14 — Analysis panel: one focal verdict (#251)
+
+- `components/AnalysisPanel.tsx` replaces the AI trace panel on `/`: header (AI-ranked / Rules only chip, Run AI
+  analysis with fixed width, busy state and "Updated N ago"), a verdict tile + 28px sentence in a live region, the
+  strategy control (moved from above the hero into the panel), four agent finding cards, the "Code checked the AI"
+  strip and the five-step decision pipeline on an inset footer.
+- `lib/analysis-view.ts` (pure, tested): `verdictOf` (urgent → orange ⚠, open moves → violet count, a check that did
+  not finish → amber, else mint ✓) and `findingsOf`. Without an AI run the API has no per-agent line, so a card is
+  derived from the rule cards (warning → act, info → watch, none → passed) plus "no loan" / "no DCL position" for
+  not-applicable; after a run its sentence and pick chip come from the trace. A loan without a health factor is
+  "not valued", never "safe".
+- Run AI analysis is locked with its reason for a visitor who has not proved ownership (the API already refused).
+- Out: the suggestion cards themselves and an "all moves done" verdict belong to #252.
