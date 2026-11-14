@@ -816,3 +816,20 @@ every 1Click quote signature itself, so the proxy cannot forge a quote.
 **Consequences:** no new caps; the only server code on the deposit path is that pass-through proxy; our deposit quote endpoints have no UI any more.
 A failed non-1:1 swap may refund to the user's HOT balance, which the portfolio does not show (KNOWN_ISSUES). The kit
 popups take the page's design tokens at load (`pageTheme`).
+
+## D43 — Every AI reply's TEE signature is checked before the answer is shown; users see a privacy mark, not a model (#233)
+
+**Context:** D38 moved the analysis to a NEAR AI Cloud TEE model, but the privacy claim was not checked. NEAR AI
+signs each reply (`<model>:sha256(request):sha256(response)`, EIP-191) with a key its attestation report names.
+Live (14 Nov 2026): the model returns three reports with one `signing_address`, and a signature is ready within
+about a second.
+**Decision:** after the run, the API checks every reply of it (`TeeVerifier`): reports echo a fresh nonce, signature
+kind `provider_tee`, both hashes match our exact bytes, the recovered signer is an attested address (distinct
+addresses: several reports with one key are one key). Reports cached 1 h, refetched once on a signer mismatch. The
+check waits at most ~3 s (a 404 is retried); any failure is "unverified" with a fixed reason and the answer is still
+shown, labelled "Private AI" instead of "Private AI · signed in TEE". The result goes into `Analysis.run.privacy` and
+`llm_calls.privacy` (migration 0027). Users no longer see the model name (`modelName()` is gone); the mark links to
+`cloud.near.ai/verify?model=<id>` because that page cannot open one reply, and the panel lists the reply ids with a
+copy button. Quote checks (DCAP, RTMR3, MRCONFIGID, NVIDIA) stay out → KNOWN_ISSUES.
+**Consequences:** up to ~3 s more per fresh analysis (≈0.7 s measured). A gateway hiccup shows an unverified mark,
+never a false "signed".

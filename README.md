@@ -94,7 +94,8 @@ portfolios; for a connected wallet the server builds the unsigned cascade, `vali
 **Not done**
 
 - No server-side signing (by design) and no guard contract.
-- No TEE attestation and no counterparty-reputation service.
+- No counterparty-reputation service. The AI runs in a NEAR AI TEE and every reply's signature is checked against
+  the attested key, but the hardware quote itself is left to the official verifier (see Privacy below).
 
 ### DeFi track: protect the position, refuse value-losing actions
 
@@ -268,10 +269,32 @@ minutes reuses the saved result, also across an API restart, with no model call.
 
 **Private inference.** The model is `z-ai/glm-5.3-flash` on [NEAR AI Cloud](https://cloud.near.ai), served inside a
 TEE (Intel TDX + NVIDIA confidential computing): the prompt with the wallet's positions and strategy is processed in an
-enclave that neither we nor the GPU operator can read, and NEAR AI signs every reply with the enclave key (anyone can
-check one at [cloud.near.ai/verify](https://cloud.near.ai/verify)). Our server does not verify those signatures yet
-(#233). There is no fallback to a model outside a TEE: on any failure the page shows the labelled rule-based list. Why
-this model, with the measurement: [D38](docs/DECISIONS.md).
+enclave that neither we nor the GPU operator can read, and NEAR AI signs every reply with the enclave key. There is no
+fallback to a model outside a TEE: on any failure the page shows the labelled rule-based list. Why this model, with the
+measurement: [D38](docs/DECISIONS.md).
+
+**Privacy: what is checked, and what is not** (#233, [D43](docs/DECISIONS.md)). After every AI analysis, and before
+the page shows it, the API (`apps/api/src/llm/tee-verifier.ts`):
+
+1. fetches the model's attestation reports (`GET /v1/attestation/report?model=…&signing_algo=ecdsa&nonce=<32 random
+bytes>`, `x-no-aliasing: true`), requires every report to echo our fresh nonce and keeps their `signing_address`
+   (instances of a model share one key, so several reports are one key). Cached for an hour, refetched once when a
+   signer does not match;
+2. fetches the signature of every model reply in the run (`GET /v1/signature/<chat_id>?signing_algo=ecdsa`), requires
+   `signature_kind: provider_tee` and the signed text to be exactly `<model>:sha256(our request bytes):sha256(the
+response bytes we received)`;
+3. recovers the EIP-191 signer (secp256k1) and requires it to be an attested key.
+
+Every reply passes → the "How the AI got here" header says **Private AI · signed in TEE**; anything else (no signature
+within ~3 s, wrong hash, unknown signer, a nonce not echoed, the gateway down) → **Private AI** with the reason on hover,
+and the cards are still shown. The mark links to the model's attestation at
+[cloud.near.ai/verify](https://cloud.near.ai/verify) and the panel lists the reply ids, so anyone can fetch and check
+the same signatures (`curl -H "authorization: Bearer $KEY" https://cloud-api.near.ai/v1/signature/<id>?signing_algo=ecdsa`).
+The result is stored with the `llm_calls` row. Users never see the model's name; it stays in the admin spend split and
+in this README. **Not checked in our code:** the Intel TDX quote (DCAP), the RTMR3 event-log replay, MRCONFIGID, and
+the NVIDIA GPU evidence: that is what the official
+[nearai-cloud-verifier](https://github.com/nearai/nearai-cloud-verifier) does. So "signed in TEE" means "signed by
+the key NEAR AI's attestation names for this model", not "we verified the hardware quote ourselves".
 
 **Spend cap and what we log.** The model is `z-ai/glm-5.3-flash` (anything else stops the API at start). Before each model call the server checks today's spend (UTC day) plus that call's worst case against
 `LLM_DAILY_CAP_USD` (default $5; a value in the `llm_settings` table overrides it); over it, no call is made and the
