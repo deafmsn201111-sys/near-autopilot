@@ -15,6 +15,7 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 WORKDIR /repo
 COPY --from=build --chown=node:node /repo/apps/analytics/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/analytics/.next/static ./apps/analytics/.next/static
+COPY --from=build --chown=node:node /repo/apps/analytics/public ./apps/analytics/public
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
