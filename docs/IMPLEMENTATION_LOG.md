@@ -543,7 +543,7 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   `explorerUrl` is never used (the UI links nearblocks.io itself).
 - `GET /v1/deposit/status/:id`: our quote id → stored deposit address → 1Click; answers cached 5 s per quote in a
   `BoundedMap` (1000 quotes), concurrent callers share one call; `deadlinePassed` from the server clock. The latest
-  status and its time go to `deposit_quotes.status` / `status_at` (migration 0021) when it changes.
+  status and its time go to `deposit_quotes.status` / `status_at` (migration 0022) when it changes.
 - `apps/analytics`: `/api/deposit/status/[id]` proxy with its own `consume('deposit-status')` limit (60 per visitor,
   10 000 overall per 10 min); `poll()` takes a schedule (`everyMs` as a function of ticks done); the deposit dialog
   polls 5 s → ×1.5 → 30 s, at most 120 checks, stops at `SUCCESS`/`REFUNDED`/`FAILED` or, while `PENDING_DEPOSIT`,
