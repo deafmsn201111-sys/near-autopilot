@@ -186,10 +186,16 @@ export type DepositTransfer = z.infer<typeof depositTransfer>;
 
 /**
  * The transfer the API built for this quote, refused unless it is exactly the quote on screen: chain, asset, decimals,
- * amount and deposit address. Only then may the user's origin wallet be asked to send it.
+ * amount and deposit address. Only then may the user's origin wallet be asked to send it. The API hands a quote's
+ * transfer out once; `retry` asks again after the wallet rejected the send.
  */
-export async function loadDepositTransfer(q: DepositQuote): Promise<Result<DepositTransfer>> {
-  const r = await call<unknown>(`/api/deposit/transfer/${encodeURIComponent(q.id)}`);
+export async function loadDepositTransfer(
+  q: DepositQuote,
+  retry = false,
+): Promise<Result<DepositTransfer>> {
+  const r = await call<unknown>(
+    `/api/deposit/transfer/${encodeURIComponent(q.id)}${retry ? '?retry=1' : ''}`,
+  );
   if (!r.ok) return r;
   const parsed = depositTransfer.safeParse(r.data);
   const t = parsed.success ? parsed.data : null;

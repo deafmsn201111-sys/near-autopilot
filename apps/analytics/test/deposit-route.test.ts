@@ -141,9 +141,9 @@ describe('GET /api/deposit/transfer/:id', () => {
     vi.resetModules();
     tryApi.mockClear();
   });
-  const get = async (id: string) => {
+  const get = async (id: string, query = '') => {
     const { GET } = await import('../app/api/deposit/transfer/[id]/route');
-    return GET(new Request(`http://localhost/api/deposit/transfer/${id}`), {
+    return GET(new Request(`http://localhost/api/deposit/transfer/${id}${query}`), {
       params: Promise.resolve({ id }),
     });
   };
@@ -151,6 +151,13 @@ describe('GET /api/deposit/transfer/:id', () => {
   it('forwards only our quote id to the API', async () => {
     expect((await get('dq_1')).status).toBe(200);
     expect(tryApi).toHaveBeenCalledWith('/v1/deposit/transfer/dq_1');
+  });
+
+  it('forwards a retry after a wallet rejection, and nothing else from the query', async () => {
+    await get('dq_1', '?retry=1&x=y');
+    await get('dq_1', '?retry=yes');
+    expect(tryApi).toHaveBeenNthCalledWith(1, '/v1/deposit/transfer/dq_1?retry=1');
+    expect(tryApi).toHaveBeenNthCalledWith(2, '/v1/deposit/transfer/dq_1');
   });
 
   it('answers 400 to an id that is not ours without calling the API', async () => {

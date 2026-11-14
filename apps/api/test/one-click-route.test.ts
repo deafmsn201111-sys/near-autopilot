@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   paymentToken,
   toBaseUnits,
@@ -77,6 +77,7 @@ function setup(
     solanaFees?: DepositDeps['solanaFees'];
     find?: DepositDeps['store']['find'];
     status?: DepositDeps['oneClick']['status'];
+    issueTransfer?: DepositDeps['store']['issueTransfer'];
   } = {},
 ) {
   const saved: StoredDepositQuote[] = [];
@@ -96,6 +97,7 @@ function setup(
       find: o.find ?? unused,
       saveStatus: unused,
       unfinished: unused,
+      issueTransfer: o.issueTransfer ?? (async () => true),
     },
     destinationTokens: ['wrap.near', USDC_NEAR_ID, 'usdt.tether-token.near'],
     newId: () => 'dq_1',
@@ -473,6 +475,7 @@ describe('POST /v1/deposit/quote', () => {
           find: unused,
           saveStatus: unused,
           unfinished: unused,
+          issueTransfer: unused,
         },
         destinationTokens: [USDC_NEAR_ID],
       },
@@ -552,11 +555,18 @@ describe('GET /v1/deposit/transfer/:id', () => {
     row: ReturnType<typeof stored> | null,
     id = 'dq_1',
     status: DepositDeps['oneClick']['status'] = live('PENDING_DEPOSIT'),
+    issueTransfer?: DepositDeps['store']['issueTransfer'],
+    query = '',
   ) => {
-    const { app } = setup({ tokens, find: async () => row, status });
+    const { app } = setup({
+      tokens,
+      find: async () => row,
+      status,
+      ...(issueTransfer ? { issueTransfer } : {}),
+    });
     return app.inject({
       method: 'GET',
-      url: `/v1/deposit/transfer/${id}`,
+      url: `/v1/deposit/transfer/${id}${query}`,
       headers: { authorization: `Bearer ${API_TOKEN}` },
     });
   };
@@ -638,5 +648,38 @@ describe('GET /v1/deposit/transfer/:id', () => {
     expect((await get(stored({ deadline: new Date(NOW.getTime() + 121_000) }))).statusCode).toBe(
       200,
     );
+  });
+
+  it('hands out a quote transfer once: a second request is refused unless it retries a wallet rejection', async () => {
+    const issued = new Set<string>();
+    const calls: [string, Date, boolean][] = [];
+    const issueTransfer: DepositDeps['store']['issueTransfer'] = async (id, at, retry) => {
+      calls.push([id, at, retry]);
+      if (issued.has(id) && !retry) return false;
+      issued.add(id);
+      return true;
+    };
+    expect((await get(stored(), 'dq_1', undefined, issueTransfer)).statusCode).toBe(200);
+    const again = await get(stored(), 'dq_1', undefined, issueTransfer);
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toEqual({
+      error:
+        'This transfer was already sent to a wallet, maybe from another tab. Check your wallet; do not send to this address again.',
+    });
+    expect((await get(stored(), 'dq_1', undefined, issueTransfer, '?retry=1')).statusCode).toBe(
+      200,
+    );
+    expect(calls).toEqual([
+      ['dq_1', NOW, false],
+      ['dq_1', NOW, false],
+      ['dq_1', NOW, true],
+    ]);
+  });
+
+  it('marks nothing as handed out when the transfer is refused before it is built', async () => {
+    const issueTransfer = vi.fn(async () => true);
+    await get(stored({ status: 'SUCCESS' }), 'dq_1', undefined, issueTransfer);
+    await get(stored({ originAsset: 'nep141:zzz.omft.near' }), 'dq_1', undefined, issueTransfer);
+    expect(issueTransfer).not.toHaveBeenCalled();
   });
 });
