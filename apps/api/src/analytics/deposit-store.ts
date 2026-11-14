@@ -1,8 +1,20 @@
-import { depositQuotes, desc, eq, gte, lt, type Database } from '@near-autopilot/db';
+import {
+  and,
+  depositQuotes,
+  desc,
+  eq,
+  gte,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  type Database,
+} from '@near-autopilot/db';
 import type { SwapStatus } from '../gateway/one-click-deposit';
 import type { AdminDepositRow, AdminDepositStore } from './admin-deposits';
-import type { DepositQuoteStore, StoredDepositQuote } from './deposit';
+import type { DepositQuoteStore, StoredDepositQuote, UnfinishedQuote } from './deposit';
 
+const FINAL: SwapStatus[] = ['SUCCESS', 'REFUNDED', 'FAILED'];
 const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** PostgreSQL store of real 1Click deposit quotes (migration 0020). */
@@ -26,6 +38,25 @@ export class DrizzleDepositQuoteStore implements DepositQuoteStore, AdminDeposit
       .update(depositQuotes)
       .set({ status, statusAt: at })
       .where(eq(depositQuotes.id, id));
+  }
+
+  async unfinished(since: Date): Promise<UnfinishedQuote[]> {
+    return this.db
+      .select({
+        id: depositQuotes.id,
+        createdAt: depositQuotes.createdAt,
+        statusAt: depositQuotes.statusAt,
+      })
+      .from(depositQuotes)
+      .where(
+        or(
+          and(
+            or(isNull(depositQuotes.status), eq(depositQuotes.status, 'PENDING_DEPOSIT')),
+            gte(depositQuotes.deadline, since),
+          ),
+          notInArray(depositQuotes.status, [...FINAL, 'PENDING_DEPOSIT']),
+        ),
+      );
   }
 
   async recent(since: Date): Promise<AdminDepositRow[]> {

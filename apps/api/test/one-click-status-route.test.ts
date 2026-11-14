@@ -66,6 +66,7 @@ function setup(
         id.startsWith('dq_')
           ? { ...stored(id), status: statuses.findLast((x) => x.id === id)?.status ?? null }
           : null,
+      unfinished: async () => [],
       saveStatus: async (id, status, at) => {
         if (o.failSave) throw new Error('db down');
         statuses.push({ id, status, at });
@@ -132,7 +133,7 @@ describe('GET /v1/deposit/status/:id', () => {
     expect(asked).toHaveLength(2);
   });
 
-  it('saves the latest status and its time only when it changes', async () => {
+  it('saves the status and the check time on every check', async () => {
     let status: SwapStatus = 'PENDING_DEPOSIT';
     const { get, statuses, advance } = setup(async () => report(status));
     await get('dq_1');
@@ -143,6 +144,10 @@ describe('GET /v1/deposit/status/:id', () => {
     await get('dq_1');
     expect(statuses.map((s) => [s.status, s.at.toISOString()])).toEqual([
       ['PENDING_DEPOSIT', '2026-11-13T10:01:00.000Z'],
+      [
+        'PENDING_DEPOSIT',
+        new Date(Date.parse('2026-11-13T10:01:00Z') + STATUS_CACHE_MS).toISOString(),
+      ],
       [
         'PROCESSING',
         new Date(Date.parse('2026-11-13T10:01:00Z') + 2 * STATUS_CACHE_MS).toISOString(),
