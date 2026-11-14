@@ -212,16 +212,29 @@ describe('sendOriginTransfer', () => {
   });
 });
 
-describe('isUserRejection', () => {
-  it('is true only when the wallet says the user declined, so nothing was sent', async () => {
+describe('sendFailure', () => {
+  it('is declined when the wallet says the user declined', async () => {
     const m = await fresh();
-    expect(m.isUserRejection({ code: 4001, message: 'x' })).toBe(true);
-    expect(m.isUserRejection(new Error('User rejected the request.'))).toBe(true);
-    expect(m.isUserRejection(new Error('Transaction cancelled by user'))).toBe(true);
-    expect(m.isUserRejection(new Error('User denied transaction signature'))).toBe(true);
-    expect(m.isUserRejection(new Error('Request timed out'))).toBe(false);
-    expect(m.isUserRejection(new Error('Transaction simulation failed'))).toBe(false);
-    expect(m.isUserRejection('nope')).toBe(false);
+    expect(m.sendFailure({ code: 4001, message: 'x' })).toBe('declined');
+    expect(m.sendFailure(new Error('User rejected the request.'))).toBe('declined');
+    expect(m.sendFailure(new Error('Transaction cancelled by user'))).toBe('declined');
+    expect(m.sendFailure(new Error('User denied transaction signature'))).toBe('declined');
+  });
+
+  it('is not-sent for a balance or gas-estimate failure, which comes before any broadcast', async () => {
+    const m = await fresh();
+    expect(m.sendFailure(new Error('insufficient funds for gas * price + value'))).toBe('not-sent');
+    expect(
+      m.sendFailure(new Error('execution reverted: ERC20: transfer amount exceeds balance')),
+    ).toBe('not-sent');
+    expect(m.sendFailure(new Error('Insufficient balance'))).toBe('not-sent');
+  });
+
+  it('is unknown for anything else: the transfer may have gone out', async () => {
+    const m = await fresh();
+    expect(m.sendFailure(new Error('Request timed out'))).toBe('unknown');
+    expect(m.sendFailure(new Error('Transaction simulation failed'))).toBe('unknown');
+    expect(m.sendFailure('nope')).toBe('unknown');
   });
 });
 

@@ -138,17 +138,19 @@ export async function sendOriginTransfer(t: DepositTransfer): Promise<string> {
 }
 
 /**
- * The user declined in the wallet (EIP-1193 4001, or the wallet's own words), so nothing was broadcast. Any other
- * error may come after the broadcast: the dialog then never offers to send that quote again.
+ * Why a wallet send threw. `declined`: the user said no (EIP-1193 4001, or the wallet's words). `not-sent`: a balance
+ * or gas-estimate failure, which comes before any broadcast. `unknown`: anything else may come after the broadcast, so
+ * the dialog never offers to send that quote again.
  */
-export function isUserRejection(e: unknown): boolean {
-  if (typeof e !== 'object' || e === null) return false;
+export function sendFailure(e: unknown): 'declined' | 'not-sent' | 'unknown' {
+  if (typeof e !== 'object' || e === null) return 'unknown';
   const { code, message } = e as { code?: unknown; message?: unknown };
-  return (
-    code === 4001 ||
-    (typeof message === 'string' &&
-      /user (rejected|denied|cancel)|cancell?ed by user/i.test(message))
-  );
+  const text = typeof message === 'string' ? message : '';
+  if (code === 4001 || /user (rejected|denied|cancel)|cancell?ed by user/i.test(text))
+    return 'declined';
+  if (/insufficient (funds|balance)|exceeds balance|execution reverted/i.test(text))
+    return 'not-sent';
+  return 'unknown';
 }
 
 export async function disconnectOriginWallet(wallet: OriginWallet): Promise<void> {

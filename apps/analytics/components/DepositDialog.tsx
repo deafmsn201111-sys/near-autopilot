@@ -27,7 +27,7 @@ import { shortHash } from '../lib/activity';
 import {
   connectOriginWallet,
   disconnectOriginWallet,
-  isUserRejection,
+  sendFailure,
   sendOriginTransfer,
   watchOriginWallets,
   type OriginWallet,
@@ -541,8 +541,12 @@ function WalletSend({
         setHash(await sendOriginTransfer(t.data));
       });
     } catch (e) {
-      if (isUserRejection(e)) setError('You declined in your wallet. Nothing was sent.');
-      else setUnsure(e instanceof Error ? e.message.slice(0, 200) : '');
+      const why = e instanceof Error ? e.message.slice(0, 200) : '';
+      const failure = sendFailure(e);
+      if (failure === 'declined') setError('You declined in your wallet. Nothing was sent.');
+      else if (failure === 'not-sent')
+        setError(`Your wallet could not send it: ${why}. Nothing was sent; check your balance.`);
+      else setUnsure(why);
     } finally {
       setBusy(false);
     }
