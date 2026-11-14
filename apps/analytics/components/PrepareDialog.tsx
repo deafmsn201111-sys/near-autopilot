@@ -16,6 +16,7 @@ import { confirmStep } from '../lib/events-client';
 import { mayContinue, progressFooter, stepAfterCheck, type StepState } from '../lib/sign-progress';
 import { withoutModal } from '../lib/modal';
 import { signCascade } from '../lib/wallet-sign';
+import { stageAfterSign, type CardStage } from '../lib/suggestions';
 import { SignProgress } from './SignProgress';
 import { Button, FactsStrip, SignButton } from './primitives';
 
@@ -41,12 +42,19 @@ export function PrepareDialog({
   label,
   signingEnabled = false,
   once = false,
+  variant = 'primary',
+  onStage,
+  onSheetClosed,
 }: {
   request: PrepareRequest;
   label: string;
   signingEnabled?: boolean;
   /** One payment (a 1Click withdrawal): after one signing attempt it is never offered to sign or build again. */
   once?: boolean;
+  variant?: 'primary' | 'secondary';
+  /** Where the signing stands, for the card around it. The card keeps this dialog mounted, so its sheet stays open. */
+  onStage?: (stage: CardStage) => void;
+  onSheetClosed?: () => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState<'idle' | 'loading' | 'signing' | 'updating'>('idle');
@@ -77,11 +85,14 @@ export function PrepareDialog({
     const setStep = (i: number, s: StepState) =>
       setProgress((p) => p && { ...p, steps: p.steps.map((x, j) => (j === i ? s : x)) });
     let at = 0;
+    let confirmed = true;
+    let through = 0;
     const r = await withoutModal(dialog, () =>
       signCascade(transactions, request.account, signingEnabled, {
         onSigning: (i) => {
           at = i;
           setStep(i, { kind: 'signing' });
+          onStage?.({ kind: 'signing', step: i + 1, of: transactions.length });
         },
         onSent: async (i, hash) => {
           setStep(i, { kind: 'checking', hash });
@@ -89,6 +100,8 @@ export function PrepareDialog({
             ? await confirmStep({ account: request.account, cascadeId, step: i, hash })
             : ({ status: 'unknown', reason: 'This server cannot confirm steps.' } as const);
           const next = stepAfterCheck(hash, result);
+          if (next.kind !== 'done') confirmed = false;
+          if (mayContinue(next)) through += 1;
           setStep(i, next);
           return mayContinue(next);
         },
@@ -96,13 +109,14 @@ export function PrepareDialog({
     );
     if (!r.ok && r.hashes.length === at)
       setStep(at, { kind: 'stopped', reason: r.reason ?? 'declined in the wallet' });
+    onStage?.(stageAfterSign(r, { confirmed, through, steps: transactions.length }));
     // A wallet may broadcast and still fail or return no hash: any attempt spends a one-payment cascade.
     if (once) {
       setSpent(r.hashes.length > 0 ? 'sent' : 'tried');
       setCascade(null);
     }
-    if (r.ok) {
-      // The transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
+    if (r.hashes.length > 0) {
+      // Some or all transactions are on-chain: refresh the portfolio until the balances, allocation and this recommendation
       // show the new state (the card updates or disappears).
       setState('updating');
       setCascade(null); // collapse the (now spent) preview; the user can prepare a fresh one if still suggested
@@ -121,7 +135,7 @@ export function PrepareDialog({
         </p>
       ) : (
         <Button
-          variant="primary"
+          variant={variant}
           size="sm"
           onClick={() => void run()}
           disabled={state === 'loading'}
@@ -259,7 +273,10 @@ export function PrepareDialog({
               ? 'Done. Updating your portfolio…'
               : progressFooter(progress.steps, state === 'signing')
           }
-          onClose={() => setProgress(null)}
+          onClose={() => {
+            setProgress(null);
+            onSheetClosed?.();
+          }}
         />
       )}
     </div>
