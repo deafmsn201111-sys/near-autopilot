@@ -257,6 +257,8 @@ describe('portfolioRecommendations', () => {
       expect(marketRate({ status: 'OK', supplyApr: '0.0416' }, 'netSupplyApr')).toBe(0.0416);
       expect(marketRate({ status: 'OK', borrowApr: null }, 'borrowApr')).toBeNull();
       expect(marketRate(undefined, 'borrowApr')).toBeNull();
+      const stale = { ...market, reasons: [{ code: 'STALE_YIELD_DATA' }] };
+      expect(marketRate(stale, 'borrowApr')).toBeNull();
     });
 
     it('says nothing about the loan above the watch line', () => {

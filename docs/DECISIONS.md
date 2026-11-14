@@ -572,11 +572,14 @@ swap → repay builder needs an allowlisted route, and `rhea.pools` had only wNE
 simple pools are empty; RATED_SWAP pool 4179 holds USDt / USDC / USDT.e / USDC.e (~$105k, 2 bp fee; 1,000 USDC →
 1,000.5 USDT.e on 14 Nov).
 **Decision:** `config/market.json` lists pool 4179 three times as exact pairs: USDC↔USDt, USDC↔USDT.e, USDt↔USDT.e.
-This widens the swap routes the account view may quote and build (swap → repay, the Guardian), not any cap:
-`validateCascade` is unchanged (its pool allowlist only gates `add_liquidity`, which also refuses a non-SIMPLE pool),
-the swap keeps its slippage floor from a fresh `get_return` quote, and the policy token allowlist is untouched.
-Burrow's borrow rate is shown whenever Burrow reports it, no longer only when the supply side of that market passes
-its liquidity / price / freshness checks.
-**Consequences:** The same entries reach the collector (venue quotes, demo agents' routable pairs, the yield
-allowlist flag of pool 4179); the demo policy still blocks USDT.e, which is not in `policy.allowedTokens`. A loan in
-any of the three stablecoins can be repaid from either of the other two in one cascade.
+This widens the swap routes the account view may quote and build (swap → repay, the Guardian). No cap changes:
+`validateCascade`'s code is unchanged; its `allowedPools` (built from this list, checked only for `add_liquidity`) now
+also holds 4179, but the `add_liquidity` prepare route refuses any non-SIMPLE pool before a cascade is built. The swap
+keeps its slippage floor from a fresh `get_return` quote; the policy token allowlist is untouched. Price impact is
+shown only for a SIMPLE pool (a stable pool's reserve ratio is not its price). Burrow's borrow rate is shown whenever
+Burrow reports it and the block is fresh, no longer only when the supply side passes its liquidity / price checks.
+**Consequences:** The same entries reach the collector (venue quotes, the yield allowlist flag of 4179, and the demo
+agents' routable pairs: a demo may now propose USDC↔USDt, which its policy allows, dry-run only; USDT.e stays blocked,
+it is not in `policy.allowedTokens`). The pool is listed once per pair because the registry models two-token pools
+(ponytail: a `tokens[]` entry once a fourth stablecoin route is needed). A loan in any of the three stablecoins can be
+repaid from either of the other two in one cascade.
