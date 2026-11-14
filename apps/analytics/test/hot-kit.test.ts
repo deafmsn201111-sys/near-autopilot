@@ -140,6 +140,78 @@ describe('kit wallet type numbers', () => {
   });
 });
 
+describe('sendOriginTransfer', () => {
+  const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const transfer = (chain: string, contractAddress: string | null, decimals = 6) => ({
+    quoteId: 'dq_1',
+    chain,
+    receiver: 'DEPOSIT',
+    amount: '1000000',
+    token: { assetId: 'a', blockchain: chain, symbol: 'X', decimals, contractAddress },
+  });
+  type Sent = {
+    token: { chain: unknown; address: string; decimals: number };
+    receiver: string;
+    amount: bigint;
+  };
+  const wallet = (w: { type: number; address: string }, sent: Sent[]) => ({
+    ...w,
+    transfer: async (args: Sent) => {
+      sent.push(args);
+      return '0xhash';
+    },
+  });
+  const sentBy = async (t: ReturnType<typeof transfer>) => {
+    const m = await fresh();
+    const sent: Sent[] = [];
+    fake.state.wallets = [wallet(EVM, sent), wallet(SOL, sent)];
+    const hash = await m.sendOriginTransfer(t);
+    const [s] = sent;
+    return {
+      hash,
+      sent: sent.length,
+      chain: s?.token.chain,
+      address: s?.token.address,
+      receiver: s?.receiver,
+      amount: s?.amount,
+    };
+  };
+
+  it('asks the EVM wallet for an ERC-20 or a native transfer on the quoted network, in base units', async () => {
+    expect(await sentBy(transfer('base', BASE_USDC))).toEqual({
+      hash: '0xhash',
+      sent: 1,
+      chain: 8453,
+      address: BASE_USDC,
+      receiver: 'DEPOSIT',
+      amount: 1_000_000n,
+    });
+    expect(await sentBy(transfer('arb', null, 18))).toMatchObject({
+      chain: 42161,
+      address: 'native',
+    });
+    expect(await sentBy(transfer('eth', null, 18))).toMatchObject({ chain: 1, address: 'native' });
+  });
+
+  it('asks the Solana wallet for an SPL or a native SOL transfer', async () => {
+    expect(await sentBy(transfer('sol', SOL_USDC))).toMatchObject({
+      chain: 'sol',
+      address: SOL_USDC,
+    });
+    expect(await sentBy(transfer('sol', null, 9))).toMatchObject({
+      chain: 'sol',
+      address: 'native',
+    });
+  });
+
+  it('refuses without a connected wallet of that chain, and for Bitcoin', async () => {
+    const m = await fresh();
+    await expect(m.sendOriginTransfer(transfer('base', BASE_USDC))).rejects.toThrow(/Connect/);
+    await expect(m.sendOriginTransfer(transfer('btc', null, 8))).rejects.toThrow();
+  });
+});
+
 describe('kit load failure', () => {
   it('connect resolves null and the next call retries the load', async () => {
     const m = await fresh();

@@ -3,7 +3,10 @@ import {
   defaultDestination,
   defaultOrigin,
   describeStatus,
+  explorerTxUrl,
   formatUnits,
+  loadDepositTransfer,
+  walletChainOf,
   loadDepositIncidents,
   loadDepositStatus,
   searchTokens,
@@ -282,5 +285,79 @@ describe('searchTokens', () => {
 
   it('keeps the whole list for an empty query', () => {
     expect(searchTokens(list, '')).toEqual(list);
+  });
+});
+
+describe('loadDepositTransfer', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const transfer = {
+    quoteId: 'dq_1',
+    chain: 'eth',
+    receiver: '0xdeposit',
+    amount: '50000000',
+    token: {
+      assetId: 'nep141:eth-usdc',
+      blockchain: 'eth',
+      symbol: 'USDC',
+      decimals: 6,
+      contractAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+    },
+  };
+  const serve = (body: unknown, status = 200) =>
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(body), { status }));
+
+  it('returns the server transfer when it is exactly the quote on screen', async () => {
+    serve(transfer);
+    expect(await loadDepositTransfer(quote)).toEqual({ ok: true, data: transfer });
+  });
+
+  it('refuses one that differs from the quote in chain, asset, amount or address', async () => {
+    for (const bad of [
+      { ...transfer, quoteId: 'dq_2' },
+      { ...transfer, chain: 'base', token: { ...transfer.token, blockchain: 'base' } },
+      { ...transfer, receiver: '0xattacker' },
+      { ...transfer, amount: '50000001' },
+      { ...transfer, token: { ...transfer.token, assetId: 'nep141:eth.omft.near' } },
+      { ...transfer, token: { ...transfer.token, decimals: 18 } },
+      { ...transfer, token: { ...transfer.token, blockchain: 'base' } },
+      { ...transfer, amount: '5e7' },
+    ]) {
+      serve(bad);
+      expect((await loadDepositTransfer(quote)).ok).toBe(false);
+    }
+  });
+
+  it('passes the server refusal through', async () => {
+    serve({ error: 'This quote has expired. Get a new one.' }, 409);
+    expect(await loadDepositTransfer(quote)).toEqual({
+      ok: false,
+      error: 'This quote has expired. Get a new one.',
+    });
+  });
+});
+
+describe('walletChainOf', () => {
+  it('maps EVM chains and Solana to the wallet that sends there; Bitcoin has none', () => {
+    expect(['eth', 'base', 'arb', 'sol', 'btc', 'x'].map(walletChainOf)).toEqual([
+      'evm',
+      'evm',
+      'evm',
+      'solana',
+      null,
+      null,
+    ]);
+  });
+});
+
+describe('explorerTxUrl', () => {
+  it('links the origin chain explorer, only for a hash of that chain', () => {
+    const evm = `0x${'ab'.repeat(32)}`;
+    const sol = '5'.repeat(88);
+    expect(explorerTxUrl('base', evm)).toBe(`https://basescan.org/tx/${evm}`);
+    expect(explorerTxUrl('eth', evm)).toBe(`https://etherscan.io/tx/${evm}`);
+    expect(explorerTxUrl('arb', evm)).toBe(`https://arbiscan.io/tx/${evm}`);
+    expect(explorerTxUrl('sol', sol)).toBe(`https://solscan.io/tx/${sol}`);
+    expect(explorerTxUrl('sol', evm)).toBeNull();
+    expect(explorerTxUrl('base', 'javascript:alert(1)')).toBeNull();
   });
 });

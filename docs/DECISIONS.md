@@ -626,3 +626,23 @@ holds the key.
 **Consequences:** HOT Kit adds ~1.1 MB of lazy chunks (the core chunk ~110 kB gzip) to the deposit dialog only. The
 kit adds no signing path in this step; #126 decides where the origin-chain transfer lives and extends
 `test/signing-lock.test.ts`.
+
+## D34 — A deposit may be sent from the user's own EVM / Solana wallet, built from the stored quote (#126)
+
+**Context:** #126. Sending a 1Click deposit by hand (copy the address, type the amount) is where money gets lost. HOT
+Kit (D33) can ask the connected EVM or Solana wallet for a transfer. That is signing on a non-NEAR chain, which the
+"signing only in the user's wallet" rule did not cover, and `validateCascade` checks NEAR cascades only.
+**Decision:** the user's own origin-chain wallet may be asked for exactly one kind of transaction: the transfer of a
+stored 1Click quote. `GET /v1/deposit/transfer/:id` rebuilds it from our `deposit_quotes` row, never from the browser:
+chain, token (native by its exact 1Click asset id, else the contract `paymentToken` names), `amountIn` in base units
+and the deposit address, which must be an address of that chain. It refuses (409) a quote past its deadline, one
+whose stored status is anything but unpaid, Bitcoin and any asset it cannot name. The browser refuses the answer
+unless it is exactly the quote on screen (id, chain, asset, decimals, amount, deposit address), and `lib/hot-kit.ts`
+refuses again when the kit would read the token as another network or contract; only then does it call the kit's
+`wallet.transfer` (EVM: the kit switches the network and refuses to send on another one). The user signs in their
+wallet; the server never sees a key. `test/signing-lock.test.ts` keeps `.transfer(` / `sendTransaction` /
+`signIntents` to that one call in `lib/hot-kit.ts`. The connected wallet of the chosen chain fills the refund address
+until the user types another; the server still validates it. The QR / manual path stays for every quote.
+**Consequences:** no new caps: the amount and receiver are the quote's, which the user saw and 1Click verified. After
+a send the button is replaced by the transaction link, so one quote is not paid twice from the dialog; the existing
+status polling follows the deposit. Bitcoin and TRON wallets stay manual (stretch).

@@ -1,6 +1,7 @@
 'use client';
 import type { HotKit } from '@hot-labs/kit';
 import type { OmniWallet } from '@hot-labs/kit/core';
+import { walletChainOf, type DepositTransfer } from './deposit';
 
 /**
  * ORIGIN-CHAIN WALLETS through HOT Kit (@hot-labs/kit): EVM and Solana only, for the deposit dialog. The NEAR wallet
@@ -99,6 +100,41 @@ export async function connectOriginWallet(chain: OriginChain): Promise<OriginWal
   } catch {
     return null;
   }
+}
+
+const EXPECTED_CHAIN: Record<string, number | string> = {
+  eth: 1,
+  base: 8453,
+  arb: 42161,
+  sol: 'sol',
+};
+
+/**
+ * Asks the connected origin wallet to send exactly `t` (from loadDepositTransfer, already matched to the quote); the
+ * wallet shows it and the user signs there. Resolves with the transaction hash. Throws before asking the wallet when
+ * the kit would read the token as another network or contract than the transfer names.
+ */
+export async function sendOriginTransfer(t: DepositTransfer): Promise<string> {
+  const chain = walletChainOf(t.chain);
+  if (!chain) throw new Error('Send this deposit manually.');
+  const [k, { Token }] = await Promise.all([load(), import('@hot-labs/kit/core')]);
+  const w = k.wallets.find((x) => CHAIN_BY_TYPE[x.type] === chain);
+  if (!w) throw new Error(`Connect your ${chain === 'evm' ? 'EVM' : 'Solana'} wallet first.`);
+  const token = new Token({
+    assetId: t.token.assetId,
+    blockchain: t.token.blockchain,
+    symbol: t.token.symbol,
+    decimals: t.token.decimals,
+    price: 0,
+    priceUpdatedAt: '',
+    ...(t.token.contractAddress && { contractAddress: t.token.contractAddress }),
+  });
+  if (
+    token.chain !== EXPECTED_CHAIN[t.chain] ||
+    token.address !== (t.token.contractAddress ?? 'native')
+  )
+    throw new Error('The wallet would send on another network. Send this deposit manually.');
+  return w.transfer({ token, receiver: t.receiver, amount: BigInt(t.amount) });
 }
 
 export async function disconnectOriginWallet(wallet: OriginWallet): Promise<void> {

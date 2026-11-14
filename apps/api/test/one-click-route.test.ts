@@ -74,6 +74,7 @@ function setup(
     shield?: DepositDeps['shield'];
     tokens?: OneClickToken[];
     solanaFees?: DepositDeps['solanaFees'];
+    find?: DepositDeps['store']['find'];
   } = {},
 ) {
   const saved: StoredDepositQuote[] = [];
@@ -90,7 +91,7 @@ function setup(
     store: {
       save: async (q) => void saved.push(q),
       purge: async () => undefined,
-      find: unused,
+      find: o.find ?? unused,
       saveStatus: unused,
       unfinished: unused,
     },
@@ -493,5 +494,118 @@ describe('POST /v1/deposit/quote', () => {
     expect(res.json()).toEqual({
       error: '1Click has no quote for this amount right now. Try a larger amount or another token.',
     });
+  });
+});
+
+describe('GET /v1/deposit/transfer/:id', () => {
+  const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const SOL_DEPOSIT = '7Np41oeYqPefeNQEHSv1UDhYrehxin3NStELsSKCT4K2';
+  const tokens: OneClickToken[] = [
+    ...TOKENS,
+    { assetId: 'nep141:base.omft.near', decimals: 18, blockchain: 'base', symbol: 'ETH' },
+    {
+      assetId: `nep141:base-${BASE_USDC}.omft.near`,
+      decimals: 6,
+      blockchain: 'base',
+      symbol: 'USDC',
+      contractAddress: BASE_USDC,
+    },
+    { assetId: 'nep141:sol.omft.near', decimals: 9, blockchain: 'sol', symbol: 'SOL' },
+    {
+      assetId: 'nep141:sol-5ce3bf3a.omft.near',
+      decimals: 6,
+      blockchain: 'sol',
+      symbol: 'USDC',
+      contractAddress: SOL_USDC,
+    },
+  ];
+  const stored = (over: Partial<StoredDepositQuote & { status: string | null }> = {}) => ({
+    id: 'dq_1',
+    createdAt: NOW,
+    accountId: 'alice.near',
+    originAsset: `nep141:base-${BASE_USDC}.omft.near`,
+    destinationAsset: `nep141:${USDC_NEAR_ID}`,
+    amountIn: '1000000',
+    amountOut: '999000',
+    minAmountOut: '989000',
+    refundTo: REFUND,
+    depositAddress: DEPOSIT,
+    deadline: new Date('2026-11-13T10:10:00Z'),
+    correlationId: 'c0ffee',
+    signature: 'ed25519:sig',
+    feeBps: 1,
+    status: null as string | null,
+    ...over,
+  });
+  const get = (row: ReturnType<typeof stored> | null, id = 'dq_1') => {
+    const { app } = setup({ tokens, find: async () => row });
+    return app.inject({
+      method: 'GET',
+      url: `/v1/deposit/transfer/${id}`,
+      headers: { authorization: `Bearer ${API_TOKEN}` },
+    });
+  };
+
+  it('builds an ERC-20 transfer of exactly the stored amount to the stored deposit address', async () => {
+    const res = await get(stored());
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      quoteId: 'dq_1',
+      chain: 'base',
+      receiver: DEPOSIT,
+      amount: '1000000',
+      token: {
+        assetId: `nep141:base-${BASE_USDC}.omft.near`,
+        blockchain: 'base',
+        symbol: 'USDC',
+        decimals: 6,
+        contractAddress: BASE_USDC,
+      },
+    });
+  });
+
+  it('builds a native EVM transfer with no contract', async () => {
+    const res = await get(stored({ originAsset: 'nep141:base.omft.near', amountIn: '10' }));
+    expect(res.json()).toMatchObject({
+      chain: 'base',
+      amount: '10',
+      token: { symbol: 'ETH', decimals: 18, contractAddress: null },
+    });
+  });
+
+  it('builds native SOL and SPL transfers to a Solana deposit address', async () => {
+    const sol = await get(
+      stored({ originAsset: 'nep141:sol.omft.near', depositAddress: SOL_DEPOSIT }),
+    );
+    expect(sol.json()).toMatchObject({
+      chain: 'sol',
+      receiver: SOL_DEPOSIT,
+      token: { symbol: 'SOL', contractAddress: null },
+    });
+    const spl = await get(
+      stored({ originAsset: 'nep141:sol-5ce3bf3a.omft.near', depositAddress: SOL_DEPOSIT }),
+    );
+    expect(spl.json()).toMatchObject({ chain: 'sol', token: { contractAddress: SOL_USDC } });
+  });
+
+  it('refuses an unknown quote, a past deadline, a quote already paid, Bitcoin and a bad deposit address', async () => {
+    expect((await get(null)).statusCode).toBe(404);
+    expect((await get(stored(), 'bad.id')).statusCode).toBe(400);
+    for (const row of [
+      stored({ deadline: new Date('2026-11-13T09:59:59Z') }),
+      stored({ status: 'KNOWN_DEPOSIT_TX' }),
+      stored({ status: 'SUCCESS' }),
+      stored({
+        originAsset: 'nep141:btc.omft.near',
+        depositAddress: 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      }),
+      stored({ depositAddress: SOL_DEPOSIT }),
+      stored({ originAsset: 'nep141:zzz.omft.near' }),
+    ]) {
+      const res = await get(row);
+      expect(res.statusCode).toBe(409);
+      expect(typeof res.json<{ error: unknown }>().error).toBe('string');
+    }
   });
 });

@@ -168,6 +168,69 @@ export async function loadDepositStatus(id: string): Promise<Result<DepositStatu
     : { ok: false, error: 'The deposit status could not be read. It is checked again shortly.' };
 }
 
+const depositTransfer = z.object({
+  quoteId: z.string(),
+  chain: z.string(),
+  receiver: z.string().min(1).max(100),
+  amount: z.string().regex(/^[1-9]\d{0,39}$/),
+  token: z.object({
+    assetId: z.string(),
+    blockchain: z.string(),
+    symbol: z.string().max(40),
+    decimals: z.number().int().min(0).max(36),
+    contractAddress: z.string().min(1).max(100).nullable(),
+  }),
+});
+/** `GET /api/deposit/transfer/:id`: what the origin wallet is asked to send, rebuilt by the API from the stored quote. */
+export type DepositTransfer = z.infer<typeof depositTransfer>;
+
+/**
+ * The transfer the API built for this quote, refused unless it is exactly the quote on screen: chain, asset, decimals,
+ * amount and deposit address. Only then may the user's origin wallet be asked to send it.
+ */
+export async function loadDepositTransfer(q: DepositQuote): Promise<Result<DepositTransfer>> {
+  const r = await call<unknown>(`/api/deposit/transfer/${encodeURIComponent(q.id)}`);
+  if (!r.ok) return r;
+  const parsed = depositTransfer.safeParse(r.data);
+  const t = parsed.success ? parsed.data : null;
+  const same =
+    t?.quoteId === q.id &&
+    t.chain === q.chain &&
+    t.token.blockchain === q.chain &&
+    t.receiver === q.depositAddress &&
+    t.amount === q.amountIn &&
+    t.token.assetId === q.origin.assetId &&
+    t.token.decimals === q.origin.decimals;
+  return t && same
+    ? { ok: true, data: t }
+    : {
+        ok: false,
+        error: 'The transfer does not match this quote, so it was not sent. Send it manually.',
+      };
+}
+
+const WALLET_CHAIN: Record<string, 'evm' | 'solana'> = {
+  eth: 'evm',
+  base: 'evm',
+  arb: 'evm',
+  sol: 'solana',
+};
+/** Which connected wallet sends on a deposit chain; null: none (Bitcoin is sent manually). */
+export const walletChainOf = (chain: string): 'evm' | 'solana' | null =>
+  WALLET_CHAIN[chain] ?? null;
+
+const EXPLORERS: Record<string, { url: string; hash: RegExp }> = {
+  eth: { url: 'https://etherscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
+  base: { url: 'https://basescan.org/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
+  arb: { url: 'https://arbiscan.io/tx/', hash: /^0x[0-9a-fA-F]{64}$/ },
+  sol: { url: 'https://solscan.io/tx/', hash: /^[1-9A-HJ-NP-Za-km-z]{64,90}$/ },
+};
+/** The origin chain explorer page of a transaction the wallet returned; null for anything not shaped like its hash. */
+export function explorerTxUrl(chain: string, hash: string): string | null {
+  const e = EXPLORERS[chain];
+  return e && e.hash.test(hash) ? `${e.url}${hash}` : null;
+}
+
 export const STATUS_MAX_CHECKS = 120;
 export const statusDelayMs = (checks: number) =>
   Math.round(Math.min(5_000 * 1.5 ** checks, 30_000));
