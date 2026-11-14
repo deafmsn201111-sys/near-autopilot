@@ -647,7 +647,9 @@ wallet; the server never sees a key. `test/signing-lock.test.ts` keeps `.transfe
 until the user types another; the server still validates it. The QR / manual path stays for every quote.
 **Consequences:** no new caps: the amount and receiver are the quote's, which the user saw and 1Click verified. After
 a send the button is replaced by the transaction link, so one quote is not paid twice from the dialog; the existing
-status polling follows the deposit. Bitcoin and TRON wallets stay manual (stretch).
+status polling follows the deposit. The API hands a quote's transfer out once (#214): `transfer_issued_at` on
+`deposit_quotes` is set by a conditional update, and a second request (another tab) gets 409. Only the dialog that saw
+its wallet reject the send (declined, no gas, no token, refused by the network) asks again with `retry=1`. Bitcoin and TRON wallets stay manual (stretch).
 
 ## D35 — One HOT Kit connects every wallet; its NEAR connector runs on our near-connect 0.12 (#189)
 

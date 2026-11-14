@@ -759,6 +759,12 @@ read, change detection, visitor limit), `portfolio-refresh.test.ts` (retries sto
   order · waiting to fill at P BUY per SELL", valued as what is still on the order plus what it bought but has not paid
   out; counted in net worth. Display only: no card, no analysis, no transaction (cancel stays in the backlog).
 
+## 2026-11-14 — A deposit quote's wallet transfer is handed out once (#214)
+
+- Migration 0026 adds `deposit_quotes.transfer_issued_at`. `GET /v1/deposit/transfer/:id` sets it with
+  `UPDATE … WHERE transfer_issued_at IS NULL RETURNING`, after every other check, so two tabs on one quote cannot both
+  prompt a wallet: the second gets 409. The dialog that saw its wallet reject the send asks again with `retry=1`.
+
 ## 2026-11-14 — One wallet connector: HOT Kit for NEAR, EVM and Solana (#189)
 
 - `lib/hot-kit.ts` owns the one kit; its NEAR connector wraps our near-connect 0.12 (CSP nonce, no access key, D35).

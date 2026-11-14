@@ -826,6 +826,7 @@ const money2 = (usd: number) =>
   `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const UNDER_MIN = `under the $${MIN_ACTION_USD} the agents act on`;
+const MIN_DCL_EXIT_USD = 0.1;
 
 export interface PortfolioAdvice {
   readonly recommendations: PortfolioRecommendation[];
@@ -990,7 +991,13 @@ export function portfolioAdvice(
   }
 
   // 4. DCL positions that have drifted out of range earn no fees until repositioned.
-  const oor = ctx.dclOutOfRange.filter((d) => (d.usd ?? 0) > 1)[0];
+  // The exit costs only gas (~$0.03) and the position earns nothing meanwhile, so only dust is skipped (#226).
+  const oor = ctx.dclOutOfRange.find((d) => (d.usd ?? 0) >= MIN_DCL_EXIT_USD);
+  const dust = ctx.dclOutOfRange.find((d) => (d.usd ?? 0) < MIN_DCL_EXIT_USD);
+  if (!oor && dust)
+    skipped.push(
+      `Your ${dust.pair} liquidity (${money2(dust.usd ?? 0)}) is out of range and earns no fees, but it is under the ${money2(MIN_DCL_EXIT_USD)} worth the network fee to exit.`,
+    );
   if (oor) {
     recs.push({
       id: `reposition-dcl-${oor.lptId}`,

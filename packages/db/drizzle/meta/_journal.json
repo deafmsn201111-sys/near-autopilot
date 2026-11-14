@@ -183,6 +183,13 @@
       "when": 1794100000000,
       "tag": "0025_account_analyses",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794110000000,
+      "tag": "0026_deposit_transfer_issued",
+      "breakpoints": true
     }
   ]
 }
