@@ -267,6 +267,18 @@ export function loadDashboardEnv(source: EnvSource = process.env): DashboardEnv 
 /** Unset and empty both mean "not provided". */
 const unsetIfEmpty = (v: unknown) => (v === '' ? undefined : v);
 
+/**
+ * Reown (WalletConnect) project id for the site's mobile wallets (HOT Kit). Public by design: Next inlines
+ * NEXT_PUBLIC_ variables into the browser bundle at build time, so it is a Docker build arg. Empty = browser wallets only.
+ */
+export const walletConnectProjectIdSchema = z.preprocess(
+  unsetIfEmpty,
+  z
+    .string()
+    .regex(/^[0-9a-f]{32}$/, 'must be a 32-character hex Reown project id')
+    .optional(),
+);
+
 /** The models the server may call; each has a price in apps/api/src/llm/pricing.ts. */
 export const LLM_MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5'] as const;
 export type LlmModel = (typeof LLM_MODELS)[number];

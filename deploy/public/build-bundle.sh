@@ -11,7 +11,10 @@ out="$root/deploy/public/dist/near-autopilot-public-$sha"
 rm -rf "$out" && mkdir -p "$out/images" "$out/config"
 
 docker buildx build --platform "$platform" -f "$root/docker/api.Dockerfile" -t near-autopilot-api:public --load "$root"
-docker buildx build --platform "$platform" -f "$root/docker/analytics.Dockerfile" -t near-autopilot-analytics:public --load "$root"
+# The one public value the site bundle needs from the local .env (Next inlines it at build time); nothing else is read.
+wc_id="$(grep -s '^NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=' "$root/.env" | cut -d= -f2- || true)"
+docker buildx build --platform "$platform" -f "$root/docker/analytics.Dockerfile" -t near-autopilot-analytics:public \
+  --build-arg "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=$wc_id" --load "$root"
 
 # No .env, key or checkpoint file in the application folders of the images (system CA bundles are not keys).
 for img in near-autopilot-api:public near-autopilot-analytics:public; do
